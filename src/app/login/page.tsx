@@ -33,14 +33,14 @@ export default function LoginPage() {
     <main className={styles.container}>
       {/* Background Video */}
       {bgVideo && (
-        <video 
+        <video
           key={bgVideo}
-          src={bgVideo} 
-          autoPlay 
-          loop 
-          muted 
-          playsInline 
-          className={styles.videoBg} 
+          src={bgVideo}
+          autoPlay
+          loop
+          muted
+          playsInline
+          className={styles.videoBg}
         />
       )}
       <div className={styles.videoOverlay} />
@@ -48,12 +48,12 @@ export default function LoginPage() {
       {/* Login Form */}
       <div className={styles.loginBox}>
         <div className={styles.logoContainer}>
-          <Image 
-            src="/slab-logo.svg" 
-            alt="SLAB Logo" 
-            width={80} 
-            height={80} 
-            className={styles.logoImage} 
+          <Image
+            src="/slab-logo.svg"
+            alt="SLAB Logo"
+            width={100}
+            height={71}
+            className={styles.logoImage}
             priority
           />
           <h1 className={styles.logoText}>SLAB</h1>
@@ -68,7 +68,7 @@ export default function LoginPage() {
               className={styles.input}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="jorge.gutierrez+everton@s-lab.cl"
+              placeholder="ronal@dinho.com"
               required
             />
           </div>
@@ -91,7 +91,7 @@ export default function LoginPage() {
               <input type="checkbox" className={styles.checkbox} defaultChecked />
               Keep me logged in
             </label>
-            
+
             <button type="submit" className={styles.submitButton}>
               Login
             </button>
