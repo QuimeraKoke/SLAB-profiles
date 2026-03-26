@@ -1,66 +1,69 @@
-import Image from "next/image";
+"use client";
+
 import styles from "./page.module.css";
+import { useAuth } from "@/context/AuthContext";
 
 export default function Home() {
+  const { user, logout } = useAuth();
+  
+  if (!user) return null; // Prevent showing flash of content before redirect
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <main className={styles.container}>
+      {/* Background ambient lighting */}
+      <div className={styles.background}>
+        <div className={styles.blob1}></div>
+        <div className={styles.blob2}></div>
+      </div>
+
+      <div className={styles.content}>
+        <div style={{ position: "absolute", top: "-50px", right: 0 }}>
+          <button 
+            onClick={logout}
+            style={{ 
+              padding: "0.5rem 1rem", 
+              background: "rgba(255,255,255,0.1)", 
+              border: "1px solid rgba(255,255,255,0.2)",
+              color: "white",
+              borderRadius: "8px",
+              cursor: "pointer"
+            }}
           >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+            Logout ({user.email})
+          </button>
         </div>
-      </main>
-    </div>
+        
+        <div className={styles.badge}>v2.0 Early Access</div>
+        
+        <h1 className={styles.title}>
+          Slab Profiles
+        </h1>
+        
+        <p className={styles.subtitle}>
+          The ultimate platform for managing, tracking, and analyzing construction profiles with unprecedented clarity.
+        </p>
+
+        <button className={styles.button}>
+          Get Started
+        </button>
+
+        <div className={styles.cards}>
+          <div className={styles.card}>
+            <div className={styles.cardIcon}>✦</div>
+            <h2 className={styles.cardTitle}>Precision Analytics</h2>
+            <p className={styles.cardText}>
+              Gain deep insights into your supply chain with our state-of-the-art analytical tools.
+            </p>
+          </div>
+          <div className={styles.card}>
+            <div className={styles.cardIcon}>⚡</div>
+            <h2 className={styles.cardTitle}>Real-time Sync</h2>
+            <p className={styles.cardText}>
+              Instantly synchronize data across teams for seamless collaboration and execution.
+            </p>
+          </div>
+        </div>
+      </div>
+    </main>
   );
 }
