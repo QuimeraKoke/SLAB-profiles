@@ -1,0 +1,20 @@
+.container {
+  padding: 32px;
+}
+
+.contentArea {
+  margin-top: 16px;
+  min-height: 400px;
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 300px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  border: 1px dashed #d1d5db;
+  color: #6b7280;
+  font-size: 1rem;
+}

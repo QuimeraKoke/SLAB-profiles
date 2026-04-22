@@ -1,0 +1,237 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.topSectionTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+
+.topRow {
+  display: grid;
+  grid-template-columns: minmax(450px, 1fr) 1.5fr;
+  gap: 24px;
+}
+
+@media (max-width: 1400px) {
+  .topRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.metricCard {
+  background-color: #ffffff;
+  border-radius: 6px;
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #f3f4f6;
+}
+
+.metricTitle {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #9ca3af;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  white-space: nowrap;
+}
+
+.metricValue {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #111827;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.metricUnit {
+  font-size: 0.65rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.metricChange {
+  font-size: 0.65rem;
+  font-weight: 600;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.changeUp {
+  color: #10b981;
+}
+
+.changeDown {
+  color: #ef4444;
+}
+
+.chartCard {
+  background-color: #ffffff;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+}
+
+.chartHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.chartTitle {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.selectGroup {
+  display: flex;
+  gap: 12px;
+}
+
+.selectInput {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  color: #4b5563;
+  padding: 6px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background-color: white;
+  cursor: pointer;
+}
+
+.btnPrimary {
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.emptyChartBox {
+  min-height: 250px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  border-left: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+  margin-left: 24px;
+  margin-bottom: 24px;
+}
+
+.emptyChartBox::before, .emptyChartBox::after {
+  content: "HD-2";
+  position: absolute;
+  bottom: -24px;
+  font-size: 0.6rem;
+  color: #9ca3af;
+}
+
+.emptyChartBox::before {
+  left: 20%;
+}
+.emptyChartBox::after {
+  left: 70%;
+  content: "HD+1";
+}
+
+.emptyChartLabel {
+  font-size: 0.75rem;
+  color: #4b5563;
+}
+
+.dailyLoadGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+}
+
+@media (max-width: 1024px) {
+  .dailyLoadGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dateOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.dateTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background-color: #eff6ff;
+  color: #3b82f6;
+  border: 1px solid #bfdbfe;
+}
+
+.alertBox {
+  background-color: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.radarArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 300px;
+  width: 100%;
+}
+
+.radarLegend {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

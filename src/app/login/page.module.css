@@ -29,10 +29,11 @@
 }
 
 .loginBox {
-  z-index: 1; /* Place above the video layer */
+  z-index: 1;
+  /* Place above the video layer */
   position: relative;
   width: 100%;
-  max-width: 400px;
+  max-width: 520px;
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -143,9 +144,13 @@
     background: rgba(0, 0, 0, 0.4);
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
-  .logoText, .label, .checkboxGroup {
+
+  .logoText,
+  .label,
+  .checkboxGroup {
     color: #fff;
   }
+
   .input {
     background: rgba(255, 255, 255, 0.9);
   }

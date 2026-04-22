@@ -1,0 +1,131 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.topRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 1024px) {
+  .topRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  background-color: #ffffff;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cardHeaderRight {
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.cardList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.listItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 0.875rem;
+}
+
+.listItem:last-child {
+  border-bottom: none;
+}
+
+.listLabel {
+  color: #4b5563;
+  font-weight: 500;
+}
+
+.listLabelLight {
+  color: #6b7280;
+  font-size: 0.75rem;
+  display: block;
+  margin-top: 4px;
+}
+
+.listValue {
+  font-weight: 700;
+  color: #111827;
+}
+
+.listValueHighlight {
+  color: #3b82f6;
+}
+
+.listValueBadge {
+  background-color: #dcfce7;
+  color: #166534;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.listValueBadgeRed {
+  background-color: #fee2e2;
+  color: #991b1b;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.bottomRow {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.commentsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+  margin-top: 16px;
+}
+
+.commentSection {
+  display: flex;
+  flex-direction: column;
+}
+
+.commentTitle {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.commentText {
+  font-size: 0.875rem;
+  color: #9ca3af;
+  font-style: italic;
+}

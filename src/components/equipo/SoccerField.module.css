@@ -1,0 +1,145 @@
+.fieldContainer {
+  background-color: transparent;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+}
+
+.pitch {
+  width: 100%;
+  max-width: 500px;
+  aspect-ratio: 0.68;
+  background: #398e4b; /* Hard green from the screenshot */
+  border: 4px solid #f4f6f8;
+  border-radius: 8px;
+  position: relative;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+/* Add inner boundary lines for the pitch */
+.pitch::before {
+  content: '';
+  position: absolute;
+  top: 4%;
+  left: 4%;
+  right: 4%;
+  bottom: 4%;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+
+.centerLine {
+  position: absolute;
+  top: 50%;
+  left: 4%;
+  right: 4%;
+  height: 1.5px;
+  background: rgba(255, 255, 255, 0.6);
+  transform: translateY(-50%);
+}
+
+.centerCircle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 25%;
+  aspect-ratio: 1;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.penaltyAreaTop,
+.penaltyAreaBottom {
+  position: absolute;
+  left: 50%;
+  width: 45%;
+  height: 14%;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  transform: translateX(-50%);
+}
+
+.penaltyAreaTop {
+  top: 4%;
+  border-top: none;
+}
+
+.penaltyAreaBottom {
+  bottom: 4%;
+  border-bottom: none;
+}
+
+.goalAreaTop,
+.goalAreaBottom {
+  position: absolute;
+  left: 50%;
+  width: 18%;
+  height: 5%;
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  transform: translateX(-50%);
+}
+
+.goalAreaTop {
+  top: 4%;
+  border-top: none;
+}
+
+.goalAreaBottom {
+  bottom: 4%;
+  border-bottom: none;
+}
+
+.nodeWrapper {
+  position: absolute;
+  cursor: pointer;
+  z-index: 10;
+}
+
+.nodeContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: transform 0.2s ease;
+}
+
+.nodeWrapper:hover .nodeContent {
+  transform: scale(1.1);
+}
+
+.node {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Remove border to match screenshot */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  transition: all 0.2s ease;
+}
+
+.nodePosText {
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.nodeBlue { background-color: #3b82f6; }
+.nodeOrange { background-color: #f59e0b; }
+.nodeRed { background-color: #ef4444; }
+
+.nodeLabel {
+  font-size: 0.6rem;
+  font-weight: 500;
+  color: #111827;
+  background: #ffffff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  pointer-events: none;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  white-space: nowrap;
+}

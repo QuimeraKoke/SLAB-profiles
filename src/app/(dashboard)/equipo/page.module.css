@@ -1,0 +1,52 @@
+.container {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  animation: fadeIn 0.3s ease-out;
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+}
+
+.tabs {
+  display: flex;
+  align-items: center;
+  background-color: #ffffff;
+  padding: 4px;
+  border-radius: 999px;
+  width: fit-content;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.tab {
+  padding: 8px 16px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #4b5563;
+  border-radius: 999px;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.tabActive {
+  background-color: #111827;
+  color: #ffffff;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  flex-grow: 1;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}

@@ -1,0 +1,107 @@
+.navbar {
+  height: 64px;
+  background-color: #0d162a; /* Dark navy */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  color: white;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.leftSection {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+}
+
+.slabLogo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: 0.05em;
+  font-family: var(--font-audiowide), sans-serif;
+}
+
+.teamDivider {
+  width: 1px;
+  height: 32px;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.teamSection {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.teamLogo {
+  width: 36px;
+  height: 36px;
+  background-color: #1b2640;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #a4b4cb;
+  font-weight: bold;
+}
+
+.teamText {
+  display: flex;
+  flex-direction: column;
+}
+
+.teamTitle {
+  font-size: 0.875rem;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.teamSubtitle {
+  font-size: 0.75rem;
+  color: #8f9baf;
+  margin: 0;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.rightSection {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.iconButton {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c4cddb;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.iconButton:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+.notificationDot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  background-color: #f2a632; /* Yellowish dot */
+  border-radius: 50%;
+}
