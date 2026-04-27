@@ -357,6 +357,8 @@ each other in dependency order.
 
 ## 6. What's deferred (TODO)
 
+### 6.1 Feature work
+
 Roughly ordered by clinical value:
 
 | Feature                                          | What it'd take                                                                                          |
@@ -368,9 +370,26 @@ Roughly ordered by clinical value:
 | **Template versioning**                          | Auto-fork on schema edit when `is_locked=True`, store `version+1`, preserve historical results pointing at v1. PRD calls this out as required. |
 | **Threshold rules + alarms**                     | New `Alarm` model (per-template + per-category thresholds), Celery worker that evaluates on result save. Compose already runs Redis. |
 | **Real interactive `BodyMap`**                   | SVG anatomical figure with clickable zones. Currently a placeholder list. |
+| **Player contract / agreement**                  | New `Contract` model FK to `Player` (`amount`, `currency`, `start_date`, `end_date`, …). Surface in `ProfileHeader`'s right column (currently a `—` placeholder). The screenshot shows "CONTRATO VIGENTE" — that block is deliberately stubbed today. |
+| **Notifications**                                | Per-user `Notification` model + `NotificationChannel` (in-app, email). Integrate with the alarms engine so threshold breaches push to the right staff. |
+| **Logout UI affordance**                         | `AuthContext.logout()` exists but no button is wired anywhere visible. Add to navbar / sidebar profile section. |
+| **Bicompartimental & Tetracompartimental templates** | Sibling seed commands to `seed_pentacompartimental`. The screenshot shows them in the original system; the engine handles them out of the box once schemas are written. |
 | **Bulk CSV / GPS import**                        | Out of MVP per PRD; placeholder. |
 | **Cross-player comparative analytics**           | Out of MVP per PRD. |
 | **Third-party integrations (Catapult, Wimu)**    | Out of MVP per PRD. |
+| **Test suite**                                   | No tests exist yet. Highest-value first: `pytest` for `exams/calculations.py` (formula engine — security-critical) and `api/scoping.py` (access control — security-critical). Frontend `vitest` for `lib/api.ts` token handling. |
+
+### 6.2 Tech debt / cleanup
+
+Things that work today but should be tidied before they confuse the next contributor:
+
+| Item                                               | Why                                                                                       |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Delete `frontend/src/components/visualizations/TrendsPanel.tsx` and its CSS | Superseded by per-template visualizations inside `DepartmentCard`. Currently dead code, but exported via `index.ts` and looks like an active component. |
+| Rationalize `Sidebar.tsx` nav items                | Most entries (`Panel`, `Estadísticas`, `Desempeño`, `Médico`, `Psicosocial`, `Técnica`, `Tareas`, `Organización`) point to `#`. Either wire them up or delete; current state misleads. |
+| Delete legacy `frontend/src/app/(dashboard)/nutricional/5c-v{1,2,3}/` pages | Pre-pivot static demos hardcoded in the original codebase. Replaced by the dynamic `Pentacompartimental` template; still reachable from the sidebar's `Nutricional` dropdown. |
+| Decide on `frontend/src/app/(dashboard)/perfil/page.tsx` | Currently an empty-state stub pointing to `/equipo`. Either make it useful (e.g. redirect to last-viewed player) or remove the route + sidebar link. |
+| Remove unused `ProfileStatistics`, `ProfilePerformance`, `ProfileMedical`, `ProfileNutritional` components | Original profile-tab-per-department components, no longer referenced after the dynamic-tabs refactor. |
 
 ---
 
@@ -395,9 +414,7 @@ Roughly ordered by clinical value:
 - **Body map / `chart_type: "body_map"`** renders a placeholder zone list, not
   a real anatomical figure.
 - **Frontend forms have no edit / delete** for existing results. The audit
-  trail is append-only by design.
-- **No tests yet.** Manual QA only. Worth standing up `pytest` for the formula
-  engine + scoping helpers before the codebase grows further.
+  trail is append-only by design (until edit-in-place ships — see §6.1).
 - **I (the assistant) did not run the stack end-to-end** during the build
   session. If something blows up on first launch, suspect missing migrations
   (`makemigrations` then `migrate`) or stale browser tokens after schema
@@ -430,15 +447,22 @@ Defined in `.env.example`, consumed by `docker-compose.yml` and
 Pick whatever delivers the most clinical value next; my recommended order:
 
 1. **Sort by `fecha`** — small, polishes UX immediately.
-2. **Real `ProfileSummary`** — aggregates per-department highlights so the
+2. **Logout UI + sidebar cleanup** — also small, removes confusion.
+3. **Real `ProfileSummary`** — aggregates per-department highlights so the
    landing tab on each player profile is meaningful.
-3. **Goal-vs-Current card** — joins the goals system with live data; high
+4. **Goal-vs-Current card** — joins the goals system with live data; high
    demo value.
-4. **Alarms engine + Celery** — biggest infra step; PRD-required for
-   "automated intelligence".
-5. **Template versioning** — needed before users actually start changing
+5. **Test suite (formula engine + scoping)** — before more features stack
+   on top. These two modules are security-critical.
+6. **Bicompartimental + Tetracompartimental seed commands** — cheap once
+   the schemas are written; rounds out the anthropometry suite.
+7. **Player contract** — completes the `ProfileHeader` placeholder.
+8. **Alarms engine + Celery + Notifications** — the biggest infra step;
+   PRD-required for "automated intelligence". Notifications layer fits
+   naturally on top.
+9. **Template versioning** — needed before users actually start changing
    schemas in production.
-6. **Real `BodyMap`** — clinical UX win for the medical team.
+10. **Real `BodyMap`** — clinical UX win for the medical team.
 
 ---
 
