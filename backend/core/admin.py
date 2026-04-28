@@ -20,6 +20,7 @@ class DepartmentAdmin(admin.ModelAdmin):
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ("name", "club", "department_summary")
     list_filter = ("club",)
+    search_fields = ("name", "club__name")
     filter_horizontal = ("departments",)
 
     def department_summary(self, obj: Category) -> str:

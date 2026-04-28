@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "core",
     "exams",
+    "dashboards",
     "api",
 ]
 

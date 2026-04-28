@@ -4,6 +4,8 @@ from ninja import NinjaAPI
 from ninja.errors import HttpError
 
 from core.models import Category, Department, Player, Position
+from dashboards.aggregation import resolve_widget
+from dashboards.models import DepartmentLayout
 from exams.calculations import compute_result_data
 from exams.models import ExamResult, ExamTemplate
 
@@ -21,6 +23,7 @@ from .scoping import (
 from .schemas import (
     CategoryOut,
     DepartmentOut,
+    LayoutResponseOut,
     LoginIn,
     LoginOut,
     MeOut,
@@ -266,3 +269,86 @@ def list_player_results(request, player_id: str, department: str | None = None):
     if department:
         qs = qs.filter(template__department__slug=department)
     return qs
+
+
+@api.get("/players/{player_id}/views", response=LayoutResponseOut)
+def get_player_view(request, player_id: str, department: str):
+    """Return the configured DepartmentLayout for (player.category, department).
+
+    Returns `{"layout": null}` when no active layout exists — the frontend
+    falls back to the legacy auto-rendered template grid in that case.
+    """
+    membership = get_membership(request.user)
+
+    player = scope_players(
+        Player.objects.select_related("category"),
+        membership,
+    ).filter(id=player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+
+    dept = scope_departments(
+        Department.objects.filter(club_id=player.category.club_id),
+        membership,
+    ).filter(slug=department).first()
+    if dept is None:
+        raise HttpError(404, "Department not found")
+
+    layout = (
+        DepartmentLayout.objects
+        .filter(department=dept, category=player.category, is_active=True)
+        .select_related("department")
+        .prefetch_related("sections__widgets__data_sources__template__department")
+        .first()
+    )
+    if layout is None:
+        return {"layout": None}
+
+    accessible_template_ids = set(
+        scope_templates(ExamTemplate.objects.all(), membership).values_list(
+            "pk", flat=True
+        )
+    )
+
+    sections_payload = []
+    for section in layout.sections.all():
+        widgets_payload = []
+        for widget in section.widgets.all():
+            sources = list(widget.data_sources.all())
+            # Drop widgets the user can't access any data for.
+            if sources and not any(
+                s.template_id in accessible_template_ids for s in sources
+            ):
+                continue
+            widgets_payload.append(
+                {
+                    "id": widget.id,
+                    "chart_type": widget.chart_type,
+                    "title": widget.title,
+                    "description": widget.description,
+                    "column_span": widget.column_span,
+                    "sort_order": widget.sort_order,
+                    "display_config": widget.display_config or {},
+                    "data": resolve_widget(widget, player.id),
+                }
+            )
+        sections_payload.append(
+            {
+                "id": section.id,
+                "title": section.title,
+                "is_collapsible": section.is_collapsible,
+                "default_collapsed": section.default_collapsed,
+                "sort_order": section.sort_order,
+                "widgets": widgets_payload,
+            }
+        )
+
+    return {
+        "layout": {
+            "id": layout.id,
+            "department": dept,
+            "category_id": player.category_id,
+            "name": layout.name,
+            "sections": sections_payload,
+        }
+    }

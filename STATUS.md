@@ -81,6 +81,10 @@ docker compose exec backend python manage.py seed_daily_notes \
 
 # Fake historical exam results so dashboards have data:
 docker compose exec backend python manage.py seed_fake_exams --reset
+
+# Default Nutricional dashboard layout (mirrors the designer's mockup):
+docker compose exec backend python manage.py seed_nutricional_layout \
+    --all-applicable-categories
 ```
 
 Log in at http://localhost:3000/login. Open any player → switch tabs.
@@ -93,6 +97,7 @@ Log in at http://localhost:3000/login. Open any player → switch tabs.
 slab-profiles/
 ├── PROJECT.md              # Product vision + architecture spec (the "why")
 ├── STATUS.md               # This file
+├── DASHBOARDS.md           # Operator + developer guide for layouts/widgets
 ├── README.md               # Operator-facing quick reference
 ├── AGENTS.md               # Reminder: Next 16 has breaking changes
 ├── docker-compose.yml      # postgres + redis + backend + frontend
@@ -107,6 +112,8 @@ slab-profiles/
 │   │                       # StaffMembership models + admin
 │   ├── exams/              # ExamTemplate, ExamResult, calculations.py,
 │   │                       # management/commands/seed_*.py
+│   ├── dashboards/         # DepartmentLayout, LayoutSection, Widget,
+│   │                       # WidgetDataSource + aggregation engine
 │   └── api/                # Ninja routers, schemas, JWT auth, scoping helpers
 │
 └── frontend/               # Next.js 16 App Router
@@ -127,9 +134,20 @@ slab-profiles/
         │   │   ├── ProfileTabs/                 # generic, takes tabs[]
         │   │   ├── ProfileSummary/              # Resumen tab (still hardcoded)
         │   │   ├── ProfileTimeline/             # Línea de tiempo tab
-        │   │   ├── ProfileDepartment/           # one tab per department
-        │   │   └── DepartmentCard/              # one card per template
-        │   └── visualizations/                  # ComponentRegistry pattern
+        │   │   ├── ProfileDepartment/           # fetches layout + falls back
+        │   │   │   └── DashboardEntryPanel/     # template-pick + DynamicUploader
+        │   │   └── DepartmentCard/              # legacy fallback grid
+        │   ├── dashboards/                      # configurable layout renderer
+        │   │   ├── DepartmentDashboard.tsx
+        │   │   ├── SectionGroup.tsx
+        │   │   └── widgets/                     # chart_type → component map
+        │   │       ├── index.tsx                # renderWidget()
+        │   │       ├── ComparisonTable.tsx
+        │   │       ├── LineWithSelector.tsx
+        │   │       ├── DonutPerResult.tsx
+        │   │       ├── GroupedBar.tsx
+        │   │       └── Unsupported.tsx
+        │   └── visualizations/                  # legacy registry (per-field chart_type)
         │       ├── Registry.tsx
         │       ├── StatCard.tsx
         │       ├── LineChart.tsx
@@ -160,6 +178,10 @@ Strict-relational core, JSONB-driven exams.
 | `StaffMembership`  | `id`, `user OneToOne`, `club FK`, `all_categories`, `categories M2M`, `all_departments`, `departments M2M` | One club per user. "All" flag bypasses the M2M list.                                  |
 | `ExamTemplate`     | `id`, `name`, `department FK`, `applicable_categories M2M`, `config_schema JSONB`, `version`, `is_locked` | Locks after first result.                                                                          |
 | `ExamResult`       | `id`, `player FK`, `template FK`, `recorded_at`, `result_data JSONB` | GIN-indexed on `result_data`. Calculated outputs computed server-side.                             |
+| `DepartmentLayout` | `id`, `department FK`, `category FK`, `name`, `is_active`            | One layout per `(department, category)`. `clean()` enforces same club + category opt-in. |
+| `LayoutSection`    | `id`, `layout FK`, `title`, `is_collapsible`, `default_collapsed`, `sort_order` | Visual grouping inside a layout.                                                          |
+| `Widget`           | `id`, `section FK`, `chart_type`, `title`, `description`, `column_span`, `display_config JSONB`, `sort_order` | One chart card. `chart_type` is a TextChoices registry — see §3.9. |
+| `WidgetDataSource` | `id`, `widget FK`, `template FK`, `field_keys text[]`, `aggregation`, `aggregation_param`, `label`, `color`, `sort_order` | Bound data feed. `clean()` validates field_keys against the template schema. |
 
 ### 3.2 Configuration-driven exam templates
 
@@ -221,6 +243,7 @@ All endpoints are JWT-authenticated by default (NinjaAPI mounted with
 | GET    | `/api/players/{id}`                              | Scoped; rich `PlayerDetailOut` (club + category + position embedded) |
 | GET    | `/api/players/{id}/templates?department=…`       | Scoped to player's category + user's departments                     |
 | GET    | `/api/players/{id}/results?department=…`         | Filter by department slug                                            |
+| GET    | `/api/players/{id}/views?department=…`           | Returns `{layout: …}` — server-aggregated dashboard payload, or `{layout: null}` for fallback |
 | GET    | `/api/templates/{id}`                            | Scoped                                                               |
 | POST   | `/api/results`                                   | Runs formula engine on submit; merges calculated outputs             |
 
@@ -285,7 +308,62 @@ new viz, create one component, register one line — admin sets `chart_type:
 "<key>"` and the platform picks it up. **Body map is a placeholder** (list of
 zones recorded over time); the interactive anatomical figure is its own slice.
 
-### 3.8 Typography
+### 3.8 Configurable dashboards (`backend/dashboards/`)
+
+Per-`(department, category)` visualization layouts the platform admin composes
+in Django Admin — no code change needed to add or rearrange charts on a player
+profile. **For step-by-step admin instructions and developer extension recipes,
+see [`DASHBOARDS.md`](./DASHBOARDS.md).**
+
+**Composition tree:**
+
+```
+DepartmentLayout (department, category)
+  └── LayoutSection (title, collapsible)
+        └── Widget (chart_type, title, column_span, display_config)
+              └── WidgetDataSource (template, field_keys, aggregation)
+```
+
+**`chart_type` registry (V1):** `comparison_table`, `line_with_selector`,
+`donut_per_result`, `grouped_bar` are fully implemented end-to-end. Three more
+slots are reserved in the enum for V2: `reference_card`, `goals_list`,
+`cross_exam_line`. Configuring them today gets you an "Unsupported renderer"
+placeholder (intentional — admin can wire data sources before frontend
+shipping). The frontend widget registry lives at
+`frontend/src/components/dashboards/widgets/index.tsx`.
+
+**Aggregation modes** on each `WidgetDataSource`:
+
+- `latest` — only the most recent result.
+- `last_n` — last N results, chronologically. `aggregation_param` = N.
+- `all` — every result the player has for that template, time-ordered.
+
+**Server-side resolution** lives in `backend/dashboards/aggregation.py`. The
+`/players/{id}/views` endpoint walks the layout tree, runs each widget's
+aggregation against the player's results, and returns a chart-ready payload
+keyed by `chart_type`. The frontend stays a dumb client — no data shaping in
+React.
+
+**Fallback:** when no `DepartmentLayout` exists for the player's
+`(department, category)` pair, `/views` returns `{"layout": null}` and the
+frontend renders the legacy `DepartmentCard` grid. Layouts ship incrementally
+— configure the ones you care about, leave others alone.
+
+**Cross-exam composition** (medical chart pulling from physical + medical +
+nutritional templates) uses one widget with multiple `WidgetDataSource` rows
+pointing at different `ExamTemplate`s. Validation in `WidgetDataSource.clean()`
+allows mixed departments only on `chart_type='cross_exam_line'`.
+
+**Admin UX:** three nested entry points so non-tech users only click dropdowns:
+
+1. **Department layouts** → add a section inline, drill into it.
+2. **Layout sections** → add a widget inline, drill into it.
+3. **Widgets** → fill in `chart_type` + `data_sources` inline.
+
+Field-key validation runs on `clean()`: typos surface as form errors with the
+list of valid keys for the chosen template.
+
+### 3.9 Typography
 
 - **Roboto** — content (body, headings, tables, sparkline labels). Loaded via
   `next/font/google` with weights 300/400/500/700.
@@ -307,6 +385,7 @@ All under `backend/exams/management/commands/`. Run via
 | `seed_metas`               | Create `Metas <Department>` goals templates (per department or all).   |
 | `seed_daily_notes`         | Create `Notas diarias <Department>` daily-notes templates.             |
 | `seed_fake_exams`          | Generate fake historical results for every player × every template.    |
+| `seed_nutricional_layout`  | Bootstrap the default Nutricional dashboard layout (table + line + donut + bar) per category. Lives in `dashboards/management/commands/`. |
 
 Common flags across the seed-template commands:
 
@@ -473,7 +552,7 @@ Pick whatever delivers the most clinical value next; my recommended order:
 docker compose up --build
 
 # Apply schema changes:
-docker compose exec backend python manage.py makemigrations core exams
+docker compose exec backend python manage.py makemigrations core exams dashboards
 docker compose exec backend python manage.py migrate
 
 # Wipe and reseed dev data:
@@ -488,6 +567,8 @@ docker compose exec backend python manage.py seed_metas \
 docker compose exec backend python manage.py seed_daily_notes \
     --create-if-missing --all-applicable-categories
 docker compose exec backend python manage.py seed_fake_exams --reset
+docker compose exec backend python manage.py seed_nutricional_layout \
+    --all-applicable-categories
 
 # Backend Python shell:
 docker compose exec backend python manage.py shell

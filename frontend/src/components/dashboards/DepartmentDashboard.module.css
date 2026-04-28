@@ -1,0 +1,15 @@
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.empty {
+  padding: 24px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.9rem;
+  background-color: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 6px;
+}

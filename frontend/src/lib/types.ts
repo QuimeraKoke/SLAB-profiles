@@ -124,3 +124,132 @@ export interface ExamResult {
   recorded_at: string;
   result_data: Record<string, unknown>;
 }
+
+// ---------- Configurable dashboards ----------
+
+/** Resolved chart-ready payload returned by the backend. Shape varies by chart_type. */
+export type WidgetData =
+  | ComparisonTablePayload
+  | LineWithSelectorPayload
+  | DonutPerResultPayload
+  | GroupedBarPayload
+  | MultiLinePayload
+  | CrossExamLinePayload
+  | UnsupportedPayload
+  | EmptyPayload;
+
+export interface FieldMeta {
+  key: string;
+  label: string;
+  unit: string;
+  group: string;
+  type: string;
+}
+
+export interface ComparisonTablePayload {
+  chart_type: "comparison_table";
+  columns: { result_id: string; recorded_at: string }[];
+  rows: (FieldMeta & {
+    values: (number | string | boolean | null)[];
+    deltas: (number | null)[];
+  })[];
+}
+
+export interface LineWithSelectorPayload {
+  chart_type: "line_with_selector";
+  available_fields: FieldMeta[];
+  series: Record<string, { recorded_at: string; value: number | null }[]>;
+}
+
+export interface DonutSlice {
+  key: string;
+  label: string;
+  value: number;
+  color: string | null;
+  percentage: number;
+}
+
+export interface DonutPerResultPayload {
+  chart_type: "donut_per_result";
+  donuts: {
+    result_id: string;
+    recorded_at: string;
+    slices: DonutSlice[];
+    total: number;
+  }[];
+}
+
+export interface GroupedBarPayload {
+  chart_type: "grouped_bar";
+  groups: {
+    result_id: string;
+    recorded_at: string;
+    bars: { key: string; label: string; value: number | null }[];
+  }[];
+  fields: (FieldMeta & { color: string | null })[];
+}
+
+export interface MultiLinePayload {
+  chart_type: "multi_line";
+  series: {
+    key: string;
+    label: string;
+    unit: string;
+    color: string | null;
+    points: { recorded_at: string; value: number | null }[];
+  }[];
+}
+
+export interface CrossExamLinePayload {
+  chart_type: "cross_exam_line";
+  series: {
+    label: string;
+    color: string | null;
+    unit: string;
+    template: string;
+    field_key: string;
+    points: { recorded_at: string; value: number | null }[];
+  }[];
+}
+
+export interface UnsupportedPayload {
+  chart_type: string;
+  unsupported: true;
+  reason?: string;
+}
+
+export interface EmptyPayload {
+  chart_type: string;
+  empty: true;
+  title?: string;
+}
+
+export interface DashboardWidget {
+  id: string;
+  chart_type: string;
+  title: string;
+  description: string;
+  column_span: number;
+  sort_order: number;
+  display_config: Record<string, unknown>;
+  data: WidgetData;
+}
+
+export interface DashboardSection {
+  id: string;
+  title: string;
+  is_collapsible: boolean;
+  default_collapsed: boolean;
+  sort_order: number;
+  widgets: DashboardWidget[];
+}
+
+export interface DepartmentLayoutResponse {
+  layout: {
+    id: string;
+    department: Department;
+    category_id: string;
+    name: string;
+    sections: DashboardSection[];
+  } | null;
+}

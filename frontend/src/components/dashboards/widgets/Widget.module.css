@@ -1,0 +1,243 @@
+.widget {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  height: 100%;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.description {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.85rem;
+  background-color: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 6px;
+}
+
+.unsupported {
+  padding: 16px;
+  background-color: #fffbeb;
+  border: 1px dashed #fbbf24;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #92400e;
+}
+
+.unsupported code {
+  background: #fef3c7;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+}
+
+.unsupportedReason {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: #b45309;
+}
+
+/* ---------- comparison table ---------- */
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.table th,
+.table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.table td {
+  color: #111827;
+}
+
+.valueCell > span:first-child {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.table th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  font-weight: 600;
+  background-color: #f9fafb;
+  white-space: nowrap;
+}
+
+.varCol {
+  color: #111827;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.unit {
+  color: #9ca3af;
+  font-size: 0.8em;
+  font-weight: 400;
+}
+
+.valueCell {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.up {
+  color: #dc2626;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.down {
+  color: #059669;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.flat {
+  color: #9ca3af;
+  font-size: 0.75rem;
+}
+
+/* ---------- line with selector ---------- */
+
+.fieldSelect {
+  font-size: 0.8rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 4px 8px;
+  background-color: #ffffff;
+  color: #111827;
+  cursor: pointer;
+}
+
+.chartArea {
+  width: 100%;
+}
+
+.chartTooltip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  background-color: #111827;
+  color: #ffffff;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+
+.chartTooltipDate {
+  color: #d1d5db;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chartTooltipValue {
+  font-weight: 600;
+}
+
+/* ---------- donut per result ---------- */
+
+.donutGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.donutItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.donutDate {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.donutChart {
+  width: 100%;
+}
+
+.donutLegend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.75rem;
+  width: 100%;
+}
+
+.donutLegendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.donutDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.donutLegendLabel {
+  flex: 1;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.donutLegendValue {
+  color: #111827;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

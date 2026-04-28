@@ -7,6 +7,7 @@ from .models import ExamResult, ExamTemplate
 class ExamTemplateAdmin(admin.ModelAdmin):
     list_display = ("name", "department", "club_name", "version", "is_locked", "updated_at")
     list_filter = ("department__club", "department", "is_locked")
+    search_fields = ("name", "department__name")
     filter_horizontal = ("applicable_categories",)
     readonly_fields = ("version", "is_locked", "created_at", "updated_at")
     autocomplete_fields = ("department",)

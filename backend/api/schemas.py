@@ -117,3 +117,47 @@ class ResultOut(Schema):
     template_id: UUID
     recorded_at: datetime
     result_data: dict[str, Any]
+
+
+# ---------- Configurable dashboards ----------
+
+class WidgetPayloadOut(Schema):
+    """A single widget on a player profile dashboard.
+
+    `data` is the resolved chart-ready payload — its shape depends on
+    `chart_type` and is documented per resolver in
+    `backend/dashboards/aggregation.py`. The frontend dispatches by
+    `chart_type` and reads `data` accordingly.
+    """
+
+    id: UUID
+    chart_type: str
+    title: str
+    description: str = ""
+    column_span: int = 12
+    sort_order: int = 0
+    display_config: dict[str, Any] = {}
+    data: dict[str, Any]
+
+
+class LayoutSectionOut(Schema):
+    id: UUID
+    title: str = ""
+    is_collapsible: bool = True
+    default_collapsed: bool = False
+    sort_order: int = 0
+    widgets: list[WidgetPayloadOut]
+
+
+class DepartmentLayoutOut(Schema):
+    id: UUID
+    department: DepartmentOut
+    category_id: UUID
+    name: str
+    sections: list[LayoutSectionOut]
+
+
+class LayoutResponseOut(Schema):
+    """Wrapper so the frontend can read `data.layout` and treat None as 'no layout'."""
+
+    layout: DepartmentLayoutOut | None = None
