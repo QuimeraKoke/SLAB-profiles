@@ -7,6 +7,15 @@ visualization types when the built-in ones aren't enough.
 > "configuration over code" philosophy and [`STATUS.md`](./STATUS.md) §3.8 for
 > the runtime architecture. This guide is the *operator's manual*.
 
+> **Note on calculated fields:** the formula engine supports
+> **`coalesce(a, b, …)`** which returns the first non-null argument.
+> Critical for segmented or sparse data: use
+> `coalesce([metric_p1], 0) + coalesce([metric_p2], 0)` for sums where one
+> segment may be missing, or `max(coalesce([m_p1], 0), coalesce([m_p2], 0))`
+> for peaks. Without `coalesce`, a single null variable makes the whole
+> formula evaluate to null. See `STATUS.md` §3.3 for the full operator
+> whitelist.
+
 ---
 
 ## 1. Vocabulary

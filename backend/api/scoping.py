@@ -90,3 +90,20 @@ def scope_results(qs: QuerySet, membership: StaffMembership | None) -> QuerySet:
     if not membership.all_departments:
         qs = qs.filter(template__department__in=membership.departments.all())
     return qs
+
+
+def scope_events(qs: QuerySet, membership: StaffMembership | None) -> QuerySet:
+    """Events visible to a user: same club + accessible department.
+
+    Note: we don't additionally filter by participants' categories — if the
+    user can see the department, they can see the event roster. Future
+    refinement may restrict participant visibility per category, but for
+    now the assumption is "if you have access to the medical department,
+    you see all medical events including the player names involved."
+    """
+    if has_full_access(membership):
+        return qs
+    qs = qs.filter(club=membership.club)
+    if not membership.all_departments:
+        qs = qs.filter(department__in=membership.departments.all())
+    return qs

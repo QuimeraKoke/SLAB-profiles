@@ -1,6 +1,12 @@
 from django.contrib import admin
 
-from .models import Category, Club, Department, Player, Position, StaffMembership
+from .models import Category, Club, Department, Player, PlayerAlias, Position, StaffMembership
+
+
+class PlayerAliasInline(admin.TabularInline):
+    model = PlayerAlias
+    extra = 0
+    fields = ("kind", "source", "value")
 
 
 @admin.register(Club)
@@ -84,6 +90,7 @@ class PlayerAdmin(admin.ModelAdmin):
     list_filter = ("category", "position", "is_active")
     search_fields = ("first_name", "last_name", "nationality")
     autocomplete_fields = ("position",)
+    inlines = [PlayerAliasInline]
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         """Limit the position dropdown to the player's own club."""

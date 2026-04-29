@@ -34,7 +34,10 @@ export async function api<T = unknown>(
   const token = getToken();
   const headers = new Headers(init.headers);
   headers.set("Accept", "application/json");
-  if (init.body && !headers.has("Content-Type")) {
+  // Don't force application/json on FormData — the browser must set its own
+  // multipart Content-Type with the boundary marker.
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
+  if (init.body && !isFormData && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
   if (token) {

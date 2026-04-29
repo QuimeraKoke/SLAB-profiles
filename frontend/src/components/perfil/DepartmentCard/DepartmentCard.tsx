@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Line,
   LineChart as RechartsLineChart,
@@ -8,7 +9,6 @@ import {
   Tooltip,
 } from "recharts";
 
-import DynamicUploader from "@/components/forms/DynamicUploader";
 import type { ExamField, ExamResult, ExamTemplate } from "@/lib/types";
 import styles from "./DepartmentCard.module.css";
 
@@ -16,7 +16,7 @@ interface DepartmentCardProps {
   template: ExamTemplate;
   results: ExamResult[];
   playerId: string;
-  onResultSaved: (result: ExamResult) => void;
+  departmentSlug: string;
 }
 
 const PAGE_SIZE = 4;
@@ -25,9 +25,8 @@ export default function DepartmentCard({
   template,
   results,
   playerId,
-  onResultSaved,
+  departmentSlug,
 }: DepartmentCardProps) {
-  const [adding, setAdding] = useState(false);
   const [page, setPage] = useState(0);
 
   const fields = template.config_schema?.fields ?? [];
@@ -53,24 +52,7 @@ export default function DepartmentCard({
     (safePage + 1) * PAGE_SIZE,
   );
 
-  const handleSaved = (result: ExamResult) => {
-    onResultSaved(result);
-    setAdding(false);
-    setPage(0);
-  };
-
-  if (adding) {
-    return (
-      <div className={`${styles.card} ${styles.expanded}`}>
-        <DynamicUploader
-          template={template}
-          playerId={playerId}
-          onSaved={handleSaved}
-          onCancel={() => setAdding(false)}
-        />
-      </div>
-    );
-  }
+  const addHref = `/perfil/${playerId}/registrar/${template.id}?tab=${encodeURIComponent(departmentSlug)}`;
 
   return (
     <div className={styles.card}>
@@ -118,13 +100,9 @@ export default function DepartmentCard({
         ) : (
           <span />
         )}
-        <button
-          type="button"
-          className={styles.addBtn}
-          onClick={() => setAdding(true)}
-        >
+        <Link href={addHref} className={styles.addBtn}>
           + Agregar
-        </button>
+        </Link>
       </footer>
     </div>
   );

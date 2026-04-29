@@ -102,6 +102,7 @@ class TemplateOut(Schema):
     department: DepartmentOut
     version: int
     config_schema: dict[str, Any]
+    input_config: dict[str, Any] = {}
 
 
 class ResultIn(Schema):
@@ -109,6 +110,17 @@ class ResultIn(Schema):
     template_id: UUID
     recorded_at: datetime
     raw_data: dict[str, Any]
+    event_id: UUID | None = None
+
+
+class ResultEventBriefOut(Schema):
+    """Minimal event info embedded in result responses — no participants list."""
+
+    id: UUID
+    event_type: str
+    title: str
+    starts_at: datetime
+    metadata: dict[str, Any] = {}
 
 
 class ResultOut(Schema):
@@ -117,6 +129,7 @@ class ResultOut(Schema):
     template_id: UUID
     recorded_at: datetime
     result_data: dict[str, Any]
+    event: ResultEventBriefOut | None = None
 
 
 # ---------- Configurable dashboards ----------
@@ -161,3 +174,48 @@ class LayoutResponseOut(Schema):
     """Wrapper so the frontend can read `data.layout` and treat None as 'no layout'."""
 
     layout: DepartmentLayoutOut | None = None
+
+
+# ---------- Events ----------
+
+class EventParticipantOut(Schema):
+    """Lightweight player snapshot for event participant lists."""
+
+    id: UUID
+    first_name: str
+    last_name: str
+
+
+class EventOut(Schema):
+    id: UUID
+    club: ClubOut
+    department: DepartmentOut
+    event_type: str
+    title: str
+    description: str = ""
+    starts_at: datetime
+    ends_at: datetime | None = None
+    location: str = ""
+    scope: str
+    category: CategoryOut | None = None
+    participants: list[EventParticipantOut]
+    metadata: dict[str, Any] = {}
+    result_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class EventIn(Schema):
+    """Create or update payload. `club` is derived from department server-side."""
+
+    department_id: UUID
+    event_type: str
+    title: str
+    description: str = ""
+    starts_at: datetime
+    ends_at: datetime | None = None
+    location: str = ""
+    scope: str = "individual"   # individual | category | custom
+    category_id: UUID | None = None
+    participant_ids: list[UUID] = []
+    metadata: dict[str, Any] = {}

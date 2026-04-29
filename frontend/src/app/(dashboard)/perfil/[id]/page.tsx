@@ -1,17 +1,20 @@
 "use client";
 
 import React, { use, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import styles from "../page.module.css";
 import ProfileHeader from "@/components/perfil/ProfileHeader/ProfileHeader";
 import ProfileTabs, { type TabSpec } from "@/components/perfil/ProfileTabs/ProfileTabs";
 import ProfileSummary from "@/components/perfil/ProfileSummary/ProfileSummary";
 import ProfileTimeline from "@/components/perfil/ProfileTimeline/ProfileTimeline";
+import ProfileEvents from "@/components/perfil/ProfileEvents/ProfileEvents";
 import ProfileDepartment from "@/components/perfil/ProfileDepartment/ProfileDepartment";
 import { api, ApiError } from "@/lib/api";
 import type { PlayerDetail } from "@/lib/types";
 
 const RESUMEN_TAB_ID = "resumen";
 const TIMELINE_TAB_ID = "timeline";
+const EVENTS_TAB_ID = "eventos";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -19,9 +22,11 @@ interface PageProps {
 
 export default function PerfilPlayerPage({ params }: PageProps) {
   const { id } = use(params);
+  const searchParams = useSearchParams();
+  const tabFromUrl = searchParams.get("tab");
   const [player, setPlayer] = useState<PlayerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>(RESUMEN_TAB_ID);
+  const [activeTab, setActiveTab] = useState<string>(tabFromUrl ?? RESUMEN_TAB_ID);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +71,7 @@ export default function PerfilPlayerPage({ params }: PageProps) {
   const tabs: TabSpec[] = [
     { id: RESUMEN_TAB_ID, label: "Resumen" },
     { id: TIMELINE_TAB_ID, label: "Línea de tiempo" },
+    { id: EVENTS_TAB_ID, label: "Eventos" },
     ...departmentTabs,
   ];
 
@@ -81,6 +87,7 @@ export default function PerfilPlayerPage({ params }: PageProps) {
       <div className={styles.contentArea}>
         {safeActive === RESUMEN_TAB_ID && <ProfileSummary />}
         {safeActive === TIMELINE_TAB_ID && <ProfileTimeline playerId={player.id} />}
+        {safeActive === EVENTS_TAB_ID && <ProfileEvents playerId={player.id} />}
         {activeDepartment && (
           <ProfileDepartment playerId={player.id} department={activeDepartment} />
         )}

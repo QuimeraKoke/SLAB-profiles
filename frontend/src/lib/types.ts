@@ -109,12 +109,42 @@ export interface ExamConfigSchema {
   fields: ExamField[];
 }
 
+export type ExamInputMode =
+  | "single"
+  | "team_table"
+  | "quick_list"
+  | "bulk_ingest";
+
+export interface ExamInputModifiers {
+  prefill_from_last?: boolean;
+}
+
+export interface ExamInputConfig {
+  input_modes: ExamInputMode[];
+  default_input_mode?: ExamInputMode;
+  modifiers?: ExamInputModifiers;
+  /** Optional column-mapping config used by bulk_ingest mode. */
+  column_mapping?: Record<string, unknown>;
+  /** When true, the single-mode form shows a match picker so the result
+   *  can be linked to a calendar event (and recorded_at derived from it). */
+  allow_event_link?: boolean;
+}
+
 export interface ExamTemplate {
   id: string;
   name: string;
   department: Department;
   version: number;
   config_schema: ExamConfigSchema;
+  input_config?: ExamInputConfig;
+}
+
+export interface ExamResultEventBrief {
+  id: string;
+  event_type: EventType;
+  title: string;
+  starts_at: string;
+  metadata: Record<string, unknown>;
 }
 
 export interface ExamResult {
@@ -123,6 +153,71 @@ export interface ExamResult {
   template_id: string;
   recorded_at: string;
   result_data: Record<string, unknown>;
+  event?: ExamResultEventBrief | null;
+}
+
+// ---------- Bulk ingest preview/commit response ----------
+
+export interface BulkMatchedPlayer {
+  player_id: string;
+  player_name: string;
+  session_label: string | null;
+  contributing_rows: number;
+  result_data: Record<string, unknown>;
+}
+
+export interface BulkUnmatched {
+  raw_player: string;
+  rows: number;
+  issues: string[];
+}
+
+export interface BulkIngestResponse {
+  matched: BulkMatchedPlayer[];
+  unmatched: BulkUnmatched[];
+  total_rows: number;
+  matched_players: number;
+  created_results: number;
+  dry_run: boolean;
+}
+
+// ---------- Events ----------
+
+export type EventType =
+  | "match"
+  | "training"
+  | "medical_checkup"
+  | "physical_test"
+  | "team_speech"
+  | "nutrition"
+  | "other";
+
+export type EventScope = "individual" | "category" | "custom";
+
+export interface EventParticipant {
+  id: string;
+  first_name: string;
+  last_name: string;
+}
+
+export interface CalendarEvent {
+  id: string;
+  club: Club;
+  department: Department;
+  event_type: EventType;
+  title: string;
+  description: string;
+  starts_at: string;
+  ends_at: string | null;
+  location: string;
+  scope: EventScope;
+  category: Category | null;
+  participants: EventParticipant[];
+  metadata: Record<string, unknown>;
+  /** Number of ExamResult rows linked to this event (e.g. GPS uploads). */
+  result_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 // ---------- Configurable dashboards ----------

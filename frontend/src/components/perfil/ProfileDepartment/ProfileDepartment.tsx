@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import { api, ApiError } from "@/lib/api";
 import type {
@@ -12,6 +12,7 @@ import type {
 import DashboardEntryPanel from "@/components/perfil/ProfileDepartment/DashboardEntryPanel";
 import DepartmentCard from "@/components/perfil/DepartmentCard/DepartmentCard";
 import DepartmentDashboard from "@/components/dashboards/DepartmentDashboard";
+import MatchHistoryTable from "@/components/perfil/MatchHistoryTable/MatchHistoryTable";
 import styles from "./ProfileDepartment.module.css";
 
 interface ProfileDepartmentProps {
@@ -24,11 +25,6 @@ export default function ProfileDepartment({ playerId, department }: ProfileDepar
   const [templates, setTemplates] = useState<ExamTemplate[]>([]);
   const [layout, setLayout] = useState<DepartmentLayoutResponse["layout"] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-
-  const refetchLayout = useCallback(() => {
-    setReloadKey((k) => k + 1);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,15 +54,7 @@ export default function ProfileDepartment({ playerId, department }: ProfileDepar
     return () => {
       cancelled = true;
     };
-  }, [playerId, department.slug, reloadKey]);
-
-  const handleResultSaved = (result: ExamResult) => {
-    setResults((prev) => (prev ? [result, ...prev] : [result]));
-    // Layout payloads are server-aggregated, so we need a refetch to see new data.
-    if (layout) {
-      refetchLayout();
-    }
-  };
+  }, [playerId, department.slug]);
 
   const renderBody = () => {
     if (results === null && !error) {
@@ -90,7 +78,7 @@ export default function ProfileDepartment({ playerId, department }: ProfileDepar
           <DashboardEntryPanel
             templates={templates}
             playerId={playerId}
-            onResultSaved={handleResultSaved}
+            departmentSlug={department.slug}
           />
           <DepartmentDashboard sections={layout.sections} />
         </>
@@ -100,15 +88,30 @@ export default function ProfileDepartment({ playerId, department }: ProfileDepar
     // Fallback to the legacy auto-rendered grid.
     return (
       <div className={styles.grid}>
-        {templates.map((t) => (
-          <DepartmentCard
-            key={t.id}
-            template={t}
-            results={(results ?? []).filter((r) => r.template_id === t.id)}
-            playerId={playerId}
-            onResultSaved={handleResultSaved}
-          />
-        ))}
+        {templates.map((t) => {
+          const templateResults = (results ?? []).filter((r) => r.template_id === t.id);
+          // Templates that opt into event linking get a dedicated history view
+          // pulling opponent + score from the linked event metadata.
+          if (t.input_config?.allow_event_link) {
+            return (
+              <MatchHistoryTable
+                key={t.id}
+                template={t}
+                results={templateResults}
+                playerId={playerId}
+              />
+            );
+          }
+          return (
+            <DepartmentCard
+              key={t.id}
+              template={t}
+              results={templateResults}
+              playerId={playerId}
+              departmentSlug={department.slug}
+            />
+          );
+        })}
       </div>
     );
   };

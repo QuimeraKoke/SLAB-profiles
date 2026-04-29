@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import type { ExamField, ExamResult, ExamTemplate } from "@/lib/types";
+import type { CalendarEvent, ExamField, ExamResult, ExamTemplate } from "@/lib/types";
 import styles from "./DynamicUploader.module.css";
 
 interface DynamicUploaderProps {
@@ -62,6 +62,38 @@ export default function DynamicUploader({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Optional match-event association — only rendered when the template
+  // explicitly opts in via input_config.allow_event_link.
+  const allowEventLink = template.input_config?.allow_event_link === true;
+  const [eventId, setEventId] = useState<string>("");
+  const [matches, setMatches] = useState<CalendarEvent[]>([]);
+
+  useEffect(() => {
+    if (!allowEventLink) return;
+    let cancelled = false;
+    api<CalendarEvent[]>(`/events?event_type=match&player_id=${playerId}`)
+      .then((data) => {
+        if (cancelled) return;
+        setMatches(
+          [...data].sort(
+            (a, b) =>
+              new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime(),
+          ),
+        );
+      })
+      .catch(() => {
+        // Non-fatal — form still works without a match association.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [allowEventLink, playerId]);
+
+  const selectedMatch = useMemo(
+    () => matches.find((m) => m.id === eventId) ?? null,
+    [matches, eventId],
+  );
+
   const setValue = (key: string, value: FormValue) => {
     setValues((prev) => ({ ...prev, [key]: value }));
   };
@@ -96,14 +128,16 @@ export default function DynamicUploader({
 
     setSubmitting(true);
     try {
+      const payload: Record<string, unknown> = {
+        player_id: playerId,
+        template_id: template.id,
+        recorded_at: new Date().toISOString(),
+        raw_data: raw,
+      };
+      if (eventId) payload.event_id = eventId;
       const result = await api<ExamResult>("/results", {
         method: "POST",
-        body: JSON.stringify({
-          player_id: playerId,
-          template_id: template.id,
-          recorded_at: new Date().toISOString(),
-          raw_data: raw,
-        }),
+        body: JSON.stringify(payload),
       });
       onSaved?.(result);
     } catch (err) {
@@ -119,6 +153,43 @@ export default function DynamicUploader({
         <h3 className={styles.title}>{template.name}</h3>
         <span className={styles.version}>v{template.version}</span>
       </div>
+
+      {allowEventLink && (
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>Asociar partido</legend>
+          <div className={styles.grid}>
+            <label className={styles.field}>
+              <span className={styles.label}>
+                Partido
+                {selectedMatch && (
+                  <span className={styles.matchHint}>
+                    · fecha: {selectedMatch.starts_at.slice(0, 10)}
+                  </span>
+                )}
+              </span>
+              <select
+                value={eventId}
+                onChange={(e) => setEventId(e.target.value)}
+              >
+                <option value="">— Sin partido —</option>
+                {matches.map((m) => {
+                  const score = (m.metadata as { score?: { home?: number; away?: number } })?.score;
+                  const scoreLabel =
+                    score && (score.home != null || score.away != null)
+                      ? ` (${score.home ?? "-"}-${score.away ?? "-"})`
+                      : "";
+                  return (
+                    <option key={m.id} value={m.id}>
+                      {m.starts_at.slice(0, 10)} · {m.title}
+                      {scoreLabel}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+          </div>
+        </fieldset>
+      )}
 
       {grouped.map(({ group, items }) => (
         <fieldset className={styles.group} key={group ?? "_default"}>

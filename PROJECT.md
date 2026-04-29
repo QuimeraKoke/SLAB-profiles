@@ -257,3 +257,91 @@ export const DynamicVisualizer = ({ type, data, config }) => {
   return <Component data={data} config={config} />;
 };
 ```
+
+---
+
+## Architecture additions (post-MVP)
+
+The following capabilities have been layered on top of the original spec
+above. They preserve the "configuration over code" thesis — none required
+hardcoded forms, none added new chart-rendering paths in React.
+
+### 1. Calendar events as first-class entities
+
+`Event` (in the new `events` app) is the calendar primitive:
+
+* Owned by a `Department` (whose calendar it lives on), authored by a `User`
+* Typed via `event_type` (match / training / medical_checkup / physical_test
+  / team_speech / nutrition / other)
+* Three participation scopes: `individual` / `category` / `custom`. Whatever
+  the scope, the actual roster is always materialized into a `participants`
+  M2M at create time so a player joining the team next week isn't
+  retroactively invited to last week's event.
+* Type-specific data (e.g. opponent + score for matches, opponent club name,
+  competition, is_home, duration) lives in `event.metadata` JSONB. Same
+  flexibility-via-JSONB pattern as `ExamTemplate.config_schema`.
+
+`ExamResult.event` is a nullable FK. When set, `recorded_at` is overridden
+server-side to `event.starts_at` — the event is the authoritative timestamp.
+This binds heterogenous data captures (GPS files, per-player match
+performance, medical checkups) to the same calendar moment without forcing
+any change to the result's storage shape.
+
+### 2. Configurable input modes per template
+
+`ExamTemplate.input_config` controls how staff submit data:
+
+```json
+{
+  "input_modes": ["single", "bulk_ingest"],
+  "default_input_mode": "single",
+  "modifiers": { "prefill_from_last": false },
+  "allow_event_link": true,
+  "column_mapping": { /* file → template_key recipe; see STATUS §3.10 */ }
+}
+```
+
+The frontend's registrar route reads this config and dispatches to either
+the auto-generated single-form (`DynamicUploader`) or the file-upload flow
+(`BulkIngestForm`). When `allow_event_link` is set, the single form also
+shows a match-picker so per-player results can be FK-linked to the right
+event. New input modes (team_table, quick_list) plug in without touching
+templates that haven't opted into them.
+
+### 3. Bulk ingest with player-alias matching
+
+The `bulk_ingest` mode is a four-step pure-Python pipeline:
+
+```
+file bytes
+  → parse_xlsx        (openpyxl, header strip, blank rows)
+  → match_rows        (PlayerAlias-then-name, diacritics-folded)
+  → transform_rows    (segment-aware: per-segment via {segment} pattern,
+                       cross-segment via reduce: max|sum|avg|last)
+  → preview / commit  (dry_run flag, optional event linking)
+```
+
+* Segment-aware transformations collapse multi-row exports (P1 / P2 / Total
+  per player) into one `ExamResult` per player without changing the result
+  schema. The formula engine learned `coalesce(a, b, …, 0)` so totals
+  survive a substitute-only player whose P1 fields are missing.
+* `PlayerAlias` (kind: nickname / squad_number / external_id, source:
+  manual / catapult / wimu / …) holds the alternate identifiers files
+  identify players by. External IDs are unique per `(kind, source, value)`
+  within a club, validated in `clean()`. The same data path will serve
+  third-party API integrations: a Catapult export becomes
+  `kind="external_id", source="catapult"` aliases.
+
+### 4. Authoring abstraction for `config_schema`
+
+Rather than ask non-technical staff to type 48-field JSON blobs in a
+textarea, the platform exposes `TemplateField` rows — a real Django model
+that mirrors each entry of `config_schema['fields']`. Saving via the
+admin's inline form regenerates the JSON. The reverse direction —
+`rebuild_template_fields()` — is used by the data migration that backfilled
+existing templates and by `python manage.py sync_template_fields` for
+post-seed-command rebuilds.
+
+The runtime canonical source is still `template.config_schema` JSONB. The
+formula engine, frontend rendering, bulk ingest pipeline, and dashboard
+layouts didn't change. `TemplateField` is purely an authoring layer.

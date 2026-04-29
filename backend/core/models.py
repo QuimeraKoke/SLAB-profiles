@@ -152,3 +152,88 @@ class Player(models.Model):
 
     def __str__(self) -> str:
         return f"{self.first_name} {self.last_name}"
+
+
+class PlayerAlias(models.Model):
+    """Alternate identifiers a player can be matched by during bulk ingest.
+
+    Three flavors:
+      * `nickname` — what staff calls the player (e.g. "Pep", "Cuti").
+      * `squad_number` — jersey number; useful for testing-day spreadsheets that
+        identify by number rather than name.
+      * `external_id` — stable identifier from a third-party system. The
+        `source` field tags which system (e.g. Catapult, Wimu).
+    """
+
+    KIND_NICKNAME = "nickname"
+    KIND_SQUAD_NUMBER = "squad_number"
+    KIND_EXTERNAL_ID = "external_id"
+    KIND_CHOICES = [
+        (KIND_NICKNAME, "Nickname"),
+        (KIND_SQUAD_NUMBER, "Squad number"),
+        (KIND_EXTERNAL_ID, "External ID"),
+    ]
+
+    SOURCE_MANUAL = "manual"
+    SOURCE_CATAPULT = "catapult"
+    SOURCE_WIMU = "wimu"
+    SOURCE_CHOICES = [
+        (SOURCE_MANUAL, "Manual"),
+        (SOURCE_CATAPULT, "Catapult"),
+        (SOURCE_WIMU, "Wimu"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="aliases")
+    kind = models.CharField(max_length=24, choices=KIND_CHOICES)
+    source = models.CharField(
+        max_length=24,
+        choices=SOURCE_CHOICES,
+        default=SOURCE_MANUAL,
+        help_text="Only meaningful for external IDs (Catapult, Wimu, ...).",
+    )
+    value = models.CharField(max_length=120)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "player alias"
+        verbose_name_plural = "player aliases"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["player", "kind", "source", "value"],
+                name="unique_player_alias",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["kind", "source", "value"]),
+        ]
+
+    def clean(self):
+        """Enforce per-club uniqueness for external IDs from the same source.
+
+        A Catapult ID, for example, must resolve to exactly one player within
+        a club. Nicknames and squad numbers can collide across players (different
+        kids called "Pep") so we don't enforce uniqueness on those.
+        """
+        from django.core.exceptions import ValidationError
+
+        if self.kind == self.KIND_EXTERNAL_ID and self.player_id and self.value:
+            club_id = self.player.category.club_id
+            collision = (
+                PlayerAlias.objects.filter(
+                    kind=self.KIND_EXTERNAL_ID,
+                    source=self.source,
+                    value=self.value,
+                    player__category__club_id=club_id,
+                )
+                .exclude(pk=self.pk)
+                .exists()
+            )
+            if collision:
+                raise ValidationError(
+                    f"Another player in this club already has external ID "
+                    f"'{self.value}' from source '{self.source}'."
+                )
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()}: {self.value}"

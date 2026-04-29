@@ -21,6 +21,11 @@ import math
 import re
 from typing import Any, Mapping
 
+# Sentinel for `coalesce` — handled with lazy argument evaluation in `_eval`,
+# so a regular Python function can't be used here. Listed in SAFE_FUNCTIONS
+# only so `_validate` accepts the call.
+_COALESCE = object()
+
 # A whitelist of safe math functions admins can call inside formulas.
 SAFE_FUNCTIONS: dict[str, Any] = {
     "abs": abs,
@@ -33,6 +38,7 @@ SAFE_FUNCTIONS: dict[str, Any] = {
     "ln": math.log,
     "exp": math.exp,
     "pow": math.pow,
+    "coalesce": _COALESCE,  # special-cased: returns first non-null arg
 }
 
 SAFE_CONSTANTS: dict[str, float] = {
@@ -180,12 +186,29 @@ def _eval(node: ast.AST, variables: Mapping[str, Any]) -> Any:
         if isinstance(node.op, ast.Or):
             return 1.0 if any(values) else 0.0
     if isinstance(node, ast.Call):
-        func = SAFE_FUNCTIONS[node.func.id]  # type: ignore[union-attr]
+        fname = node.func.id  # type: ignore[union-attr]
+        # Lazy-evaluated: returns the first arg whose evaluation yields a real
+        # number, swallowing `FormulaError` from missing or null variables. If
+        # every arg is missing/null, the call itself raises so the surrounding
+        # formula fails (and the field is stored as None by `compute_result_data`).
+        if fname == "coalesce":
+            if not node.args:
+                raise FormulaError("coalesce: requires at least one argument")
+            for arg in node.args:
+                try:
+                    value = _eval(arg, variables)
+                except FormulaError:
+                    continue
+                if value is not None:
+                    return value
+            raise FormulaError("coalesce: all arguments were null/missing")
+
+        func = SAFE_FUNCTIONS[fname]
         args = [_eval(arg, variables) for arg in node.args]
         try:
             return float(func(*args))
         except (ValueError, TypeError, ArithmeticError) as exc:
-            raise FormulaError(f"Error in {node.func.id}(): {exc}") from exc
+            raise FormulaError(f"Error in {fname}(): {exc}") from exc
     raise FormulaError(f"Unsupported expression: {type(node).__name__}")
 
 

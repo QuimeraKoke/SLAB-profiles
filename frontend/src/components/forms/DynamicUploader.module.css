@@ -62,6 +62,13 @@
   color: #374151;
 }
 
+.matchHint {
+  margin-left: 6px;
+  color: #6b7280;
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
 .field input,
 .field select,
 .field textarea {

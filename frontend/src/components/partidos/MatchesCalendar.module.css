@@ -1,0 +1,164 @@
+.wrapper {
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+}
+
+.navGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.navBtn {
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  font-size: 1.1rem;
+  color: #4b5563;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.navBtn:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.todayBtn {
+  background-color: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #4b5563;
+  cursor: pointer;
+}
+
+.todayBtn:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.monthTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #111827;
+  text-transform: capitalize;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  background-color: #f3f4f6;
+  gap: 1px;
+}
+
+.weekday {
+  background-color: #f9fafb;
+  text-align: center;
+  padding: 8px 6px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.cell {
+  background-color: #ffffff;
+  min-height: 96px;
+  padding: 6px 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+
+.outOfMonth {
+  background-color: #fafafa;
+}
+
+.outOfMonth .dayNumber {
+  color: #d1d5db;
+}
+
+.today .dayNumber {
+  background-color: #6d28d9;
+  color: #ffffff;
+}
+
+.dayNumber {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #4b5563;
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+
+.eventsList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  background-color: #ede9fe;
+  color: #5b21b6;
+  font-size: 0.72rem;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.chip:hover {
+  background-color: #ddd6fe;
+  color: #4c1d95;
+}
+
+.chipTime {
+  font-weight: 700;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.chipTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chipDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background-color: #0ea5e9;
+  flex-shrink: 0;
+  margin-left: auto;
+}

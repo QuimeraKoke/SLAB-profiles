@@ -18,7 +18,8 @@ import {
   Menu,
   ChevronDown,
   ChevronRight,
-  Shield
+  Shield,
+  Settings,
 } from "lucide-react";
 import styles from "./Sidebar.module.css";
 
@@ -45,6 +46,15 @@ const navItems = [
   { label: "Técnica", icon: Edit, href: "#", hasBadge: true },
   { label: "Tareas", icon: CheckSquare, href: "#" },
   { label: "Organización", icon: Network, href: "#" },
+  {
+    label: "Configuraciones",
+    icon: Settings,
+    href: "#",
+    hasDropdown: true,
+    subItems: [
+      { label: "Partidos", href: "/partidos" },
+    ],
+  },
 ];
 
 export default function Sidebar() {
@@ -75,7 +85,10 @@ export default function Sidebar() {
           const Icon = item.icon;
           const isExpanded = expandedItems.includes(item.label);
           // Set active state based on pathname properly
-          const isActive = pathname === item.href || (item.subItems && pathname.startsWith('/nutricional') && item.label === 'Nutricional');
+          const isActive =
+            pathname === item.href ||
+            (item.subItems && item.label === "Nutricional" && pathname.startsWith("/nutricional")) ||
+            (item.subItems && item.label === "Configuraciones" && pathname.startsWith("/partidos"));
 
           return (
             <div key={index}>
