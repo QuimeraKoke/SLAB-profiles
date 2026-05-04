@@ -275,16 +275,18 @@ This is what runs the daily goal evaluator + pre-deadline warnings at
    ```
 
    ⚠️ **`NEXT_PUBLIC_API_URL` must be set BEFORE the first build** —
-   Next.js bakes `NEXT_PUBLIC_*` vars into the static bundle at build
-   time. If you edit this var later, Railway will redeploy and pick up
-   the new value, but the existing bundle won't update until the build
-   completes.
+   Next.js inlines `NEXT_PUBLIC_*` vars into the static JS bundle at
+   build time. The frontend `Dockerfile` declares it as `ARG` + `ENV`,
+   so Railway forwards the service variable into the build. If you set
+   it AFTER the first deploy, click **Deploy → Redeploy** to rebuild
+   the bundle with the new value (a plain restart won't pick it up).
 
-5. **(Recommended) Build args**: in some Railway setups, env vars need
-   to be marked as build-time. Look for a "Build" or "Variables → Build
-   args" toggle and ensure `NEXT_PUBLIC_API_URL` is included.
+5. Deploy.
 
-6. Deploy.
+**Symptom if you forget:** the deployed app's network tab shows
+requests going to `http://localhost:8000/api`, login fails silently,
+and the bell/category dropdown stay empty. Fix = set the var on the
+frontend service and trigger a fresh build.
 
 ---
 

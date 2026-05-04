@@ -178,6 +178,11 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        # Baked into the JS bundle by `next build`. Local dev uses the
+        # `command: npm run dev` override below so this only matters for
+        # `docker compose build` parity with prod.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
     # Override the Dockerfile's prod CMD (npm start) with the dev server
     # so local docker-compose keeps hot-reloading the mounted source.
     command: npm run dev
