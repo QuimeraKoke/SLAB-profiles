@@ -61,6 +61,7 @@ services:
       DEBUG: ${DEBUG:-true}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-insecure-change-me}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
+      CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
       JWT_LIFETIME_HOURS: ${JWT_LIFETIME_HOURS:-12}
       POSTGRES_HOST: postgres

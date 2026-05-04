@@ -14,6 +14,19 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-insecure-change-me")
 DEBUG = env("DEBUG", default=True)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["*"])
 
+# Origins (scheme + host) that POSTing to /admin/ etc. are allowed to come
+# from. Required when DEBUG=False and the browser hits a non-localhost
+# domain — otherwise Django rejects the form with "CSRF verification failed".
+# In Railway/prod set e.g.
+#   CSRF_TRUSTED_ORIGINS=https://backend.up.railway.app,https://frontend.up.railway.app
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
+
+# Railway / most PaaS terminate TLS at a proxy and forward HTTP internally.
+# Without these two settings Django thinks every request is plain HTTP and
+# treats secure-cookie / CSRF / redirect logic incorrectly.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+USE_X_FORWARDED_HOST = True
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

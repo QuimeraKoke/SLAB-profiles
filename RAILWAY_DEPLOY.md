@@ -144,6 +144,10 @@ DJANGO_SECRET_KEY=                    # paste a long random string (50+ chars)
 JWT_SECRET=                           # paste another long random string
 DJANGO_ALLOWED_HOSTS=slab-backend-production-abcd.up.railway.app
 CORS_ALLOWED_ORIGINS=https://slab-frontend-production-wxyz.up.railway.app
+# Required when DEBUG=false — Django rejects /admin/ POST submissions with
+# "CSRF verification failed" unless the request's Origin is listed here.
+# Include both backend and frontend Railway URLs (HTTPS).
+CSRF_TRUSTED_ORIGINS=https://slab-backend-production-abcd.up.railway.app,https://slab-frontend-production-wxyz.up.railway.app
 
 # Postgres — referenced from the Postgres plugin
 POSTGRES_HOST=${{ Postgres.PGHOST }}
