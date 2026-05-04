@@ -35,6 +35,10 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Whitenoise serves /static/ files (Django Admin CSS/JS, etc.) from the
+    # backend container directly — no nginx / S3 needed. Must be the first
+    # entry after SecurityMiddleware per whitenoise docs.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -128,7 +132,11 @@ STORAGES = {
         "BACKEND": "storages.backends.s3.S3Storage",
     },
     "staticfiles": {
-        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+        # Whitenoise's compressed + hashed-filename storage: gzipped + per-file
+        # hash in the name so far-future Cache-Control headers are safe. Run
+        # `python manage.py collectstatic` to populate STATIC_ROOT first
+        # (the Dockerfile build does this).
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
     },
 }
 

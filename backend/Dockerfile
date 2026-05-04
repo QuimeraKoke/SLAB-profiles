@@ -15,6 +15,13 @@ RUN pip install -r requirements.txt
 
 COPY . .
 
+# Collect static assets at build time so whitenoise can serve /static/
+# in production (Django Admin CSS/JS, ninja docs, etc.). The image bakes
+# the resulting `staticfiles/` directory in, so prod containers don't
+# need to run collectstatic at startup. settings.py defaults cover
+# every env var collectstatic reads, so this works without an .env.
+RUN python manage.py collectstatic --no-input
+
 EXPOSE 8000
 
 CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

@@ -177,6 +177,9 @@ services:
   frontend:
     build:
       context: ./frontend
+    # Override the Dockerfile's prod CMD (npm start) with the dev server
+    # so local docker-compose keeps hot-reloading the mounted source.
+    command: npm run dev
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/api}
     volumes:
