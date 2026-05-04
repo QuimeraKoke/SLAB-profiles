@@ -1,99 +1,158 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  Grid,
   Users,
   User,
-  TrendingUp,
-  Crosshair,
-  Plus,
-  TreeDeciduous,
-  Award,
-  Edit,
-  CheckSquare,
-  Network,
-  Menu,
+  BarChart3,
   ChevronDown,
   ChevronRight,
-  Shield,
   Settings,
+  X,
 } from "lucide-react";
+
+import { api } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import type { Department } from "@/lib/types";
 import styles from "./Sidebar.module.css";
 
-const navItems = [
-  { label: "Panel", icon: Grid, href: "#" },
+interface NavLeaf {
+  label: string;
+  href: string;
+}
+
+interface NavGroup {
+  label: string;
+  icon: React.ComponentType<{ size?: number; className?: string }>;
+  /** When set, renders an expandable group; href is unused. */
+  subItems?: NavLeaf[];
+  href?: string;
+}
+
+const STATIC_NAV: NavGroup[] = [
   { label: "Equipo", icon: Users, href: "/equipo" },
   { label: "Perfil", icon: User, href: "/perfil" },
-  { label: "Estadísticas", icon: TrendingUp, href: "#" },
-  { label: "Desempeño", icon: Crosshair, href: "#", hasDropdown: true },
-  { label: "Médico", icon: Plus, href: "#" },
-  { 
-    label: "Nutricional", 
-    icon: TreeDeciduous, 
-    href: "#",
-    hasDropdown: true,
-    subItems: [
-      { label: "Resumen", href: "/nutricional/resumen" },
-      { label: "5C Version 1", href: "/nutricional/5c-v1" },
-      { label: "5C Version 2", href: "/nutricional/5c-v2" },
-      { label: "5C Version 3", href: "/nutricional/5c-v3" }
-    ]
-  },
-  { label: "Psicosocial", icon: Award, href: "#" },
-  { label: "Técnica", icon: Edit, href: "#", hasBadge: true },
-  { label: "Tareas", icon: CheckSquare, href: "#" },
-  { label: "Organización", icon: Network, href: "#" },
-  {
-    label: "Configuraciones",
-    icon: Settings,
-    href: "#",
-    hasDropdown: true,
-    subItems: [
-      { label: "Partidos", href: "/partidos" },
-    ],
-  },
 ];
 
-export default function Sidebar() {
+const SETTINGS_NAV: NavGroup = {
+  label: "Configuraciones",
+  icon: Settings,
+  subItems: [
+    { label: "Jugadores", href: "/configuraciones/jugadores" },
+    { label: "Partidos", href: "/partidos" },
+  ],
+};
+
+interface SidebarProps {
+  /** Whether the sidebar is shown. Only consumed on tablet/mobile —
+   *  desktop CSS forces it visible regardless of this flag. */
+  open?: boolean;
+  onClose?: () => void;
+}
+
+export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   const pathname = usePathname();
-  const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const { membership, user } = useAuth();
+  const [expandedItems, setExpandedItems] = useState<string[]>([
+    "Reportes",
+    "Configuraciones",
+  ]);
+  const [departments, setDepartments] = useState<Department[]>([]);
+
+  // Fetch the departments visible to this user. `/clubs/{id}/departments`
+  // already applies StaffMembership scoping — non-admins only see the
+  // departments their membership grants. Platform admins (no membership)
+  // skip this call and the Reportes group simply doesn't render.
+  useEffect(() => {
+    if (!membership) return;
+    let cancelled = false;
+    api<Department[]>(`/clubs/${membership.club.id}/departments`)
+      .then((data) => {
+        if (!cancelled) {
+          setDepartments(
+            [...data].sort((a, b) => a.name.localeCompare(b.name)),
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setDepartments([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [membership]);
+
+  const reportsGroup: NavGroup | null =
+    departments.length > 0
+      ? {
+          label: "Reportes",
+          icon: BarChart3,
+          subItems: departments.map((d) => ({
+            label: d.name,
+            href: `/reportes/${d.slug}`,
+          })),
+        }
+      : null;
+
+  const navItems: NavGroup[] = [
+    ...STATIC_NAV,
+    ...(reportsGroup ? [reportsGroup] : []),
+    SETTINGS_NAV,
+  ];
 
   const toggleExpand = (label: string, e: React.MouseEvent) => {
     e.preventDefault();
-    setExpandedItems(prev => 
-      prev.includes(label) ? prev.filter(item => item !== label) : [...prev, label]
+    setExpandedItems((prev) =>
+      prev.includes(label) ? prev.filter((item) => item !== label) : [...prev, label],
     );
   };
 
   return (
-    <aside className={styles.sidebar}>
+    <aside
+      className={`${styles.sidebar} ${open ? styles.sidebarOpen : ""}`}
+      aria-hidden={!open ? undefined : false}
+    >
       <div className={styles.profileSection}>
         <div className={styles.avatar}>
           <User size={24} color="#6b7280" />
         </div>
         <div className={styles.profileInfo}>
-          <h2 className={styles.profileName}>Juan Ignacio Cuevas</h2>
-          <p className={styles.profileRole}>Reporte</p>
+          <h2 className={styles.profileName}>
+            {user?.username || user?.email || "Sesión activa"}
+          </h2>
+          <p className={styles.profileRole}>
+            {user?.email && user.email !== user.username
+              ? user.email
+              : membership?.club?.name || "Reporte"}
+          </p>
         </div>
+        {onClose && (
+          <button
+            type="button"
+            className={styles.closeBtn}
+            onClick={onClose}
+            aria-label="Cerrar menú"
+          >
+            <X size={18} />
+          </button>
+        )}
       </div>
 
       <nav className={styles.navMenu}>
-        {navItems.map((item, index) => {
+        {navItems.map((item) => {
           const Icon = item.icon;
           const isExpanded = expandedItems.includes(item.label);
-          // Set active state based on pathname properly
           const isActive =
-            pathname === item.href ||
-            (item.subItems && item.label === "Nutricional" && pathname.startsWith("/nutricional")) ||
-            (item.subItems && item.label === "Configuraciones" && pathname.startsWith("/partidos"));
+            (item.href && pathname === item.href) ||
+            (item.subItems &&
+              item.subItems.some((s) => pathname === s.href || pathname.startsWith(`${s.href}/`)));
 
           return (
-            <div key={index}>
+            <div key={item.label}>
               {item.subItems ? (
-                <div 
+                <div
                   className={`${styles.navItem} ${isActive ? styles.navItemActive : ""}`}
                   onClick={(e) => toggleExpand(item.label, e)}
                   style={{ cursor: "pointer" }}
@@ -102,41 +161,39 @@ export default function Sidebar() {
                     <Icon size={18} className={styles.icon} />
                     <span>{item.label}</span>
                   </div>
-                  {isExpanded ? <ChevronDown size={16} className={styles.icon} /> : <ChevronRight size={16} className={styles.icon} />}
+                  {isExpanded ? (
+                    <ChevronDown size={16} className={styles.icon} />
+                  ) : (
+                    <ChevronRight size={16} className={styles.icon} />
+                  )}
                 </div>
               ) : (
-                <Link 
-                  href={item.href} 
+                <Link
+                  href={item.href!}
                   className={`${styles.navItem} ${isActive ? styles.navItemActive : ""}`}
+                  onClick={onClose}
                 >
                   <div className={styles.navItemLeft}>
                     <Icon size={18} className={styles.icon} />
                     <span>{item.label}</span>
                   </div>
-                  
-                  {item.hasDropdown && <ChevronDown size={16} className={styles.icon} />}
-                  {item.hasBadge && (
-                    <div className={styles.badgeIcon}>
-                      <Shield size={14} strokeWidth={2.5} />
-                    </div>
-                  )}
                 </Link>
               )}
-              
-              {/* Render SubMenu */}
+
               {item.subItems && isExpanded && (
                 <div className={styles.subItemsList}>
-                  {item.subItems.map((subItem, subIndex) => {
+                  {item.subItems.map((subItem) => {
                     const isSubActive = pathname === subItem.href;
                     return (
-                      <Link 
-                        key={subIndex} 
+                      <Link
+                        key={subItem.href}
                         href={subItem.href}
                         className={`${styles.subItem} ${isSubActive ? styles.subItemActive : ""}`}
+                        onClick={onClose}
                       >
                         {subItem.label}
                       </Link>
-                    )
+                    );
                   })}
                 </div>
               )}
@@ -145,12 +202,6 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className={styles.bottomSection}>
-        <button className={styles.collapseButton}>
-          <Menu size={18} className={styles.icon} />
-          <span>Contraer</span>
-        </button>
-      </div>
     </aside>
   );
 }

@@ -1,0 +1,145 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 6px;
+  padding: 10px;
+}
+
+.container.dragOver {
+  background: #ede9fe;
+  border-color: #6d28d9;
+}
+
+.dropZone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.82rem;
+  color: #6b7280;
+}
+
+.dropZone strong {
+  color: #374151;
+}
+
+.uploadBtn {
+  background-color: #6d28d9;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.uploadBtn:hover {
+  background-color: #5b21b6;
+}
+
+.uploadBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.hidden {
+  display: none;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: #111827;
+}
+
+.row.uploading {
+  font-style: italic;
+  color: #6b7280;
+}
+
+.left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.icon {
+  font-size: 1.05rem;
+}
+
+.fname {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.size {
+  color: #9ca3af;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.iconBtn {
+  background: none;
+  border: 1px solid transparent;
+  color: #6b7280;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.iconBtn:hover {
+  border-color: #6d28d9;
+  color: #6d28d9;
+}
+
+.iconBtn.danger:hover {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+.error {
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.empty {
+  font-size: 0.78rem;
+  color: #9ca3af;
+  text-align: center;
+  padding: 8px;
+}

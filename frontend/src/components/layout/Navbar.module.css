@@ -1,6 +1,6 @@
 .navbar {
   height: 64px;
-  background-color: #0d162a; /* Dark navy */
+  background-color: #0d162a;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -13,6 +13,33 @@
   display: flex;
   align-items: center;
   gap: 32px;
+  min-width: 0;
+}
+
+/* Hamburger toggle — visible only on tablet / mobile, the layout owns the
+ * actual sidebar visibility state. Hidden by default on desktop. */
+.menuToggle {
+  display: none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  color: #c4cddb;
+  cursor: pointer;
+}
+
+.menuToggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+@media (max-width: 1024px) {
+  .menuToggle {
+    display: inline-flex;
+  }
 }
 
 .slabLogo {
@@ -75,6 +102,82 @@
   gap: 12px;
 }
 
+.categoryPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  align-items: flex-end;
+}
+
+.categoryPickerHint {
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #8f9baf;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.categorySelect {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  padding: 4px 28px 4px 10px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path d='M1 1l4 4 4-4' stroke='%23c4cddb' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  min-width: 140px;
+}
+
+.categorySelect:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.categorySelect:focus {
+  outline: 2px solid #6366f1;
+  outline-offset: 1px;
+}
+
+.categorySelect option {
+  background: #1b2640;
+  color: #ffffff;
+}
+
+/* Tablet / mobile space-saving — drop the gap, hide the team copy
+ * (logo + category picker still tell you where you are), and let the
+ * category select shrink. */
+@media (max-width: 1024px) {
+  .leftSection {
+    gap: 12px;
+  }
+  .teamDivider,
+  .teamText {
+    display: none;
+  }
+  .navbar {
+    padding: 0 12px;
+  }
+  .categorySelect {
+    min-width: 110px;
+  }
+}
+
+@media (max-width: 640px) {
+  .teamSection {
+    display: none;
+  }
+  .categoryPickerHint {
+    display: none;
+  }
+}
+
 .iconButton {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -96,12 +199,212 @@
   color: white;
 }
 
-.notificationDot {
+/* ---------- Bell + alerts dropdown ---------- */
+
+.bellWrapper {
+  position: relative;
+}
+
+.badge {
   position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 6px;
-  height: 6px;
-  background-color: #f2a632; /* Yellowish dot */
-  border-radius: 50%;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  background-color: #dc2626;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 0 2px #0d162a;
+  line-height: 1;
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 380px;
+  max-height: 540px;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.3);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.dropdownHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  background: #f9fafb;
+}
+
+.dropdownTitle {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #111827;
+  letter-spacing: 0.02em;
+}
+
+.dropdownCount {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #6b7280;
+  background: #e5e7eb;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.dropdownError {
+  padding: 10px 16px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 0.8rem;
+  border-bottom: 1px solid #fecaca;
+}
+
+.dropdownEmpty {
+  padding: 28px 16px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.alertList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  max-height: 480px;
+}
+
+.alertItem {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.alertItem:last-child {
+  border-bottom: none;
+}
+
+.severityBar {
+  width: 4px;
+  background-color: #9ca3af;
+  flex-shrink: 0;
+}
+
+.severityBar.info {
+  background-color: #3b82f6;
+}
+
+.severityBar.warning {
+  background-color: #f59e0b;
+}
+
+.severityBar.critical {
+  background-color: #dc2626;
+}
+
+.alertBody {
+  flex: 1;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.alertHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+
+.playerName {
+  font-weight: 600;
+  color: #111827;
+}
+
+.playerCategory {
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
+.alertWhen {
+  margin-left: auto;
+  color: #9ca3af;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.alertMessage {
+  font-size: 0.82rem;
+  color: #374151;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.alertSourceTag {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.triggerCount {
+  margin-left: 4px;
+  color: #9a3412;
+  font-weight: 600;
+  font-size: 0.75rem;
+}
+
+.alertActions {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.alertLink {
+  font-size: 0.78rem;
+  color: #6d28d9;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.alertLink:hover {
+  text-decoration: underline;
+}
+
+.alertDismissBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+  cursor: pointer;
+}
+
+.alertDismissBtn:hover {
+  color: #dc2626;
 }

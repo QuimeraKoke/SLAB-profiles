@@ -69,7 +69,7 @@ export default function GroupedBar({ widget }: GroupedBarProps) {
       </header>
       {widget.description && <p className={styles.description}>{widget.description}</p>}
 
-      <div className={styles.chartArea} style={{ height: 220 }}>
+      <div className={styles.chartArea} style={{ height: widget.chart_height ?? 220 }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 64 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />

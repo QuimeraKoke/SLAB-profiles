@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import MatchesCalendar from "@/components/partidos/MatchesCalendar";
 import { api, ApiError } from "@/lib/api";
+import { useCategoryContext } from "@/context/CategoryContext";
 import type { CalendarEvent } from "@/lib/types";
 import styles from "./page.module.css";
 
@@ -39,12 +40,20 @@ export default function PartidosPage() {
     setCalMonth({ year: d.getFullYear(), month: d.getMonth() + 1 });
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    setMatches(null);
-    setError(null);
+  const { categoryId, loading: categoryLoading } = useCategoryContext();
 
-    api<CalendarEvent[]>("/events?event_type=match")
+  useEffect(() => {
+    if (categoryLoading) return;
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setMatches(null);
+      setError(null);
+    });
+
+    const params = new URLSearchParams({ event_type: "match" });
+    if (categoryId) params.set("category_id", categoryId);
+    api<CalendarEvent[]>(`/events?${params}`)
       .then((data) => {
         if (cancelled) return;
         // Newest first by start time.
@@ -62,11 +71,17 @@ export default function PartidosPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, categoryId, categoryLoading]);
+
+  // Snapshot "now" on mount so the upcoming/past filter is stable across
+  // re-renders. The lint rule `react-hooks/purity` flags Date.now() inside
+  // useMemo because re-renders would shift the boundary; freezing on mount
+  // gives a deterministic split for the page's lifetime. Adequate UX —
+  // matches don't move fast enough that a half-second drift matters.
+  const [now] = useState(() => Date.now());
 
   const filtered = useMemo(() => {
     if (!matches) return [];
-    const now = Date.now();
     if (filter === "upcoming") {
       return matches.filter((m) => new Date(m.starts_at).getTime() >= now)
         .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
@@ -75,7 +90,7 @@ export default function PartidosPage() {
       return matches.filter((m) => new Date(m.starts_at).getTime() < now);
     }
     return matches;
-  }, [matches, filter]);
+  }, [matches, filter, now]);
 
   return (
     <div className={styles.container}>
@@ -192,7 +207,11 @@ function MatchRow({
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isPast = new Date(match.starts_at).getTime() < Date.now();
+  // Same lint rationale as the parent page: snapshot "now" on mount so
+  // `isPast` is deterministic across re-renders. Adequate for showing
+  // "(pasado)" copy on a card.
+  const [now] = useState(() => Date.now());
+  const isPast = new Date(match.starts_at).getTime() < now;
   const dateLabel = formatDate(match.starts_at);
 
   const handleDelete = async () => {

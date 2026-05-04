@@ -281,13 +281,16 @@ def run_ingest(
 
     matched: list[dict] = []
     for payload in by_player.values():
-        result_data = compute_result_data(template, payload.raw_data)
+        result_data, inputs_snapshot = compute_result_data(
+            template, payload.raw_data, player=payload.player,
+        )
         matched.append({
             "player_id": str(payload.player.id),
             "player_name": f"{payload.player.first_name} {payload.player.last_name}",
             "session_label": ", ".join(sorted(payload.session_labels)) or None,
             "contributing_rows": payload.contributing_rows,
             "result_data": result_data,
+            "inputs_snapshot": inputs_snapshot,
         })
     matched.sort(key=lambda m: m["player_name"].lower())
 
@@ -320,6 +323,7 @@ def run_ingest(
                 template=template,
                 recorded_at=recorded_at,
                 result_data=entry["result_data"],
+                inputs_snapshot=entry.get("inputs_snapshot") or {},
                 event=event,
             )
         response["created_results"] = len(matched)

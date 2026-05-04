@@ -23,6 +23,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+.alertBadge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background-color: #dc2626;
+  color: #ffffff;
+  border-radius: 999px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #ffffff;
 }
 
 .info {
@@ -37,6 +56,38 @@
   letter-spacing: 0.05em;
   text-transform: uppercase;
   margin-bottom: 4px;
+}
+
+.statusPill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-left: 10px;
+  white-space: nowrap;
+}
+
+.status_available {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.status_reintegration {
+  background: #fef3c7;
+  color: #854d0e;
+}
+
+.status_recovery {
+  background: #fed7aa;
+  color: #9a3412;
+}
+
+.status_injured {
+  background: #fee2e2;
+  color: #b91c1c;
 }
 
 .name {

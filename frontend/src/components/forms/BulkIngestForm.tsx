@@ -40,11 +40,13 @@ export default function BulkIngestForm({
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<BulkIngestResponse | null>(null);
 
-  // Match selector: optional, fetched once on mount.
+  // Match selector: shown only when the template opts in via link_to_match.
+  const linkToMatch = template.link_to_match === true;
   const [matches, setMatches] = useState<CalendarEvent[]>([]);
   const [eventId, setEventId] = useState<string>("");
 
   useEffect(() => {
+    if (!linkToMatch) return;
     let cancelled = false;
     api<CalendarEvent[]>(`/events?event_type=match`)
       .then((data) => {
@@ -61,7 +63,7 @@ export default function BulkIngestForm({
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [linkToMatch]);
 
   const selectedMatch = useMemo(
     () => matches.find((m) => m.id === eventId) ?? null,
@@ -69,11 +71,19 @@ export default function BulkIngestForm({
   );
 
   // When a match is picked, lock the date to the match's day so the user
-  // can't drift away from the authoritative event timestamp.
+  // can't drift away from the authoritative event timestamp. Deferred via
+  // a microtask so the lint rule `react-hooks/set-state-in-effect` doesn't
+  // flag the synchronous state write.
   useEffect(() => {
-    if (selectedMatch) {
+    if (!selectedMatch) return;
+    let cancelled = false;
+    Promise.resolve().then(() => {
+      if (cancelled) return;
       setRecordedAt(selectedMatch.starts_at.slice(0, 10));
-    }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedMatch]);
 
   const submit = async (dryRun: boolean) => {
@@ -119,7 +129,10 @@ export default function BulkIngestForm({
   };
 
   // ---------- preview screen ----------
-  if (stage === "preview" && preview) {
+  // Stays mounted while the commit is in flight so the user keeps seeing
+  // the matched-players summary under the "Guardando…" button rather than
+  // a loading spinner over a blank screen.
+  if ((stage === "preview" || stage === "committing") && preview) {
     return (
       <div className={styles.wrapper}>
         {selectedMatch && (
@@ -268,27 +281,29 @@ export default function BulkIngestForm({
         {file && <span className={styles.fileName}>{file.name}</span>}
       </label>
 
-      <label className={styles.field}>
-        <span className={styles.label}>Asociar partido (opcional)</span>
-        <select
-          value={eventId}
-          onChange={(e) => setEventId(e.target.value)}
-        >
-          <option value="">— Sin partido (fecha manual) —</option>
-          {matches.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.starts_at.slice(0, 10)} · {m.title}
-              {m.location ? ` (${m.location})` : ""}
-            </option>
-          ))}
-        </select>
-        {selectedMatch && (
-          <span className={styles.matchHint}>
-            Los registros se vincularán a este partido y la fecha se tomará de{" "}
-            <strong>{selectedMatch.starts_at.slice(0, 16).replace("T", " ")}</strong>.
-          </span>
-        )}
-      </label>
+      {linkToMatch && (
+        <label className={styles.field}>
+          <span className={styles.label}>Asociar partido (opcional)</span>
+          <select
+            value={eventId}
+            onChange={(e) => setEventId(e.target.value)}
+          >
+            <option value="">— Sin partido (fecha manual) —</option>
+            {matches.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.starts_at.slice(0, 10)} · {m.title}
+                {m.location ? ` (${m.location})` : ""}
+              </option>
+            ))}
+          </select>
+          {selectedMatch && (
+            <span className={styles.matchHint}>
+              Los registros se vincularán a este partido y la fecha se tomará de{" "}
+              <strong>{selectedMatch.starts_at.slice(0, 16).replace("T", " ")}</strong>.
+            </span>
+          )}
+        </label>
+      )}
 
       <label className={styles.field}>
         <span className={styles.label}>

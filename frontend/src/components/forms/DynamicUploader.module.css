@@ -97,6 +97,21 @@
   grid-column: 1 / -1;
 }
 
+/* Two-step cascade for categorical fields with `option_groups` — the
+ * group select sits left of the leaf-option select. Stack on narrow
+ * widths so neither select gets squeezed. */
+.groupedFieldRow {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 2fr;
+  gap: 6px;
+}
+
+@media (max-width: 480px) {
+  .groupedFieldRow {
+    grid-template-columns: 1fr;
+  }
+}
+
 .checkboxLabel {
   display: flex;
   align-items: center;
@@ -116,6 +131,15 @@
   background-color: #fef2f2;
   border: 1px solid #fecaca;
   color: #b91c1c;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+}
+
+.warning {
+  background-color: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
   border-radius: 6px;
   padding: 10px 14px;
   font-size: 0.9rem;

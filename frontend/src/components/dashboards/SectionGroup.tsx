@@ -49,7 +49,14 @@ export default function SectionGroup({ section }: SectionGroupProps) {
             <div
               key={widget.id}
               className={styles.cell}
-              style={{ "--col-span": widget.column_span } as React.CSSProperties}
+              style={
+                {
+                  "--col-span": widget.column_span,
+                  // Tablet rule: max 2 widgets per row. ≤6 stays 6 (pair),
+                  // >6 promotes to 12 (full row). Mobile overrides to 12 in CSS.
+                  "--tablet-col-span": widget.column_span <= 6 ? 6 : 12,
+                } as React.CSSProperties
+              }
             >
               {renderWidget(widget)}
             </div>

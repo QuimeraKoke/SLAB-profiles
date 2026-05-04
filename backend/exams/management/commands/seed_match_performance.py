@@ -43,8 +43,11 @@ CONFIG_SCHEMA: dict = {
 }
 
 INPUT_CONFIG: dict = {
-    "input_modes": ["single"],
-    "default_input_mode": "single",
+    # `team_table` lets the matches manager enter performance for the whole
+    # roster in a single screen, keyed to the match event. `single` keeps
+    # the per-player registrar working for back-fills.
+    "input_modes": ["team_table", "single"],
+    "default_input_mode": "team_table",
     "modifiers": {"prefill_from_last": False},
     # Tells the frontend to render a "match" picker on the single-mode form.
     # When the user picks a match, the result's event FK is set and recorded_at

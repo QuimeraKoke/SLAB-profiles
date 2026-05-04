@@ -1,0 +1,151 @@
+.widget {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.description {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.headerCell {
+  text-align: left;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  font-weight: 600;
+  padding: 10px 12px;
+  background-color: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.headerCell:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
+.headerCell.alignRight {
+  text-align: right;
+}
+
+.unit {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #9ca3af;
+}
+
+.sortArrow {
+  color: #6d28d9;
+  font-size: 0.65rem;
+}
+
+.table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #111827;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.playerCell {
+  font-weight: 600;
+  white-space: nowrap;
+  position: sticky;
+  left: 0;
+  background: #ffffff;
+  z-index: 1;
+}
+
+.cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.cellValue {
+  font-weight: 500;
+  display: block;
+  line-height: 1.2;
+}
+
+/* Variation indicator (▲/▼ + signed magnitude). Colors are direction-only,
+ * not "good vs bad" — that's metric-specific and we don't have semantics
+ * yet. Muted blue for up, muted orange for down. */
+.delta {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.deltaUp {
+  color: #2563eb;
+}
+
+.deltaDown {
+  color: #ea580c;
+}
+
+.deltaFlat {
+  color: #9ca3af;
+}
+
+.missingCell {
+  color: #d1d5db;
+  font-weight: 400;
+}
+
+.empty {
+  padding: 20px 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.85rem;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 6px;
+}

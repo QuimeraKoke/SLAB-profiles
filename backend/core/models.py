@@ -130,6 +130,36 @@ class StaffMembership(models.Model):
 
 
 class Player(models.Model):
+    SEX_MALE = "M"
+    SEX_FEMALE = "F"
+    SEX_CHOICES = [
+        (SEX_MALE, "Masculino"),
+        (SEX_FEMALE, "Femenino"),
+    ]
+
+    # Player availability status. Derived (cached) from open Episodes on
+    # episodic templates — see exams.signals + the episode lifecycle.
+    # Stages are ordered worst → best; the cache always reflects the WORST
+    # stage across the player's open episodes.
+    STATUS_INJURED = "injured"
+    STATUS_RECOVERY = "recovery"
+    STATUS_REINTEGRATION = "reintegration"
+    STATUS_AVAILABLE = "available"
+    STATUS_CHOICES = [
+        (STATUS_INJURED, "Lesionado"),
+        (STATUS_RECOVERY, "Recuperación"),
+        (STATUS_REINTEGRATION, "Reintegración"),
+        (STATUS_AVAILABLE, "Disponible"),
+    ]
+    # Ordered worst (lowest rank) to best (highest rank). Used by the
+    # signal that recomputes a player's status from open episodes.
+    STATUS_RANK = {
+        STATUS_INJURED: 0,
+        STATUS_RECOVERY: 1,
+        STATUS_REINTEGRATION: 2,
+        STATUS_AVAILABLE: 3,
+    }
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     category = models.ForeignKey(Category, on_delete=models.PROTECT, related_name="players")
     position = models.ForeignKey(
@@ -142,13 +172,48 @@ class Player(models.Model):
     first_name = models.CharField(max_length=80)
     last_name = models.CharField(max_length=80)
     date_of_birth = models.DateField(null=True, blank=True)
+    sex = models.CharField(
+        max_length=1, choices=SEX_CHOICES, blank=True,
+        help_text="Used by clinical reference formulas (e.g. anthropometric calculations).",
+    )
     nationality = models.CharField(
         max_length=80,
         blank=True,
         help_text="Free-form, e.g. 'Chile'. We can promote this to an FK later.",
     )
+    # Cached "latest known" anthropometric values. Updated automatically when
+    # an exam template field marks itself as `writes_to_player_field` (see
+    # exams.models.TemplateField). Manually editable in admin as a fallback.
+    current_weight_kg = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        help_text="Latest known weight in kilograms.",
+    )
+    current_height_cm = models.DecimalField(
+        max_digits=5, decimal_places=1, null=True, blank=True,
+        help_text="Latest known height in centimeters.",
+    )
     is_active = models.BooleanField(default=True)
+    status = models.CharField(
+        max_length=16, choices=STATUS_CHOICES, default=STATUS_AVAILABLE,
+        db_index=True,
+        help_text=(
+            "Cached availability status — recomputed from open episodes on "
+            "episodic exam templates. Worst stage across all open episodes wins."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    @property
+    def age(self) -> int | None:
+        """Age in years from date_of_birth, or None when unknown."""
+        if not self.date_of_birth:
+            return None
+        from datetime import date
+        today = date.today()
+        years = today.year - self.date_of_birth.year
+        if (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day):
+            years -= 1
+        return years
 
     def __str__(self) -> str:
         return f"{self.first_name} {self.last_name}"
@@ -237,3 +302,98 @@ class PlayerAlias(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_kind_display()}: {self.value}"
+
+
+class Contract(models.Model):
+    """A player's contractual agreement with the club.
+
+    Multiple contracts per player (history-aware: renewals, loans, youth-to-pro
+    promotions, etc.). The "current" contract is the row whose
+    `start_date <= today <= end_date`. Most fields mirror the Airtable view
+    the team already uses (Inicio Contrato, Fin Contrato, Porcentaje Contrato,
+    Total Bruto, Bono Fijo, Bono Variable, Aumento, Opción Compra, Cláusula
+    Salida, Opción Renovación). The bonus / option / clause columns are kept
+    as free-text because the team's existing workflow is "NO" or a description
+    rather than structured numbers.
+    """
+
+    TYPE_PERMANENT = "permanent"
+    TYPE_LOAN_IN = "loan_in"
+    TYPE_LOAN_OUT = "loan_out"
+    TYPE_YOUTH = "youth"
+    TYPE_CHOICES = [
+        (TYPE_PERMANENT, "Permanente"),
+        (TYPE_LOAN_IN, "Préstamo (entra)"),
+        (TYPE_LOAN_OUT, "Préstamo (cedido)"),
+        (TYPE_YOUTH, "Cantera / juvenil"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.ForeignKey(
+        Player, on_delete=models.CASCADE, related_name="contracts"
+    )
+    contract_type = models.CharField(
+        max_length=20, choices=TYPE_CHOICES, default=TYPE_PERMANENT,
+    )
+
+    # Term
+    start_date = models.DateField(help_text="Inicio Contrato")
+    end_date = models.DateField(
+        help_text="Fin Contrato. UI displays as 'TT YYYY' from end_date.year."
+    )
+    signing_date = models.DateField(null=True, blank=True)
+
+    # Money
+    ownership_percentage = models.DecimalField(
+        max_digits=4, decimal_places=2, default=1,
+        help_text="Porcentaje Contrato. 1.00 = club is full owner; 0.75 = co-owned.",
+    )
+    total_gross_amount = models.DecimalField(
+        max_digits=15, decimal_places=2, null=True, blank=True,
+        help_text="Total Bruto del contrato.",
+    )
+    salary_currency = models.CharField(
+        max_length=3, default="CLP",
+        help_text="ISO currency code: CLP, USD, EUR, …",
+    )
+
+    # Free-text columns mirroring the team's existing Airtable conventions.
+    # 'NO' (or empty) = does not apply; otherwise free description.
+    fixed_bonus = models.TextField(
+        blank=True, help_text="Bono Fijo. Ej. 'USD 60.000 por clasificar a Libertadores'.",
+    )
+    variable_bonus = models.TextField(
+        blank=True, help_text="Bono Variable. Ej. 'USD 2.000 si juega 70% minutos del mes'.",
+    )
+    salary_increase = models.TextField(
+        blank=True, help_text="Aumento. Ej. '15% del salario en caso de renovación'.",
+    )
+    purchase_option = models.TextField(
+        blank=True, help_text="Opción de Compra. 'NO' o monto/condiciones.",
+    )
+    release_clause = models.TextField(
+        blank=True, help_text="Cláusula de Salida. 'NO' o monto.",
+    )
+    renewal_option = models.TextField(
+        blank=True, help_text="Opción de Renovación. 'NO', 'SI', condiciones, etc.",
+    )
+
+    # Provenance
+    agent_name = models.CharField(max_length=200, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-end_date", "-start_date")
+        indexes = [
+            models.Index(fields=["player", "end_date"]),
+        ]
+
+    @property
+    def season_label(self) -> str:
+        """'TT YYYY' label for `end_date`, matching the team's convention."""
+        return f"TT {self.end_date.year}"
+
+    def __str__(self) -> str:
+        return f"{self.player} · {self.start_date} → {self.season_label} ({self.get_contract_type_display()})"

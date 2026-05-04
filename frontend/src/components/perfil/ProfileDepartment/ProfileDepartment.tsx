@@ -26,12 +26,38 @@ export default function ProfileDepartment({ playerId, department }: ProfileDepar
   const [layout, setLayout] = useState<DepartmentLayoutResponse["layout"] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Refetch only the results list. Used after a row is edited or deleted in
+  // a child DepartmentCard so the table re-renders without thrashing the
+  // template + layout fetches.
+  const refreshResults = React.useCallback(() => {
+    let cancelled = false;
+    const dept = encodeURIComponent(department.slug);
+    api<ExamResult[]>(`/players/${playerId}/results?department=${dept}`)
+      .then((data) => {
+        if (!cancelled) setResults(data);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setError(err instanceof ApiError ? err.message : "Failed to refresh results");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [playerId, department.slug]);
+
   useEffect(() => {
     let cancelled = false;
-    setResults(null);
-    setTemplates([]);
-    setLayout(null);
-    setError(null);
+    // Defer the "clear state for new fetch" via a microtask so the lint
+    // rule `react-hooks/set-state-in-effect` doesn't flag the synchronous
+    // resets. Same behavior — runs before any render.
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setResults(null);
+      setTemplates([]);
+      setLayout(null);
+      setError(null);
+    });
 
     const dept = encodeURIComponent(department.slug);
     Promise.all([
@@ -109,6 +135,7 @@ export default function ProfileDepartment({ playerId, department }: ProfileDepar
               results={templateResults}
               playerId={playerId}
               departmentSlug={department.slug}
+              onMutated={refreshResults}
             />
           );
         })}

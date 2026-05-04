@@ -1,12 +1,39 @@
 from django.contrib import admin
 
-from .models import Category, Club, Department, Player, PlayerAlias, Position, StaffMembership
+from .models import (
+    Category,
+    Club,
+    Contract,
+    Department,
+    Player,
+    PlayerAlias,
+    Position,
+    StaffMembership,
+)
 
 
 class PlayerAliasInline(admin.TabularInline):
     model = PlayerAlias
     extra = 0
     fields = ("kind", "source", "value")
+
+
+class ContractInline(admin.StackedInline):
+    model = Contract
+    extra = 0
+    fields = (
+        ("contract_type", "ownership_percentage"),
+        ("start_date", "end_date", "signing_date"),
+        ("total_gross_amount", "salary_currency"),
+        "fixed_bonus",
+        "variable_bonus",
+        "salary_increase",
+        ("purchase_option", "release_clause"),
+        "renewal_option",
+        ("agent_name", "notes"),
+    )
+    classes = ("collapse",)
+    show_change_link = True
 
 
 @admin.register(Club)
@@ -86,11 +113,15 @@ class StaffMembershipAdmin(admin.ModelAdmin):
 
 @admin.register(Player)
 class PlayerAdmin(admin.ModelAdmin):
-    list_display = ("first_name", "last_name", "category", "position", "nationality", "is_active")
-    list_filter = ("category", "position", "is_active")
+    list_display = (
+        "first_name", "last_name", "category", "position", "sex",
+        "current_weight_kg", "current_height_cm",
+        "nationality", "is_active",
+    )
+    list_filter = ("category", "position", "sex", "is_active")
     search_fields = ("first_name", "last_name", "nationality")
     autocomplete_fields = ("position",)
-    inlines = [PlayerAliasInline]
+    inlines = [PlayerAliasInline, ContractInline]
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         """Limit the position dropdown to the player's own club."""
@@ -101,3 +132,44 @@ class PlayerAdmin(admin.ModelAdmin):
                 if player and player.category_id:
                     kwargs["queryset"] = Position.objects.filter(club=player.category.club)
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+@admin.register(Contract)
+class ContractAdmin(admin.ModelAdmin):
+    list_display = (
+        "player", "contract_type", "start_date", "end_date",
+        "ownership_percentage", "total_gross_amount", "salary_currency",
+    )
+    list_filter = ("contract_type", "salary_currency")
+    search_fields = (
+        "player__first_name", "player__last_name", "agent_name", "notes",
+    )
+    autocomplete_fields = ("player",)
+    fieldsets = (
+        (None, {
+            "fields": (
+                "player", "contract_type",
+                ("start_date", "end_date", "signing_date"),
+                ("ownership_percentage", "total_gross_amount", "salary_currency"),
+            ),
+        }),
+        ("Bonos y opciones", {
+            "fields": (
+                "fixed_bonus",
+                "variable_bonus",
+                "salary_increase",
+                "purchase_option",
+                "release_clause",
+                "renewal_option",
+            ),
+            "description": (
+                "Texto libre. Convención: 'NO' = no aplica; en otro caso, "
+                "describir monto y condiciones."
+            ),
+        }),
+        ("Provenance", {
+            "fields": ("agent_name", "notes", "created_at", "updated_at"),
+            "classes": ("collapse",),
+        }),
+    )
+    readonly_fields = ("created_at", "updated_at")

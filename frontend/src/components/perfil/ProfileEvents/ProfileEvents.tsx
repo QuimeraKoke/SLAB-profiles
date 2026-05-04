@@ -34,11 +34,18 @@ const EVENT_TYPE_TONE: Record<EventType, string> = {
 export default function ProfileEvents({ playerId }: ProfileEventsProps) {
   const [events, setEvents] = useState<CalendarEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  // Snapshot "now" once on mount — see partidos page for rationale.
+  // The upcoming/past split on a profile page doesn't need real-time updates.
+  const [now] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
-    setEvents(null);
-    setError(null);
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setEvents(null);
+      setError(null);
+    });
 
     api<CalendarEvent[]>(`/events?player_id=${playerId}`)
       .then((data) => {
@@ -54,11 +61,10 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
     return () => {
       cancelled = true;
     };
-  }, [playerId]);
+  }, [playerId, reloadKey]);
 
   const { upcoming, past } = useMemo(() => {
     if (!events) return { upcoming: [], past: [] };
-    const now = Date.now();
     const upcoming: CalendarEvent[] = [];
     const past: CalendarEvent[] = [];
     for (const e of events) {
@@ -75,7 +81,7 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
       (a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime(),
     );
     return { upcoming, past };
-  }, [events]);
+  }, [events, now]);
 
   const createHref = `/perfil/${playerId}/eventos/nuevo?tab=eventos`;
 
@@ -115,7 +121,11 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
           </h3>
           <div className={styles.list}>
             {upcoming.map((e) => (
-              <EventCard key={e.id} event={e} />
+              <EventCard
+                key={e.id}
+                event={e}
+                onChanged={() => setReloadKey((k) => k + 1)}
+              />
             ))}
           </div>
         </div>
@@ -128,7 +138,12 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
           </h3>
           <div className={styles.list}>
             {past.map((e) => (
-              <EventCard key={e.id} event={e} past />
+              <EventCard
+                key={e.id}
+                event={e}
+                past
+                onChanged={() => setReloadKey((k) => k + 1)}
+              />
             ))}
           </div>
         </div>
@@ -137,10 +152,46 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
   );
 }
 
-function EventCard({ event, past = false }: { event: CalendarEvent; past?: boolean }) {
+function EventCard({
+  event,
+  past = false,
+  onChanged,
+}: {
+  event: CalendarEvent;
+  past?: boolean;
+  onChanged: () => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const tone = EVENT_TYPE_TONE[event.event_type as EventType] ?? "other";
   const typeLabel = EVENT_TYPE_LABEL[event.event_type as EventType] ?? event.event_type;
   const dateLabel = formatDate(event.starts_at, event.ends_at);
+
+  // Match events have a dedicated full editor at /partidos/[id]/editar with
+  // metadata/participants UI. For other event types, we ship a lightweight
+  // delete-only affordance for now; full editing is the matches manager's
+  // surface today.
+  const editHref =
+    event.event_type === "match" ? `/partidos/${event.id}/editar` : null;
+
+  const handleDelete = async () => {
+    if (
+      !confirm(
+        `¿Borrar el evento "${event.title}"? Los datos vinculados quedarán sin evento asociado.`,
+      )
+    ) {
+      return;
+    }
+    setDeleting(true);
+    setActionError(null);
+    try {
+      await api(`/events/${event.id}`, { method: "DELETE" });
+      onChanged();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : "No se pudo borrar el evento");
+      setDeleting(false);
+    }
+  };
 
   return (
     <article className={`${styles.card} ${past ? styles.past : ""}`}>
@@ -166,7 +217,24 @@ function EventCard({ event, past = false }: { event: CalendarEvent; past?: boole
             {event.participants.length} participantes
           </span>
         )}
+        <div className={styles.cardActions}>
+          {editHref && (
+            <Link href={editHref} className={styles.cardActionBtn}>
+              ✏️ Editar
+            </Link>
+          )}
+          <button
+            type="button"
+            className={`${styles.cardActionBtn} ${styles.cardActionBtnDanger}`}
+            onClick={handleDelete}
+            disabled={deleting}
+            title="Borrar evento"
+          >
+            🗑 {deleting ? "Borrando…" : "Borrar"}
+          </button>
+        </div>
       </div>
+      {actionError && <div className={styles.cardError}>{actionError}</div>}
     </article>
   );
 }

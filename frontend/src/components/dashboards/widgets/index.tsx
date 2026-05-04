@@ -3,6 +3,7 @@
 import React from "react";
 
 import type { DashboardWidget } from "@/lib/types";
+import BodyMapHeatmap from "./BodyMapHeatmap";
 import ComparisonTable from "./ComparisonTable";
 import LineWithSelector from "./LineWithSelector";
 import DonutPerResult from "./DonutPerResult";
@@ -16,6 +17,7 @@ const widgetRegistry: Record<string, React.ComponentType<{ widget: DashboardWidg
   donut_per_result: DonutPerResult,
   grouped_bar: GroupedBar,
   multi_line: MultiLine,
+  body_map_heatmap: BodyMapHeatmap,
 };
 
 export function renderWidget(widget: DashboardWidget): React.ReactNode {

@@ -17,12 +17,19 @@ interface PlayerTableProps {
 export default function PlayerTable({ players }: PlayerTableProps) {
   const getStatusLabel = (status: string) => {
     switch (status) {
-      case "healthy":
-        return "Alta";
-      case "recuperation":
+      case "available":
+        return "Disponible";
+      case "reintegration":
+        return "Reintegración";
+      case "recovery":
         return "Recuperación";
       case "injured":
         return "Lesionado";
+      // Legacy values kept for graceful fallback.
+      case "healthy":
+        return "Disponible";
+      case "recuperation":
+        return "Recuperación";
       default:
         return status;
     }

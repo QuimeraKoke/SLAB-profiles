@@ -47,7 +47,17 @@
   min-width: 0;
 }
 
-@media (max-width: 768px) {
+/* Tablet (641–1024px): max 2 widgets per row. The component computes
+ * `--tablet-col-span` (6 when col_span ≤ 6, else 12) so a 4-col widget
+ * pairs with another 4-col, and an 8-col widget takes the full row. */
+@media (max-width: 1024px) {
+  .cell {
+    grid-column: span var(--tablet-col-span, 12);
+  }
+}
+
+/* Mobile (≤640px): every widget takes the full row regardless of intent. */
+@media (max-width: 640px) {
   .cell {
     grid-column: span 12;
   }

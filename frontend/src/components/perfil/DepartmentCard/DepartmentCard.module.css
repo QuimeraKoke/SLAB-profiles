@@ -40,6 +40,15 @@
   border-radius: 6px;
 }
 
+.error {
+  padding: 8px 12px;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+
 /* ---------- mini line charts (sparkline grid) ---------- */
 
 .chartGrid {
@@ -222,6 +231,48 @@
   white-space: nowrap;
 }
 
+.rowActionsHead {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.rowActions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+  padding: 4px 8px !important;
+}
+
+.rowActions button + button {
+  margin-left: 4px;
+}
+
+.rowBtn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  line-height: 1;
+  color: #6b7280;
+}
+
+.rowBtn:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+
+.rowBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rowBtnDanger:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
 /* ---------- footer ---------- */
 
 .footer {
@@ -283,4 +334,28 @@
 .addBtn:hover {
   background-color: #5b21b6;
   color: white;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.teamBtn {
+  display: inline-block;
+  background-color: #ffffff;
+  color: #6d28d9;
+  border: 1px solid #6d28d9;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.teamBtn:hover {
+  background-color: #ede9fe;
+  color: #5b21b6;
 }

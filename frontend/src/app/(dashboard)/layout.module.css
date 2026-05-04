@@ -16,4 +16,31 @@
   flex: 1;
   overflow-y: auto;
   position: relative;
+  min-width: 0;
+}
+
+/* Backdrop shown only on tablet / mobile when the sidebar is open.
+ * Pinned to the area below the navbar (64px) so the menu and category
+ * picker stay reachable while the sidebar is overlaid. */
+.backdrop {
+  display: none;
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(13, 22, 42, 0.5);
+  z-index: 30;
+  animation: fadeIn 160ms ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@media (max-width: 1024px) {
+  .backdrop {
+    display: block;
+  }
 }

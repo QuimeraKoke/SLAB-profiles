@@ -1,10 +1,37 @@
 .container {
   padding: 32px;
-  max-width: 720px;
+  /* Wider than the form-only original so the bulk-entry table fits. */
+  max-width: 1280px;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.perfSection {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.perfHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.perfTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.perfHint {
+  font-size: 0.78rem;
+  color: #6b7280;
 }
 
 .header {

@@ -20,8 +20,14 @@ const DEFAULT_PALETTE = [
   "#ec4899", // pink
 ];
 
+const DONUT_DEFAULT_HEIGHT = 180;
+
 export default function DonutPerResult({ widget }: DonutPerResultProps) {
   const data = widget.data as DonutPerResultPayload;
+  const chartHeight = widget.chart_height ?? DONUT_DEFAULT_HEIGHT;
+  const heightScale = chartHeight / DONUT_DEFAULT_HEIGHT;
+  const innerRadius = Math.round(42 * heightScale);
+  const outerRadius = Math.round(70 * heightScale);
   if (data.donuts.length === 0) {
     return (
       <div className={styles.widget}>
@@ -44,7 +50,7 @@ export default function DonutPerResult({ widget }: DonutPerResultProps) {
           <div key={donut.result_id} className={styles.donutItem}>
             <div className={styles.donutDate}>{formatDate(donut.recorded_at)}</div>
             <div className={styles.donutChart}>
-              <ResponsiveContainer width="100%" height={180}>
+              <ResponsiveContainer width="100%" height={chartHeight}>
                 <PieChart>
                   <Pie
                     data={donut.slices}
@@ -52,8 +58,8 @@ export default function DonutPerResult({ widget }: DonutPerResultProps) {
                     nameKey="label"
                     cx="50%"
                     cy="50%"
-                    innerRadius={42}
-                    outerRadius={70}
+                    innerRadius={innerRadius}
+                    outerRadius={outerRadius}
                     paddingAngle={1}
                     isAnimationActive={false}
                   >

@@ -35,6 +35,31 @@
 .profileInfo {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.closeBtn {
+  display: none;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 4px;
+  color: #c4cddb;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
+.closeBtn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+@media (max-width: 1024px) {
+  .closeBtn {
+    display: inline-flex;
+  }
 }
 
 .profileName {
@@ -172,4 +197,25 @@
   height: 4px;
   border-radius: 50%;
   background-color: #3b82f6;
+}
+
+/* Tablet / mobile: pull the sidebar out of the flex flow and overlay it.
+ * Hidden by default (off-screen left); the layout's `open` flag adds the
+ * `.sidebarOpen` class to slide it in. The backdrop is owned by the
+ * dashboard layout module. */
+@media (max-width: 1024px) {
+  .sidebar {
+    position: fixed;
+    top: 64px; /* below navbar */
+    left: 0;
+    bottom: 0;
+    z-index: 40;
+    transform: translateX(-100%);
+    transition: transform 200ms ease;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.2);
+  }
+
+  .sidebar.sidebarOpen {
+    transform: translateX(0);
+  }
 }

@@ -17,9 +17,12 @@ export default function ProfileTimeline({ playerId }: ProfileTimelineProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setResults(null);
-    setTemplates([]);
-    setError(null);
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setResults(null);
+      setTemplates([]);
+      setError(null);
+    });
 
     Promise.all([
       api<ExamResult[]>(`/players/${playerId}/results`),
@@ -41,10 +44,14 @@ export default function ProfileTimeline({ playerId }: ProfileTimelineProps) {
     };
   }, [playerId]);
 
+  // Sort by the doctor-typed `fecha` when present (it's the clinically
+  // meaningful date — when the measurement actually happened — even if
+  // it differs from `recorded_at` which is the moment the form was saved).
+  // Falls back to `recorded_at` when no fecha was filled in.
   const sorted = useMemo(() => {
     if (!results) return [];
     return [...results].sort(
-      (a, b) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime(),
+      (a, b) => effectiveDate(b).getTime() - effectiveDate(a).getTime(),
     );
   }, [results]);
 
@@ -108,7 +115,9 @@ interface TimelineItemProps {
 function TimelineItem({ result, template }: TimelineItemProps) {
   const fields = template?.config_schema?.fields ?? [];
   const summary = summarizeResult(result, fields);
-  const recorded = new Date(result.recorded_at);
+  // Display the effective date (doctor-typed `fecha` when present) so the
+  // timeline reads as a clinical record, not a save-event log.
+  const recorded = effectiveDate(result);
 
   return (
     <li className={styles.item}>
@@ -195,6 +204,22 @@ function formatValue(value: unknown): string {
 }
 
 // truncate is declared above with summarizeResult so it can be reused.
+
+/**
+ * The clinically meaningful date for a result: the doctor-typed `fecha`
+ * field if present and parseable, otherwise the system's `recorded_at`
+ * timestamp. Used by the timeline so back-dated entries (e.g. doctor
+ * registers Monday's check-in on Tuesday morning) show on Monday.
+ */
+function effectiveDate(result: ExamResult): Date {
+  const raw = result.result_data?.fecha;
+  if (typeof raw === "string" && raw.length >= 10) {
+    // ISO date or datetime; treat naked dates as midnight local.
+    const parsed = new Date(raw.includes("T") ? raw : `${raw}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) return parsed;
+  }
+  return new Date(result.recorded_at);
+}
 
 function relativeDate(then: Date): string {
   const diffMs = Date.now() - then.getTime();

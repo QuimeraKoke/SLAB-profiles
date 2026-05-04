@@ -9,6 +9,9 @@ import {
   Tooltip,
 } from "recharts";
 
+import DynamicUploader from "@/components/forms/DynamicUploader";
+import Modal from "@/components/ui/Modal/Modal";
+import { api, ApiError } from "@/lib/api";
 import type { ExamField, ExamResult, ExamTemplate } from "@/lib/types";
 import styles from "./DepartmentCard.module.css";
 
@@ -17,6 +20,8 @@ interface DepartmentCardProps {
   results: ExamResult[];
   playerId: string;
   departmentSlug: string;
+  /** Called after a row is edited or deleted so the parent can refetch. */
+  onMutated?: () => void;
 }
 
 const PAGE_SIZE = 4;
@@ -26,8 +31,12 @@ export default function DepartmentCard({
   results,
   playerId,
   departmentSlug,
+  onMutated,
 }: DepartmentCardProps) {
   const [page, setPage] = useState(0);
+  const [editing, setEditing] = useState<ExamResult | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const fields = template.config_schema?.fields ?? [];
   const sortedResults = useMemo(
@@ -53,6 +62,30 @@ export default function DepartmentCard({
   );
 
   const addHref = `/perfil/${playerId}/registrar/${template.id}?tab=${encodeURIComponent(departmentSlug)}`;
+  const teamHref = `${addHref}&mode=team_table`;
+  const teamModeEnabled =
+    template.input_config?.input_modes?.includes("team_table") ?? false;
+
+  const handleSaved = () => {
+    setEditing(null);
+    onMutated?.();
+  };
+
+  const handleDelete = async (result: ExamResult) => {
+    if (!confirm("¿Borrar este registro? Esta acción no se puede deshacer.")) {
+      return;
+    }
+    setDeletingId(result.id);
+    setActionError(null);
+    try {
+      await api(`/results/${result.id}`, { method: "DELETE" });
+      onMutated?.();
+    } catch (err) {
+      setActionError(err instanceof ApiError ? err.message : "Error al borrar");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <div className={styles.card}>
@@ -63,12 +96,20 @@ export default function DepartmentCard({
         </span>
       </header>
 
+      {actionError && <div className={styles.error}>{actionError}</div>}
+
       {results.length === 0 ? (
         <div className={styles.empty}>Aún sin registros para esta plantilla.</div>
       ) : (
         <>
           <CardVisualization fields={fields} results={sortedResults} />
-          <CardTable fields={fields} results={visibleResults} />
+          <CardTable
+            fields={fields}
+            results={visibleResults}
+            onEdit={setEditing}
+            onDelete={handleDelete}
+            deletingId={deletingId}
+          />
         </>
       )}
 
@@ -100,10 +141,33 @@ export default function DepartmentCard({
         ) : (
           <span />
         )}
-        <Link href={addHref} className={styles.addBtn}>
-          + Agregar
-        </Link>
+        <div className={styles.actions}>
+          {teamModeEnabled && (
+            <Link href={teamHref} className={styles.teamBtn}>
+              Capturar todos
+            </Link>
+          )}
+          <Link href={addHref} className={styles.addBtn}>
+            + Agregar
+          </Link>
+        </div>
       </footer>
+
+      <Modal
+        open={editing !== null}
+        title={`Editar — ${template.name}`}
+        onClose={() => setEditing(null)}
+      >
+        {editing && (
+          <DynamicUploader
+            template={template}
+            playerId={playerId}
+            existingResult={editing}
+            onSaved={handleSaved}
+            onCancel={() => setEditing(null)}
+          />
+        )}
+      </Modal>
     </div>
   );
 }
@@ -277,9 +341,18 @@ function StatStrip({
 interface CardTableProps {
   fields: ExamField[];
   results: ExamResult[];
+  onEdit: (result: ExamResult) => void;
+  onDelete: (result: ExamResult) => void;
+  deletingId: string | null;
 }
 
-function CardTable({ fields, results }: CardTableProps) {
+function CardTable({
+  fields,
+  results,
+  onEdit,
+  onDelete,
+  deletingId,
+}: CardTableProps) {
   const columns = useMemo(() => pickColumns(fields), [fields]);
 
   return (
@@ -291,6 +364,7 @@ function CardTable({ fields, results }: CardTableProps) {
             {columns.map((c) => (
               <th key={c.key}>{c.label}</th>
             ))}
+            <th className={styles.rowActionsHead} aria-label="Acciones" />
           </tr>
         </thead>
         <tbody>
@@ -306,6 +380,27 @@ function CardTable({ fields, results }: CardTableProps) {
                   </td>
                 );
               })}
+              <td className={styles.rowActions}>
+                <button
+                  type="button"
+                  className={styles.rowBtn}
+                  onClick={() => onEdit(r)}
+                  aria-label="Editar registro"
+                  title="Editar"
+                >
+                  ✏️
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.rowBtn} ${styles.rowBtnDanger}`}
+                  onClick={() => onDelete(r)}
+                  disabled={deletingId === r.id}
+                  aria-label="Borrar registro"
+                  title="Borrar"
+                >
+                  {deletingId === r.id ? "…" : "🗑"}
+                </button>
+              </td>
             </tr>
           ))}
         </tbody>

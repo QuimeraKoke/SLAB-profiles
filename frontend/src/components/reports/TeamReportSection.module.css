@@ -1,0 +1,63 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  user-select: none;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background-color: #f9fafb;
+}
+
+.title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.chevron {
+  font-size: 0.85rem;
+  color: #6b7280;
+  line-height: 1;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 16px;
+}
+
+.cell {
+  grid-column: span min(var(--col-span, 12), 12);
+  min-width: 0;
+}
+
+/* Tablet (641–1024px): max 2 widgets per row. The component computes
+ * `--tablet-col-span` (6 when col_span ≤ 6, else 12). */
+@media (max-width: 1024px) {
+  .cell {
+    grid-column: span var(--tablet-col-span, 12);
+  }
+}
+
+/* Mobile (≤640px): every widget takes the full row regardless of intent. */
+@media (max-width: 640px) {
+  .cell {
+    grid-column: span 12;
+  }
+}

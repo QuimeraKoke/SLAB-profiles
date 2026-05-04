@@ -53,6 +53,7 @@ _ALLOWED_NODES = (
     ast.UnaryOp,
     ast.Constant,
     ast.Name,
+    ast.Attribute,  # for `player.sex`, `<slug>.<field_key>` syntax
     ast.Load,
     ast.Call,
     ast.IfExp,
@@ -80,17 +81,63 @@ _ALLOWED_NODES = (
 )
 
 
+class Namespace:
+    """Read-only attribute proxy used for `player.X` and `<slug>.X` lookups.
+
+    Snapshot tracker (when supplied) records every successful lookup as
+    `{namespace_name}.{attr}` → value pairs, so the calling endpoint can
+    persist an audit-of-record alongside the calculated result.
+    """
+
+    def __init__(self, name: str, values: Mapping[str, Any], tracker: dict | None = None):
+        self._name = name
+        self._values = dict(values)
+        self._tracker = tracker
+
+    def lookup(self, attr: str) -> Any:
+        """Return the value (or None when the attr isn't present / is None)."""
+        if attr not in self._values:
+            return None
+        value = self._values[attr]
+        # Track only non-null reads — a missing/None value isn't a "value used".
+        if value is not None and self._tracker is not None:
+            self._tracker[f"{self._name}.{attr}"] = value
+        return value
+
+
 class FormulaError(ValueError):
     """Raised when a formula references unknown variables, calls a forbidden
     function, or fails to evaluate (e.g. division by zero)."""
 
 
-_BRACKET_RE = re.compile(r"\[([A-Za-z_][A-Za-z0-9_]*)\]")
+# Brackets accept either a bare identifier (`[peso]`) or a single dotted
+# identifier (`[player.sex]`, `[pentacompartimental.peso]`).
+_BRACKET_RE = re.compile(r"\[([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)\]")
 
 
 def _normalize(formula: str) -> str:
-    """Convert `[name]` references to bare `name` identifiers."""
+    """Convert `[name]` and `[ns.attr]` references to bare identifiers."""
     return _BRACKET_RE.sub(r"\1", formula)
+
+
+def extract_namespace_refs(formula: str) -> set[str]:
+    """Return the set of top-level namespace names referenced via dot syntax.
+
+    For `[player.sex] + [pentacompartimental.peso] / [peso]` returns
+    `{"player", "pentacompartimental"}`. Used by `compute_result_data` to
+    decide which namespaces to assemble (player + which template slugs).
+    """
+    if not isinstance(formula, str) or not formula.strip():
+        return set()
+    try:
+        tree = ast.parse(_normalize(formula), mode="eval")
+    except SyntaxError:
+        return set()
+    refs: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            refs.add(node.value.id)
+    return refs
 
 
 def _validate(node: ast.AST) -> None:
@@ -102,6 +149,12 @@ def _validate(node: ast.AST) -> None:
                 raise FormulaError("Only direct function calls are allowed")
             if child.func.id not in SAFE_FUNCTIONS:
                 raise FormulaError(f"Function not allowed: {child.func.id}")
+        if isinstance(child, ast.Attribute):
+            # Single-level only: `player.sex` ✓, `a.b.c` ✗
+            if not isinstance(child.value, ast.Name):
+                raise FormulaError(
+                    "Only single-level attribute access is allowed (e.g. `player.sex`)"
+                )
 
 
 def _to_number(value: Any) -> float:
@@ -119,17 +172,43 @@ def _eval(node: ast.AST, variables: Mapping[str, Any]) -> Any:
     if isinstance(node, ast.Expression):
         return _eval(node.body, variables)
     if isinstance(node, ast.Constant):
-        if isinstance(node.value, (int, float)):
-            return float(node.value)
+        # bool is checked first because `bool` is a subclass of `int`.
         if isinstance(node.value, bool):
             return 1.0 if node.value else 0.0
+        if isinstance(node.value, (int, float)):
+            return float(node.value)
+        if isinstance(node.value, str):
+            return node.value  # used for equality checks like `player.sex == "M"`
         raise FormulaError(f"Unsupported literal: {node.value!r}")
     if isinstance(node, ast.Name):
         if node.id in variables:
-            return _to_number(variables[node.id])
+            value = variables[node.id]
+            # Bare names are only meaningful for scalar fields; namespace
+            # objects must be accessed via dot syntax.
+            if isinstance(value, Namespace):
+                raise FormulaError(
+                    f"'{node.id}' is a namespace; use dot syntax (e.g. `{node.id}.<field>`)."
+                )
+            return _to_number(value)
         if node.id in SAFE_CONSTANTS:
             return SAFE_CONSTANTS[node.id]
         raise FormulaError(f"Unknown variable: {node.id}")
+    if isinstance(node, ast.Attribute):
+        # Validator ensures this is a single-level Name.attr.
+        ns_name = node.value.id  # type: ignore[union-attr]
+        if ns_name not in variables:
+            raise FormulaError(f"Unknown namespace: {ns_name}")
+        ns = variables[ns_name]
+        if not isinstance(ns, Namespace):
+            raise FormulaError(f"`{ns_name}` is not a namespace.")
+        value = ns.lookup(node.attr)
+        if value is None:
+            raise FormulaError(f"`{ns_name}.{node.attr}` has no value.")
+        # Numbers stay numbers; strings flow through so equality checks work.
+        # Anything else gets coerced to a number.
+        if isinstance(value, str):
+            return value
+        return _to_number(value)
     if isinstance(node, ast.UnaryOp):
         operand = _eval(node.operand, variables)
         if isinstance(node.op, ast.UAdd):
@@ -229,16 +308,86 @@ def evaluate_formula(formula: str, variables: Mapping[str, Any]) -> float:
     return float(_eval(tree, variables))
 
 
-def compute_result_data(template, raw_data: Mapping[str, Any]) -> dict[str, Any]:
+def _build_player_namespace(player, tracker: dict) -> Namespace:
+    """Snapshot the player's attributes that formulas may reference."""
+    values = {
+        "sex": player.sex or None,
+        "current_weight_kg": (
+            float(player.current_weight_kg)
+            if player.current_weight_kg is not None else None
+        ),
+        "current_height_cm": (
+            float(player.current_height_cm)
+            if player.current_height_cm is not None else None
+        ),
+        "age": player.age,
+    }
+    return Namespace("player", values, tracker)
+
+
+def _build_template_namespaces(player, slugs: set[str], tracker: dict) -> dict[str, Namespace]:
+    """For each slug, find the player's most recent ExamResult on the matching
+    template (in the same club) and expose its `result_data` as a namespace.
+    """
+    if not slugs or player is None:
+        return {}
+    # Lazy imports to avoid circular import at module load time.
+    from .models import ExamResult, ExamTemplate
+
+    club_id = player.category.club_id
+    templates = (
+        ExamTemplate.objects
+        .filter(slug__in=slugs, department__club_id=club_id)
+        .only("id", "slug")
+    )
+    namespaces: dict[str, Namespace] = {}
+    for tpl in templates:
+        latest = (
+            ExamResult.objects
+            .filter(player_id=player.id, template_id=tpl.id)
+            .order_by("-recorded_at")
+            .first()
+        )
+        result_data = (latest.result_data if latest else {}) or {}
+        namespaces[tpl.slug] = Namespace(tpl.slug, result_data, tracker)
+    return namespaces
+
+
+def compute_result_data(
+    template,
+    raw_data: Mapping[str, Any],
+    player=None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
     """Run all calculated fields in a template's config_schema.
 
-    Returns a new dict that is `raw_data` plus every successfully-computed
-    calculated field. Fields that fail to evaluate are stored as None so the
-    save still succeeds and the frontend can flag the gap visibly.
+    Returns `(result_data, inputs_snapshot)`:
+      - `result_data` is `raw_data` plus every successfully-computed
+        calculated field. Failed formulas store None so the save still
+        succeeds and the gap is visible.
+      - `inputs_snapshot` records every external value (`player.X`,
+        `<slug>.Y`) that was actually read while evaluating the formulas.
+        Empty when no namespace references were used. Persist alongside
+        the ExamResult to preserve the exact inputs at calculation time.
     """
     schema = template.config_schema or {}
     fields = schema.get("fields", []) or []
     out: dict[str, Any] = dict(raw_data)
+    snapshot: dict[str, Any] = {}
+
+    # Collect every namespace mentioned across all calculated formulas so we
+    # only build/load each one once.
+    all_refs: set[str] = set()
+    for field in fields:
+        if isinstance(field, dict) and field.get("type") == "calculated" and field.get("formula"):
+            all_refs.update(extract_namespace_refs(field["formula"]))
+
+    namespaces: dict[str, Namespace] = {}
+    if "player" in all_refs and player is not None:
+        namespaces["player"] = _build_player_namespace(player, snapshot)
+    template_slugs = all_refs - {"player"}
+    if template_slugs:
+        namespaces.update(_build_template_namespaces(player, template_slugs, snapshot))
+
     for field in fields:
         if not isinstance(field, dict):
             continue
@@ -248,10 +397,11 @@ def compute_result_data(template, raw_data: Mapping[str, Any]) -> dict[str, Any]
         formula = field.get("formula")
         if not key or not formula:
             continue
+        variables = {**out, **namespaces}
         try:
-            out[key] = evaluate_formula(formula, out)
+            out[key] = evaluate_formula(formula, variables)
         except FormulaError:
-            # Capture failure but don't abort the save — partial data is still
-            # useful and admins need to see the gap to fix the formula.
+            # Failed formulas store None — partial data is still useful and
+            # admins need to see the gap to fix the formula.
             out[key] = None
-    return out
+    return out, snapshot

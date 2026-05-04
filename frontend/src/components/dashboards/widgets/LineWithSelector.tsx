@@ -25,6 +25,11 @@ export default function LineWithSelector({ widget }: LineWithSelectorProps) {
 
   const activeField = fields.find((f) => f.key === activeKey) ?? fields[0];
 
+  const distinctTemplates = new Set(
+    fields.map((f) => f.template_id).filter(Boolean),
+  );
+  const showTemplateLabel = distinctTemplates.size > 1;
+
   const config = (widget.display_config ?? {}) as {
     x_axis_title?: string;
     y_axis_title?: string;
@@ -67,19 +72,24 @@ export default function LineWithSelector({ widget }: LineWithSelectorProps) {
           value={activeField?.key}
           onChange={(e) => setActiveKey(e.target.value)}
         >
-          {fields.map((f) => (
-            <option key={f.key} value={f.key}>
-              {f.label}
-              {f.unit ? ` (${f.unit})` : ""}
-            </option>
-          ))}
+          {fields.map((f) => {
+            const prefix =
+              showTemplateLabel && f.template_label ? `${f.template_label} — ` : "";
+            return (
+              <option key={f.key} value={f.key}>
+                {prefix}
+                {f.label}
+                {f.unit ? ` (${f.unit})` : ""}
+              </option>
+            );
+          })}
         </select>
       </header>
 
       {activeSeries.length === 0 ? (
         <div className={styles.empty}>Sin datos para esta variable.</div>
       ) : (
-        <div className={styles.chartArea} style={{ height: 240 }}>
+        <div className={styles.chartArea} style={{ height: widget.chart_height ?? 240 }}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={activeSeries} margin={{ top: 8, right: 16, left: 8, bottom: 24 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
@@ -139,7 +149,9 @@ export default function LineWithSelector({ widget }: LineWithSelectorProps) {
 
 interface TooltipProps {
   active?: boolean;
-  payload?: Array<{ payload?: { value?: number; recorded_at?: string } }>;
+  // `readonly` so the type matches Recharts' TooltipPayload which marks
+  // its payload as readonly. We only read from it.
+  payload?: ReadonlyArray<{ payload?: { value?: number; recorded_at?: string } }>;
   unit: string;
 }
 

@@ -8,9 +8,13 @@ interface FieldViewProps {
 }
 
 export default function FieldView({ players }: FieldViewProps) {
-
-  const availableCount = players.filter(p => p.status === 'healthy').length;
-  const recuperatingCount = players.filter(p => p.status === 'recuperation').length;
+  // Status values come from the backend: available / injured / recovery /
+  // reintegration. Earlier this used "healthy" / "recuperation" which
+  // never matched, so every counter rendered 0.
+  const availableCount = players.filter(p => p.status === 'available').length;
+  const recuperatingCount = players.filter(
+    p => p.status === 'recovery' || p.status === 'reintegration',
+  ).length;
   const injuredCount = players.filter(p => p.status === 'injured').length;
   const totalPlayers = players.length;
 

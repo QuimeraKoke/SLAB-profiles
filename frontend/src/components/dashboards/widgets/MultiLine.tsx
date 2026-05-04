@@ -83,7 +83,7 @@ export default function MultiLine({ widget }: MultiLineProps) {
       </header>
       {widget.description && <p className={styles.description}>{widget.description}</p>}
 
-      <div className={styles.chartArea} style={{ height: 280 }}>
+      <div className={styles.chartArea} style={{ height: widget.chart_height ?? 280 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 24 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />

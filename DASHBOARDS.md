@@ -120,10 +120,11 @@ whole thing.
 | `chart_type`         | Best for                                          | Required data shape                                              |
 | -------------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
 | `comparison_table`   | Last N takes side-by-side, with deltas            | 1 source · `last_n` · multiple `field_keys` (one row per field)  |
-| `line_with_selector` | Trend over time, one variable at a time (dropdown)| 1 source · `all` · multiple `field_keys`                         |
+| `line_with_selector` | Trend over time, one variable at a time (dropdown)| **1+ sources** · `all` · multiple `field_keys`. With multiple sources, the dropdown lists fields from every bound template (e.g. CK + urine refractometry on the same selector). |
 | `multi_line`         | Trend over time, all series visible at once       | 1 source · `all` (or `last_n`) · multiple `field_keys`           |
 | `donut_per_result`   | Body-composition fractions, one donut per take    | 1 source · `last_n` · `field_keys` that sum to a meaningful whole |
 | `grouped_bar`        | Compare a few values across recent takes          | 1 source · `last_n` · 2–5 `field_keys`                           |
+| `body_map_heatmap`   | Counts per body region (e.g. injury frequency)    | 1 source · `all` (or `last_n`) · **exactly 1** categorical `field_key` whose `option_regions` map each option to a body region (e.g. `{"Muslo der.": "right_thigh"}`). |
 
 ### Reserved (configure now, render later)
 
@@ -150,6 +151,68 @@ without admin re-work.
 The frontend never re-aggregates — what comes back from `/api/players/{id}/views`
 is already shaped for the chart. So picking `all` on a 200-result dataset for
 a sparkline is fine; the cost is server-side and bounded.
+
+---
+
+## 4b. Body map heatmap setup
+
+The `body_map_heatmap` widget needs **two** things to work end-to-end:
+
+1. **An `option_regions` map on the categorical field** that the widget
+   counts. Maps each option string to a canonical body region. Set in the
+   TemplateField inline ("Option regions" textbox — JSON object) or in the
+   field's `config_schema['fields'][i].option_regions` directly. The
+   `seed_lesiones` command ships a sensible default map for the standard
+   `body_part` field.
+2. **A widget configured against that field**:
+   - `chart_type` = `body_map_heatmap`
+   - 1 data source · template with the mapped categorical field
+   - `field_keys` = `["body_part"]` (exactly one)
+   - `aggregation` = `all` or `last_n` — both work
+   - `column_span` 4–6 reads well; the silhouette renders ~180px wide
+
+**Canonical region names** (used by both front + back silhouettes):
+```
+# Shared (visible in either view):
+head, neck, pelvis,
+left_shoulder, right_shoulder,
+left_arm, right_arm,
+left_forearm, right_forearm,
+left_hand, right_hand,
+left_thigh, right_thigh,
+left_knee, right_knee,
+left_calf, right_calf,
+left_foot, right_foot
+
+# Front-only:
+chest, abdomen
+
+# Back-only:
+upper_back, lower_back
+```
+Options whose region is absent or unknown are silently skipped from the
+counts but still inflate the "X resultados" header — useful for catching
+unmapped options without breaking the chart.
+
+**View convention:**
+- **Frente** mirrors medical-imaging convention — the player's right side
+  is on the SVG's **left** (as if the player faces the viewer). Use this
+  to read alongside X-rays / MRI scans.
+- **Espalda** is **not** mirrored — the player's right is on the SVG's
+  right (as you'd see them from behind in person).
+
+**Stage filter chips** appear automatically when the source template is
+episodic with a categorical `stage_field` (e.g. Lesiones). The widget
+pre-buckets counts per stage on the server, so flipping between
+`Todas / Lesionado / Recuperación / Reintegración / Cerrado` is instant
+client-side. Useful for "how many open injuries are at recovery stage?"
+type questions.
+
+**Color scale:** continuous gray → red, scaled by `count / max_count`
+within the active filter. Each region renders a tooltip showing
+`<region> · N resultados` plus per-option breakdown when multiple options
+map to the same region (breakdown hidden when a stage filter is active to
+avoid misleading totals).
 
 ---
 
@@ -191,6 +254,12 @@ should document their `display_config` shape in this guide.
 - Below 768px every widget collapses to full width regardless of `column_span`.
 - Sections always stack vertically — there's no "two columns of sections"
   layout.
+- **Chart height** — per-widget pixel override on `Widget.chart_height`.
+  Leave blank to use the per-chart-type default; set a number to make the
+  chart taller (or shorter). Defaults: line ≈ 240, multi-line ≈ 280,
+  grouped bar ≈ 220, donut ≈ 180. Recommended range 160–600. Donut
+  scales its inner/outer radius with the height so the ring grows visibly.
+  Comparison tables ignore the value (no chart area).
 
 ### Section behavior
 - **Title blank** → no header rendered (use this for the intro row).

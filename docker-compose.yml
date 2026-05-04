@@ -20,6 +20,37 @@ services:
     ports:
       - "6379:6379"
 
+  minio:
+    image: minio/minio:RELEASE.2024-10-13T13-34-11Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-slabminio}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-slabminio-secret}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console (login with the keys above)
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One-shot init container: creates the bucket on first boot. Exits 0 once
+  # the bucket exists; backend depends on this completing successfully.
+  minio-init:
+    image: minio/mc:RELEASE.2024-10-08T09-37-26Z
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      sh -c "
+      sleep 2 &&
+      mc alias set local http://minio:9000 ${AWS_ACCESS_KEY_ID:-slabminio} ${AWS_SECRET_ACCESS_KEY:-slabminio-secret} &&
+      mc mb -p local/${AWS_STORAGE_BUCKET_NAME:-slab-attachments} || true
+      "
+
   backend:
     build:
       context: ./backend
@@ -39,6 +70,14 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slab}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
       REDIS_URL: redis://redis:6379/0
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-slab-attachments}
+      AWS_S3_REGION_NAME: ${AWS_S3_REGION_NAME:-us-east-1}
+      AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-http://minio:9000}
+      AWS_S3_PUBLIC_ENDPOINT_URL: ${AWS_S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
+      AWS_S3_ADDRESSING_STYLE: ${AWS_S3_ADDRESSING_STYLE:-path}
+      AWS_S3_URL_PROTOCOL: ${AWS_S3_URL_PROTOCOL:-http:}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-slabminio}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-slabminio-secret}
     volumes:
       - ./backend:/app
     ports:
@@ -47,6 +86,92 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: ./backend
+    command: celery -A config worker --loglevel=info
+    environment:
+      DEBUG: ${DEBUG:-true}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-insecure-change-me}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-slab}
+      POSTGRES_USER: ${POSTGRES_USER:-slab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slab}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CELERY_TIMEZONE: ${CELERY_TIMEZONE:-UTC}
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-slab-attachments}
+      AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-http://minio:9000}
+      AWS_S3_PUBLIC_ENDPOINT_URL: ${AWS_S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
+      AWS_S3_ADDRESSING_STYLE: ${AWS_S3_ADDRESSING_STYLE:-path}
+      AWS_S3_URL_PROTOCOL: ${AWS_S3_URL_PROTOCOL:-http:}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-slabminio}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-slabminio-secret}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-localhost}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-true}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-alerts@s-lab.cl}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      backend:
+        condition: service_started
+
+  beat:
+    build:
+      context: ./backend
+    command: celery -A config beat --loglevel=info
+    environment:
+      DEBUG: ${DEBUG:-true}
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-insecure-change-me}
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-*}
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-me}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-slab}
+      POSTGRES_USER: ${POSTGRES_USER:-slab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slab}
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+      CELERY_TIMEZONE: ${CELERY_TIMEZONE:-UTC}
+      AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-slab-attachments}
+      AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-http://minio:9000}
+      AWS_S3_PUBLIC_ENDPOINT_URL: ${AWS_S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
+      AWS_S3_ADDRESSING_STYLE: ${AWS_S3_ADDRESSING_STYLE:-path}
+      AWS_S3_URL_PROTOCOL: ${AWS_S3_URL_PROTOCOL:-http:}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-slabminio}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-slabminio-secret}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-localhost}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-true}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-alerts@s-lab.cl}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      backend:
         condition: service_started
 
   frontend:
@@ -67,3 +192,4 @@ volumes:
   postgres_data:
   frontend_node_modules:
   frontend_next_cache:
+  minio_data:

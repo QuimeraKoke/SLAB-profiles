@@ -70,6 +70,14 @@ class ExamTemplate(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=120)
+    slug = models.SlugField(
+        max_length=80, blank=True, default="",
+        help_text=(
+            "Identificador estable usado en fórmulas para referenciar resultados "
+            "de esta plantilla, ej. `[pentacompartimental.peso]`. Se autogenera "
+            "del nombre si se deja en blanco. No puede ser 'player'."
+        ),
+    )
     department = models.ForeignKey(
         Department, on_delete=models.PROTECT, related_name="exam_templates"
     )
@@ -87,15 +95,88 @@ class ExamTemplate(models.Model):
         default=False,
         help_text="Once results exist, the template is locked. New changes spawn a new version.",
     )
+    link_to_match = models.BooleanField(
+        default=False,
+        help_text=(
+            "When enabled, the data-entry form shows an 'Asociar partido' selector. "
+            "The picked match becomes the authoritative timestamp (overrides "
+            "recorded_at) and is FK-stored on every result. Applies to single, "
+            "bulk-ingest, and team-table forms."
+        ),
+    )
+    is_episodic = models.BooleanField(
+        default=False,
+        help_text=(
+            "When enabled, results on this template form linked Episodes. "
+            "Each result either opens a new Episode or progresses an existing "
+            "open one (via episode_id). The Episode auto-derives stage / "
+            "status / title from the latest linked result, and the player's "
+            "Player.status is recomputed from their open episodes."
+        ),
+    )
+    show_injuries = models.BooleanField(
+        default=False,
+        help_text=(
+            "When enabled, the data-entry form for this template displays a "
+            "panel listing the player's open injuries, with a button to add a "
+            "new one without leaving the form. Useful for daily-notes / "
+            "session-tracking templates where the doctor needs context on "
+            "current injuries while filling unrelated data."
+        ),
+    )
+    episode_config = models.JSONField(
+        default=dict, blank=True,
+        help_text=(
+            "Episodic-template config. Required when is_episodic=True. "
+            'Shape: {"stage_field": "stage", '
+            '"open_stages": ["injured", "recovery", "reintegration"], '
+            '"closed_stage": "closed", '
+            '"title_template": "{type} — {body_part}"}. '
+            "open_stages is ordered WORST → BEST."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        indexes = [GinIndex(fields=["config_schema"])]
+        indexes = [
+            GinIndex(fields=["config_schema"]),
+            models.Index(fields=["slug"]),
+        ]
+
+    RESERVED_SLUGS = frozenset({"player"})
 
     def clean(self):
         """Validate input_config has the right shape and references known modes."""
         from django.core.exceptions import ValidationError
+        from django.utils.text import slugify
+
+        # Auto-derive slug from name if blank.
+        if not self.slug and self.name:
+            self.slug = slugify(self.name).replace("-", "_")[:80]
+        if self.slug:
+            if self.slug in self.RESERVED_SLUGS:
+                raise ValidationError({"slug": f"'{self.slug}' is reserved and cannot be used."})
+            # Must match identifier rules so it parses inside formula brackets.
+            import re
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", self.slug):
+                raise ValidationError(
+                    {"slug": "Must be lowercase letters, digits and underscores; "
+                             "must start with a letter."}
+                )
+            # Club-wide uniqueness (department.club is the boundary).
+            if self.department_id:
+                conflict = (
+                    ExamTemplate.objects
+                    .filter(slug=self.slug, department__club=self.department.club)
+                    .exclude(pk=self.pk)
+                    .first()
+                )
+                if conflict:
+                    raise ValidationError(
+                        {"slug": f"Slug '{self.slug}' is already used by template "
+                                 f"'{conflict.name}' in this club."}
+                    )
 
         cfg = self.input_config or {}
         modes = cfg.get("input_modes", [])
@@ -113,6 +194,126 @@ class ExamTemplate(models.Model):
             )
         if self.MODE_BULK_INGEST in modes:
             self._validate_column_mapping(cfg.get("column_mapping"))
+        if self.MODE_TEAM_TABLE in modes:
+            self._validate_team_table(cfg.get("team_table"))
+
+        # Episodic templates require a usable episode_config.
+        if self.is_episodic:
+            self._validate_episode_config()
+
+    def _validate_episode_config(self):
+        from django.core.exceptions import ValidationError
+
+        cfg = self.episode_config or {}
+        if not isinstance(cfg, dict):
+            raise ValidationError({"episode_config": "Must be an object."})
+        stage_field = cfg.get("stage_field")
+        if not isinstance(stage_field, str) or not stage_field.strip():
+            raise ValidationError(
+                {"episode_config": "'stage_field' is required (the field key carrying the stage)."}
+            )
+        open_stages = cfg.get("open_stages")
+        if (not isinstance(open_stages, list) or not open_stages
+                or any(not isinstance(s, str) for s in open_stages)):
+            raise ValidationError(
+                {"episode_config": "'open_stages' must be a non-empty list of strings (worst→best)."}
+            )
+        closed_stage = cfg.get("closed_stage")
+        if not isinstance(closed_stage, str) or not closed_stage.strip():
+            raise ValidationError(
+                {"episode_config": "'closed_stage' is required."}
+            )
+        if closed_stage in open_stages:
+            raise ValidationError(
+                {"episode_config": "'closed_stage' must NOT be in 'open_stages'."}
+            )
+
+        # If the schema is already populated, validate stage_field references
+        # exist and that the stage values declared overlap with the field's
+        # categorical options.
+        schema_fields = (self.config_schema or {}).get("fields") or []
+        if schema_fields:
+            target = next(
+                (f for f in schema_fields
+                 if isinstance(f, dict) and f.get("key") == stage_field),
+                None,
+            )
+            if target is None:
+                valid = sorted(
+                    f.get("key") for f in schema_fields
+                    if isinstance(f, dict) and f.get("key")
+                )
+                raise ValidationError({
+                    "episode_config": (
+                        f"stage_field '{stage_field}' not found in template fields. "
+                        f"Available: {', '.join(valid)}"
+                    )
+                })
+            if target.get("type") not in {"categorical", "text"}:
+                raise ValidationError({
+                    "episode_config": (
+                        f"stage_field '{stage_field}' must be categorical or text "
+                        f"(got '{target.get('type')}')."
+                    )
+                })
+
+    def _validate_team_table(self, cfg):
+        """Light shape validation for the team_table config block.
+
+        team_table = {
+            "shared_fields": ["fecha"],   # asked once at the top of the form
+            "row_fields":   ["valor"],    # one column per — defaults to all
+                                          # non-shared, non-calculated keys
+            "include_inactive": false
+        }
+        """
+        from django.core.exceptions import ValidationError
+
+        if cfg is None:
+            return  # All fields default to row_fields automatically.
+        if not isinstance(cfg, dict):
+            raise ValidationError({"input_config": "'team_table' must be an object."})
+
+        all_keys = {
+            f.get("key")
+            for f in (self.config_schema or {}).get("fields", [])
+            if isinstance(f, dict) and f.get("key")
+        }
+        calculated_keys = {
+            f.get("key")
+            for f in (self.config_schema or {}).get("fields", [])
+            if isinstance(f, dict) and f.get("type") == "calculated" and f.get("key")
+        }
+
+        shared = cfg.get("shared_fields") or []
+        rows = cfg.get("row_fields") or []
+        if not isinstance(shared, list) or not isinstance(rows, list):
+            raise ValidationError(
+                {"input_config": "'team_table.shared_fields' and 'row_fields' must be lists."}
+            )
+
+        unknown_shared = [k for k in shared if k not in all_keys]
+        unknown_rows = [k for k in rows if k not in all_keys]
+        if unknown_shared:
+            raise ValidationError(
+                {"input_config": f"team_table.shared_fields references unknown key(s): {', '.join(unknown_shared)}."}
+            )
+        if unknown_rows:
+            raise ValidationError(
+                {"input_config": f"team_table.row_fields references unknown key(s): {', '.join(unknown_rows)}."}
+            )
+
+        bad_calc_shared = [k for k in shared if k in calculated_keys]
+        if bad_calc_shared:
+            raise ValidationError(
+                {"input_config": f"team_table.shared_fields cannot include calculated field(s): {', '.join(bad_calc_shared)}."}
+            )
+
+        overlap = set(shared) & set(rows)
+        if overlap:
+            raise ValidationError(
+                {"input_config": f"Field(s) cannot be in both shared_fields and row_fields: {', '.join(sorted(overlap))}."}
+            )
 
     def _validate_column_mapping(self, mapping):
         """Light shape validation for the bulk_ingest column mapping.
@@ -172,6 +373,23 @@ class ExamTemplate(models.Model):
                     {"input_config": f"'field_map[{col!r}].reduce' must be one of max|min|sum|avg|last."}
                 )
 
+    def save(self, *args, **kwargs):
+        # Keep input_config.allow_event_link mirrored from the model field so
+        # frontend reads stay backwards-compatible. Model field is canonical.
+        cfg = dict(self.input_config or {})
+        if cfg.get("allow_event_link") != bool(self.link_to_match):
+            cfg["allow_event_link"] = bool(self.link_to_match)
+            self.input_config = cfg
+            update_fields = kwargs.get("update_fields")
+            if update_fields is not None and "input_config" not in update_fields:
+                kwargs["update_fields"] = list(update_fields) + ["input_config"]
+        # Auto-derive slug from name when missing (e.g. programmatic creation
+        # via seed commands that bypass full_clean).
+        if not self.slug and self.name:
+            from django.utils.text import slugify
+            self.slug = slugify(self.name).replace("-", "_")[:80] or "template"
+        super().save(*args, **kwargs)
+
     def __str__(self) -> str:
         return f"{self.name} v{self.version} ({self.department})"
 
@@ -216,12 +434,15 @@ class ExamTemplate(models.Model):
                     unit=raw.get("unit", "") or "",
                     group=raw.get("group", "") or "",
                     options=raw.get("options") or [],
+                    option_labels=raw.get("option_labels") or {},
+                    option_regions=raw.get("option_regions") or {},
                     formula=raw.get("formula", "") or "",
                     chart_type=raw.get("chart_type", "") or "",
                     required=bool(raw.get("required")),
                     multiline=bool(raw.get("multiline")),
                     rows=raw.get("rows"),
                     placeholder=raw.get("placeholder", "") or "",
+                    writes_to_player_field=raw.get("writes_to_player_field", "") or "",
                 ))
             TemplateField.objects.bulk_create(objs)
 
@@ -245,6 +466,7 @@ class TemplateField(models.Model):
     TYPE_CALCULATED = "calculated"
     TYPE_BOOLEAN = "boolean"
     TYPE_DATE = "date"
+    TYPE_FILE = "file"
     TYPE_CHOICES = [
         (TYPE_NUMBER, "Número"),
         (TYPE_TEXT, "Texto"),
@@ -252,6 +474,7 @@ class TemplateField(models.Model):
         (TYPE_CALCULATED, "Calculado (fórmula)"),
         (TYPE_BOOLEAN, "Sí/No"),
         (TYPE_DATE, "Fecha"),
+        (TYPE_FILE, "Archivo (uno o varios)"),
     ]
 
     CHART_TYPE_CHOICES = [
@@ -290,6 +513,28 @@ class TemplateField(models.Model):
         default=list, blank=True,
         help_text="Solo para tipo categórico. Lista de strings, una opción por elemento.",
     )
+    option_labels = models.JSONField(
+        default=dict, blank=True,
+        help_text=(
+            "Solo para tipo categórico. Diccionario opcional que asocia cada "
+            "valor de `options` con la etiqueta visible en el formulario "
+            "(ej. {\"injured\": \"Lesionado\"}). Si está vacío o falta una "
+            "clave, se muestra el valor tal cual."
+        ),
+    )
+    option_regions = models.JSONField(
+        default=dict, blank=True,
+        help_text=(
+            "Solo para tipo categórico. Diccionario opcional que asocia cada "
+            "valor de `options` con una región del cuerpo (head, neck, "
+            "chest, abdomen, pelvis, left_shoulder, right_shoulder, left_arm, "
+            "right_arm, left_forearm, right_forearm, left_hand, right_hand, "
+            "left_thigh, right_thigh, left_knee, right_knee, left_calf, "
+            "right_calf, left_foot, right_foot). Lo usa el widget "
+            "`body_map_heatmap` para colorear regiones según cuántos "
+            "resultados las mencionan."
+        ),
+    )
     formula = models.TextField(
         blank=True,
         help_text="Solo para tipo calculado. Ej. [peso] / (([talla] / 100) ** 2).",
@@ -310,12 +555,51 @@ class TemplateField(models.Model):
     )
     placeholder = models.CharField(max_length=200, blank=True)
 
+    # Player profile write-back. When set, saving an ExamResult that holds a
+    # non-null value for this field will update the named Player attribute
+    # (provided this result is the most recent for the (player, template)).
+    PLAYER_FIELD_NONE = ""
+    PLAYER_FIELD_WEIGHT = "current_weight_kg"
+    PLAYER_FIELD_HEIGHT = "current_height_cm"
+    PLAYER_FIELD_SEX = "sex"
+    PLAYER_FIELD_CHOICES = [
+        (PLAYER_FIELD_NONE, "—"),
+        (PLAYER_FIELD_WEIGHT, "Player.current_weight_kg"),
+        (PLAYER_FIELD_HEIGHT, "Player.current_height_cm"),
+        (PLAYER_FIELD_SEX, "Player.sex"),
+    ]
+    writes_to_player_field = models.CharField(
+        max_length=32, choices=PLAYER_FIELD_CHOICES, blank=True, default="",
+        help_text=(
+            "Cuando se guarda un resultado, se copia el valor de este campo "
+            "al atributo del jugador (sólo si es el resultado más reciente "
+            "para esta plantilla)."
+        ),
+    )
+
     class Meta:
         ordering = ("sort_order", "key")
         unique_together = [("template", "key")]
 
     def clean(self):
         from django.core.exceptions import ValidationError
+        import re
+
+        # Field keys must be safe identifiers (and dot-free) to play nicely
+        # with the formula engine's namespace resolver.
+        if self.key:
+            if "." in self.key:
+                raise ValidationError(
+                    {"key": "Field keys cannot contain '.' (reserved for namespace syntax in formulas)."}
+                )
+            if self.key in {"player"}:
+                raise ValidationError(
+                    {"key": "'player' is a reserved name and cannot be used as a field key."}
+                )
+            if not re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", self.key):
+                raise ValidationError(
+                    {"key": "Field keys must be valid identifiers (letters, digits, underscores; must start with a letter or underscore)."}
+                )
 
         if self.type == self.TYPE_CATEGORICAL:
             if not isinstance(self.options, list) or not self.options:
@@ -336,6 +620,10 @@ class TemplateField(models.Model):
             out["group"] = self.group
         if self.type == self.TYPE_CATEGORICAL and self.options:
             out["options"] = list(self.options)
+            if self.option_labels:
+                out["option_labels"] = dict(self.option_labels)
+            if self.option_regions:
+                out["option_regions"] = dict(self.option_regions)
         if self.type == self.TYPE_CALCULATED and self.formula:
             out["formula"] = self.formula
         if self.chart_type:
@@ -348,6 +636,8 @@ class TemplateField(models.Model):
                 out["rows"] = self.rows
         if self.placeholder:
             out["placeholder"] = self.placeholder
+        if self.writes_to_player_field:
+            out["writes_to_player_field"] = self.writes_to_player_field
         return out
 
     def __str__(self) -> str:
@@ -360,12 +650,27 @@ class ExamResult(models.Model):
     template = models.ForeignKey(ExamTemplate, on_delete=models.PROTECT, related_name="results")
     recorded_at = models.DateTimeField()
     result_data = models.JSONField(default=dict)
+    # Audit-of-record: every external value (`player.X`, `<slug>.Y`) read by
+    # this result's calculated fields, captured at the moment of evaluation.
+    # Empty dict when no namespace references were used. Older rows backfilled
+    # to {} via migration. See exams.calculations.compute_result_data().
+    inputs_snapshot = models.JSONField(default=dict, blank=True)
     event = models.ForeignKey(
         "events.Event",
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name="exam_results",
         help_text="Optional link to a calendar event (e.g. the match this GPS export came from).",
+    )
+    episode = models.ForeignKey(
+        "exams.Episode",
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name="results",
+        help_text=(
+            "Set when the result is part of an episodic template's lifecycle. "
+            "PROTECT prevents accidental episode deletion while results exist."
+        ),
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -374,8 +679,72 @@ class ExamResult(models.Model):
             GinIndex(fields=["result_data"]),
             models.Index(fields=["player", "recorded_at"]),
             models.Index(fields=["event"]),
+            models.Index(fields=["episode"]),
         ]
         ordering = ("-recorded_at",)
 
     def __str__(self) -> str:
         return f"{self.template.name} – {self.player} @ {self.recorded_at:%Y-%m-%d}"
+
+
+class Episode(models.Model):
+    """A clinical episode tying a sequence of ExamResults together.
+
+    Used by templates with `is_episodic=True` (e.g. injuries, surgeries,
+    concussion protocols). Each ExamResult on the template links to an
+    Episode; the Episode auto-derives `stage`, `status`, `title`, and
+    `ended_at` from the latest linked result via post-save signal.
+
+    Player.status is recomputed from open episodes (worst stage wins).
+    """
+
+    STATUS_OPEN = "open"
+    STATUS_CLOSED = "closed"
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "Abierto"),
+        (STATUS_CLOSED, "Cerrado"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.ForeignKey(
+        "core.Player", on_delete=models.CASCADE, related_name="episodes",
+    )
+    template = models.ForeignKey(
+        ExamTemplate, on_delete=models.PROTECT, related_name="episodes",
+    )
+    status = models.CharField(
+        max_length=8, choices=STATUS_CHOICES, default=STATUS_OPEN, db_index=True,
+    )
+    stage = models.CharField(
+        max_length=40, blank=True,
+        help_text="Free-form per template; populated by signal from latest result's stage_field.",
+    )
+    title = models.CharField(
+        max_length=200, blank=True,
+        help_text="Human-readable summary (auto-derived from latest result via title_template).",
+    )
+    started_at = models.DateTimeField(
+        help_text="When the first linked result was recorded.",
+    )
+    ended_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Set when the episode transitions to 'closed' (= recorded_at of the closing result).",
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_episodes",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-started_at",)
+        indexes = [
+            models.Index(fields=["player", "status"]),
+            models.Index(fields=["template", "status"]),
+        ]
+
+    def __str__(self) -> str:
+        scope = self.title or self.stage or "(sin título)"
+        return f"[{self.get_status_display()}] {self.player} · {scope}"

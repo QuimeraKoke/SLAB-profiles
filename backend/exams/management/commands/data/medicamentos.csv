@@ -1,0 +1,62 @@
+id;categoria;nombre;riesgo_doping;via_admin;principio_activo;nota_medica;accion_requerida;fuente
+1;AINEs;Celecoxib 200 mg;PERMITIDO;oral;celecoxib;Inhibidor COX-2. No prohibido por WADA.;ninguna;WADA 2024 / globaldro.com
+2;AINEs;Diclofenaco gel crema;PERMITIDO;topica;diclofenaco;Uso topico. No detectable en orina. Sin restriccion.;ninguna;WADA 2024 / globaldro.com
+3;AINEs;Eterocoxib 120 mg;PERMITIDO;oral;etoricoxib;Inhibidor COX-2. No prohibido.;ninguna;WADA 2024 / globaldro.com
+4;AINEs;Feldene flash 20 mg sublingual;PERMITIDO;sublingual;piroxicam;No prohibido. Precaucion con uso prolongado.;ninguna;WADA 2024 / globaldro.com
+5;AINEs;Ketoprofen 100 mg;PERMITIDO;oral;ketoprofeno;No prohibido. Sin restriccion WADA.;ninguna;WADA 2024 / globaldro.com
+6;AINEs;Ketoprofen 150 mg Bl;PERMITIDO;oral;ketoprofeno;No prohibido.;ninguna;WADA 2024 / globaldro.com
+7;AINEs;Ketorolaco SL 30 mg;PERMITIDO;sublingual;ketorolaco;No prohibido.;ninguna;WADA 2024 / globaldro.com
+8;AINEs;Lertus 75 mg / 5 ml;PERMITIDO;inyectable;diclofenaco sodico;No prohibido.;ninguna;WADA 2024 / globaldro.com
+9;AINEs;Pro lertus 140 mg;PERMITIDO;oral;diclofenaco liberacion prolongada;No prohibido.;ninguna;WADA 2024 / globaldro.com
+10;AINEs;Traumeel;CONDICIONAL;topica/oral;producto homeopatico combinado;Composicion variable por lote. Riesgo de contaminacion con aconitina.;Verificar numero de lote. Documentar uso.;WADA 2024 / globaldro.com
+11;Analgesico;Desdol comp.;CONDICIONAL;oral;a confirmar - posible combinacion con opioide;Confirmar composicion exacta. Si contiene codeina o tramadol: PROHIBIDO en competicion.;Revisar ficha tecnica antes de administrar.;WADA 2024
+12;Analgesico;Dolgenal 30 mg;CONDICIONAL;oral;ketorolaco (verificar si lleva opioide);Si es ketorolaco puro: permitido. Si contiene tramadol u opioide: PROHIBIDO.;Confirmar composicion con proveedor.;WADA 2024
+13;Analgesico;Dolgenal 30 mg sublingual;PERMITIDO;sublingual;ketorolaco;No prohibido si formulacion sin opioide.;ninguna;WADA 2024 / globaldro.com
+14;Analgesico;Metamizol sodico 300 mg;PERMITIDO;oral/inyectable;metamizol sodico (dipirona);No prohibido por WADA.;ninguna;WADA 2024 / globaldro.com
+15;Analgesico;Paracetamol 1 gr;PERMITIDO;oral;paracetamol;No prohibido. Permitido en todas las categorias.;ninguna;WADA 2024 / globaldro.com
+16;Analgesico;Tramvolta 37.5 mg;PROHIBIDO;oral;tramadol;TRAMADOL. Prohibido en competicion WADA 2024. Positivo garantizado.;NO administrar en competicion. Retirar del botiquin de partido.;WADA Lista Prohibida 2024 - S7 Narcoticos
+17;Anestesia;Bupivacaina clorhidrato 50 mg 10 ml;PERMITIDO;inyectable local;bupivacaina;Anestesico local. No prohibido.;ninguna;WADA 2024 / globaldro.com
+18;Anestesia;Cloruro de sodio 0.9% ampolla 10 ml;PERMITIDO;inyectable;cloruro de sodio;Solucion fisiologica. No prohibido.;ninguna;WADA 2024
+19;Anestesia;Lidocaina 2% ampolla 20 ml;CONDICIONAL;inyectable;lidocaina;No prohibido en uso local/infiltracion. Grandes volumenes IV cuestionables.;Documentar indicacion y dosis. TUE recomendable si uso IV sistemico.;WADA 2024
+20;Anestesia;Lidocaina gel 4% 15 gr;PERMITIDO;topica;lidocaina;Uso topico. No prohibido.;ninguna;WADA 2024 / globaldro.com
+21;Antiacido y antiulcerante;Antiax 480 mg comp. masticables;PERMITIDO;oral;antiacido (carbonato calcico);No prohibido.;ninguna;WADA 2024 / globaldro.com
+22;Antiacido y antiulcerante;Magnatil C efervescente;PERMITIDO;oral;magnesio + vitamina C;Antiacido. No prohibido.;ninguna;WADA 2024 / globaldro.com
+23;Antiacido y antiulcerante;Omeprazol 20 mg;PERMITIDO;oral;omeprazol;Inhibidor de bomba de protones. No prohibido.;ninguna;WADA 2024 / globaldro.com
+24;Antialergico;Desloratadina 5 mg;PERMITIDO;oral;desloratadina;Antihistaminico no sedante. No prohibido.;ninguna;WADA 2024 / globaldro.com
+25;Antialergico;Nefersil 125 mg;PERMITIDO;oral;fexofenadina;Antihistaminico no sedante. No prohibido.;ninguna;WADA 2024 / globaldro.com
+26;Antialergico;Nefersil fast 125 mg;PERMITIDO;oral;fexofenadina liberacion rapida;Antihistaminico no sedante. No prohibido.;ninguna;WADA 2024 / globaldro.com
+27;Antibiotico;Aciclovir 200 mg;PERMITIDO;oral;aciclovir;Antiviral. No prohibido.;ninguna;WADA 2024 / globaldro.com
+28;Antibiotico;Aciclovir 5% crema 15 gr;PERMITIDO;topica;aciclovir;Uso topico. No prohibido.;ninguna;WADA 2024 / globaldro.com
+29;Antibiotico;Amoxicilina 500 mg;PERMITIDO;oral;amoxicilina;Antibiotico betalactamico. No prohibido.;ninguna;WADA 2024 / globaldro.com
+30;Antibiotico;Azitromicina 500 mg;PERMITIDO;oral;azitromicina;Macrolido. No prohibido.;ninguna;WADA 2024 / globaldro.com
+31;Antibiotico;Clavam DUO 875/125 mg frasco;PERMITIDO;oral;amoxicilina + acido clavulanico;No prohibido.;ninguna;WADA 2024 / globaldro.com
+32;Antibiotico;Pnc Sodica 1.000.000 UI ampolla;PERMITIDO;inyectable;penicilina G sodica;No prohibida.;ninguna;WADA 2024 / globaldro.com
+33;Antibiotico;Pnc Benzatinica 1.200.000 UI ampolla;PERMITIDO;inyectable;penicilina G benzatinica;No prohibida.;ninguna;WADA 2024 / globaldro.com
+34;Antidiarreico;Loperamida 2 mg;PERMITIDO;oral;loperamida;No cruza BHE. No prohibido.;ninguna;WADA 2024 / globaldro.com
+35;Antemetico;Domperidona 10 mg;PERMITIDO;oral;domperidona;No cruza BHE. No prohibida.;ninguna;WADA 2024 / globaldro.com
+36;Antemetico;Viadil 5 mg/ml;CONDICIONAL;oral/inyectable;metoclopramida;No prohibida. Registrar uso medico.;Documentar indicacion medica. Registrar en ficha del jugador.;WADA 2024
+37;Antemetico;Viadil compuesto 15 ml gotas;CONDICIONAL;oral;metoclopramida + otros (verificar);Verificar composicion completa. Documentar uso.;Revisar ficha tecnica. Documentar indicacion.;WADA 2024
+38;Antiespasmódico;Buscapina 20 mg / 1 ml;PERMITIDO;inyectable;butilescopolamina;No cruza BHE. No prohibida.;ninguna;WADA 2024 / globaldro.com
+39;Antigripal;Abrilar jarabe 35 mg frasco 100 ml;CONDICIONAL;oral;a confirmar - posible pseudoefedrina/efedrina;Si contiene pseudoefedrina o efedrina: PROHIBIDA en competicion (umbral 150 ug/mL).;URGENTE: verificar composicion con proveedor antes de uso en competicion.;WADA Lista Prohibida 2024 - S6b Estimulantes
+40;Antigripal;Iliadin spray nasal 0.05% 10 ml;PERMITIDO;nasal topica;oximetazolina;Descongestionante nasal topico. No prohibido.;ninguna;WADA 2024 / globaldro.com
+41;Antigripal;Tapsin te noche;PROHIBIDO;oral;codeina + antihistaminico + paracetamol;Contiene CODEINA. Se metaboliza a morfina. PROHIBIDO en competicion WADA.;NO administrar en competicion ni 5 dias antes. Retirar del botiquin de partido.;WADA Lista Prohibida 2024 - S7 Narcoticos
+42;Antipiretico;Paracetamol 1 gr;PERMITIDO;oral;paracetamol;No prohibido. Seguro.;ninguna;WADA 2024 / globaldro.com
+43;Antitusivo;Fresh mel oral;PERMITIDO;oral;miel / propoleo;Producto natural. No prohibido.;ninguna;WADA 2024
+44;Corticoide;Betavol 5+2 mg/ml ampolla;PROHIBIDO;inyectable sistemico;betametasona + dexametasona;Glucocorticoide sistemico. PROHIBIDO en competicion sin TUE.;Solicitar TUE ANTES de administrar en periodo de competicion.;WADA Lista Prohibida 2024 - S9 Glucocorticoides
+45;Corticoide;Dermatobic crema 15 gr;CONDICIONAL;topica;corticoide topico (posiblemente betametasona);Uso topico dermatologico: no prohibido. Documentar indicacion.;Documentar uso en ficha del jugador.;WADA 2024
+46;Corticoide;Dermatolic crema 25 gr;CONDICIONAL;topica;corticoide topico dermatologico;Uso topico: no prohibido. Verificar composicion exacta.;Documentar uso. Confirmar composicion con fabricante.;WADA 2024
+47;Corticoide;Foille crema 28 gr;PERMITIDO;topica;benzocaina + antiseptico (sin corticoide);Anestesico y antiseptico topico. No contiene corticoide. No prohibido.;ninguna;WADA 2024 / globaldro.com
+48;Corticoide;Pro bextra ampolla;PROHIBIDO;inyectable sistemico;betametasona + dexametasona;Glucocorticoide sistemico inyectable. PROHIBIDO en competicion sin TUE.;Solicitar TUE ANTES de administrar en periodo de competicion.;WADA Lista Prohibida 2024 - S9 Glucocorticoides
+49;Corticoide;Tobradex suspension oftalmica 5 ml;CONDICIONAL;oftalmica;dexametasona + tobramicina;Uso oftalmico local. No prohibido si estrictamente local.;Documentar uso. Notificar al medico de control si se usa pericompeticion.;WADA 2024
+50;Corticoide;Tobradex unguento oftalmico 3.5 gr;CONDICIONAL;oftalmica;dexametasona + tobramicina;Uso oftalmico. No prohibido localmente. Documentar.;Documentar uso en ficha del jugador.;WADA 2024
+51;Hialuronico;Idon 10 mg/ml frasco 15 ml;PERMITIDO;inyectable intraarticular;acido hialuronico;No prohibido.;ninguna;WADA 2024 / globaldro.com
+52;Inductor del sueno;Zopiclona 7.5 mg;CONDICIONAL;oral;zopiclona;No prohibido. Produce sedacion residual. Precaucion precompeticion.;No administrar la noche previa a partido si afecta rendimiento. Documentar uso.;WADA 2024
+53;Mucolitico;Ambroxol 15 mg frasco 100 ml;PERMITIDO;oral;ambroxol;Mucolitico. No prohibido.;ninguna;WADA 2024 / globaldro.com
+54;Mucolitico;Bromhexina 8 mg frasco 100 ml;PERMITIDO;oral;bromhexina;Mucolitico. No prohibido.;ninguna;WADA 2024 / globaldro.com
+55;Relajante muscular;Ciclobenzaprina 10 mg;CONDICIONAL;oral;ciclobenzaprina;No prohibido. Produce sedacion de accion central. Evaluar en competicion.;No administrar en dia de partido. Documentar uso.;WADA 2024
+56;Vitaminas;Neurobionta 10.000 UI;PERMITIDO;oral/inyectable;vitaminas B1 + B6 + B12;Complejo vitaminico. No prohibido.;ninguna;WADA 2024 / globaldro.com
+57;Otros;Oticum solucion otica 5 ml;PERMITIDO;otica topica;fenol / glicerina (otologico);Uso otico local. No prohibido.;ninguna;WADA 2024
+58;Otros;Visine 15 ml solucion oftalmica;PERMITIDO;oftalmica;tetrizolina;Descongestionante ocular. No prohibido.;ninguna;WADA 2024 / globaldro.com
+59;Otros;Clotrimazol 1% gel topica 20 gr;PERMITIDO;topica;clotrimazol;Antifungico topico. No prohibido.;ninguna;WADA 2024 / globaldro.com
+60;Otros;Terbinafina gel topica 1%;PERMITIDO;topica;terbinafina;Antifungico topico. No prohibido.;ninguna;WADA 2024 / globaldro.com
+61;Otros;Proctogel crema 30 gr;PERMITIDO;rectal topica;anestesico local + antiinflamatorio;Uso local anorrectal. No prohibido.;ninguna;WADA 2024

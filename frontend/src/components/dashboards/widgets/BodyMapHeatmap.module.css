@@ -1,0 +1,245 @@
+.widget {
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid #f3f4f6;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.toolbarGroup {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.viewToggle {
+  display: inline-flex;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.viewBtn {
+  background: #ffffff;
+  color: #6b7280;
+  border: none;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.viewBtn:not(:last-child) {
+  border-right: 1px solid #e5e7eb;
+}
+
+.viewBtn.viewBtnActive {
+  background: #6d28d9;
+  color: #ffffff;
+}
+
+.stageChip {
+  background: #ffffff;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stageChip:hover {
+  border-color: #6d28d9;
+  color: #6d28d9;
+}
+
+.stageChip.stageChipActive {
+  background: #6d28d9;
+  color: #ffffff;
+  border-color: #6d28d9;
+}
+
+.stageChip.stageChipActive.kind_closed {
+  background: #047857;
+  border-color: #047857;
+}
+
+.title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.totalCount {
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.body {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.svgWrap {
+  flex: 0 0 auto;
+}
+
+.svg {
+  width: 180px;
+  height: auto;
+  display: block;
+}
+
+.viewCaption {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+  margin-top: 6px;
+  padding: 4px 0;
+  border-top: 1px solid #f3f4f6;
+}
+
+.viewCaption .arrow {
+  font-size: 0.85rem;
+  color: #9ca3af;
+}
+
+.faceFeature {
+  fill: #6b7280;
+  pointer-events: none;
+}
+
+.region {
+  cursor: default;
+  transition: filter 120ms;
+  stroke: #e5e7eb;
+  stroke-width: 0.6;
+}
+
+.region:hover {
+  filter: brightness(0.9);
+}
+
+.legend {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: #111827;
+  min-width: 0;
+}
+
+.legendTitle {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: #6b7280;
+  margin: 0 0 4px 0;
+}
+
+.legendRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  background: #f9fafb;
+}
+
+.legendSwatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  border: 1px solid #e5e7eb;
+}
+
+.legendName {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.legendCount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #6b7280;
+}
+
+.empty {
+  font-size: 0.85rem;
+  color: #6b7280;
+  text-align: center;
+  padding: 24px;
+}
+
+.tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: #111827;
+  color: #ffffff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  z-index: 1000;
+  /* Pin the tooltip just above and centered on the cursor. clientX/Y are
+     already viewport coords, so position:fixed reads them directly. */
+  transform: translate(-50%, calc(-100% - 8px));
+}
+
+.tooltip strong {
+  font-weight: 700;
+}
+
+.scaleHint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: #9ca3af;
+  margin-top: 6px;
+}
+
+.scaleBar {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #f3f4f6 0%, #fecaca 50%, #b91c1c 100%);
+  border: 1px solid #e5e7eb;
+}

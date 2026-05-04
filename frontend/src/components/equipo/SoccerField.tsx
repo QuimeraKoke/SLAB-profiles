@@ -6,76 +6,161 @@ interface SoccerFieldProps {
   players: EquipoPlayerRow[];
 }
 
+// Slot grid for a generic 4-3-3 view. Each slot points to the position
+// abbreviation it pulls from (POR / DF / MC / DEL — matching what the
+// seed creates) plus the index of the matching player to render.
+type Slot = { top: string; left: string; pos: string; index: number };
+
+const FIELD_SLOTS: Slot[] = [
+  // Forwards (3)
+  { top: '14%', left: '20%', pos: 'DEL', index: 0 },
+  { top: '10%', left: '50%', pos: 'DEL', index: 1 },
+  { top: '14%', left: '80%', pos: 'DEL', index: 2 },
+  // Midfielders (3)
+  { top: '38%', left: '25%', pos: 'MC', index: 0 },
+  { top: '44%', left: '50%', pos: 'MC', index: 1 },
+  { top: '38%', left: '75%', pos: 'MC', index: 2 },
+  // Defenders (4)
+  { top: '70%', left: '15%', pos: 'DF', index: 0 },
+  { top: '76%', left: '38%', pos: 'DF', index: 1 },
+  { top: '76%', left: '62%', pos: 'DF', index: 2 },
+  { top: '70%', left: '85%', pos: 'DF', index: 3 },
+  // Goalkeeper
+  { top: '92%', left: '50%', pos: 'POR', index: 0 },
+];
+
+const STATUS_DOT_CLASS: Record<string, string> = {
+  available: 'nodeBlue',
+  injured: 'nodeRed',
+  recovery: 'nodeOrange',
+  reintegration: 'nodeYellow',
+};
+
+const POSITION_LABEL: Record<string, string> = {
+  POR: 'Arqueros',
+  DF: 'Defensa',
+  MC: 'Mediocampo',
+  DEL: 'Delantera',
+};
+
+const POSITION_ORDER = ['POR', 'DF', 'MC', 'DEL'];
+
+function shortName(full: string): string {
+  const parts = full.split(' ').filter(Boolean);
+  if (parts.length <= 1) return full;
+  return `${parts[0].charAt(0)}. ${parts.slice(1).join(' ')}`;
+}
+
 export default function SoccerField({ players }: SoccerFieldProps) {
+  // Bucket players by position abbreviation.
+  const byPos = new Map<string, EquipoPlayerRow[]>();
+  for (const p of players) {
+    const list = byPos.get(p.position) ?? [];
+    list.push(p);
+    byPos.set(p.position, list);
+  }
 
-  // Renders a specific player node on the field by matching their position
-  const renderNode = (top: string, left: string, targetPos: string, matchIndex: number = 0) => {
-    // Basic mapping: find the Nth player matching this position
-    const matchedPlayers = players.filter(p => p.position === targetPos);
-    const player = matchedPlayers[matchIndex];
+  // Resolve which player lands at each pitch slot. Track ids so the
+  // bench section below shows the rest without duplicates.
+  const onFieldIds = new Set<string>();
+  const renderedSlots = FIELD_SLOTS.map((slot) => {
+    const candidates = byPos.get(slot.pos) ?? [];
+    const player = candidates[slot.index];
+    if (!player) return null;
+    onFieldIds.add(player.id);
+    const dotClass = STATUS_DOT_CLASS[player.status] ?? 'nodeBlue';
+    return { ...slot, player, dotClass };
+  });
 
-    if (!player) return null; // If we don't have enough players for this pos, render nothing
+  // Bench: anyone the slots couldn't accommodate, kept in their position
+  // bucket so the panel stays tactical (Arqueros / Defensa / etc.).
+  const benchByPos: Record<string, EquipoPlayerRow[]> = {};
+  for (const [pos, list] of byPos.entries()) {
+    const extras = list.filter((p) => !onFieldIds.has(p.id));
+    if (extras.length > 0) benchByPos[pos] = extras;
+  }
+  // Players whose position abbreviation isn't in our 4-bucket map (e.g.
+  // a custom one the admin set up) — surface them too so nobody hides.
+  const unknownExtras = (byPos.get('—') ?? []).filter((p) => !onFieldIds.has(p.id));
+  for (const [pos, list] of byPos.entries()) {
+    if (!POSITION_ORDER.includes(pos) && pos !== '—') {
+      const extras = list.filter((p) => !onFieldIds.has(p.id));
+      if (extras.length > 0) {
+        benchByPos[pos] = (benchByPos[pos] ?? []).concat(extras);
+      }
+    }
+  }
+  if (unknownExtras.length > 0) benchByPos['—'] = unknownExtras;
 
-    // Format name e.g. "E. Martínez"
-    const nameParts = player.name.split(' ').filter(Boolean);
-    const shortName = nameParts.length > 1
-      ? `${nameParts[0].charAt(0)}. ${nameParts.slice(1).join(' ')}`
-      : player.name;
-
-    const dotClass = player.status === 'healthy'
-      ? styles.nodeBlue
-      : player.status === 'recuperation'
-        ? styles.nodeOrange
-        : styles.nodeRed;
-
-    return (
-      <div
-        className={styles.nodeWrapper}
-        style={{ top, left, transform: 'translate(-50%, -50%)' }}
-        key={player.id}
-      >
-        <div className={styles.nodeContent}>
-           <div className={`${styles.node} ${dotClass}`}>
-             <span className={styles.nodePosText}>{targetPos}</span>
-           </div>
-           <span className={styles.nodeLabel}>{shortName}</span>
-        </div>
-      </div>
-    );
-  };
+  const benchKeys = [
+    ...POSITION_ORDER.filter((p) => benchByPos[p]),
+    ...Object.keys(benchByPos).filter((p) => !POSITION_ORDER.includes(p)),
+  ];
 
   return (
-    <div className={styles.fieldContainer}>
-      <div className={styles.pitch}>
-        {/* Field markings */}
-        <div className={styles.centerLine} />
-        <div className={styles.centerCircle} />
-        <div className={styles.penaltyAreaTop} />
-        <div className={styles.penaltyAreaBottom} />
-        <div className={styles.goalAreaTop} />
-        <div className={styles.goalAreaBottom} />
+    <div className={styles.fieldWrapper}>
+      <div className={styles.fieldContainer}>
+        <div className={styles.pitch}>
+          {/* Field markings */}
+          <div className={styles.centerLine} />
+          <div className={styles.centerCircle} />
+          <div className={styles.penaltyAreaTop} />
+          <div className={styles.penaltyAreaBottom} />
+          <div className={styles.goalAreaTop} />
+          <div className={styles.goalAreaBottom} />
 
-        {/* 4-3-3 Formation Nodes (Top to Bottom: Forward to Goalkeeper) */}
-
-        {/* Forwards */}
-        {renderNode('18%', '20%', 'EI')}
-        {renderNode('14%', '50%', 'DC')}
-        {renderNode('18%', '80%', 'ED')}
-
-        {/* Midfielders */}
-        {renderNode('42%', '25%', 'MC', 0)}
-        {renderNode('48%', '50%', 'MCD')}
-        {renderNode('42%', '75%', 'MC', 1)}
-
-        {/* Defenders */}
-        {renderNode('75%', '15%', 'LI')}
-        {renderNode('82%', '35%', 'DFC', 0)}
-        {renderNode('82%', '65%', 'DFC', 1)}
-        {renderNode('75%', '85%', 'LD')}
-
-        {/* Goalkeeper */}
-        {renderNode('93%', '50%', 'POR', 0)}
+          {renderedSlots.map((slot) => {
+            if (!slot) return null;
+            return (
+              <div
+                key={slot.player.id}
+                className={styles.nodeWrapper}
+                style={{
+                  top: slot.top,
+                  left: slot.left,
+                  transform: 'translate(-50%, -50%)',
+                }}
+              >
+                <div className={styles.nodeContent}>
+                  <div className={`${styles.node} ${styles[slot.dotClass]}`}>
+                    <span className={styles.nodePosText}>{slot.player.position}</span>
+                  </div>
+                  <span className={styles.nodeLabel}>{shortName(slot.player.name)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
+
+      {benchKeys.length > 0 && (
+        <div className={styles.benchSection}>
+          <h4 className={styles.benchTitle}>Plantel completo</h4>
+          <div className={styles.benchGrid}>
+            {benchKeys.map((pos) => (
+              <div key={pos} className={styles.benchColumn}>
+                <span className={styles.benchPositionLabel}>
+                  {POSITION_LABEL[pos] ?? pos}
+                </span>
+                <ul className={styles.benchList}>
+                  {benchByPos[pos].map((p) => {
+                    const dotClass = STATUS_DOT_CLASS[p.status] ?? 'nodeBlue';
+                    return (
+                      <li key={p.id} className={styles.benchPlayer}>
+                        <span
+                          className={`${styles.benchDot} ${styles[dotClass]}`}
+                          aria-hidden="true"
+                        />
+                        <span className={styles.benchName}>{p.name}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

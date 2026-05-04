@@ -55,7 +55,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user && pathname !== "/login") {
       router.push("/login");
     } else if (user && pathname === "/login") {
-      router.push("/");
+      // Land authenticated users on the team roster — useful starting
+      // surface and where the navbar category picker drives the data.
+      router.push("/equipo");
     }
   }, [user, loading, pathname, router]);
 
@@ -68,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(res.access_token);
       setUser(res.user);
       setMembership(res.membership);
-      router.push("/");
+      router.push("/equipo");
     },
     [router],
   );

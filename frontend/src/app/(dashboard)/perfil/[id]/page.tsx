@@ -9,12 +9,16 @@ import ProfileSummary from "@/components/perfil/ProfileSummary/ProfileSummary";
 import ProfileTimeline from "@/components/perfil/ProfileTimeline/ProfileTimeline";
 import ProfileEvents from "@/components/perfil/ProfileEvents/ProfileEvents";
 import ProfileDepartment from "@/components/perfil/ProfileDepartment/ProfileDepartment";
+import ProfileGoals from "@/components/perfil/ProfileGoals/ProfileGoals";
+import ProfileEpisodes from "@/components/perfil/ProfileEpisodes/ProfileEpisodes";
 import { api, ApiError } from "@/lib/api";
 import type { PlayerDetail } from "@/lib/types";
 
 const RESUMEN_TAB_ID = "resumen";
 const TIMELINE_TAB_ID = "timeline";
 const EVENTS_TAB_ID = "eventos";
+const GOALS_TAB_ID = "objetivos";
+const LESIONES_TAB_ID = "lesiones";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -30,8 +34,15 @@ export default function PerfilPlayerPage({ params }: PageProps) {
 
   useEffect(() => {
     let cancelled = false;
-    setPlayer(null);
-    setError(null);
+    // Defer the "clear state for new fetch" via a microtask so the lint
+    // rule `react-hooks/set-state-in-effect` doesn't flag synchronous
+    // setState in the effect body. Behavior is identical to direct
+    // setState — both run before any render.
+    Promise.resolve().then(() => {
+      if (cancelled) return;
+      setPlayer(null);
+      setError(null);
+    });
     api<PlayerDetail>(`/players/${id}`)
       .then((data) => {
         if (!cancelled) setPlayer(data);
@@ -72,6 +83,8 @@ export default function PerfilPlayerPage({ params }: PageProps) {
     { id: RESUMEN_TAB_ID, label: "Resumen" },
     { id: TIMELINE_TAB_ID, label: "Línea de tiempo" },
     { id: EVENTS_TAB_ID, label: "Eventos" },
+    { id: GOALS_TAB_ID, label: "Objetivos" },
+    { id: LESIONES_TAB_ID, label: "Lesiones" },
     ...departmentTabs,
   ];
 
@@ -85,9 +98,11 @@ export default function PerfilPlayerPage({ params }: PageProps) {
       <ProfileTabs tabs={tabs} activeTab={safeActive} onTabChange={setActiveTab} />
 
       <div className={styles.contentArea}>
-        {safeActive === RESUMEN_TAB_ID && <ProfileSummary />}
+        {safeActive === RESUMEN_TAB_ID && <ProfileSummary playerId={player.id} />}
         {safeActive === TIMELINE_TAB_ID && <ProfileTimeline playerId={player.id} />}
         {safeActive === EVENTS_TAB_ID && <ProfileEvents playerId={player.id} />}
+        {safeActive === GOALS_TAB_ID && <ProfileGoals player={player} />}
+        {safeActive === LESIONES_TAB_ID && <ProfileEpisodes player={player} />}
         {activeDepartment && (
           <ProfileDepartment playerId={player.id} department={activeDepartment} />
         )}

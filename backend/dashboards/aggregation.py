@@ -85,6 +85,17 @@ def _empty(widget: Widget, chart_type: str) -> dict[str, Any]:
         return {**base, "series": []}
     if chart_type == ChartType.CROSS_EXAM_LINE.value:
         return {**base, "series": []}
+    if chart_type == ChartType.BODY_MAP_HEATMAP.value:
+        return {
+            **base,
+            "counts": {},
+            "counts_by_stage": {},
+            "stages": [],
+            "stage_field_key": "",
+            "max_count": 0,
+            "items": [],
+            "total_results": 0,
+        }
     return base
 
 
@@ -132,28 +143,47 @@ def _resolve_comparison_table(
 def _resolve_line_with_selector(
     widget: Widget, sources: list[WidgetDataSource], player_id: UUID
 ) -> dict[str, Any]:
+    """Build a flat dropdown of fields drawn from one or more templates.
+
+    Composite series keys (`<source_id>::<field_key>`) keep two templates
+    that happen to share a field name from collapsing into the same series.
+    Each option carries its template label so the frontend can prefix the
+    dropdown when more than one template is bound.
+    """
     if not sources:
         return _empty(widget, ChartType.LINE_WITH_SELECTOR.value)
-    source = sources[0]
-    template = source.template
-    results = _fetch_results(template, player_id, source)
 
-    field_keys = source.field_keys or [
-        f["key"]
-        for f in iter_template_fields(template)
-        if f.get("type") in {"number", "calculated"}
-    ]
-    available_fields = [_field_meta(template, k) for k in field_keys]
-    series: dict[str, list[dict[str, Any]]] = {
-        k: [
-            {
-                "recorded_at": r.recorded_at.isoformat(),
-                "value": _safe_float(_read(r, k)),
-            }
-            for r in results
+    available_fields: list[dict[str, Any]] = []
+    series: dict[str, list[dict[str, Any]]] = {}
+
+    for source in sources:
+        template = source.template
+        results = _fetch_results(template, player_id, source)
+        field_keys = source.field_keys or [
+            f["key"]
+            for f in iter_template_fields(template)
+            if f.get("type") in {"number", "calculated"}
         ]
-        for k in field_keys
-    }
+        for field_key in field_keys:
+            composite_key = f"{source.id}::{field_key}"
+            meta = _field_meta(template, field_key)
+            available_fields.append(
+                {
+                    **meta,
+                    "key": composite_key,
+                    "field_key": field_key,
+                    "template_id": str(template.id),
+                    "template_label": source.label or template.name,
+                }
+            )
+            series[composite_key] = [
+                {
+                    "recorded_at": r.recorded_at.isoformat(),
+                    "value": _safe_float(_read(r, field_key)),
+                }
+                for r in results
+            ]
+
     return {
         "chart_type": ChartType.LINE_WITH_SELECTOR.value,
         "available_fields": available_fields,
@@ -324,6 +354,127 @@ def _resolve_cross_exam_line(
     }
 
 
+def _resolve_body_map_heatmap(
+    widget: Widget, sources: list[WidgetDataSource], player_id: UUID
+) -> dict[str, Any]:
+    """Count results per body region, bucketed by episode stage when applicable.
+
+    For each result on (player, template), reads `result_data[field_key]`,
+    maps it to a body region via the field's `option_regions` map, and
+    counts. When the source template is episodic and has a categorical
+    stage_field, the resolver ALSO buckets counts by stage value so the
+    frontend can render a stage-filter chip selector and recompute the
+    displayed counts client-side without an extra round-trip.
+
+    Returns:
+      - counts: total counts per region across all stages
+      - counts_by_stage: {stage_value: {region: count}} when stages available
+      - stages: ordered list of {value, label, kind} for chip rendering
+      - max_count: peak across `counts` (for color scaling)
+      - items: per-region detail with contributing-option breakdown
+      - total_results: how many results contributed
+    """
+    if not sources:
+        return _empty(widget, ChartType.BODY_MAP_HEATMAP.value)
+    source = sources[0]
+    template = source.template
+    if not source.field_keys:
+        return _empty(widget, ChartType.BODY_MAP_HEATMAP.value)
+    field_key = source.field_keys[0]
+    field = field_lookup(template, field_key) or {}
+    option_regions: dict[str, str] = field.get("option_regions") or {}
+    option_labels: dict[str, str] = field.get("option_labels") or {}
+
+    # Detect episodic stage field for bucketing.
+    episode_cfg = template.episode_config or {} if template.is_episodic else {}
+    stage_field_key: str = episode_cfg.get("stage_field") or ""
+    stage_field = field_lookup(template, stage_field_key) if stage_field_key else None
+    stage_labels: dict[str, str] = (
+        (stage_field or {}).get("option_labels") or {}
+    ) if stage_field else {}
+    open_stages: list[str] = list(episode_cfg.get("open_stages") or [])
+    closed_stage: str = episode_cfg.get("closed_stage") or ""
+    # Ordered worst → best, then closed at the end.
+    canonical_stage_order: list[str] = (
+        open_stages + ([closed_stage] if closed_stage else [])
+    )
+
+    results = _fetch_results(template, player_id, source)
+
+    counts: dict[str, int] = {}
+    per_option_counts: dict[str, int] = {}
+    counts_by_stage: dict[str, dict[str, int]] = {}
+
+    for r in results:
+        body_raw = (r.result_data or {}).get(field_key)
+        if not body_raw:
+            continue
+        per_option_counts[body_raw] = per_option_counts.get(body_raw, 0) + 1
+        region = option_regions.get(body_raw)
+        if not region:
+            continue
+        counts[region] = counts.get(region, 0) + 1
+
+        if stage_field_key:
+            stage_raw = (r.result_data or {}).get(stage_field_key) or ""
+            stage_raw = str(stage_raw)
+            if stage_raw:
+                bucket = counts_by_stage.setdefault(stage_raw, {})
+                bucket[region] = bucket.get(region, 0) + 1
+
+    max_count = max(counts.values(), default=0)
+
+    region_to_options: dict[str, list[str]] = {}
+    for opt, region in option_regions.items():
+        region_to_options.setdefault(region, []).append(opt)
+
+    items = [
+        {
+            "region": region,
+            "count": cnt,
+            "options": [
+                {
+                    "value": opt,
+                    "label": option_labels.get(opt, opt),
+                    "count": per_option_counts.get(opt, 0),
+                }
+                for opt in region_to_options.get(region, [])
+                if per_option_counts.get(opt, 0) > 0
+            ],
+        }
+        for region, cnt in counts.items()
+    ]
+
+    # Stages list — preserve canonical order, then append any "stray" values
+    # we saw in the data that aren't in episode_config (defensive).
+    stages: list[dict[str, str]] = []
+    if stage_field_key:
+        seen = set(counts_by_stage.keys())
+        for v in canonical_stage_order:
+            if v in seen or v in (stage_field or {}).get("options", []):
+                stages.append({
+                    "value": v,
+                    "label": stage_labels.get(v, v),
+                    "kind": "closed" if v == closed_stage else "open",
+                })
+                seen.discard(v)
+        # Stray values (rare): append at the end so the UI doesn't lose them.
+        for v in seen:
+            stages.append({"value": v, "label": stage_labels.get(v, v), "kind": "open"})
+
+    return {
+        "chart_type": ChartType.BODY_MAP_HEATMAP.value,
+        "field": _field_meta(template, field_key),
+        "counts": counts,
+        "counts_by_stage": counts_by_stage,
+        "stages": stages,
+        "stage_field_key": stage_field_key,
+        "max_count": max_count,
+        "items": items,
+        "total_results": len(results),
+    }
+
+
 _RESOLVERS: dict[str, Callable[[Widget, list[WidgetDataSource], UUID], dict[str, Any]]] = {
     ChartType.COMPARISON_TABLE.value: _resolve_comparison_table,
     ChartType.LINE_WITH_SELECTOR.value: _resolve_line_with_selector,
@@ -331,6 +482,7 @@ _RESOLVERS: dict[str, Callable[[Widget, list[WidgetDataSource], UUID], dict[str,
     ChartType.GROUPED_BAR.value: _resolve_grouped_bar,
     ChartType.MULTI_LINE.value: _resolve_multi_line,
     ChartType.CROSS_EXAM_LINE.value: _resolve_cross_exam_line,
+    ChartType.BODY_MAP_HEATMAP.value: _resolve_body_map_heatmap,
 }
 
 
