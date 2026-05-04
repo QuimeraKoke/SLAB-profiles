@@ -138,8 +138,16 @@ class Command(BaseCommand):
             update_fields.append("is_locked")
         template.save(update_fields=update_fields)
 
+        # Honor `--all-applicable-categories` on UPDATE too. Templates created
+        # without categories on a prior run would otherwise stay detached and
+        # `seed_fake_exams` would silently skip them.
+        if attach_all:
+            categories = Category.objects.filter(club=club, departments=department)
+            template.applicable_categories.set(categories)
+
         self.stdout.write(self.style.SUCCESS(
-            f"Updated '{template.name}' (department: {department.name})."
+            f"Updated '{template.name}' (department: {department.name}, "
+            f"categories: {template.applicable_categories.count()})."
         ))
 
     @transaction.atomic
