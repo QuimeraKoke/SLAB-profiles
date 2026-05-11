@@ -4,6 +4,8 @@ export interface ApiUser {
   id: number;
   email: string;
   username: string;
+  first_name: string;
+  last_name: string;
   is_staff: boolean;
   is_superuser: boolean;
 }
@@ -769,6 +771,9 @@ export interface TeamDistributionPayload {
     min?: number;
     max?: number;
   };
+  /** Size of the (filtered) roster the backend resolved against, used by
+   *  the frontend to flag "small-N" distributions with a warning badge. */
+  roster_size?: number;
   empty?: boolean;
   error?: string;
 }

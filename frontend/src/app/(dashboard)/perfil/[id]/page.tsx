@@ -3,6 +3,10 @@
 import React, { use, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import styles from "../page.module.css";
+import DateRangeControl, {
+  defaultDateRange,
+  type DateRangeValue,
+} from "@/components/common/DateRangeControl";
 import ProfileHeader from "@/components/perfil/ProfileHeader/ProfileHeader";
 import ProfileTabs, { type TabSpec } from "@/components/perfil/ProfileTabs/ProfileTabs";
 import ProfileSummary from "@/components/perfil/ProfileSummary/ProfileSummary";
@@ -31,6 +35,10 @@ export default function PerfilPlayerPage({ params }: PageProps) {
   const [player, setPlayer] = useState<PlayerDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>(tabFromUrl ?? RESUMEN_TAB_ID);
+  // Cross-cutting date filter for department tabs. Lives at the page
+  // level so switching between Médico / Físico / Nutricional preserves
+  // the chosen window.
+  const [dateRange, setDateRange] = useState<DateRangeValue>(() => defaultDateRange());
 
   useEffect(() => {
     let cancelled = false;
@@ -104,7 +112,20 @@ export default function PerfilPlayerPage({ params }: PageProps) {
         {safeActive === GOALS_TAB_ID && <ProfileGoals player={player} />}
         {safeActive === LESIONES_TAB_ID && <ProfileEpisodes player={player} />}
         {activeDepartment && (
-          <ProfileDepartment playerId={player.id} department={activeDepartment} />
+          <ProfileDepartment
+            playerId={player.id}
+            playerName={`${player.first_name} ${player.last_name}`}
+            department={activeDepartment}
+            dateFrom={dateRange.date.from}
+            dateTo={dateRange.date.to}
+            dateRangeControl={
+              <DateRangeControl
+                value={dateRange}
+                onChange={setDateRange}
+                variant="compact"
+              />
+            }
+          />
         )}
       </div>
     </div>

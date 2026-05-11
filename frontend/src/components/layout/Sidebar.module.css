@@ -68,6 +68,12 @@
   font-weight: 600;
   margin: 0;
   line-height: 1.2;
+  /* Truncate long names/emails with an ellipsis. `.profileInfo` already
+   * has `min-width: 0` so the flex child can actually shrink past its
+   * intrinsic content width — required for `text-overflow` to engage. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profileRole {
@@ -75,6 +81,9 @@
   font-size: 0.75rem;
   margin: 0;
   margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .navMenu {
@@ -137,8 +146,34 @@
 }
 
 .bottomSection {
-  padding: 16px 20px;
+  padding: 12px 12px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.logoutButton {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: transparent;
+  border: none;
+  color: #a4b4cb;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 10px 16px;
+  width: 100%;
+  text-align: left;
+  border-radius: 6px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.logoutButton:hover {
+  background-color: rgba(220, 38, 38, 0.12);
+  color: #fca5a5;
+}
+
+.logoutButton:hover .icon {
+  opacity: 1;
 }
 
 .collapseButton {

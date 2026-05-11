@@ -77,6 +77,48 @@ def health(request):
     return {"status": "ok"}
 
 
+# Reports / per-player views accept a date window (date_from / date_to) and
+# we cap it to keep responses bounded — a bypassed UI can't load arbitrary
+# years of data. Cap value applies uniformly across team and per-player
+# endpoints so the two layers stay consistent.
+DATE_WINDOW_MAX_DAYS = 90
+
+
+def _parse_date_window(
+    date_from: str | None,
+    date_to: str | None,
+) -> tuple[datetime | None, datetime | None]:
+    """Parse + sanitize a (date_from, date_to) pair from query params.
+
+    - Strings are parsed as ISO-8601 (date or datetime). Malformed values
+      become None silently — same "don't break on stale frontend state"
+      posture used everywhere else in this module.
+    - If both bounds are present and inverted (from > to), they swap.
+    - If the resulting span exceeds DATE_WINDOW_MAX_DAYS, the lower bound
+      is pinned so the window equals the cap.
+
+    Returns the parsed (from, to) tuple ready to hand to the resolvers.
+    """
+    from datetime import datetime as _dt, timedelta as _td
+
+    def _parse(raw: str | None) -> _dt | None:
+        if not raw:
+            return None
+        try:
+            return _dt.fromisoformat(raw)
+        except (TypeError, ValueError):
+            return None
+
+    parsed_from = _parse(date_from)
+    parsed_to = _parse(date_to)
+    if parsed_from and parsed_to:
+        if parsed_to < parsed_from:
+            parsed_from, parsed_to = parsed_to, parsed_from
+        if (parsed_to - parsed_from).days > DATE_WINDOW_MAX_DAYS:
+            parsed_from = parsed_to - _td(days=DATE_WINDOW_MAX_DAYS)
+    return parsed_from, parsed_to
+
+
 def _serialize_membership(membership):
     if membership is None:
         return None
@@ -1120,13 +1162,24 @@ def list_player_results(
 
 
 @api.get("/players/{player_id}/views", response=LayoutResponseOut)
-def get_player_view(request, player_id: str, department: str):
+def get_player_view(
+    request,
+    player_id: str,
+    department: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
     """Return the configured DepartmentLayout for (player.category, department).
 
     Returns `{"layout": null}` when no active layout exists — the frontend
     falls back to the legacy auto-rendered template grid in that case.
+
+    Optional `date_from` / `date_to` (ISO-8601) bound `ExamResult.recorded_at`
+    before each widget runs its aggregation. Capped at 90 days; widgets like
+    `body_map_heatmap` ignore the bounds by design (see resolver docs).
     """
     membership = get_membership(request.user)
+    parsed_from, parsed_to = _parse_date_window(date_from, date_to)
 
     player = scope_players(
         Player.objects.select_related("category"),
@@ -1178,7 +1231,7 @@ def get_player_view(request, player_id: str, department: str):
                     "chart_height": widget.chart_height,
                     "sort_order": widget.sort_order,
                     "display_config": widget.display_config or {},
-                    "data": resolve_widget(widget, player.id),
+                    "data": resolve_widget(widget, player.id, parsed_from, parsed_to),
                 }
             )
         sections_payload.append(
@@ -1211,6 +1264,9 @@ def get_team_report(
     department_slug: str,
     category_id: str,
     position_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    player_ids: str | None = None,
 ):
     """Return the active TeamReportLayout for `(department, category)`.
 
@@ -1218,9 +1274,12 @@ def get_team_report(
     aggregation registry and returned in `data`. Returns `{layout: null}`
     when no active layout exists so the frontend renders the placeholder.
 
-    Optional `position_id` narrows every widget's roster to players at
-    that position (e.g. only goalkeepers). Applied uniformly across the
-    layout so the report's position picker is consistent.
+    Optional filters (all applied uniformly across every widget):
+      - `position_id`: narrows roster to players at this position.
+      - `player_ids`: comma-separated UUIDs; further narrows roster.
+      - `date_from` / `date_to`: ISO-8601 dates bounding ExamResult
+        `recorded_at`. Capped at 90 days at the API layer. `status_counts`
+        and `active_records` ignore these by design (current-state widgets).
     """
     from uuid import UUID as _UUID
 
@@ -1252,6 +1311,22 @@ def get_team_report(
         ).exists():
             parsed_position_id = candidate_uuid
 
+    # Parse player_ids: comma-separated UUIDs. Silently drop malformed
+    # entries — same "don't break on stale frontend state" posture as
+    # position_id above.
+    parsed_player_ids: list[_UUID] = []
+    if player_ids:
+        for raw in player_ids.split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                parsed_player_ids.append(_UUID(raw))
+            except (TypeError, ValueError):
+                continue
+
+    parsed_from, parsed_to = _parse_date_window(date_from, date_to)
+
     layout = (
         TeamReportLayout.objects
         .filter(department=dept, category=category, is_active=True)
@@ -1276,7 +1351,11 @@ def get_team_report(
                     "chart_height": widget.chart_height,
                     "sort_order": widget.sort_order,
                     "data": resolve_team_widget(
-                        widget, category, position_id=parsed_position_id,
+                        widget, category,
+                        position_id=parsed_position_id,
+                        player_ids=parsed_player_ids or None,
+                        date_from=parsed_from,
+                        date_to=parsed_to,
                     ),
                 }
             )

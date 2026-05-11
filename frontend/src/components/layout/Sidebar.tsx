@@ -9,14 +9,30 @@ import {
   BarChart3,
   ChevronDown,
   ChevronRight,
+  LogOut,
   Settings,
   X,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import type { Department } from "@/lib/types";
+import type { ApiUser, Department } from "@/lib/types";
 import styles from "./Sidebar.module.css";
+
+/** Best-effort display name. Falls back through:
+ *    1. "First Last" (Django auth fields, often empty in older accounts)
+ *    2. username
+ *    3. email local-part (before the @)
+ *    4. empty string — caller renders a generic placeholder.
+ */
+function displayName(user: ApiUser | null): string {
+  if (!user) return "";
+  const fullName = `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim();
+  if (fullName) return fullName;
+  if (user.username) return user.username;
+  if (user.email) return user.email.split("@")[0];
+  return "";
+}
 
 interface NavLeaf {
   label: string;
@@ -54,7 +70,7 @@ interface SidebarProps {
 
 export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   const pathname = usePathname();
-  const { membership, user } = useAuth();
+  const { membership, user, logout } = useAuth();
   const [expandedItems, setExpandedItems] = useState<string[]>([
     "Reportes",
     "Configuraciones",
@@ -119,14 +135,17 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
           <User size={24} color="#6b7280" />
         </div>
         <div className={styles.profileInfo}>
-          <h2 className={styles.profileName}>
-            {user?.username || user?.email || "Sesión activa"}
+          <h2
+            className={styles.profileName}
+            title={displayName(user) || undefined}
+          >
+            {displayName(user) || "Sesión activa"}
           </h2>
-          <p className={styles.profileRole}>
-            {user?.email && user.email !== user.username
-              ? user.email
-              : membership?.club?.name || "Reporte"}
-          </p>
+          {user?.email && (
+            <p className={styles.profileRole} title={user.email}>
+              {user.email}
+            </p>
+          )}
         </div>
         {onClose && (
           <button
@@ -202,6 +221,22 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
         })}
       </nav>
 
+      <div className={styles.bottomSection}>
+        <button
+          type="button"
+          className={styles.logoutButton}
+          onClick={() => {
+            // Close the drawer (mobile) then log out — AuthContext.logout
+            // clears the token, resets user state, and pushes /login.
+            onClose?.();
+            logout();
+          }}
+          aria-label="Cerrar sesión"
+        >
+          <LogOut size={18} className={styles.icon} />
+          <span>Cerrar sesión</span>
+        </button>
+      </div>
     </aside>
   );
 }

@@ -124,6 +124,10 @@ export default function TeamDistribution({ widget }: Props) {
   );
 }
 
+/** Distributions with fewer than this many players in the filtered roster
+ *  are flagged in the UI — too few samples to be a meaningful reference. */
+const LIMITED_REFERENCE_THRESHOLD = 5;
+
 function Header({
   widget,
   data,
@@ -131,12 +135,22 @@ function Header({
   widget: TeamReportWidget;
   data: TeamDistributionPayload;
 }) {
+  const rosterSize = data.roster_size;
+  const limitedReference =
+    typeof rosterSize === "number"
+    && rosterSize > 0
+    && rosterSize < LIMITED_REFERENCE_THRESHOLD;
   return (
     <header className={styles.header}>
       <div>
         <h4 className={styles.title}>{widget.title}</h4>
         {widget.description && (
           <p className={styles.description}>{widget.description}</p>
+        )}
+        {limitedReference && (
+          <p className={styles.limitedBadge}>
+            Con {rosterSize} jugador{rosterSize === 1 ? "" : "es"} — referencia limitada
+          </p>
         )}
       </div>
       {data.field && (

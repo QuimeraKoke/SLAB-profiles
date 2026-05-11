@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 
+import DownloadPlayerExcelButton from "@/components/perfil/ProfileDepartment/DownloadPlayerExcelButton";
 import { api, ApiError } from "@/lib/api";
 import type {
   DepartmentLayoutResponse,
@@ -17,10 +18,26 @@ import styles from "./ProfileDepartment.module.css";
 
 interface ProfileDepartmentProps {
   playerId: string;
+  /** "First Last" — used for the Excel filename + summary sheet. */
+  playerName: string;
   department: Department;
+  /** ISO date strings ("YYYY-MM-DD") for the cross-tab filter, set on
+   *  the parent page. Empty string = no bound on that side. */
+  dateFrom: string;
+  dateTo: string;
+  /** Pre-rendered control so the parent owns the date state — keeps it
+   *  shared across all department tabs without prop drilling setters. */
+  dateRangeControl: React.ReactNode;
 }
 
-export default function ProfileDepartment({ playerId, department }: ProfileDepartmentProps) {
+export default function ProfileDepartment({
+  playerId,
+  playerName,
+  department,
+  dateFrom,
+  dateTo,
+  dateRangeControl,
+}: ProfileDepartmentProps) {
   const [results, setResults] = useState<ExamResult[] | null>(null);
   const [templates, setTemplates] = useState<ExamTemplate[]>([]);
   const [layout, setLayout] = useState<DepartmentLayoutResponse["layout"] | null>(null);
@@ -59,11 +76,20 @@ export default function ProfileDepartment({ playerId, department }: ProfileDepar
       setError(null);
     });
 
+    // Templates and per-row history (`results`) are intentionally NOT
+    // narrowed by the date filter — the "Agregar examen" picker should
+    // always offer every applicable template, and the per-template
+    // history card (legacy view) shows the full timeline. Only the
+    // dashboard layout aggregation respects the window.
     const dept = encodeURIComponent(department.slug);
+    const layoutParams = new URLSearchParams({ department: department.slug });
+    if (dateFrom) layoutParams.set("date_from", dateFrom);
+    if (dateTo) layoutParams.set("date_to", dateTo);
+
     Promise.all([
       api<ExamResult[]>(`/players/${playerId}/results?department=${dept}`),
       api<ExamTemplate[]>(`/players/${playerId}/templates?department=${dept}`),
-      api<DepartmentLayoutResponse>(`/players/${playerId}/views?department=${dept}`),
+      api<DepartmentLayoutResponse>(`/players/${playerId}/views?${layoutParams}`),
     ])
       .then(([resultsData, templatesData, layoutData]) => {
         if (cancelled) return;
@@ -80,7 +106,7 @@ export default function ProfileDepartment({ playerId, department }: ProfileDepar
     return () => {
       cancelled = true;
     };
-  }, [playerId, department.slug]);
+  }, [playerId, department.slug, dateFrom, dateTo]);
 
   const renderBody = () => {
     if (results === null && !error) {
@@ -146,16 +172,30 @@ export default function ProfileDepartment({ playerId, department }: ProfileDepar
   return (
     <section className={styles.container}>
       <header className={styles.header}>
-        <h2 className={styles.title}>{department.name}</h2>
-        {results !== null && (
-          <span className={styles.subtitle}>
-            {layout
-              ? `Layout configurado · ${layout.sections.length} ${
-                  layout.sections.length === 1 ? "sección" : "secciones"
-                }`
-              : `${templates.length} ${templates.length === 1 ? "plantilla" : "plantillas"}`}
-          </span>
-        )}
+        <div className={styles.titleBlock}>
+          <h2 className={styles.title}>{department.name}</h2>
+          {results !== null && (
+            <span className={styles.subtitle}>
+              {layout
+                ? `Layout configurado · ${layout.sections.length} ${
+                    layout.sections.length === 1 ? "sección" : "secciones"
+                  }`
+                : `${templates.length} ${templates.length === 1 ? "plantilla" : "plantillas"}`}
+            </span>
+          )}
+        </div>
+        <div className={styles.controls}>
+          {dateRangeControl}
+          {layout && (
+            <DownloadPlayerExcelButton
+              playerName={playerName}
+              department={department}
+              sections={layout.sections}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+            />
+          )}
+        </div>
       </header>
 
       {renderBody()}

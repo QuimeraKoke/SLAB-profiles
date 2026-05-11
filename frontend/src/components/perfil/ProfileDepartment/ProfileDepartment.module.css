@@ -6,11 +6,19 @@
 
 .header {
   display: flex;
-  align-items: baseline;
+  align-items: flex-end;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-bottom: 4px;
   border-bottom: 1px solid #e5e7eb;
   padding-bottom: 8px;
+}
+
+.titleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .title {
@@ -23,6 +31,13 @@
 .subtitle {
   font-size: 0.85rem;
   color: #6b7280;
+}
+
+.controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .loading {

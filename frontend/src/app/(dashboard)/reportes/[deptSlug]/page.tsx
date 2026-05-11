@@ -2,12 +2,16 @@
 
 import React, { use, useEffect, useState } from "react";
 
+import DownloadExcelButton from "@/components/reports/DownloadExcelButton";
+import ReportFilters, { defaultFilters } from "@/components/reports/ReportFilters";
+import type { ReportFiltersValue } from "@/components/reports/ReportFilters";
 import TeamReportDashboard from "@/components/reports/TeamReportDashboard";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useCategoryContext } from "@/context/CategoryContext";
 import type {
   Department,
+  PlayerSummary,
   Position,
   TeamReportResponse,
 } from "@/lib/types";
@@ -25,8 +29,9 @@ export default function ReportePage({ params }: PageProps) {
   const { categoryId, loading: categoryLoading } = useCategoryContext();
   const [department, setDepartment] = useState<Department | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
-  // Empty string = "Todas las posiciones" (no filter); otherwise a position UUID.
-  const [positionId, setPositionId] = useState<string>("");
+  const [players, setPlayers] = useState<PlayerSummary[]>([]);
+  // Filters: position + player subset + date range. Default: "Últimos 30 días".
+  const [filters, setFilters] = useState<ReportFiltersValue>(() => defaultFilters());
   const [layout, setLayout] = useState<TeamReportResponse["layout"] | null>(null);
   const [layoutFetched, setLayoutFetched] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,14 +63,40 @@ export default function ReportePage({ params }: PageProps) {
     };
   }, [membership, deptSlug]);
 
+  // Step 1b: load the roster for the category — needed by the player
+  // multi-select filter. Refreshes when the global category changes.
+  useEffect(() => {
+    if (!categoryId) return;
+    let cancelled = false;
+    api<PlayerSummary[]>(`/players?category_id=${categoryId}`)
+      .then((data) => {
+        if (cancelled) return;
+        setPlayers(data);
+        // Reset the player subset when the category changes; the
+        // previously-selected IDs may not belong to the new category.
+        setFilters((prev) => ({ ...prev, playerIds: [] }));
+      })
+      .catch(() => {
+        // Non-fatal — the filter just shows an empty list.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [categoryId]);
+
   // Step 2: fetch the layout when (department, categoryId) are both ready
-  // and refetch when the picker changes. Each widget's data is resolved
+  // and refetch when any filter changes. Each widget's data is resolved
   // server-side, so the response already carries everything to render.
   useEffect(() => {
     if (!department || categoryLoading || !categoryId) return;
     let cancelled = false;
     const params = new URLSearchParams({ category_id: categoryId });
-    if (positionId) params.set("position_id", positionId);
+    if (filters.positionId) params.set("position_id", filters.positionId);
+    if (filters.playerIds.length > 0) {
+      params.set("player_ids", filters.playerIds.join(","));
+    }
+    if (filters.date.from) params.set("date_from", filters.date.from);
+    if (filters.date.to) params.set("date_to", filters.date.to);
     api<TeamReportResponse>(
       `/reports/${department.slug}?${params}`,
     )
@@ -85,7 +116,7 @@ export default function ReportePage({ params }: PageProps) {
     return () => {
       cancelled = true;
     };
-  }, [department, categoryId, positionId, categoryLoading]);
+  }, [department, categoryId, categoryLoading, filters]);
 
   if (!department) {
     return (
@@ -105,22 +136,27 @@ export default function ReportePage({ params }: PageProps) {
           <h1 className={styles.title}>{department.name}</h1>
         </div>
         <div className={styles.controls}>
-          {positions.length > 0 && (
-            <label className={styles.field}>
-              <span className={styles.label}>Posición</span>
-              <select
-                value={positionId}
-                onChange={(e) => setPositionId(e.target.value)}
-              >
-                <option value="">Todas</option>
-                {positions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                    {p.abbreviation ? ` (${p.abbreviation})` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <ReportFilters
+            positions={positions}
+            players={players}
+            value={filters}
+            onChange={setFilters}
+          />
+          {layout && (
+            <DownloadExcelButton
+              deptSlug={department.slug}
+              sections={layout.sections}
+              meta={{
+                departmentName: department.name,
+                categoryName: layout.category.name,
+                filters: {
+                  positionLabel: filterPositionLabel(filters.positionId, positions),
+                  playerNames: filterPlayerNames(filters.playerIds, players),
+                  dateFrom: filters.date.from,
+                  dateTo: filters.date.to,
+                },
+              }}
+            />
           )}
         </div>
       </header>
@@ -138,6 +174,18 @@ export default function ReportePage({ params }: PageProps) {
       )}
     </div>
   );
+}
+
+function filterPositionLabel(positionId: string, positions: Position[]): string {
+  if (!positionId) return "Todas";
+  const p = positions.find((x) => x.id === positionId);
+  return p ? p.name : "Todas";
+}
+
+function filterPlayerNames(playerIds: string[], players: PlayerSummary[]): string[] {
+  if (playerIds.length === 0) return [];
+  const byId = new Map(players.map((p) => [p.id, `${p.first_name} ${p.last_name}`]));
+  return playerIds.map((id) => byId.get(id) ?? id);
 }
 
 function Placeholder({ departmentName }: { departmentName: string }) {

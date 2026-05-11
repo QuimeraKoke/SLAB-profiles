@@ -1,0 +1,158 @@
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.field select,
+.field input[type="date"] {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: #ffffff;
+  min-width: 180px;
+}
+
+.dateGroup {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.dateGroup .field select,
+.dateGroup .field input[type="date"] {
+  min-width: 140px;
+}
+
+.playerField {
+  position: relative;
+}
+
+.playerButton {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: #ffffff;
+  min-width: 220px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.playerButton:hover {
+  border-color: #9ca3af;
+}
+
+.playerButtonText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playerButtonCaret {
+  color: #6b7280;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.playerDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  width: 280px;
+  max-height: 320px;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.playerSearchInput {
+  padding: 8px 12px;
+  border: none;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.playerActions {
+  display: flex;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.playerActionButton {
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-size: 0.78rem;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.playerActionButton:hover {
+  text-decoration: underline;
+}
+
+.playerList {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.playerOption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: #1f2937;
+}
+
+.playerOption:hover {
+  background: #f3f4f6;
+}
+
+.playerOption input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.playerEmpty {
+  padding: 12px;
+  font-size: 0.85rem;
+  color: #6b7280;
+  text-align: center;
+}
+
+.windowNote {
+  font-size: 0.72rem;
+  color: #6b7280;
+  margin-top: 2px;
+}

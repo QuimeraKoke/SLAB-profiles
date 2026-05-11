@@ -13,6 +13,7 @@ can show a friendly stub instead of crashing.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -33,35 +34,84 @@ def resolve_team_widget(
     category: Category,
     *,
     position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     """Resolve a team-scoped widget against a category roster.
 
     Optional `position_id` narrows the roster to players at one position
     (Goalkeeper, Defender, …). Applied uniformly across all team widgets
     so the report page's position picker affects every chart consistently.
+
+    Optional `player_ids` further narrows the roster to a specific subset
+    of players (empty / None = no filter). The chosen players still appear
+    on roster-shaped widgets even if they have no data in the date window
+    — empty cells preserve the roster as the "frame of reference".
+
+    Optional `date_from` / `date_to` bound `ExamResult.recorded_at` before
+    every aggregation runs. `LATEST` / `LAST_N` / `ALL` semantics stay the
+    same — they just operate on the bounded queryset. Endpoint callers
+    are expected to cap the window (currently 90 days at the API layer).
     """
     chart_type = widget.chart_type
+    common = {
+        "position_id": position_id,
+        "player_ids": player_ids,
+        "date_from": date_from,
+        "date_to": date_to,
+    }
     if chart_type == ChartType.TEAM_HORIZONTAL_COMPARISON.value:
-        return _resolve_team_horizontal_comparison(widget, category, position_id=position_id)
+        return _resolve_team_horizontal_comparison(widget, category, **common)
     if chart_type == ChartType.TEAM_ROSTER_MATRIX.value:
-        return _resolve_team_roster_matrix(widget, category, position_id=position_id)
+        return _resolve_team_roster_matrix(widget, category, **common)
     if chart_type == ChartType.TEAM_STATUS_COUNTS.value:
-        return _resolve_team_status_counts(widget, category, position_id=position_id)
+        return _resolve_team_status_counts(widget, category, **common)
     if chart_type == ChartType.TEAM_TREND_LINE.value:
-        return _resolve_team_trend_line(widget, category, position_id=position_id)
+        return _resolve_team_trend_line(widget, category, **common)
     if chart_type == ChartType.TEAM_DISTRIBUTION.value:
-        return _resolve_team_distribution(widget, category, position_id=position_id)
+        return _resolve_team_distribution(widget, category, **common)
     if chart_type == ChartType.TEAM_ACTIVE_RECORDS.value:
-        return _resolve_team_active_records(widget, category, position_id=position_id)
+        return _resolve_team_active_records(widget, category, **common)
     return _empty(widget, chart_type, error=f"Unsupported chart type: {chart_type}")
 
 
-def _roster_query(category: Category, position_id: UUID | None):
-    """Active-player queryset for the category, optionally narrowed by position."""
+def _roster_query(
+    category: Category,
+    position_id: UUID | None,
+    player_ids: Sequence[UUID] | None = None,
+):
+    """Active-player queryset for the category.
+
+    Filters cascade: position → explicit player subset. An empty / None
+    `player_ids` means "no player-level filter" (all matching players).
+    Players that the caller passes in `player_ids` are kept even if they
+    have no data in the current date window — by design, since the
+    selection itself is the user's "frame of reference".
+    """
     qs = Player.objects.filter(category_id=category.id, is_active=True)
     if position_id is not None:
         qs = qs.filter(position_id=position_id)
+    if player_ids:
+        qs = qs.filter(id__in=list(player_ids))
     return qs.order_by("last_name", "first_name")
+
+
+def _apply_date_window(
+    qs,
+    date_from: datetime | None,
+    date_to: datetime | None,
+):
+    """Bound an ExamResult / Episode queryset by `recorded_at` (or
+    `started_at` for Episode). Each resolver passes the right field via
+    its own query construction — this helper handles ExamResult only.
+    Callers that need Episode filtering apply it inline.
+    """
+    if date_from is not None:
+        qs = qs.filter(recorded_at__gte=date_from)
+    if date_to is not None:
+        qs = qs.filter(recorded_at__lte=date_to)
+    return qs
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +204,9 @@ def _resolve_team_horizontal_comparison(
     category: Category,
     *,
     position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     """Per-player horizontal bar groups, one bar per recent reading.
 
@@ -252,7 +305,7 @@ def _resolve_team_horizontal_comparison(
 
     overall_limit = max(source_limits.values(), default=3)
 
-    players = list(_roster_query(category, position_id))
+    players = list(_roster_query(category, position_id, player_ids))
     player_index = {p.id: p for p in players}
 
     # Initialize buckets keyed by every synthetic key.
@@ -263,11 +316,12 @@ def _resolve_team_horizontal_comparison(
     # One query per source — different templates need different `template_id`
     # filters. Cheap with our roster sizes.
     for source in sources:
-        results = (
+        results = _apply_date_window(
             ExamResult.objects
-            .filter(template_id=source.template_id, player_id__in=player_index.keys())
-            .order_by("player_id", "-recorded_at")
-            .values("player_id", "recorded_at", "result_data")
+            .filter(template_id=source.template_id, player_id__in=player_index.keys()),
+            date_from, date_to,
+        ).order_by("player_id", "-recorded_at").values(
+            "player_id", "recorded_at", "result_data",
         )
         per_source_limit = source_limits[source.pk]
         for row in results:
@@ -327,6 +381,9 @@ def _resolve_team_roster_matrix(
     category: Category,
     *,
     position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     """Roster × metrics matrix — rows = players, columns = field keys.
 
@@ -439,7 +496,7 @@ def _resolve_team_roster_matrix(
         variation_raw if variation_raw in {"off", "absolute", "percent"} else "off"
     )
 
-    players = list(_roster_query(category, position_id))
+    players = list(_roster_query(category, position_id, player_ids))
     player_index = {p.id: p for p in players}
 
     # Whether we still need a "previous" value for each cell. When variation
@@ -462,11 +519,12 @@ def _resolve_team_roster_matrix(
         if not source_synthetics:
             continue
 
-        results = (
+        results = _apply_date_window(
             ExamResult.objects
-            .filter(template_id=source.template_id, player_id__in=player_index.keys())
-            .order_by("player_id", "-recorded_at")
-            .values("player_id", "recorded_at", "result_data")
+            .filter(template_id=source.template_id, player_id__in=player_index.keys()),
+            date_from, date_to,
+        ).order_by("player_id", "-recorded_at").values(
+            "player_id", "recorded_at", "result_data",
         )
 
         for row in results:
@@ -550,8 +608,16 @@ def _resolve_team_status_counts(
     category: Category,
     *,
     position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,  # accepted for signature parity; see docstring
+    date_to: datetime | None = None,    # accepted for signature parity; see docstring
 ) -> dict[str, Any]:
     """Squad availability snapshot — answers "who's ready to play?"
+
+    Note: `date_from`/`date_to` are accepted but intentionally NOT applied
+    to the Episode query — "who's available" is inherently a current-moment
+    question, not a historical one. Restricting to open episodes started in
+    a past window would produce a misleading snapshot.
 
     For each active player in the category, finds the most recent OPEN
     Episode on the configured episodic template (typically Lesiones). The
@@ -640,7 +706,7 @@ def _resolve_team_status_counts(
 
     color_overrides = (widget.display_config or {}).get("stage_colors") or {}
 
-    players = list(_roster_query(category, position_id))
+    players = list(_roster_query(category, position_id, player_ids))
     player_index = {p.id: p for p in players}
 
     # Most recent open Episode per player on this template. A player can
@@ -751,6 +817,9 @@ def _resolve_team_trend_line(
     category: Category,
     *,
     position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     """Multi-series line chart: team average per metric over time.
 
@@ -825,7 +894,7 @@ def _resolve_team_trend_line(
                 }
             )
 
-    players = list(_roster_query(category, position_id))
+    players = list(_roster_query(category, position_id, player_ids))
     player_index = {p.id: p for p in players}
     if not player_index:
         return {
@@ -849,12 +918,11 @@ def _resolve_team_trend_line(
         ]
         if not source_synthetics:
             continue
-        results = (
+        results = _apply_date_window(
             ExamResult.objects
-            .filter(template_id=source.template_id, player_id__in=player_index.keys())
-            .order_by("recorded_at")
-            .values("recorded_at", "result_data")
-        )
+            .filter(template_id=source.template_id, player_id__in=player_index.keys()),
+            date_from, date_to,
+        ).order_by("recorded_at").values("recorded_at", "result_data")
         for row in results:
             start = _bucket_start(row["recorded_at"], bucket_size)
             iso = start.date().isoformat()
@@ -910,6 +978,9 @@ def _resolve_team_distribution(
     category: Category,
     *,
     position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     """Histogram of latest values across the roster for a single metric.
 
@@ -969,7 +1040,7 @@ def _resolve_team_distribution(
     display_config = widget.display_config or {}
     bin_count = max(3, min(int(display_config.get("bin_count") or 8), 30))
 
-    players = list(_roster_query(category, position_id))
+    players = list(_roster_query(category, position_id, player_ids))
     player_index = {p.id: p for p in players}
     if not player_index:
         return _empty(
@@ -983,13 +1054,13 @@ def _resolve_team_distribution(
             },
         }
 
-    # Collect each player's *latest* numeric value for this field.
-    results = (
+    # Collect each player's *latest* numeric value for this field, bounded
+    # to the date window so distributions reflect the selected period.
+    results = _apply_date_window(
         ExamResult.objects
-        .filter(template_id=template.id, player_id__in=player_index.keys())
-        .order_by("player_id", "-recorded_at")
-        .values("player_id", "result_data")
-    )
+        .filter(template_id=template.id, player_id__in=player_index.keys()),
+        date_from, date_to,
+    ).order_by("player_id", "-recorded_at").values("player_id", "result_data")
     latest_by_player: dict[UUID, float] = {}
     for row in results:
         pid = row["player_id"]
@@ -1014,6 +1085,7 @@ def _resolve_team_distribution(
             "bin_count": bin_count,
             "bins": [],
             "stats": {},
+            "roster_size": len(player_index),
             "empty": True,
         }
 
@@ -1074,6 +1146,10 @@ def _resolve_team_distribution(
             "min": round(lo, 4),
             "max": round(hi, 4),
         },
+        # Frontend uses `roster_size` to decide whether to show the
+        # "referencia limitada" badge (configured threshold lives there
+        # so the rule is auditable on the client).
+        "roster_size": len(player_index),
         "empty": False,
     }
 
@@ -1088,8 +1164,17 @@ def _resolve_team_active_records(
     category: Category,
     *,
     position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,  # accepted but unused; see docstring
+    date_to: datetime | None = None,    # accepted but unused; see docstring
 ) -> dict[str, Any]:
     """List of records currently "active" based on date-range fields.
+
+    Note: `date_from`/`date_to` are accepted for signature parity but NOT
+    applied — "active" is a single-instant question (as_of), not a window.
+    Constraining the underlying ExamResult queryset by `recorded_at` would
+    hide currently-active prescriptions whose row was created outside the
+    selected window.
 
     Useful for non-episodic templates with a notion of "this row applies
     right now" — e.g. medication courses where today falls between
@@ -1153,7 +1238,7 @@ def _resolve_team_active_records(
         for fk in field_keys
     ]
 
-    players = list(_roster_query(category, position_id))
+    players = list(_roster_query(category, position_id, player_ids))
     player_index = {p.id: p for p in players}
 
     def _parse_date(raw: Any) -> _date | None:

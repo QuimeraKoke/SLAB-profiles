@@ -8,6 +8,7 @@ happens here.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Callable
 from uuid import UUID
 
@@ -26,12 +27,31 @@ from .models import (
 # ---------- helpers ----------
 
 def _fetch_results(
-    template: ExamTemplate, player_id: UUID, source: WidgetDataSource
+    template: ExamTemplate,
+    player_id: UUID,
+    source: WidgetDataSource,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> list[ExamResult]:
-    """Apply the source's aggregation rule, return results in chronological order."""
-    qs = ExamResult.objects.filter(template=template, player_id=player_id).order_by(
-        "recorded_at"
-    )
+    """Apply the source's aggregation rule, return results in chronological order.
+
+    Optional `date_from` / `date_to` bound `recorded_at` BEFORE the
+    aggregation runs. That means `LATEST` returns the last result within
+    the window (not the last result ever), `LAST_N` returns the last N
+    within the window (may be fewer than N if the window is sparse), and
+    `ALL` returns everything in the window. The semantics match the team
+    aggregator so the two layers stay consistent.
+
+    Widgets that conceptually ignore the window (e.g. body-map heatmap
+    of all-time injuries) should call `_fetch_results` without passing
+    the bounds — the resolver is in charge of that policy decision.
+    """
+    qs = ExamResult.objects.filter(template=template, player_id=player_id)
+    if date_from is not None:
+        qs = qs.filter(recorded_at__gte=date_from)
+    if date_to is not None:
+        qs = qs.filter(recorded_at__lte=date_to)
+    qs = qs.order_by("recorded_at")
     if source.aggregation == Aggregation.LATEST:
         latest = qs.last()
         return [latest] if latest else []
@@ -102,13 +122,17 @@ def _empty(widget: Widget, chart_type: str) -> dict[str, Any]:
 # ---------- resolvers ----------
 
 def _resolve_comparison_table(
-    widget: Widget, sources: list[WidgetDataSource], player_id: UUID
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     if not sources:
         return _empty(widget, ChartType.COMPARISON_TABLE.value)
     source = sources[0]
     template = source.template
-    results = _fetch_results(template, player_id, source)
+    results = _fetch_results(template, player_id, source, date_from, date_to)
 
     columns = [
         {"result_id": str(r.id), "recorded_at": r.recorded_at.isoformat()}
@@ -141,7 +165,11 @@ def _resolve_comparison_table(
 
 
 def _resolve_line_with_selector(
-    widget: Widget, sources: list[WidgetDataSource], player_id: UUID
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a flat dropdown of fields drawn from one or more templates.
 
@@ -158,7 +186,7 @@ def _resolve_line_with_selector(
 
     for source in sources:
         template = source.template
-        results = _fetch_results(template, player_id, source)
+        results = _fetch_results(template, player_id, source, date_from, date_to)
         field_keys = source.field_keys or [
             f["key"]
             for f in iter_template_fields(template)
@@ -192,13 +220,17 @@ def _resolve_line_with_selector(
 
 
 def _resolve_donut_per_result(
-    widget: Widget, sources: list[WidgetDataSource], player_id: UUID
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     if not sources:
         return _empty(widget, ChartType.DONUT_PER_RESULT.value)
     source = sources[0]
     template = source.template
-    results = _fetch_results(template, player_id, source)
+    results = _fetch_results(template, player_id, source, date_from, date_to)
 
     palette = (
         widget.display_config.get("colors", [])
@@ -243,13 +275,17 @@ def _resolve_donut_per_result(
 
 
 def _resolve_grouped_bar(
-    widget: Widget, sources: list[WidgetDataSource], player_id: UUID
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     if not sources:
         return _empty(widget, ChartType.GROUPED_BAR.value)
     source = sources[0]
     template = source.template
-    results = _fetch_results(template, player_id, source)
+    results = _fetch_results(template, player_id, source, date_from, date_to)
 
     palette = (
         widget.display_config.get("colors", [])
@@ -285,13 +321,17 @@ def _resolve_grouped_bar(
 
 
 def _resolve_multi_line(
-    widget: Widget, sources: list[WidgetDataSource], player_id: UUID
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     if not sources:
         return _empty(widget, ChartType.MULTI_LINE.value)
     source = sources[0]
     template = source.template
-    results = _fetch_results(template, player_id, source)
+    results = _fetch_results(template, player_id, source, date_from, date_to)
 
     palette = (
         widget.display_config.get("colors", [])
@@ -323,11 +363,15 @@ def _resolve_multi_line(
 
 
 def _resolve_cross_exam_line(
-    widget: Widget, sources: list[WidgetDataSource], player_id: UUID
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
 ) -> dict[str, Any]:
     series_payload = []
     for src in sources:
-        results = _fetch_results(src.template, player_id, src)
+        results = _fetch_results(src.template, player_id, src, date_from, date_to)
         key = src.field_keys[0] if src.field_keys else None
         if key is None:
             continue
@@ -355,9 +399,19 @@ def _resolve_cross_exam_line(
 
 
 def _resolve_body_map_heatmap(
-    widget: Widget, sources: list[WidgetDataSource], player_id: UUID
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,  # accepted but unused; see docstring
+    date_to: datetime | None = None,    # accepted but unused; see docstring
 ) -> dict[str, Any]:
     """Count results per body region, bucketed by episode stage when applicable.
+
+    Note: `date_from` / `date_to` are accepted for signature parity with
+    the other resolvers but NOT applied. A body-map heatmap of "injuries
+    in the last 30 days" misleads — old open injuries (e.g. a recovering
+    ACL diagnosed 2 months ago) would silently disappear from the map.
+    Lesion history is fundamentally an all-time view; we keep it that way.
 
     For each result on (player, template), reads `result_data[field_key]`,
     maps it to a body region via the field's `option_regions` map, and
@@ -475,7 +529,10 @@ def _resolve_body_map_heatmap(
     }
 
 
-_RESOLVERS: dict[str, Callable[[Widget, list[WidgetDataSource], UUID], dict[str, Any]]] = {
+# Callable type widened with `Any` because mypy/pyright can't express the
+# date_from/date_to optionals across the literal Callable type alias. The
+# actual resolvers accept the kwargs.
+_RESOLVERS: dict[str, Callable[..., dict[str, Any]]] = {
     ChartType.COMPARISON_TABLE.value: _resolve_comparison_table,
     ChartType.LINE_WITH_SELECTOR.value: _resolve_line_with_selector,
     ChartType.DONUT_PER_RESULT.value: _resolve_donut_per_result,
@@ -486,8 +543,18 @@ _RESOLVERS: dict[str, Callable[[Widget, list[WidgetDataSource], UUID], dict[str,
 }
 
 
-def resolve_widget(widget: Widget, player_id: UUID) -> dict[str, Any]:
-    """Return a chart-ready payload for a widget bound to a player."""
+def resolve_widget(
+    widget: Widget,
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict[str, Any]:
+    """Return a chart-ready payload for a widget bound to a player.
+
+    Optional `date_from` / `date_to` bound `ExamResult.recorded_at`
+    before aggregation. Per-resolver policy: most apply the bounds;
+    `body_map_heatmap` ignores them by design (cumulative view).
+    """
     sources = list(widget.data_sources.all())
     handler = _RESOLVERS.get(widget.chart_type)
     if handler is None:
@@ -499,4 +566,4 @@ def resolve_widget(widget: Widget, player_id: UUID) -> dict[str, Any]:
                 "Reserved for V2."
             ),
         }
-    return handler(widget, sources, player_id)
+    return handler(widget, sources, player_id, date_from, date_to)
