@@ -52,14 +52,22 @@ PENTACOMPARTIMENTAL_SCHEMA: dict = {
             "chart_type": "line",
         },
         {
-            "key": "suma_pliegues", "label": "Σ 4 pliegues", "type": "calculated", "unit": "mm",
-            "formula": "[pliegue_supra] + [pliegue_abdomen] + [pliegue_muslo] + [pliegue_pierna]",
+            # Σ 6 pliegues — la suma que efectivamente usa el área
+            # nutricional del demo. Reemplaza el viejo Σ 4 (que excluía
+            # tríceps y subescapular).
+            "key": "suma_pliegues", "label": "Σ 6 pliegues", "type": "calculated", "unit": "mm",
+            "formula": (
+                "[pliegue_triceps] + [pliegue_subescapular] + [pliegue_supra] "
+                "+ [pliegue_abdomen] + [pliegue_muslo] + [pliegue_pierna]"
+            ),
             "chart_type": "line",
-        },
-        {
-            "key": "grasa_faulkner", "label": "% Grasa (Faulkner)", "type": "calculated", "unit": "%",
-            "formula": "0.153 * ([pliegue_supra] + [pliegue_abdomen] + [pliegue_muslo] + [pliegue_pierna]) + 5.783",
-            "chart_type": "line",
+            "direction_of_good": "down",
+            "reference_ranges": [
+                {"label": "Élite",     "max": 30,             "color": "#16a34a"},
+                {"label": "Bueno",     "min": 30, "max": 40,  "color": "#86efac"},
+                {"label": "Aceptable", "min": 40, "max": 50,  "color": "#f59e0b"},
+                {"label": "Elevado",   "min": 50,             "color": "#dc2626"},
+            ],
         },
         {
             "key": "masa_piel", "label": "Masa Piel", "type": "calculated", "unit": "kg",
@@ -85,6 +93,49 @@ PENTACOMPARTIMENTAL_SCHEMA: dict = {
             "key": "masa_muscular", "label": "Masa Muscular", "type": "calculated", "unit": "kg",
             "formula": "[peso] - ([masa_adiposa] + [masa_osea] + [masa_piel] + [masa_residual])",
             "chart_type": "line",
+        },
+        # ---- Porcentajes y compuestos derivados ----
+        # Las dos columnas que efectivamente lee la nutricionista en
+        # tablas y dashboards. Bandas semánticas según referencia clínica
+        # confirmada con el área (Élite / Bueno / Aceptable / Elevado o
+        # Bajo, dependiendo de la dirección de la métrica).
+        {
+            "key": "masa_adiposa_pct", "label": "% Masa Adiposa", "type": "calculated", "unit": "%",
+            "formula": "[masa_adiposa] / [peso] * 100",
+            "chart_type": "line",
+            "direction_of_good": "down",
+            "reference_ranges": [
+                {"label": "Élite",     "max": 16,             "color": "#16a34a"},
+                {"label": "Bueno",     "min": 16, "max": 19,  "color": "#86efac"},
+                {"label": "Aceptable", "min": 19, "max": 23,  "color": "#f59e0b"},
+                {"label": "Elevado",   "min": 23,             "color": "#dc2626"},
+            ],
+        },
+        {
+            "key": "masa_muscular_pct", "label": "% Masa Muscular", "type": "calculated", "unit": "%",
+            "formula": "[masa_muscular] / [peso] * 100",
+            "chart_type": "line",
+            "direction_of_good": "up",
+            "reference_ranges": [
+                {"label": "Bajo",      "max": 47,             "color": "#dc2626"},
+                {"label": "Aceptable", "min": 47, "max": 48,  "color": "#f59e0b"},
+                {"label": "Bueno",     "min": 48, "max": 54,  "color": "#86efac"},
+                {"label": "Élite",     "min": 54,             "color": "#16a34a"},
+            ],
+        },
+        {
+            # Índice Muscular / Óseo — proxy de calidad del tejido magro
+            # respecto al andamiaje. Cuarta métrica del semáforo nutricional.
+            "key": "imo", "label": "IMO (Muscular/Óseo)", "type": "calculated", "unit": "",
+            "formula": "[masa_muscular] / [masa_osea]",
+            "chart_type": "line",
+            "direction_of_good": "up",
+            "reference_ranges": [
+                {"label": "Bajo",      "max": 3.8,             "color": "#dc2626"},
+                {"label": "Aceptable", "min": 3.8, "max": 4.2, "color": "#f59e0b"},
+                {"label": "Bueno",     "min": 4.2, "max": 4.5, "color": "#86efac"},
+                {"label": "Élite",     "min": 4.5,             "color": "#16a34a"},
+            ],
         },
     ]
 }

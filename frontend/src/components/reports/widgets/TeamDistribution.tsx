@@ -5,6 +5,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -12,10 +13,13 @@ import {
 } from "recharts";
 
 import type {
+  TeamDistributionBandCount,
   TeamDistributionPayload,
   TeamReportWidget,
 } from "@/lib/types";
 import styles from "./TeamDistribution.module.css";
+
+const DEFAULT_BAR_COLOR = "#6d28d9";
 
 interface Props {
   widget: TeamReportWidget;
@@ -35,9 +39,13 @@ export default function TeamDistribution({ widget }: Props) {
         label: ((b.low + b.high) / 2).toFixed(1),
         rangeLabel: `${b.low.toFixed(1)} – ${b.high.toFixed(1)}`,
         count: b.count,
+        color: b.color ?? DEFAULT_BAR_COLOR,
+        bandLabel: b.band_label ?? null,
       })),
     [data.bins],
   );
+
+  const bandCounts = data.band_counts ?? null;
 
   if (data.empty || (data.bins ?? []).length === 0) {
     return (
@@ -68,6 +76,10 @@ export default function TeamDistribution({ widget }: Props) {
         <Stat label="Max" value={data.stats.max} unit={unit} />
       </div>
 
+      {bandCounts && bandCounts.length > 0 && (
+        <BandCountsRow counts={bandCounts} unit={unit} />
+      )}
+
       <div style={{ width: "100%", height }}>
         <ResponsiveContainer>
           <BarChart
@@ -83,9 +95,15 @@ export default function TeamDistribution({ widget }: Props) {
                 const point = payload[0]?.payload as {
                   rangeLabel: string;
                   count: number;
+                  bandLabel: string | null;
                 };
                 return (
                   <div className={styles.tooltip}>
+                    {point.bandLabel && (
+                      <span className={styles.tooltipBand}>
+                        Banda {point.bandLabel}
+                      </span>
+                    )}
                     <span className={styles.tooltipRange}>
                       {point.rangeLabel}{unit}
                     </span>
@@ -98,12 +116,16 @@ export default function TeamDistribution({ widget }: Props) {
             />
             <Bar
               dataKey="count"
-              fill="#6d28d9"
+              fill={DEFAULT_BAR_COLOR}
               radius={[4, 4, 0, 0]}
               isAnimationActive={false}
               onMouseEnter={(_, idx) => setHoverIndex(idx)}
               onMouseLeave={() => setHoverIndex(null)}
-            />
+            >
+              {chartData.map((entry) => (
+                <Cell key={entry.index} fill={entry.color} />
+              ))}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -182,4 +204,41 @@ function Stat({ label, value, unit, format }: StatProps) {
       </span>
     </div>
   );
+}
+
+interface BandCountsRowProps {
+  counts: TeamDistributionBandCount[];
+  unit: string;
+}
+
+function BandCountsRow({ counts, unit }: BandCountsRowProps) {
+  return (
+    <div className={styles.bandCountsRow} aria-label="Conteo por banda clínica">
+      {counts.map((band, idx) => {
+        const range = bandRangeText(band, unit);
+        return (
+          <div key={`${band.label}-${idx}`} className={styles.bandChip}>
+            <span
+              className={styles.bandSwatch}
+              style={{ background: band.color ?? DEFAULT_BAR_COLOR }}
+            />
+            <div className={styles.bandChipText}>
+              <span className={styles.bandLabel}>{band.label}</span>
+              {range && <span className={styles.bandRange}>{range}</span>}
+            </div>
+            <span className={styles.bandCount}>{band.count}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function bandRangeText(band: TeamDistributionBandCount, unit: string): string {
+  const u = unit.trim();
+  const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+  if (band.min === null && band.max !== null) return `≤ ${fmt(band.max)}${u ? " " + u : ""}`;
+  if (band.min !== null && band.max === null) return `≥ ${fmt(band.min)}${u ? " " + u : ""}`;
+  if (band.min !== null && band.max !== null) return `${fmt(band.min)} – ${fmt(band.max)}${u ? " " + u : ""}`;
+  return "";
 }

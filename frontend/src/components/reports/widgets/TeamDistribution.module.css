@@ -94,11 +94,70 @@
   font-size: 0.75rem;
 }
 
+.tooltipBand {
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
 .tooltipRange {
   color: #d1d5db;
   font-size: 0.65rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.bandCountsRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.bandChip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 8px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.bandSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.bandChipText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.bandLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.bandRange {
+  font-size: 0.65rem;
+  color: #6b7280;
+  font-variant-numeric: tabular-nums;
+}
+
+.bandCount {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
+  font-variant-numeric: tabular-nums;
+  margin-left: 4px;
 }
 
 .tooltipCount {

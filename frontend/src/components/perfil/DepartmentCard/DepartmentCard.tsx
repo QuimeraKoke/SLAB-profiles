@@ -12,6 +12,7 @@ import {
 import DynamicUploader from "@/components/forms/DynamicUploader";
 import Modal from "@/components/ui/Modal/Modal";
 import { api, ApiError } from "@/lib/api";
+import { usePermission } from "@/lib/permissions";
 import type { ExamField, ExamResult, ExamTemplate } from "@/lib/types";
 import styles from "./DepartmentCard.module.css";
 
@@ -354,6 +355,11 @@ function CardTable({
   deletingId,
 }: CardTableProps) {
   const columns = useMemo(() => pickColumns(fields), [fields]);
+  // Action gates — when both are false, the actions column collapses
+  // entirely so the table doesn't waste space on a blank gutter.
+  const canEdit = usePermission("exams.change_examresult");
+  const canDelete = usePermission("exams.delete_examresult");
+  const showActions = canEdit || canDelete;
 
   return (
     <div className={styles.tableWrapper}>
@@ -364,7 +370,9 @@ function CardTable({
             {columns.map((c) => (
               <th key={c.key}>{c.label}</th>
             ))}
-            <th className={styles.rowActionsHead} aria-label="Acciones" />
+            {showActions && (
+              <th className={styles.rowActionsHead} aria-label="Acciones" />
+            )}
           </tr>
         </thead>
         <tbody>
@@ -380,27 +388,33 @@ function CardTable({
                   </td>
                 );
               })}
-              <td className={styles.rowActions}>
-                <button
-                  type="button"
-                  className={styles.rowBtn}
-                  onClick={() => onEdit(r)}
-                  aria-label="Editar registro"
-                  title="Editar"
-                >
-                  ✏️
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.rowBtn} ${styles.rowBtnDanger}`}
-                  onClick={() => onDelete(r)}
-                  disabled={deletingId === r.id}
-                  aria-label="Borrar registro"
-                  title="Borrar"
-                >
-                  {deletingId === r.id ? "…" : "🗑"}
-                </button>
-              </td>
+              {showActions && (
+                <td className={styles.rowActions}>
+                  {canEdit && (
+                    <button
+                      type="button"
+                      className={styles.rowBtn}
+                      onClick={() => onEdit(r)}
+                      aria-label="Editar registro"
+                      title="Editar"
+                    >
+                      ✏️
+                    </button>
+                  )}
+                  {canDelete && (
+                    <button
+                      type="button"
+                      className={`${styles.rowBtn} ${styles.rowBtnDanger}`}
+                      onClick={() => onDelete(r)}
+                      disabled={deletingId === r.id}
+                      aria-label="Borrar registro"
+                      title="Borrar"
+                    >
+                      {deletingId === r.id ? "…" : "🗑"}
+                    </button>
+                  )}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

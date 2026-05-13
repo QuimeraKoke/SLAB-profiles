@@ -335,16 +335,26 @@ def _build_template_namespaces(player, slugs: set[str], tracker: dict) -> dict[s
     from .models import ExamResult, ExamTemplate
 
     club_id = player.category.club_id
+    # Cross-template references resolve to the ACTIVE version of each
+    # family so the formula sees the same canonical schema admins are
+    # currently editing. The result fetch still fans out across all
+    # versions of the family (by family_id) — a recently-renamed field
+    # might be missing on an older result, but that's already handled by
+    # `result_data.get(...)` returning None.
     templates = (
         ExamTemplate.objects
-        .filter(slug__in=slugs, department__club_id=club_id)
-        .only("id", "slug")
+        .filter(
+            slug__in=slugs,
+            department__club_id=club_id,
+            is_active_version=True,
+        )
+        .only("id", "slug", "family_id")
     )
     namespaces: dict[str, Namespace] = {}
     for tpl in templates:
         latest = (
             ExamResult.objects
-            .filter(player_id=player.id, template_id=tpl.id)
+            .filter(player_id=player.id, template__family_id=tpl.family_id)
             .order_by("-recorded_at")
             .first()
         )

@@ -6,6 +6,7 @@ import Modal from "@/components/ui/Modal/Modal";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useCategoryContext } from "@/context/CategoryContext";
+import { usePermission } from "@/lib/permissions";
 import type {
   Category,
   PlayerCreateIn,
@@ -79,6 +80,10 @@ export default function PlayersAdminPage() {
 
   // Edit / create form state
   const [editing, setEditing] = useState<PlayerSummary | "new" | null>(null);
+  const canAdd = usePermission("core.add_player");
+  const canChange = usePermission("core.change_player");
+  const canDelete = usePermission("core.delete_player");
+  const showRowActions = canChange || canDelete;
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
 
@@ -164,7 +169,7 @@ export default function PlayersAdminPage() {
     const ok = confirm(
       `¿Borrar a ${player.first_name} ${player.last_name}? ` +
         `Si tiene historial (resultados, episodios, contratos) la operación va a fallar — ` +
-        `usá el toggle para desactivarlo en su lugar.`,
+        `usa el toggle para desactivarlo en su lugar.`,
     );
     if (!ok) return;
     setActionError(null);
@@ -188,7 +193,7 @@ export default function PlayersAdminPage() {
       return;
     }
     if (!form.category_id) {
-      setActionError("Elegí una categoría.");
+      setActionError("Elige una categoría.");
       return;
     }
 
@@ -255,21 +260,23 @@ export default function PlayersAdminPage() {
           <span className={styles.eyebrow}>Configuraciones</span>
           <h1 className={styles.title}>Jugadores</h1>
           <p className={styles.subtitle}>
-            Gestioná el plantel — alta, baja y edición de jugadores. Para
+            Gestiona el plantel — alta, baja y edición de jugadores. Para
             mantener el historial sin contar al jugador en el plantel activo,
             desactivalo en lugar de borrarlo.
           </p>
         </div>
-        <div className={styles.actions}>
-          <button
-            type="button"
-            className={styles.primaryBtn}
-            onClick={openCreate}
-            disabled={categories.length === 0}
-          >
-            + Nuevo jugador
-          </button>
-        </div>
+        {canAdd && (
+          <div className={styles.actions}>
+            <button
+              type="button"
+              className={styles.primaryBtn}
+              onClick={openCreate}
+              disabled={categories.length === 0}
+            >
+              + Nuevo jugador
+            </button>
+          </div>
+        )}
       </header>
 
       <div className={styles.toolbar}>
@@ -307,7 +314,7 @@ export default function PlayersAdminPage() {
       ) : filteredPlayers.length === 0 ? (
         <div className={styles.empty}>
           {(players?.length ?? 0) === 0
-            ? "No hay jugadores cargados todavía. Hacé clic en + Nuevo jugador para empezar."
+            ? "No hay jugadores cargados todavía. Haz clic en + Nuevo jugador para empezar."
             : "Ningún jugador coincide con los filtros."}
         </div>
       ) : (
@@ -322,7 +329,7 @@ export default function PlayersAdminPage() {
                 <th>Peso</th>
                 <th>Altura</th>
                 <th>Estado</th>
-                <th aria-label="Acciones" />
+                {showRowActions && <th aria-label="Acciones" />}
               </tr>
             </thead>
             <tbody>
@@ -339,37 +346,53 @@ export default function PlayersAdminPage() {
                     <td>{p.current_weight_kg ?? "—"}</td>
                     <td>{p.current_height_cm ?? "—"}</td>
                     <td>
-                      <button
-                        type="button"
-                        className={`${styles.statusPill} ${
-                          p.is_active ? styles.statusActive : styles.statusInactive
-                        }`}
-                        onClick={() => toggleActive(p)}
-                        title={p.is_active ? "Desactivar" : "Activar"}
-                      >
-                        {p.is_active ? "Activo" : "Inactivo"}
-                      </button>
+                      {canChange ? (
+                        <button
+                          type="button"
+                          className={`${styles.statusPill} ${
+                            p.is_active ? styles.statusActive : styles.statusInactive
+                          }`}
+                          onClick={() => toggleActive(p)}
+                          title={p.is_active ? "Desactivar" : "Activar"}
+                        >
+                          {p.is_active ? "Activo" : "Inactivo"}
+                        </button>
+                      ) : (
+                        <span
+                          className={`${styles.statusPill} ${
+                            p.is_active ? styles.statusActive : styles.statusInactive
+                          }`}
+                        >
+                          {p.is_active ? "Activo" : "Inactivo"}
+                        </span>
+                      )}
                     </td>
-                    <td className={styles.rowActions}>
-                      <button
-                        type="button"
-                        className={styles.iconBtn}
-                        onClick={() => openEdit(p)}
-                        title="Editar"
-                        aria-label="Editar jugador"
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        type="button"
-                        className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
-                        onClick={() => handleDelete(p)}
-                        title="Borrar"
-                        aria-label="Borrar jugador"
-                      >
-                        🗑
-                      </button>
-                    </td>
+                    {showRowActions && (
+                      <td className={styles.rowActions}>
+                        {canChange && (
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            onClick={() => openEdit(p)}
+                            title="Editar"
+                            aria-label="Editar jugador"
+                          >
+                            ✏️
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            type="button"
+                            className={`${styles.iconBtn} ${styles.iconBtnDanger}`}
+                            onClick={() => handleDelete(p)}
+                            title="Borrar"
+                            aria-label="Borrar jugador"
+                          >
+                            🗑
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}

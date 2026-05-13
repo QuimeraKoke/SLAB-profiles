@@ -689,3 +689,306 @@ class AlertRuleValidationTests(TestCase):
         )
         with self.assertRaises(ValidationError):
             rule.full_clean()
+
+    def test_band_rule_without_reference_ranges_rejected(self):
+        from django.core.exceptions import ValidationError
+        rule = AlertRule(
+            template=self.template, field_key="valor",
+            kind=AlertRuleKind.BAND, config={},
+        )
+        with self.assertRaisesRegex(ValidationError, "reference_ranges"):
+            rule.full_clean()
+
+    def test_band_rule_with_ranges_passes(self):
+        self.template.config_schema = {
+            "fields": [
+                {
+                    "key": "valor", "label": "Valor", "type": "number", "unit": "U/L",
+                    "reference_ranges": [
+                        {"label": "OK",        "max": 100, "color": "#16a34a"},
+                        {"label": "Elevado",   "min": 100, "color": "#dc2626"},
+                    ],
+                }
+            ]
+        }
+        self.template.save(update_fields=["config_schema"])
+        rule = AlertRule(
+            template=self.template, field_key="valor",
+            kind=AlertRuleKind.BAND, config={},
+        )
+        rule.full_clean()  # should not raise
+
+    def test_band_invalid_trigger_labels_rejected(self):
+        from django.core.exceptions import ValidationError
+        self.template.config_schema = {
+            "fields": [
+                {
+                    "key": "valor", "label": "Valor", "type": "number", "unit": "U/L",
+                    "reference_ranges": [
+                        {"label": "OK",      "max": 100, "color": "#16a34a"},
+                        {"label": "Elevado", "min": 100, "color": "#dc2626"},
+                    ],
+                }
+            ]
+        }
+        self.template.save(update_fields=["config_schema"])
+        rule = AlertRule(
+            template=self.template, field_key="valor",
+            kind=AlertRuleKind.BAND, config={"trigger_labels": [123]},
+        )
+        with self.assertRaisesRegex(ValidationError, "trigger_labels"):
+            rule.full_clean()
+
+
+def _make_banded_template(department, field_key="valor"):
+    """Build a template whose `field_key` has Bajo/OK/Elevado bands.
+
+    Heuristic-friendly: "Elevado" carries a strong red (#dc2626), "Bajo" a
+    strong green (#16a34a), so `alert_bands()` picks Elevado by default.
+    """
+    return ExamTemplate.objects.create(
+        name="Banded", slug="banded", department=department,
+        config_schema={
+            "fields": [{
+                "key": field_key, "label": "Valor", "type": "number",
+                "unit": "U/L",
+                "reference_ranges": [
+                    {"label": "Bajo",    "max": 50,            "color": "#16a34a"},
+                    {"label": "OK",      "min": 50, "max": 100, "color": "#86efac"},
+                    {"label": "Elevado", "min": 100,           "color": "#dc2626"},
+                ],
+            }],
+        },
+    )
+
+
+class BandRuleEvaluatorTests(TestCase):
+    def setUp(self):
+        self.club = Club.objects.create(name="Test FC")
+        self.dept = Department.objects.create(club=self.club, name="Med", slug="med")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.dept)
+        self.player = Player.objects.create(
+            category=self.cat, first_name="A", last_name="B",
+        )
+        self.template = _make_banded_template(self.dept)
+        self.template.applicable_categories.add(self.cat)
+
+    def _band_rule(self, **cfg) -> AlertRule:
+        return AlertRule.objects.create(
+            template=self.template, field_key="valor",
+            kind=AlertRuleKind.BAND,
+            config=cfg, severity=AlertSeverity.CRITICAL,
+        )
+
+    def test_value_in_red_band_fires(self):
+        rule = self._band_rule()
+        result = _make_result(self.player, self.template, 150)  # → Elevado
+        evaluate_threshold_rules_for_result(result)
+        self.assertTrue(Alert.objects.filter(
+            source_id=rule.id, status=AlertStatus.ACTIVE,
+        ).exists())
+
+    def test_value_in_safe_band_does_not_fire(self):
+        rule = self._band_rule()
+        result = _make_result(self.player, self.template, 75)  # → OK
+        evaluate_threshold_rules_for_result(result)
+        self.assertFalse(Alert.objects.filter(source_id=rule.id).exists())
+
+    def test_alert_severity_inherited_from_rule(self):
+        # Slice 2 will default new rules to CRITICAL; this test confirms
+        # the evaluator passes the rule's severity through verbatim.
+        rule = self._band_rule()
+        result = _make_result(self.player, self.template, 150)
+        evaluate_threshold_rules_for_result(result)
+        alert = Alert.objects.get(source_id=rule.id)
+        self.assertEqual(alert.severity, AlertSeverity.CRITICAL)
+
+    def test_subsequent_safe_reading_auto_resolves(self):
+        # First reading in red band → alert fires.
+        # Second reading back in OK → alert auto-resolves.
+        rule = self._band_rule()
+        red = _make_result(self.player, self.template, 150, days_ago=2)
+        evaluate_threshold_rules_for_result(red)
+        self.assertEqual(
+            Alert.objects.filter(source_id=rule.id, status=AlertStatus.ACTIVE).count(),
+            1,
+        )
+        ok = _make_result(self.player, self.template, 75, days_ago=0)
+        evaluate_threshold_rules_for_result(ok)
+        # Active count must now be 0; the original alert flipped to RESOLVED.
+        self.assertEqual(
+            Alert.objects.filter(source_id=rule.id, status=AlertStatus.ACTIVE).count(),
+            0,
+        )
+        self.assertEqual(
+            Alert.objects.filter(
+                source_id=rule.id, status=AlertStatus.RESOLVED,
+            ).count(),
+            1,
+        )
+
+    def test_trigger_labels_override_heuristic(self):
+        # Force OK to be the trigger (silly, but tests the override path).
+        rule = self._band_rule(trigger_labels=["OK"])
+        ok = _make_result(self.player, self.template, 75)  # → OK band
+        evaluate_threshold_rules_for_result(ok)
+        self.assertTrue(Alert.objects.filter(source_id=rule.id).exists())
+        # And Elevado should NOT fire because it's not in trigger_labels.
+        Alert.objects.filter(source_id=rule.id).delete()
+        red = _make_result(self.player, self.template, 150, days_ago=0)
+        evaluate_threshold_rules_for_result(red)
+        self.assertFalse(Alert.objects.filter(source_id=rule.id).exists())
+
+    def test_non_numeric_value_skips_silently(self):
+        rule = self._band_rule()
+        # `_value_for_rule` returns None for text values → no alert.
+        result = ExamResult.objects.create(
+            player=self.player, template=self.template,
+            recorded_at=timezone.now(),
+            result_data={"valor": "n/a"},
+        )
+        evaluate_threshold_rules_for_result(result)
+        self.assertFalse(Alert.objects.filter(source_id=rule.id).exists())
+
+    def test_inactive_band_rule_does_not_fire(self):
+        rule = self._band_rule()
+        rule.is_active = False
+        rule.save()
+        _make_result(self.player, self.template, 150)
+        self.assertFalse(Alert.objects.filter(source_id=rule.id).exists())
+
+    def test_message_template_with_band_placeholder(self):
+        rule = self._band_rule()
+        rule.message_template = "{field_label} = {value} → {band_label}"
+        rule.save(update_fields=["message_template"])
+        result = _make_result(self.player, self.template, 150)
+        evaluate_threshold_rules_for_result(result)
+        alert = Alert.objects.get(source_id=rule.id)
+        self.assertEqual(alert.message, "Valor = 150 → Elevado")
+
+
+class SeedBandAlertsCommandTests(TestCase):
+    """End-to-end coverage for `python manage.py seed_band_alerts`.
+
+    These tests intentionally don't mock the evaluator — the command's
+    value proposition IS the end-to-end "rules created → alerts firing"
+    flow, so we exercise it as one piece.
+    """
+
+    def setUp(self):
+        self.club = Club.objects.create(name="Test FC")
+        self.dept = Department.objects.create(club=self.club, name="N", slug="n")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.dept)
+        self.player_red = Player.objects.create(
+            category=self.cat, first_name="Red", last_name="P", is_active=True,
+        )
+        self.player_safe = Player.objects.create(
+            category=self.cat, first_name="Safe", last_name="P", is_active=True,
+        )
+        self.template = _make_banded_template(self.dept)
+        self.template.applicable_categories.add(self.cat)
+
+    def _run(self, *args):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command("seed_band_alerts", *args, stdout=out, stderr=StringIO())
+        return out.getvalue()
+
+    def test_creates_rule_for_field_with_red_band(self):
+        self._run()
+        rules = AlertRule.objects.filter(
+            template=self.template, field_key="valor", kind=AlertRuleKind.BAND,
+        )
+        self.assertEqual(rules.count(), 1)
+        rule = rules.first()
+        self.assertEqual(rule.severity, AlertSeverity.CRITICAL)
+        self.assertTrue(rule.is_active)
+        self.assertEqual(rule.config, {})
+
+    def test_idempotent_rerun_does_not_duplicate(self):
+        self._run()
+        before = AlertRule.objects.filter(kind=AlertRuleKind.BAND).count()
+        self._run()
+        after = AlertRule.objects.filter(kind=AlertRuleKind.BAND).count()
+        self.assertEqual(before, after)
+
+    def test_preserves_admin_severity_on_rerun(self):
+        self._run()
+        rule = AlertRule.objects.get(kind=AlertRuleKind.BAND, template=self.template)
+        rule.severity = AlertSeverity.WARNING
+        rule.message_template = "custom message"
+        rule.save(update_fields=["severity", "message_template"])
+        self._run()
+        rule.refresh_from_db()
+        self.assertEqual(rule.severity, AlertSeverity.WARNING)
+        self.assertEqual(rule.message_template, "custom message")
+
+    def test_backfill_fires_alert_for_player_in_red_band(self):
+        _make_result(self.player_red, self.template, 150)
+        _make_result(self.player_safe, self.template, 75)
+        self._run()
+        red_alerts = Alert.objects.filter(
+            player=self.player_red, status=AlertStatus.ACTIVE,
+            source_type=AlertSource.THRESHOLD,
+        )
+        safe_alerts = Alert.objects.filter(
+            player=self.player_safe, status=AlertStatus.ACTIVE,
+            source_type=AlertSource.THRESHOLD,
+        )
+        self.assertEqual(red_alerts.count(), 1)
+        self.assertEqual(safe_alerts.count(), 0)
+
+    def test_skips_field_without_alert_color(self):
+        # Replace the template's field with bands that have only cool colors.
+        self.template.config_schema = {
+            "fields": [{
+                "key": "valor", "label": "Valor", "type": "number", "unit": "U/L",
+                "reference_ranges": [
+                    {"label": "Bajo", "max": 50,  "color": "#16a34a"},
+                    {"label": "Alto", "min": 50,  "color": "#22c55e"},  # still greenish
+                ],
+            }],
+        }
+        self.template.save(update_fields=["config_schema"])
+        self._run()
+        self.assertFalse(AlertRule.objects.filter(
+            template=self.template, kind=AlertRuleKind.BAND,
+        ).exists())
+
+    def test_deactivates_rule_when_alert_band_removed(self):
+        # Seed once → rule active.
+        self._run()
+        rule = AlertRule.objects.get(template=self.template, kind=AlertRuleKind.BAND)
+        self.assertTrue(rule.is_active)
+
+        # Remove the red band → re-seed should deactivate.
+        self.template.config_schema = {
+            "fields": [{
+                "key": "valor", "label": "Valor", "type": "number", "unit": "U/L",
+                "reference_ranges": [
+                    {"label": "Bajo", "max": 50,  "color": "#16a34a"},
+                    {"label": "Alto", "min": 50,  "color": "#22c55e"},
+                ],
+            }],
+        }
+        self.template.save(update_fields=["config_schema"])
+        self._run()
+        rule.refresh_from_db()
+        self.assertFalse(rule.is_active)
+
+    def test_dry_run_writes_nothing(self):
+        self._run("--dry-run")
+        self.assertFalse(AlertRule.objects.exists())
+        self.assertFalse(Alert.objects.exists())
+
+    def test_no_backfill_creates_rules_but_no_alerts(self):
+        _make_result(self.player_red, self.template, 150)
+        # Wipe alerts the post_save signal created so we can verify the
+        # command itself doesn't add any more when --no-backfill is set.
+        Alert.objects.all().delete()
+        self._run("--no-backfill")
+        self.assertTrue(AlertRule.objects.filter(kind=AlertRuleKind.BAND).exists())
+        self.assertFalse(Alert.objects.filter(source_type=AlertSource.THRESHOLD).exists())

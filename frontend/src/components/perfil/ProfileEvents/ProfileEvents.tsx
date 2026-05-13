@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import { api, ApiError } from "@/lib/api";
+import { usePermission } from "@/lib/permissions";
 import type { CalendarEvent, EventType } from "@/lib/types";
 import styles from "./ProfileEvents.module.css";
 
@@ -35,6 +36,8 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
   const [events, setEvents] = useState<CalendarEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const canAdd = usePermission("events.add_event");
+  const canDelete = usePermission("events.delete_event");
   // Snapshot "now" once on mount — see partidos page for rationale.
   // The upcoming/past split on a profile page doesn't need real-time updates.
   const [now] = useState(() => Date.now());
@@ -94,14 +97,16 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
   if (events!.length === 0) {
     return (
       <section className={styles.container}>
-        <div className={styles.toolbar}>
-          <Link href={createHref} className={styles.createBtn}>
-            + Crear evento
-          </Link>
-        </div>
+        {canAdd && (
+          <div className={styles.toolbar}>
+            <Link href={createHref} className={styles.createBtn}>
+              + Crear evento
+            </Link>
+          </div>
+        )}
         <div className={styles.empty}>
-          Este jugador no tiene eventos programados todavía. Usa{" "}
-          <strong>Crear evento</strong> para agendar uno.
+          Este jugador no tiene eventos programados todavía.
+          {canAdd && <> Usa <strong>Crear evento</strong> para agendar uno.</>}
         </div>
       </section>
     );
@@ -109,11 +114,13 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
 
   return (
     <section className={styles.container}>
-      <div className={styles.toolbar}>
-        <Link href={createHref} className={styles.createBtn}>
-          + Crear evento
-        </Link>
-      </div>
+      {canAdd && (
+        <div className={styles.toolbar}>
+          <Link href={createHref} className={styles.createBtn}>
+            + Crear evento
+          </Link>
+        </div>
+      )}
       {upcoming.length > 0 && (
         <div>
           <h3 className={styles.sectionTitle}>
@@ -124,6 +131,7 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
               <EventCard
                 key={e.id}
                 event={e}
+                canDelete={canDelete}
                 onChanged={() => setReloadKey((k) => k + 1)}
               />
             ))}
@@ -142,6 +150,7 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
                 key={e.id}
                 event={e}
                 past
+                canDelete={canDelete}
                 onChanged={() => setReloadKey((k) => k + 1)}
               />
             ))}
@@ -155,12 +164,15 @@ export default function ProfileEvents({ playerId }: ProfileEventsProps) {
 function EventCard({
   event,
   past = false,
+  canDelete,
   onChanged,
 }: {
   event: CalendarEvent;
   past?: boolean;
+  canDelete: boolean;
   onChanged: () => void;
 }) {
+  const canChangeMatch = usePermission("events.change_event");
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const tone = EVENT_TYPE_TONE[event.event_type as EventType] ?? "other";
@@ -217,22 +229,26 @@ function EventCard({
             {event.participants.length} participantes
           </span>
         )}
-        <div className={styles.cardActions}>
-          {editHref && (
-            <Link href={editHref} className={styles.cardActionBtn}>
-              ✏️ Editar
-            </Link>
-          )}
-          <button
-            type="button"
-            className={`${styles.cardActionBtn} ${styles.cardActionBtnDanger}`}
-            onClick={handleDelete}
-            disabled={deleting}
-            title="Borrar evento"
-          >
-            🗑 {deleting ? "Borrando…" : "Borrar"}
-          </button>
-        </div>
+        {(canChangeMatch || canDelete) && (
+          <div className={styles.cardActions}>
+            {editHref && canChangeMatch && (
+              <Link href={editHref} className={styles.cardActionBtn}>
+                ✏️ Editar
+              </Link>
+            )}
+            {canDelete && (
+              <button
+                type="button"
+                className={`${styles.cardActionBtn} ${styles.cardActionBtnDanger}`}
+                onClick={handleDelete}
+                disabled={deleting}
+                title="Borrar evento"
+              >
+                🗑 {deleting ? "Borrando…" : "Borrar"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
       {actionError && <div className={styles.cardError}>{actionError}</div>}
     </article>

@@ -7,8 +7,10 @@ import BodyMapHeatmap from "./BodyMapHeatmap";
 import ComparisonTable from "./ComparisonTable";
 import LineWithSelector from "./LineWithSelector";
 import DonutPerResult from "./DonutPerResult";
+import GoalCard from "./GoalCard";
 import GroupedBar from "./GroupedBar";
 import MultiLine from "./MultiLine";
+import PlayerAlerts from "./PlayerAlerts";
 import Unsupported from "./Unsupported";
 
 const widgetRegistry: Record<string, React.ComponentType<{ widget: DashboardWidget }>> = {
@@ -18,6 +20,8 @@ const widgetRegistry: Record<string, React.ComponentType<{ widget: DashboardWidg
   grouped_bar: GroupedBar,
   multi_line: MultiLine,
   body_map_heatmap: BodyMapHeatmap,
+  goal_card: GoalCard,
+  player_alerts: PlayerAlerts,
 };
 
 export function renderWidget(widget: DashboardWidget): React.ReactNode {

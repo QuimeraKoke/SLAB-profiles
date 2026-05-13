@@ -51,15 +51,42 @@ class DepartmentAdmin(admin.ModelAdmin):
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("name", "club", "department_summary")
+    list_display = ("name", "club", "department_summary", "external_provider")
     list_filter = ("club",)
     search_fields = ("name", "club__name")
     filter_horizontal = ("departments",)
+    fieldsets = (
+        (None, {"fields": ("club", "name", "departments")}),
+        ("Integración externa", {
+            "fields": ("external_config",),
+            "description": (
+                "Para vincular esta categoría con API-Football, completa el "
+                "JSON: <code>{\"provider\": \"api_football\", \"team_id\": "
+                "257, \"season\": 2026}</code>. Trae automáticamente todos "
+                "los partidos del equipo en esa temporada (liga, copa, "
+                "continental, amistosos). Para restringir a competiciones "
+                "específicas agrega <code>\"league_ids\": [265, 270]</code>. "
+                "Deja vacío (<code>{}</code>) para categorías no cubiertas "
+                "por el proveedor (juveniles / cadetes)."
+            ),
+            "classes": ("collapse",),
+        }),
+    )
 
     def department_summary(self, obj: Category) -> str:
         return ", ".join(d.name for d in obj.departments.all()) or "—"
 
     department_summary.short_description = "Departments"
+
+    def external_provider(self, obj: Category) -> str:
+        cfg = obj.external_config or {}
+        provider = cfg.get("provider")
+        if not provider:
+            return "—"
+        team_id = cfg.get("team_id")
+        return f"{provider} (team {team_id})" if team_id else str(provider)
+
+    external_provider.short_description = "Proveedor externo"
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         """Limit the departments picker to those of the category's own club."""
@@ -173,3 +200,55 @@ class ContractAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ("created_at", "updated_at")
+
+
+# --- User admin override: require first/last name + email at create time ----
+#
+# Django's default User add form only requires `username` + password. In our
+# app the login is by email (see api/auth.py) and the sidebar surfaces the
+# user's display name via "First Last" → username fallback. Empty name/email
+# fields produce a degraded UX, so we gate creation at the admin layer.
+#
+# The model still has `blank=True` on these — programmatic creation (CLI,
+# fixtures, tests, `createsuperuser`) is unaffected.
+
+from django import forms
+from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
+
+
+class RequiredFieldsUserCreationForm(UserCreationForm):
+    """Like UserCreationForm but with first_name, last_name and email required."""
+
+    first_name = forms.CharField(max_length=150, required=True, label="Nombre")
+    last_name = forms.CharField(max_length=150, required=True, label="Apellido")
+    email = forms.EmailField(required=True, label="Email")
+
+    class Meta(UserCreationForm.Meta):
+        fields = ("username", "first_name", "last_name", "email")
+
+
+class SLABUserAdmin(UserAdmin):
+    add_form = RequiredFieldsUserCreationForm
+    add_fieldsets = (
+        (None, {
+            "classes": ("wide",),
+            "fields": (
+                "username", "first_name", "last_name", "email",
+                "password1", "password2",
+            ),
+        }),
+    )
+    # Make the existing edit-view list_display surface the name too, so
+    # admins can spot users with empty profiles at a glance.
+    list_display = (
+        "username", "email", "first_name", "last_name",
+        "is_staff", "is_active",
+    )
+
+
+# Re-register the auth User with the custom admin. The default is registered
+# automatically by django.contrib.auth's AppConfig, so we unregister first.
+admin.site.unregister(User)
+admin.site.register(User, SLABUserAdmin)

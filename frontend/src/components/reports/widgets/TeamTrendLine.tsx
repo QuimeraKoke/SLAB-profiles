@@ -12,6 +12,7 @@ import {
 } from "recharts";
 
 import type {
+  TeamPositionGroup,
   TeamReportWidget,
   TeamTrendLinePayload,
 } from "@/lib/types";
@@ -21,8 +22,16 @@ interface Props {
   widget: TeamReportWidget;
 }
 
+const SINGLE_LINE_COLOR = "#6d28d9";
+
 export default function TeamTrendLine({ widget }: Props) {
   const data = widget.data as TeamTrendLinePayload;
+  const isByPosition = data.grouping === "position";
+  // Stabilize the array reference so downstream useMemo deps don't churn.
+  const groups: TeamPositionGroup[] = useMemo(
+    () => (isByPosition ? (data.groups ?? []) : []),
+    [isByPosition, data.groups],
+  );
 
   const [pickedKey, setPickedKey] = useState<string | null>(null);
   const selectedKey = useMemo(() => {
@@ -36,18 +45,30 @@ export default function TeamTrendLine({ widget }: Props) {
     [data.fields, selectedKey],
   );
 
-  // Recharts wants an array of objects keyed by the dataKey we pass to <Line>.
-  // We map each bucket's selected-field value into `value`. Buckets with no
-  // reading for the selected field omit `value` and Recharts drops the point.
-  const chartData = useMemo(
-    () =>
-      (data.buckets ?? []).map((b) => ({
-        label: b.label,
-        iso: b.iso,
-        value: selectedKey ? b.values?.[selectedKey] : undefined,
-      })),
-    [data.buckets, selectedKey],
-  );
+  // Two shapes:
+  //  - team-wide: { label, iso, value }            (single <Line dataKey="value">)
+  //  - by position: { label, iso, [groupId]: mean } (one <Line> per group)
+  // Recharts drops missing keys → gaps are honored by `connectNulls`.
+  const chartData = useMemo(() => {
+    const buckets = data.buckets ?? [];
+    if (isByPosition) {
+      return buckets.map((b) => {
+        const entry: Record<string, string | number | undefined> = {
+          label: b.label,
+          iso: b.iso,
+        };
+        for (const g of groups) {
+          entry[g.id] = b.values_by_group?.[g.id]?.[selectedKey];
+        }
+        return entry;
+      });
+    }
+    return buckets.map((b) => ({
+      label: b.label,
+      iso: b.iso,
+      value: selectedKey ? b.values?.[selectedKey] : undefined,
+    }));
+  }, [data.buckets, selectedKey, isByPosition, groups]);
 
   const showSelector = (data.fields ?? []).length > 1;
   const unit = selectedField?.unit ? ` ${selectedField.unit}` : "";
@@ -63,6 +84,7 @@ export default function TeamTrendLine({ widget }: Props) {
           onSelect={setPickedKey}
           showSelector={showSelector}
           bucketSize={data.bucket_size}
+          isByPosition={isByPosition}
         />
         <div className={styles.empty}>
           {data.error
@@ -85,7 +107,21 @@ export default function TeamTrendLine({ widget }: Props) {
         onSelect={setPickedKey}
         showSelector={showSelector}
         bucketSize={data.bucket_size}
+        isByPosition={isByPosition}
       />
+      {isByPosition && groups.length > 0 && (
+        <div className={styles.legend} aria-hidden="true">
+          {groups.map((g) => (
+            <span key={g.id} className={styles.legendItem}>
+              <span
+                className={styles.legendSwatch}
+                style={{ background: g.color }}
+              />
+              {g.name}
+            </span>
+          ))}
+        </div>
+      )}
       <div style={{ width: "100%", height }}>
         <ResponsiveContainer>
           <LineChart data={chartData} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
@@ -95,8 +131,42 @@ export default function TeamTrendLine({ widget }: Props) {
             <Tooltip
               content={({ active, payload }) => {
                 if (!active || !payload?.length) return null;
-                const point = payload[0]?.payload as { label: string; value?: number };
-                if (point?.value === undefined || point.value === null) return null;
+                const point = payload[0]?.payload as
+                  | { label: string; value?: number; [k: string]: unknown }
+                  | undefined;
+                if (!point) return null;
+
+                if (isByPosition) {
+                  const rows = groups
+                    .map((g) => {
+                      const v = point[g.id];
+                      return typeof v === "number"
+                        ? { group: g, value: v }
+                        : null;
+                    })
+                    .filter((r): r is { group: TeamPositionGroup; value: number } => r !== null);
+                  if (rows.length === 0) return null;
+                  return (
+                    <div className={styles.tooltip}>
+                      <span className={styles.tooltipDate}>{point.label}</span>
+                      {rows.map(({ group, value }) => (
+                        <span key={group.id} className={styles.tooltipRow}>
+                          <span
+                            className={styles.tooltipSwatch}
+                            style={{ background: group.color }}
+                          />
+                          <span className={styles.tooltipLabel}>{group.label}</span>
+                          <span className={styles.tooltipValue}>
+                            {value.toFixed(2)}
+                            {unit}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  );
+                }
+
+                if (point.value === undefined || point.value === null) return null;
                 return (
                   <div className={styles.tooltip}>
                     <span className={styles.tooltipDate}>{point.label}</span>
@@ -108,16 +178,33 @@ export default function TeamTrendLine({ widget }: Props) {
                 );
               }}
             />
-            <Line
-              type="monotone"
-              dataKey="value"
-              stroke="#6d28d9"
-              strokeWidth={2}
-              dot={{ r: 3, fill: "#6d28d9", stroke: "#ffffff", strokeWidth: 1 }}
-              activeDot={{ r: 5, fill: "#6d28d9", stroke: "#ffffff", strokeWidth: 2 }}
-              isAnimationActive={false}
-              connectNulls
-            />
+            {isByPosition ? (
+              groups.map((g) => (
+                <Line
+                  key={g.id}
+                  type="monotone"
+                  dataKey={g.id}
+                  name={g.name}
+                  stroke={g.color}
+                  strokeWidth={2}
+                  dot={{ r: 3, fill: g.color, stroke: "#ffffff", strokeWidth: 1 }}
+                  activeDot={{ r: 5, fill: g.color, stroke: "#ffffff", strokeWidth: 2 }}
+                  isAnimationActive={false}
+                  connectNulls
+                />
+              ))
+            ) : (
+              <Line
+                type="monotone"
+                dataKey="value"
+                stroke={SINGLE_LINE_COLOR}
+                strokeWidth={2}
+                dot={{ r: 3, fill: SINGLE_LINE_COLOR, stroke: "#ffffff", strokeWidth: 1 }}
+                activeDot={{ r: 5, fill: SINGLE_LINE_COLOR, stroke: "#ffffff", strokeWidth: 2 }}
+                isAnimationActive={false}
+                connectNulls
+              />
+            )}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -133,6 +220,7 @@ interface HeaderProps {
   onSelect: (key: string) => void;
   showSelector: boolean;
   bucketSize: "week" | "month";
+  isByPosition: boolean;
 }
 
 function Header({
@@ -143,7 +231,12 @@ function Header({
   onSelect,
   showSelector,
   bucketSize,
+  isByPosition,
 }: HeaderProps) {
+  const bucketLabel = bucketSize === "month" ? "mes" : "semana";
+  const metaCopy = isByPosition
+    ? `Promedio por posición · agrupado por ${bucketLabel}`
+    : `Promedio del plantel · agrupado por ${bucketLabel}`;
   return (
     <header className={styles.header}>
       <div>
@@ -151,9 +244,7 @@ function Header({
         {widget.description && (
           <p className={styles.description}>{widget.description}</p>
         )}
-        <span className={styles.meta}>
-          Promedio del plantel · agrupado por {bucketSize === "month" ? "mes" : "semana"}
-        </span>
+        <span className={styles.meta}>{metaCopy}</span>
       </div>
       {showSelector ? (
         <label className={styles.fieldSelectLabel}>

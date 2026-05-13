@@ -8,6 +8,10 @@ export interface ApiUser {
   last_name: string;
   is_staff: boolean;
   is_superuser: boolean;
+  /** Effective Django permission codenames (group + direct user perms).
+   *  Superusers receive a single `"*"` sentinel — the frontend's
+   *  `hasPermission` helper treats it as "match anything". */
+  permissions: string[];
 }
 
 export interface Membership {
@@ -223,6 +227,12 @@ export interface ExamField {
   rows?: number;
   /** Hint text shown inside empty inputs. */
   placeholder?: string;
+  /** Clinical reference bands for numeric/calculated fields. Drives the
+   *  form hint shown below the input (compact static + dynamic active
+   *  band as the user types) and widget cell-border coloring downstream. */
+  reference_ranges?: ReferenceBand[];
+  /** Coloring opinion for variation deltas on widgets. */
+  direction_of_good?: "up" | "down" | "neutral";
 }
 
 export interface ExamConfigSchema {
@@ -342,6 +352,16 @@ export interface TeamResultsOut {
 export type GoalOperator = "<=" | "<" | "==" | ">=" | ">";
 export type GoalStatus = "active" | "met" | "missed" | "cancelled";
 
+export interface GoalProgress {
+  /** Whether `current_value` already satisfies `operator target_value`.
+   *  Null when no reading exists. */
+  achieved: boolean | null;
+  /** Signed delta `current_value - target_value`. */
+  distance: number | null;
+  /** Same delta as a % of `target_value`. Null when target is 0. */
+  distance_pct: number | null;
+}
+
 export interface Goal {
   id: string;
   player_id: string;
@@ -355,11 +375,40 @@ export interface Goal {
   due_date: string; // YYYY-MM-DD
   notes: string;
   status: GoalStatus;
+  /** Value the scheduled evaluator stored at the last run — may be stale.
+   *  Use `current_value` for live displays. */
   last_value: number | null;
   evaluated_at: string | null;
   /** Days before due_date to start firing pre-deadline warnings. null/0 disables. */
   warn_days_before: number | null;
   created_at: string;
+  /** Live current value (latest reading on this player+template family+field).
+   *  Computed at every list/get; distinct from `last_value`. */
+  current_value: number | null;
+  current_recorded_at: string | null;
+  progress: GoalProgress;
+}
+
+/** Per-player goal_card widget payload. */
+export interface GoalCardPayload {
+  chart_type: "goal_card";
+  title: string;
+  cards: {
+    id: string;
+    template_name: string;
+    field_key: string;
+    field_label: string;
+    field_unit: string;
+    operator: GoalOperator;
+    target_value: number;
+    due_date: string;
+    days_to_due: number;
+    current_value: number | null;
+    current_recorded_at: string | null;
+    progress: GoalProgress;
+    notes: string;
+  }[];
+  empty?: boolean;
 }
 
 export interface GoalCreateIn {
@@ -495,8 +544,20 @@ export type WidgetData =
   | MultiLinePayload
   | CrossExamLinePayload
   | BodyMapHeatmapPayload
+  | GoalCardPayload
+  | PlayerAlertsPayload
   | UnsupportedPayload
   | EmptyPayload;
+
+/** Clinical reference band: a labeled numeric range with optional color.
+ *  Either `min` or `max` (or both) is present — bands are disjoint and
+ *  ordered low→high. Server-side validation lives in `TemplateField._validate_reference_ranges`. */
+export interface ReferenceBand {
+  label: string;
+  min?: number;
+  max?: number;
+  color?: string;
+}
 
 export interface FieldMeta {
   key: string;
@@ -504,6 +565,9 @@ export interface FieldMeta {
   unit: string;
   group: string;
   type: string;
+  /** When present, drives form hint + cell-border coloring on widgets. */
+  reference_ranges?: ReferenceBand[];
+  direction_of_good?: "up" | "down" | "neutral";
 }
 
 export interface ComparisonTablePayload {
@@ -662,17 +726,45 @@ export interface DepartmentLayoutResponse {
  *  `values` is keyed by field_key so the dropdown change is a pure
  *  client-side selector.
  */
+/** A position bucket emitted when `grouping === "position"`. */
+export interface TeamPositionGroup {
+  id: string;
+  /** Short label (typically the position abbreviation: POR / DF / MC / DEL). */
+  label: string;
+  /** Full position name for tooltips. */
+  name: string;
+  color: string;
+}
+
 export interface TeamHorizontalComparisonPayload {
   chart_type: "team_horizontal_comparison";
   title: string;
+  /** "none" (default — one row per player) or "position" (rows = positions,
+   *  bars = monthly means across players in that position). */
+  grouping?: "none" | "position";
   fields: { key: string; label: string; unit: string }[];
   default_field_key: string;
   limit_per_player: number;
-  rows: {
-    player_id: string;
-    player_name: string;
-    values: Record<string, { value: number; label: string; iso: string }[]>;
-  }[];
+  /** Present only when `grouping === "position"`. */
+  groups?: TeamPositionGroup[];
+  /** Shape depends on `grouping`:
+   *   - "none":     one row per player (with `player_id`, `player_name`).
+   *   - "position": one row per position (with `group_id`, `group_label`,
+   *                 `group_name`, `color`). */
+  rows: (
+    | {
+        player_id: string;
+        player_name: string;
+        values: Record<string, { value: number; label: string; iso: string }[]>;
+      }
+    | {
+        group_id: string;
+        group_label: string;
+        group_name: string;
+        color: string;
+        values: Record<string, { value: number; label: string; iso: string }[]>;
+      }
+  )[];
   empty?: boolean;
   error?: string;
 }
@@ -687,7 +779,17 @@ export interface TeamHorizontalComparisonPayload {
 export interface TeamRosterMatrixPayload {
   chart_type: "team_roster_matrix";
   title: string;
-  columns: { key: string; label: string; unit: string }[];
+  columns: {
+    key: string;
+    label: string;
+    unit: string;
+    /** Drives delta coloring (green/red). When omitted or "neutral"
+     *  the frontend keeps the existing blue/orange neutral palette. */
+    direction_of_good?: "up" | "down" | "neutral";
+    /** Reference bands for cell border coloring. Empty / undefined = no
+     *  band-based treatment, cell renders with its current background. */
+    reference_ranges?: ReferenceBand[];
+  }[];
   ranges: Record<string, { min: number; max: number }>;
   rows: {
     player_id: string;
@@ -735,24 +837,48 @@ export interface TeamStatusCountsPayload {
   error?: string;
 }
 
-/** Multi-series line chart of team averages over time. */
+/** Multi-series line chart of team averages over time.
+ *  When `grouping === "position"`, the team-wide mean splits into one
+ *  line per position (POR/DF/MC/DEL). Bucket values are then keyed by
+ *  group id, not by field key. */
 export interface TeamTrendLinePayload {
   chart_type: "team_trend_line";
   title: string;
+  grouping?: "none" | "position";
   fields: { key: string; label: string; unit: string }[];
   default_field_key: string;
   bucket_size: "week" | "month";
+  /** Present only when `grouping === "position"`. */
+  groups?: TeamPositionGroup[];
   buckets: {
     label: string;
     iso: string;
-    /** Mean across the roster per field key. Missing keys = no data that bucket. */
-    values: Record<string, number>;
+    /** Present when `grouping === "none"` (or omitted = "none"). */
+    values?: Record<string, number>;
+    /** Present when `grouping === "position"`. Mapping position_id →
+     *  field_key → mean. Missing field keys = no data that bucket. */
+    values_by_group?: Record<string, Record<string, number>>;
   }[];
   empty?: boolean;
   error?: string;
 }
 
 /** Histogram of latest values across the roster for one metric. */
+/** Per-band count summary emitted when the field has `reference_ranges`
+ *  configured AND the widget hasn't opted out via
+ *  `display_config.coloring === "none"`. Renders as the chip row under
+ *  the stats. Entries with `count: 0` are kept so the row is consistent
+ *  across renders. */
+export interface TeamDistributionBandCount {
+  label: string;
+  color?: string;
+  /** Inclusive lower bound; null for the lowest band (open-left). */
+  min: number | null;
+  /** Inclusive upper bound; null for the highest band (open-right). */
+  max: number | null;
+  count: number;
+}
+
 export interface TeamDistributionPayload {
   chart_type: "team_distribution";
   title: string;
@@ -763,6 +889,13 @@ export interface TeamDistributionPayload {
     high: number;
     count: number;
     players: { id: string; name: string; value: number }[];
+    /** Hex color of the band the bin's midpoint falls into. Present only
+     *  when band coloring is active. Frontend falls back to the default
+     *  violet when absent. */
+    color?: string;
+    /** Band label (e.g. "Élite", "Bueno"). Present only when band
+     *  coloring is active and the bin midpoint falls inside a band. */
+    band_label?: string;
   }[];
   stats: {
     n?: number;
@@ -771,9 +904,59 @@ export interface TeamDistributionPayload {
     min?: number;
     max?: number;
   };
+  /** Present only when band coloring is active. One entry per declared
+   *  band, in declaration order (worst-to-best or vice versa, whichever
+   *  the template chose). */
+  band_counts?: TeamDistributionBandCount[];
   /** Size of the (filtered) roster the backend resolved against, used by
    *  the frontend to flag "small-N" distributions with a warning badge. */
   roster_size?: number;
+  empty?: boolean;
+  error?: string;
+}
+
+/** One active alert row, shared between the per-player widget and the
+ *  team widget (each player card embeds a list of these). */
+export interface AlertItem {
+  id: string;
+  source_type: "goal" | "goal_warning" | "threshold" | "medication" | string;
+  source_id?: string;
+  severity: "info" | "warning" | "critical" | string;
+  message: string;
+  fired_at: string;
+  last_fired_at?: string | null;
+  trigger_count?: number;
+  template_name?: string;
+  field_key?: string;
+}
+
+/** Per-player active-alerts list, scoped to the widget's department. */
+export interface PlayerAlertsPayload {
+  chart_type: "player_alerts";
+  title: string;
+  department_id: string;
+  department_name: string;
+  alerts: AlertItem[];
+  total: number;
+  empty?: boolean;
+  error?: string;
+}
+
+/** Team-wide active-alerts ranking, scoped to the widget's department. */
+export interface TeamAlertsPayload {
+  chart_type: "team_alerts";
+  title: string;
+  department_id: string;
+  department_name: string;
+  players: {
+    player_id: string;
+    player_name: string;
+    alert_count: number;
+    critical_count: number;
+    max_severity: "info" | "warning" | "critical" | string;
+    alerts: AlertItem[];
+  }[];
+  total_alerts: number;
   empty?: boolean;
   error?: string;
 }
@@ -799,6 +982,94 @@ export interface TeamActiveRecordsPayload {
   error?: string;
 }
 
+/** Top-N ranking by a single numeric metric, aggregated across the
+ *  active window. Aggregator is sum / avg / max / latest. */
+export interface TeamLeaderboardPayload {
+  chart_type: "team_leaderboard";
+  title: string;
+  field: { key: string; label: string; unit: string } | null;
+  aggregator: "sum" | "avg" | "max" | "latest";
+  order: "asc" | "desc";
+  limit: number;
+  rows: {
+    rank: number;
+    player_id: string;
+    player_name: string;
+    value: number;
+    samples: number;
+  }[];
+  empty?: boolean;
+  error?: string;
+}
+
+/** Roster × goals matrix. Each column is a distinct (template, field,
+ *  operator, target) combo; rows are players. Cells carry current
+ *  value + progress vs target + status bucket. */
+export interface TeamGoalProgressPayload {
+  chart_type: "team_goal_progress";
+  title: string;
+  columns: {
+    key: string;
+    template_name: string;
+    field_label: string;
+    field_unit: string;
+    operator: GoalOperator;
+    target_value: number;
+  }[];
+  rows: {
+    player_id: string;
+    player_name: string;
+    cells: Record<
+      string,
+      {
+        goal_id: string;
+        current_value: number | null;
+        progress: GoalProgress;
+        due_date: string;
+        days_to_due: number;
+        status: "achieved" | "in_progress" | "missed" | "no_data";
+      }
+    >;
+  }[];
+  /** Aggregate counts across every cell — useful for a header summary. */
+  summary: {
+    achieved: number;
+    in_progress: number;
+    missed: number;
+    no_data: number;
+    total: number;
+  };
+  empty?: boolean;
+  error?: string;
+}
+
+/** Roster × templates matrix tracking days-since-last-result per cell.
+ *  Operational "who's overdue for evaluation?" report. */
+export interface TeamActivityCoveragePayload {
+  chart_type: "team_activity_coverage";
+  title: string;
+  /** One per template configured on the widget. */
+  columns: { key: string; label: string; slug: string }[];
+  /** Day thresholds for the green / yellow / red bucket boundaries.
+   *  Days-since ≤ green_max ⇒ ok; ≤ yellow_max ⇒ due; otherwise overdue. */
+  thresholds: { green_max: number; yellow_max: number };
+  rows: {
+    player_id: string;
+    player_name: string;
+    cells: Record<
+      string,
+      {
+        days_since: number | null;
+        last_iso: string | null;
+        status: "ok" | "due" | "overdue" | "never";
+      }
+    >;
+  }[];
+  as_of: string;
+  empty?: boolean;
+  error?: string;
+}
+
 export type TeamWidgetData =
   | TeamHorizontalComparisonPayload
   | TeamRosterMatrixPayload
@@ -806,6 +1077,10 @@ export type TeamWidgetData =
   | TeamTrendLinePayload
   | TeamDistributionPayload
   | TeamActiveRecordsPayload
+  | TeamActivityCoveragePayload
+  | TeamLeaderboardPayload
+  | TeamGoalProgressPayload
+  | TeamAlertsPayload
   | UnsupportedPayload
   | EmptyPayload;
 

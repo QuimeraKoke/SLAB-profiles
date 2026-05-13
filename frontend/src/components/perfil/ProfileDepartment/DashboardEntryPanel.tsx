@@ -3,6 +3,7 @@
 import React from "react";
 import Link from "next/link";
 
+import { usePermission } from "@/lib/permissions";
 import type { ExamTemplate } from "@/lib/types";
 import styles from "./DashboardEntryPanel.module.css";
 
@@ -17,7 +18,10 @@ export default function DashboardEntryPanel({
   playerId,
   departmentSlug,
 }: DashboardEntryPanelProps) {
-  if (templates.length === 0) return null;
+  // Hide the entire "Registrar nueva entrada" bar (not just disable the
+  // buttons) when the user can't create exam results.
+  const canAdd = usePermission("exams.add_examresult");
+  if (!canAdd || templates.length === 0) return null;
 
   return (
     <div className={styles.panel}>

@@ -21,8 +21,11 @@
 
 import type {
   TeamActiveRecordsPayload,
+  TeamActivityCoveragePayload,
   TeamDistributionPayload,
+  TeamGoalProgressPayload,
   TeamHorizontalComparisonPayload,
+  TeamLeaderboardPayload,
   TeamReportSection,
   TeamRosterMatrixPayload,
   TeamStatusCountsPayload,
@@ -134,30 +137,151 @@ function serializeWidget(data: TeamWidgetData, title: string): AOA | null {
       return serializeDistribution(data as TeamDistributionPayload, title);
     case "team_active_records":
       return serializeActiveRecords(data as TeamActiveRecordsPayload, title);
+    case "team_activity_coverage":
+      return serializeActivityCoverage(data as TeamActivityCoveragePayload, title);
+    case "team_leaderboard":
+      return serializeLeaderboard(data as TeamLeaderboardPayload, title);
+    case "team_goal_progress":
+      return serializeGoalProgress(data as TeamGoalProgressPayload, title);
     default:
       return null;
   }
+}
+
+function serializeGoalProgress(
+  data: TeamGoalProgressPayload,
+  title: string,
+): AOA {
+  // Wide: one row per player, columns alternating value + status per goal.
+  const header: (string | number | null)[] = ["Jugador"];
+  for (const col of data.columns) {
+    const opLabel = ({"<=":"≤","<":"<","==":"=",">=":"≥",">":">"} as Record<string, string>)[col.operator] ?? col.operator;
+    const colHeader = `${col.field_label} (${opLabel} ${col.target_value}${col.field_unit ? " " + col.field_unit : ""})`;
+    header.push(`${colHeader} — valor`);
+    header.push(`${colHeader} — estado`);
+  }
+  const statusLabels: Record<string, string> = {
+    achieved: "Cumplido",
+    in_progress: "En curso",
+    missed: "Vencido",
+    no_data: "Sin medición",
+  };
+  const rows: AOA = [
+    [title],
+    [
+      `Resumen: ${data.summary.achieved} cumplidos · ${data.summary.in_progress} en curso · `
+      + `${data.summary.missed} vencidos · ${data.summary.no_data} sin medición`,
+    ],
+    [],
+    header,
+  ];
+  if (data.empty || data.rows.length === 0) {
+    rows.push(["Sin datos"]);
+    return rows;
+  }
+  for (const row of data.rows) {
+    const out: (string | number | null)[] = [row.player_name];
+    for (const col of data.columns) {
+      const cell = row.cells[col.key];
+      if (!cell) {
+        out.push("—", "Sin objetivo");
+        continue;
+      }
+      out.push(cell.current_value, statusLabels[cell.status] ?? cell.status);
+    }
+    rows.push(out);
+  }
+  return rows;
+}
+
+function serializeLeaderboard(
+  data: TeamLeaderboardPayload,
+  title: string,
+): AOA {
+  const fieldLabel = data.field
+    ? data.field.unit
+      ? `${data.field.label} (${data.field.unit})`
+      : data.field.label
+    : "";
+  const rows: AOA = [
+    [title],
+    [`Métrica: ${fieldLabel}`],
+    [`Agregador: ${data.aggregator} · Orden: ${data.order} · Top ${data.limit}`],
+    [],
+    ["Posición", "Jugador", "Valor", "Tomas"],
+  ];
+  if (data.empty || data.rows.length === 0) {
+    rows.push(["Sin datos"]);
+    return rows;
+  }
+  for (const row of data.rows) {
+    rows.push([row.rank, row.player_name, row.value, row.samples]);
+  }
+  return rows;
+}
+
+function serializeActivityCoverage(
+  data: TeamActivityCoveragePayload,
+  title: string,
+): AOA {
+  // Wide: one row per player, one column per template. Each cell carries
+  // the days-since count + the last-result ISO date so the user can drill
+  // into specific delays without going back to the app.
+  const header: (string | number | null)[] = ["Jugador"];
+  for (const col of data.columns) {
+    header.push(`${col.label} — días`);
+    header.push(`${col.label} — última toma`);
+  }
+  const rows: AOA = [
+    [title],
+    [`Al ${data.as_of}`],
+    [`Umbrales: verde ≤ ${data.thresholds.green_max} d · amarillo ≤ ${data.thresholds.yellow_max} d`],
+    [],
+    header,
+  ];
+  if (data.empty || data.rows.length === 0) {
+    rows.push(["Sin datos"]);
+    return rows;
+  }
+  for (const row of data.rows) {
+    const out: (string | number | null)[] = [row.player_name];
+    for (const col of data.columns) {
+      const cell = row.cells[col.key];
+      if (!cell || cell.status === "never") {
+        out.push("—", "Sin registro");
+      } else {
+        out.push(cell.days_since, cell.last_iso ?? "");
+      }
+    }
+    rows.push(out);
+  }
+  return rows;
 }
 
 function serializeHorizontalComparison(
   data: TeamHorizontalComparisonPayload,
   title: string,
 ): AOA {
-  // Tidy / long format: one row per (player, field, reading). Lets the
-  // user pivot in Excel however they want.
-  const rows: AOA = [[title], [], ["Jugador", "Métrica", "Unidad", "Fecha", "Valor"]];
+  // Tidy / long format: one row per (subject, field, reading). Subject is
+  // either a player (default) or a position group (when the widget is
+  // configured with `group_by: "position"`). Header label flips so the
+  // exported sheet is self-describing.
+  const isByPosition = data.grouping === "position";
+  const subjectHeader = isByPosition ? "Posición" : "Jugador";
+  const rows: AOA = [[title], [], [subjectHeader, "Métrica", "Unidad", "Fecha", "Valor"]];
   if (data.empty || (data.rows ?? []).length === 0) {
     rows.push(["Sin datos"]);
     return rows;
   }
   const fieldsByKey = new Map(data.fields.map((f) => [f.key, f]));
   for (const row of data.rows) {
+    const subjectName = "player_name" in row ? row.player_name : row.group_name;
     let wroteAny = false;
     for (const field of data.fields) {
       const readings = row.values[field.key] || [];
       for (const r of readings) {
         rows.push([
-          row.player_name,
+          subjectName,
           fieldsByKey.get(field.key)?.label ?? field.key,
           field.unit ?? "",
           r.iso,
@@ -167,7 +291,7 @@ function serializeHorizontalComparison(
       }
     }
     if (!wroteAny) {
-      rows.push([row.player_name, "—", "", "", null]);
+      rows.push([subjectName, "—", "", "", null]);
     }
   }
   return rows;
@@ -249,12 +373,24 @@ function serializeTrendLine(
   data: TeamTrendLinePayload,
   title: string,
 ): AOA {
-  // Wide: one row per bucket, one column per series. Missing values
-  // become blank cells (null) so Excel's chart wizard handles gaps.
+  // Wide: one row per bucket. In team-wide mode each metric is its own
+  // column. In position mode each (position × metric) combo gets its own
+  // column so the sheet is still pivotable. Missing values stay blank.
+  const isByPosition = data.grouping === "position";
+  const groups = isByPosition ? (data.groups ?? []) : [];
   const header: (string | number | null)[] = ["Período", "Fecha"];
-  for (const f of data.fields) {
-    const label = f.unit ? `${f.label} (${f.unit})` : f.label;
-    header.push(label);
+  if (isByPosition) {
+    for (const g of groups) {
+      for (const f of data.fields) {
+        const label = f.unit ? `${g.label} · ${f.label} (${f.unit})` : `${g.label} · ${f.label}`;
+        header.push(label);
+      }
+    }
+  } else {
+    for (const f of data.fields) {
+      const label = f.unit ? `${f.label} (${f.unit})` : f.label;
+      header.push(label);
+    }
   }
   const rows: AOA = [[title], [`Granularidad: ${data.bucket_size === "month" ? "mensual" : "semanal"}`], [], header];
   if (data.empty || data.buckets.length === 0) {
@@ -263,9 +399,19 @@ function serializeTrendLine(
   }
   for (const bucket of data.buckets) {
     const out: (string | number | null)[] = [bucket.label, bucket.iso];
-    for (const f of data.fields) {
-      const v = bucket.values[f.key];
-      out.push(typeof v === "number" ? v : null);
+    if (isByPosition) {
+      for (const g of groups) {
+        const groupValues = bucket.values_by_group?.[g.id];
+        for (const f of data.fields) {
+          const v = groupValues?.[f.key];
+          out.push(typeof v === "number" ? v : null);
+        }
+      }
+    } else {
+      for (const f of data.fields) {
+        const v = bucket.values?.[f.key];
+        out.push(typeof v === "number" ? v : null);
+      }
     }
     rows.push(out);
   }

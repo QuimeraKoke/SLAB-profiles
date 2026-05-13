@@ -69,6 +69,55 @@ from .schemas import (
 
 User = get_user_model()
 
+
+# ---------------------------------------------------------------------------
+# Permission helpers — declared early so the endpoint decorators below
+# can reference them without forward-ref gymnastics.
+# ---------------------------------------------------------------------------
+
+
+def _has_perm(user, codename: str) -> bool:
+    """Cheap helper around `user.has_perm`. Handles anonymous + superuser.
+
+    Codename format is `<app_label>.<codename>` (e.g. `core.view_contract`).
+    Superusers always return True (matches Django's default).
+    """
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return user.has_perm(codename)
+
+
+def require_perm(codename: str):
+    """Decorator: raise HttpError(403) when the request user lacks `codename`.
+
+    Use on Ninja endpoint functions; the decorator forwards `*args,
+    **kwargs` after the permission check. Superusers bypass via
+    `_has_perm`.
+
+    Example:
+
+        @api.delete("/results/{result_id}")
+        @require_perm("exams.delete_examresult")
+        def delete_result(request, result_id: UUID):
+            ...
+    """
+    from functools import wraps
+
+    def decorator(view):
+        @wraps(view)
+        def wrapper(request, *args, **kwargs):
+            if not _has_perm(request.user, codename):
+                raise HttpError(
+                    403,
+                    f"No tienes permiso para esta acción ({codename}).",
+                )
+            return view(request, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
 api = NinjaAPI(title="SLAB API", version="0.1.0", auth=jwt_auth)
 
 
@@ -119,6 +168,27 @@ def _parse_date_window(
     return parsed_from, parsed_to
 
 
+def _serialize_user(user):
+    """Project the Django User into the `UserOut` shape with all
+    effective permission codenames flattened. Superusers get a single
+    `"*"` sentinel — the frontend treats it as "match anything"
+    instead of pretending to enumerate the entire permission table."""
+    if user.is_superuser:
+        permissions = ["*"]
+    else:
+        permissions = sorted(user.get_all_permissions())
+    return {
+        "id": user.id,
+        "email": user.email,
+        "username": user.username,
+        "first_name": user.first_name or "",
+        "last_name": user.last_name or "",
+        "is_staff": user.is_staff,
+        "is_superuser": user.is_superuser,
+        "permissions": permissions,
+    }
+
+
 def _serialize_membership(membership):
     if membership is None:
         return None
@@ -149,7 +219,7 @@ def login(request, payload: LoginIn):
     return {
         "access_token": token,
         "expires_at": expires_at,
-        "user": user,
+        "user": _serialize_user(user),
         "membership": _serialize_membership(membership),
     }
 
@@ -158,7 +228,7 @@ def login(request, payload: LoginIn):
 def me(request):
     membership = get_membership(request.user)
     return {
-        "user": request.user,
+        "user": _serialize_user(request.user),
         "membership": _serialize_membership(membership),
     }
 
@@ -316,6 +386,7 @@ def _check_position_in_scope(position_id, club_id):
 
 
 @api.post("/players", response=PlayerDetailOut)
+@require_perm("core.add_player")
 def create_player(request, payload: PlayerIn):
     """Create a player. The signed-in user must have access to the target
     category (via StaffMembership). Position is optional but if provided
@@ -340,6 +411,7 @@ def create_player(request, payload: PlayerIn):
 
 
 @api.patch("/players/{player_id}", response=PlayerDetailOut)
+@require_perm("core.change_player")
 def update_player(request, player_id: str, payload: PlayerPatchIn):
     """Partial update for a player. Each provided field is written; others
     remain. `status` is **not** writable — it's auto-derived from open
@@ -398,6 +470,7 @@ def update_player(request, player_id: str, payload: PlayerPatchIn):
 
 
 @api.delete("/players/{player_id}")
+@require_perm("core.delete_player")
 def delete_player(request, player_id: str):
     """Hard-delete a player. Refuses (409) when there are linked records
     (results, episodes, contracts) — those reflect real history and the
@@ -420,7 +493,7 @@ def delete_player(request, player_id: str):
         raise HttpError(
             409,
             "No se puede borrar: hay datos asociados que protegen al jugador. "
-            "Desactivá al jugador (is_active=false) en su lugar para "
+            "Desactiva al jugador (is_active=false) en su lugar para "
             "preservar el historial.",
         ) from exc
 
@@ -432,17 +505,11 @@ def delete_player(request, player_id: str):
 def _user_can_see_salary(user) -> bool:
     """Salary visibility gate.
 
-    Platform admins (no membership) and is_staff users see full salary detail.
-    Other staff (e.g. medical doctor with a StaffMembership but no is_staff
-    flag) get a redacted view: total_gross_amount + the bonus/option/clause
-    text fields are omitted, but term + contract_type stay visible so the
-    profile header can still show "Contract until TT 2027".
+    Backed by the standard `core.view_contract` permission. Granted
+    granularly to users via /admin/auth/user/<id>/ → User permissions,
+    or via a custom group. Superusers always pass.
     """
-    if not user or not user.is_authenticated:
-        return False
-    if user.is_superuser or user.is_staff:
-        return True
-    return False
+    return _has_perm(user, "core.view_contract")
 
 
 def _serialize_contract(contract: Contract, user) -> dict:
@@ -498,6 +565,7 @@ def _serialize_current_contract(player: Player, user) -> dict | None:
 
 
 @api.get("/players/{player_id}/contracts", response=list[ContractOut])
+@require_perm("core.view_contract")
 def list_player_contracts(request, player_id: str):
     membership = get_membership(request.user)
     player = scope_players(Player.objects.all(), membership).filter(pk=player_id).first()
@@ -507,21 +575,16 @@ def list_player_contracts(request, player_id: str):
     return [_serialize_contract(c, request.user) for c in contracts]
 
 
-def _require_admin_for_contracts(user):
-    """Only is_staff or superuser can create / edit / delete contracts.
-
-    Doctors with a StaffMembership but no is_staff flag can read (with salary
-    redacted) but not mutate.
-    """
-    if not user or not user.is_authenticated:
-        raise HttpError(401, "Authentication required.")
-    if not (user.is_staff or user.is_superuser):
-        raise HttpError(403, "Only club admins can edit contracts.")
+# Contract mutations are gated per-action via the standard
+# `core.add_contract` / `core.change_contract` / `core.delete_contract`
+# permissions. Assigned granularly through /admin/auth/user/<id>/
+# rather than via the Editor / Solo Lectura groups (those don't
+# include contract perms by design).
 
 
 @api.post("/contracts", response=ContractOut)
+@require_perm("core.add_contract")
 def create_contract(request, payload: ContractIn):
-    _require_admin_for_contracts(request.user)
     membership = get_membership(request.user)
     player = scope_players(Player.objects.all(), membership).filter(id=payload.player_id).first()
     if player is None:
@@ -550,8 +613,8 @@ def create_contract(request, payload: ContractIn):
 
 
 @api.patch("/contracts/{contract_id}", response=ContractOut)
+@require_perm("core.change_contract")
 def update_contract(request, contract_id: str, payload: ContractPatchIn):
-    _require_admin_for_contracts(request.user)
     membership = get_membership(request.user)
     contract = (
         Contract.objects
@@ -583,8 +646,8 @@ def update_contract(request, contract_id: str, payload: ContractPatchIn):
 
 
 @api.delete("/contracts/{contract_id}")
+@require_perm("core.delete_contract")
 def delete_contract(request, contract_id: str):
-    _require_admin_for_contracts(request.user)
     membership = get_membership(request.user)
     contract = (
         Contract.objects
@@ -612,6 +675,7 @@ def get_template(request, template_id: str):
 
 
 @api.post("/results", response=ResultOut)
+@require_perm("exams.add_examresult")
 def create_result(request, payload: ResultIn):
     """Create an ExamResult.
 
@@ -677,6 +741,7 @@ def create_result(request, payload: ResultIn):
 
 
 @api.patch("/results/{result_id}", response=ResultOut)
+@require_perm("exams.change_examresult")
 def update_result(request, result_id: UUID, payload: ResultPatchIn):
     """Update an existing ExamResult's raw_data and/or recorded_at.
 
@@ -732,6 +797,7 @@ def update_result(request, result_id: UUID, payload: ResultPatchIn):
 
 
 @api.delete("/results/{result_id}")
+@require_perm("exams.delete_examresult")
 def delete_result(request, result_id: UUID):
     """Hard-delete an ExamResult plus any attachments pinned to it.
 
@@ -788,6 +854,7 @@ def delete_result(request, result_id: UUID):
 
 
 @api.post("/results/team", response=TeamResultsOut)
+@require_perm("exams.add_examresult")
 def create_team_results(request, payload: TeamResultsIn):
     """Create one ExamResult per player from a roster-style submission.
 
@@ -923,6 +990,7 @@ def _serialize_result(result: ExamResult) -> dict:
 
 
 @api.post("/results/bulk")
+@require_perm("exams.add_examresult")
 def bulk_results(
     request,
     file: UploadedFile = File(...),
@@ -1018,6 +1086,11 @@ def list_player_templates(request, player_id: str, department: str | None = None
     qs = scope_templates(
         ExamTemplate.objects.select_related("department").filter(
             applicable_categories=player.category,
+            # Only the active version of each family is offered for new
+            # writes. Inactive versions stay in the DB so historical
+            # ExamResults remain queryable; they don't appear in the
+            # registrar's picker.
+            is_active_version=True,
         ),
         membership,
     )
@@ -1464,6 +1537,7 @@ def get_event(request, event_id: UUID):
 
 
 @api.post("/events", response=EventOut)
+@require_perm("events.add_event")
 def create_event(request, payload: EventIn):
     membership = get_membership(request.user)
 
@@ -1527,6 +1601,7 @@ def create_event(request, payload: EventIn):
 
 
 @api.patch("/events/{event_id}", response=EventOut)
+@require_perm("events.change_event")
 def update_event(request, event_id: UUID, payload: EventIn):
     membership = get_membership(request.user)
     event = scope_events(Event.objects.all(), membership).filter(pk=event_id).first()
@@ -1587,6 +1662,7 @@ def update_event(request, event_id: UUID, payload: EventIn):
 
 
 @api.delete("/events/{event_id}")
+@require_perm("events.delete_event")
 def delete_event(request, event_id: UUID):
     membership = get_membership(request.user)
     event = scope_events(Event.objects.all(), membership).filter(pk=event_id).first()
@@ -1610,8 +1686,68 @@ from goals.models import (  # noqa: E402
 )
 
 
+def _resolve_goal_current_value(goal: Goal) -> tuple[float | None, "datetime | None"]:
+    """Latest numeric reading for this goal's (player, template family, field_key).
+
+    Fans out across the template version family so a forked v2 still sees v1
+    history. Returns (value, recorded_at) or (None, None) if no reading exists
+    or the latest reading has a non-numeric value at that key.
+    """
+    latest = (
+        ExamResult.objects
+        .filter(player_id=goal.player_id, template__family_id=goal.template.family_id)
+        .order_by("-recorded_at")
+        .only("recorded_at", "result_data")
+        .first()
+    )
+    # We want the latest reading that actually HAS a numeric value for this
+    # field — not just the latest reading at all. A doctor may have logged a
+    # daily-note without setting `peso`; we shouldn't claim the goal has no
+    # current value just because of that. Walk newest-first until we find one.
+    candidates = (
+        ExamResult.objects
+        .filter(player_id=goal.player_id, template__family_id=goal.template.family_id)
+        .order_by("-recorded_at")
+        .only("recorded_at", "result_data")
+    )
+    for r in candidates.iterator():
+        raw = (r.result_data or {}).get(goal.field_key)
+        if raw is None or raw == "":
+            continue
+        try:
+            return float(raw), r.recorded_at
+        except (TypeError, ValueError):
+            continue
+    return None, (latest.recorded_at if latest else None)
+
+
+def _goal_progress(goal: Goal, current_value: float | None) -> dict:
+    """Compute {achieved, distance, distance_pct} for a goal against the
+    given current value. Returns null fields when current_value is unknown."""
+    if current_value is None:
+        return {"achieved": None, "distance": None, "distance_pct": None}
+    target = float(goal.target_value)
+    op = goal.operator
+    if op == "<=":
+        achieved = current_value <= target
+    elif op == "<":
+        achieved = current_value < target
+    elif op == ">=":
+        achieved = current_value >= target
+    elif op == ">":
+        achieved = current_value > target
+    elif op == "==":
+        achieved = current_value == target
+    else:
+        achieved = False
+    distance = round(current_value - target, 4)
+    pct = round((distance / target) * 100, 2) if target != 0 else None
+    return {"achieved": achieved, "distance": distance, "distance_pct": pct}
+
+
 def _serialize_goal(goal: Goal) -> dict:
-    """Find the field's label + unit in the template's config_schema."""
+    """Find the field's label + unit in the template's config_schema, then
+    compute the live current value + progress against the goal's target."""
     label = goal.field_key
     unit = ""
     for field in (goal.template.config_schema or {}).get("fields", []):
@@ -1619,6 +1755,7 @@ def _serialize_goal(goal: Goal) -> dict:
             label = field.get("label") or goal.field_key
             unit = field.get("unit") or ""
             break
+    current_value, current_recorded_at = _resolve_goal_current_value(goal)
     return {
         "id": goal.id,
         "player_id": goal.player_id,
@@ -1636,6 +1773,9 @@ def _serialize_goal(goal: Goal) -> dict:
         "evaluated_at": goal.evaluated_at,
         "warn_days_before": goal.warn_days_before,
         "created_at": goal.created_at,
+        "current_value": current_value,
+        "current_recorded_at": current_recorded_at,
+        "progress": _goal_progress(goal, current_value),
     }
 
 
@@ -1665,6 +1805,7 @@ def list_player_goals(request, player_id: UUID):
 
 
 @api.post("/goals", response=GoalOut)
+@require_perm("goals.add_goal")
 def create_goal(request, payload: GoalIn):
     membership = get_membership(request.user)
 
@@ -1711,6 +1852,7 @@ def create_goal(request, payload: GoalIn):
 
 
 @api.patch("/goals/{goal_id}", response=GoalOut)
+@require_perm("goals.change_goal")
 def update_goal(request, goal_id: UUID, payload: GoalPatchIn):
     membership = get_membership(request.user)
     goal = _scoped_goals(membership).filter(pk=goal_id).first()
@@ -1755,6 +1897,7 @@ def update_goal(request, goal_id: UUID, payload: GoalPatchIn):
 
 
 @api.delete("/goals/{goal_id}")
+@require_perm("goals.delete_goal")
 def delete_goal(request, goal_id: UUID):
     membership = get_membership(request.user)
     goal = _scoped_goals(membership).filter(pk=goal_id).first()
@@ -1831,6 +1974,7 @@ def list_all_alerts(request, status: str | None = "active", limit: int = 50):
 
 
 @api.patch("/alerts/{alert_id}", response=AlertOut)
+@require_perm("goals.change_alert")
 def update_alert(request, alert_id: UUID, payload: AlertPatchIn):
     membership = get_membership(request.user)
     alert = _scoped_alerts(membership).filter(pk=alert_id).first()
@@ -1877,8 +2021,8 @@ def _check_attachment_source_access(
     if source_type == AttachmentSource.CONTRACT:
         from core.models import Contract
 
-        if mutate:
-            _require_admin_for_contracts(request.user)
+        if mutate and not _has_perm(request.user, "core.change_contract"):
+            raise HttpError(403, "No tienes permiso para modificar contratos.")
         contract = (
             Contract.objects
             .filter(player__in=scope_players(Player.objects.all(), membership))
@@ -1911,6 +2055,7 @@ def _check_attachment_source_access(
 
 
 @api.post("/attachments", response=AttachmentOut)
+@require_perm("attachments.add_attachment")
 def upload_attachment(
     request,
     file: UploadedFile = File(...),
@@ -2039,6 +2184,7 @@ def download_attachment(request, attachment_id: UUID):
 
 
 @api.delete("/attachments/{attachment_id}")
+@require_perm("attachments.delete_attachment")
 def delete_attachment(request, attachment_id: UUID):
     attachment = Attachment.objects.filter(pk=attachment_id).first()
     if attachment is None:
@@ -2159,6 +2305,7 @@ def list_episode_results(request, episode_id: str):
 
 
 @api.patch("/episodes/{episode_id}", response=EpisodeOut)
+@require_perm("exams.change_episode")
 def update_episode(request, episode_id: str, payload: EpisodePatchIn):
     """Force-close an episode without entering a final result.
 

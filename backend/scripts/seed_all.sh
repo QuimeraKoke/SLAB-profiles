@@ -128,6 +128,10 @@ run "seed_fake_exams" python manage.py seed_fake_exams "${FAKE_FLAGS[@]}"
 run "seed_demo_layouts" python manage.py seed_demo_layouts \
     --club "$CLUB" --category "$CATEGORY"
 
+# 7. Role groups (Editor / Solo Lectura). Idempotent; existing users
+# without a group are auto-assigned to Editor so demos don't break.
+run "seed_role_groups" python manage.py seed_role_groups
+
 # ---------------------------------------------------------------
 # Verification — counts the rows seed_fake_exams should have created.
 # If you see 0 results, the most common causes are:

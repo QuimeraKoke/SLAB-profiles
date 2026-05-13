@@ -90,7 +90,25 @@ class ExamTemplate(models.Model):
             "See model docstring for the schema."
         ),
     )
+    # ---- Versioning ----
+    # `family_id` groups all versions of a template together; the slug-uniqueness
+    # rule + the registrar's "which template to write to?" lookup both rely on
+    # exactly one version per family being marked `is_active_version=True`.
+    # Reads (dashboards, history) fan out across the whole family by joining on
+    # this field — see `aggregation._fetch_results` and `team_aggregation`.
+    family_id = models.UUIDField(
+        default=uuid.uuid4, editable=False,
+        help_text="Shared by every version of the same template. Set by `fork_new_version`.",
+    )
     version = models.PositiveIntegerField(default=1)
+    is_active_version = models.BooleanField(
+        default=True,
+        help_text=(
+            "Exactly one version per family is active. New ExamResults are written "
+            "against the active version (resolved by slug); inactive versions stay "
+            "for history but are hidden from the registrar's template picker."
+        ),
+    )
     is_locked = models.BooleanField(
         default=False,
         help_text="Once results exist, the template is locked. New changes spawn a new version.",
@@ -142,6 +160,26 @@ class ExamTemplate(models.Model):
         indexes = [
             GinIndex(fields=["config_schema"]),
             models.Index(fields=["slug"]),
+            # Lets the registrar resolve "active template for slug X" with a
+            # single seek instead of scanning the family.
+            models.Index(
+                fields=["slug", "is_active_version"],
+                name="exam_tpl_slug_active_idx",
+            ),
+        ]
+        constraints = [
+            # (family_id, version) must be unique — protects against accidental
+            # double-fork from concurrent admin edits.
+            models.UniqueConstraint(
+                fields=["family_id", "version"],
+                name="exam_tpl_family_version_unique",
+            ),
+            # Exactly one active version per family.
+            models.UniqueConstraint(
+                fields=["family_id"],
+                condition=models.Q(is_active_version=True),
+                name="exam_tpl_one_active_per_family",
+            ),
         ]
 
     RESERVED_SLUGS = frozenset({"player"})
@@ -164,12 +202,22 @@ class ExamTemplate(models.Model):
                     {"slug": "Must be lowercase letters, digits and underscores; "
                              "must start with a letter."}
                 )
-            # Club-wide uniqueness (department.club is the boundary).
-            if self.department_id:
+            # Club-wide uniqueness — but only against OTHER active versions.
+            # Old versions in the same family keep their slug; the constraint
+            # only kicks in for distinct families competing for the same slug.
+            # Also restrict the check to active-vs-active so a brand-new
+            # template doesn't conflict with retired versions of an unrelated
+            # template (rare but possible after a chain of forks).
+            if self.department_id and self.is_active_version:
                 conflict = (
                     ExamTemplate.objects
-                    .filter(slug=self.slug, department__club=self.department.club)
+                    .filter(
+                        slug=self.slug,
+                        department__club=self.department.club,
+                        is_active_version=True,
+                    )
                     .exclude(pk=self.pk)
+                    .exclude(family_id=self.family_id)  # same family ≠ conflict
                     .first()
                 )
                 if conflict:
@@ -388,10 +436,124 @@ class ExamTemplate(models.Model):
         if not self.slug and self.name:
             from django.utils.text import slugify
             self.slug = slugify(self.name).replace("-", "_")[:80] or "template"
+        # Every brand-new template starts a fresh family. The field default
+        # already gives us a UUID; we only need to ensure programmatic
+        # creations that explicitly pass `family_id=None` (no callers do
+        # today but be defensive) get a fresh one.
+        if self.family_id is None:
+            self.family_id = uuid.uuid4()
         super().save(*args, **kwargs)
 
     def __str__(self) -> str:
         return f"{self.name} v{self.version} ({self.department})"
+
+    # ---- Versioning -------------------------------------------------------
+    def fork_new_version(self) -> "ExamTemplate":
+        """Clone this template into v+1 and make the clone the active version.
+
+        Copies the runtime schema (`config_schema`, `input_config`,
+        `episode_config`), the structured `TemplateField` rows, the
+        `applicable_categories` M2M, and reassigns every WidgetDataSource +
+        TeamReportWidgetDataSource pointing at this version to the new one.
+        The old version stays in the DB, no longer active — historical
+        `ExamResult` rows continue to point at it.
+
+        The clone starts UNLOCKED so the admin can edit its schema; it
+        re-locks itself on the first ExamResult save (same auto-lock signal
+        that gates the original).
+
+        Returns the new ExamTemplate instance.
+        """
+        from django.db import transaction
+
+        with transaction.atomic():
+            # Step 1: create the v+1 row. Take family_id from self so both
+            # versions share it.
+            new_version = ExamTemplate.objects.create(
+                name=self.name,
+                slug=self.slug,
+                department=self.department,
+                config_schema=dict(self.config_schema or {}),
+                input_config=dict(self.input_config or {}),
+                family_id=self.family_id,
+                version=self.version + 1,
+                is_active_version=False,  # flip later, after old is deactivated
+                is_locked=False,
+                link_to_match=self.link_to_match,
+                is_episodic=self.is_episodic,
+                show_injuries=self.show_injuries,
+                episode_config=dict(self.episode_config or {}),
+            )
+
+            # Step 2: copy TemplateField rows. Bulk-create for speed; we
+            # already have the schema in JSON form so `rebuild_template_fields`
+            # would be redundant.
+            field_rows = list(self.template_fields.all().order_by("sort_order", "key"))
+            TemplateField.objects.bulk_create([
+                TemplateField(
+                    template=new_version,
+                    sort_order=row.sort_order,
+                    key=row.key,
+                    label=row.label,
+                    type=row.type,
+                    unit=row.unit,
+                    group=row.group,
+                    options=list(row.options or []),
+                    option_labels=dict(row.option_labels or {}),
+                    option_regions=dict(row.option_regions or {}),
+                    formula=row.formula,
+                    chart_type=row.chart_type,
+                    required=row.required,
+                    multiline=row.multiline,
+                    rows=row.rows,
+                    placeholder=row.placeholder,
+                    direction_of_good=row.direction_of_good,
+                    reference_ranges=list(row.reference_ranges or []),
+                    writes_to_player_field=row.writes_to_player_field,
+                )
+                for row in field_rows
+            ])
+
+            # Step 3: copy the applicable_categories M2M.
+            new_version.applicable_categories.set(self.applicable_categories.all())
+
+            # Step 4: hand off data sources from old → new so dashboards keep
+            # working. WidgetDataSource is for per-player layouts;
+            # TeamReportWidgetDataSource is the team-report mirror. Lazy
+            # imports — the dashboards app is a downstream consumer of
+            # ExamTemplate and we want to avoid a cycle at module load.
+            from dashboards.models import (  # noqa: WPS433
+                TeamReportWidgetDataSource, WidgetDataSource,
+            )
+            WidgetDataSource.objects.filter(template=self).update(template=new_version)
+            TeamReportWidgetDataSource.objects.filter(template=self).update(
+                template=new_version,
+            )
+
+            # Step 5: flip the active flags atomically — old → inactive,
+            # new → active. Order matters because of the partial-unique
+            # constraint on (family_id) where is_active_version=True.
+            ExamTemplate.objects.filter(pk=self.pk).update(is_active_version=False)
+            ExamTemplate.objects.filter(pk=new_version.pk).update(is_active_version=True)
+            new_version.refresh_from_db()
+
+        return new_version
+
+    @classmethod
+    def active_for_slug(
+        cls, *, slug: str, department_id=None, club_id=None,
+    ):
+        """Resolve the active version for `slug` scoped by department or club.
+
+        Used by the registrar and seed commands so writes always target the
+        current version even when forks have happened in between.
+        """
+        qs = cls.objects.filter(slug=slug, is_active_version=True)
+        if department_id is not None:
+            qs = qs.filter(department_id=department_id)
+        if club_id is not None:
+            qs = qs.filter(department__club_id=club_id)
+        return qs.first()
 
     # ---- Authoring sync helpers ----------------------------------------------
     # The canonical runtime source is `config_schema["fields"]` (a JSON list).
@@ -442,6 +604,8 @@ class ExamTemplate(models.Model):
                     multiline=bool(raw.get("multiline")),
                     rows=raw.get("rows"),
                     placeholder=raw.get("placeholder", "") or "",
+                    direction_of_good=raw.get("direction_of_good", "") or TemplateField.DIRECTION_NEUTRAL,
+                    reference_ranges=raw.get("reference_ranges") or [],
                     writes_to_player_field=raw.get("writes_to_player_field", "") or "",
                 ))
             TemplateField.objects.bulk_create(objs)
@@ -555,6 +719,54 @@ class TemplateField(models.Model):
     )
     placeholder = models.CharField(max_length=200, blank=True)
 
+    # Direction-of-good for numeric / calculated fields. Tells the frontend
+    # which way deltas should be colored green vs red on widgets like
+    # `team_roster_matrix`. `up` = higher is better (e.g. CMJ); `down` =
+    # lower is better (e.g. CK, resting HR); `neutral` (default) keeps the
+    # current blue/orange neutral palette — used when the metric has no
+    # obvious clinical direction (e.g. body composition that depends on
+    # role, position-specific norms, etc.).
+    DIRECTION_NEUTRAL = "neutral"
+    DIRECTION_UP = "up"
+    DIRECTION_DOWN = "down"
+    DIRECTION_CHOICES = [
+        (DIRECTION_NEUTRAL, "Neutro (sin opinión)"),
+        (DIRECTION_UP, "Más es mejor (verde si sube)"),
+        (DIRECTION_DOWN, "Menos es mejor (verde si baja)"),
+    ]
+    direction_of_good = models.CharField(
+        max_length=10, choices=DIRECTION_CHOICES,
+        blank=True, default=DIRECTION_NEUTRAL,
+        help_text=(
+            "Para campos numéricos/calculados. Define cómo colorear los "
+            "deltas de variación en widgets como Roster Matrix: 'up' pinta "
+            "verde un alza y rojo una baja; 'down' invierte; 'neutral' "
+            "mantiene el paleta azul/naranja sin juicio."
+        ),
+    )
+
+    # Reference bands for numeric/calculated fields. Each band is
+    # {"label": str, "min": float?, "max": float?, "color": str?}.
+    # At least one of `min` / `max` must be set per band; bands must be
+    # ordered and disjoint (validated in `clean()`). Drives:
+    #   - Compact + dynamic hint under the form input.
+    #   - Cell border coloring on `team_roster_matrix` + `comparison_table`.
+    # When empty, no hint is shown and widgets keep their default coloring.
+    reference_ranges = models.JSONField(
+        default=list, blank=True,
+        help_text=(
+            "Bandas de referencia clínica para campos numéricos. Lista de "
+            "objetos: {\"label\": \"Normal\", \"min\": 30, \"max\": 200, "
+            "\"color\": \"#16a34a\"}. min y max son opcionales por banda "
+            "(banda abierta a un lado), pero al menos uno debe estar. Las "
+            "bandas deben ser disjuntas y ordenadas de menor a mayor. "
+            "Ejemplo CK: [{\"label\":\"Bajo\",\"max\":30},"
+            "{\"label\":\"Normal\",\"min\":30,\"max\":200},"
+            "{\"label\":\"Elevado\",\"min\":200,\"max\":400},"
+            "{\"label\":\"Severo\",\"min\":400}]"
+        ),
+    )
+
     # Player profile write-back. When set, saving an ExamResult that holds a
     # non-null value for this field will update the named Player attribute
     # (provided this result is the most recent for the (player, template)).
@@ -611,6 +823,92 @@ class TemplateField(models.Model):
         if self.multiline and self.type != self.TYPE_TEXT:
             raise ValidationError({"multiline": "Multi-línea solo aplica a campos de texto."})
 
+        # Reference bands: numeric/calculated only, shape + ordering rules.
+        if self.reference_ranges:
+            if self.type not in {self.TYPE_NUMBER, self.TYPE_CALCULATED}:
+                raise ValidationError({
+                    "reference_ranges": (
+                        "Las bandas de referencia solo aplican a campos "
+                        "numéricos o calculados."
+                    ),
+                })
+            self._validate_reference_ranges()
+
+    def _validate_reference_ranges(self):
+        """Check `reference_ranges` shape + ordering + disjointness.
+
+        Each band needs a label and at least one bound. We allow at most
+        one band open on each end (one with no `min`, one with no `max`)
+        and require the closed-bound bands in between to chain without
+        overlap or gap (the next band's min ≥ previous band's max).
+        """
+        from django.core.exceptions import ValidationError
+
+        bands = self.reference_ranges
+        if not isinstance(bands, list):
+            raise ValidationError({"reference_ranges": "Debe ser una lista de bandas."})
+
+        normalized = []
+        for i, band in enumerate(bands):
+            if not isinstance(band, dict):
+                raise ValidationError({
+                    "reference_ranges": f"Banda #{i + 1}: debe ser un objeto.",
+                })
+            label = (band.get("label") or "").strip()
+            if not label:
+                raise ValidationError({
+                    "reference_ranges": f"Banda #{i + 1}: 'label' es obligatorio.",
+                })
+            lo = band.get("min")
+            hi = band.get("max")
+            if lo is None and hi is None:
+                raise ValidationError({
+                    "reference_ranges": (
+                        f"Banda '{label}': definí al menos uno de 'min' o 'max'."
+                    ),
+                })
+            try:
+                lo_f = float(lo) if lo is not None else None
+                hi_f = float(hi) if hi is not None else None
+            except (TypeError, ValueError):
+                raise ValidationError({
+                    "reference_ranges": (
+                        f"Banda '{label}': 'min' y 'max' deben ser numéricos."
+                    ),
+                })
+            if lo_f is not None and hi_f is not None and lo_f >= hi_f:
+                raise ValidationError({
+                    "reference_ranges": (
+                        f"Banda '{label}': 'min' ({lo_f}) debe ser menor que 'max' ({hi_f})."
+                    ),
+                })
+            normalized.append((label, lo_f, hi_f))
+
+        # Ordering + disjointness. Sort by effective lower bound (None
+        # treated as -infinity), then walk pairs.
+        ordered = sorted(
+            normalized,
+            key=lambda b: float("-inf") if b[1] is None else b[1],
+        )
+        for prev, curr in zip(ordered, ordered[1:]):
+            prev_max = prev[2]
+            curr_min = curr[1]
+            if prev_max is None or curr_min is None:
+                raise ValidationError({
+                    "reference_ranges": (
+                        f"Bandas '{prev[0]}' y '{curr[0]}': solo una banda puede "
+                        "quedar abierta en cada extremo (la más baja sin 'min', "
+                        "la más alta sin 'max'). El resto debe tener ambos límites."
+                    ),
+                })
+            if curr_min < prev_max:
+                raise ValidationError({
+                    "reference_ranges": (
+                        f"Bandas '{prev[0]}' y '{curr[0]}' se solapan "
+                        f"(prev.max={prev_max} > curr.min={curr_min})."
+                    ),
+                })
+
     def to_schema_dict(self) -> dict:
         """Serialize this row back into the JSON shape stored in config_schema['fields']."""
         out: dict = {"key": self.key, "label": self.label, "type": self.type}
@@ -636,6 +934,10 @@ class TemplateField(models.Model):
                 out["rows"] = self.rows
         if self.placeholder:
             out["placeholder"] = self.placeholder
+        if self.direction_of_good and self.direction_of_good != self.DIRECTION_NEUTRAL:
+            out["direction_of_good"] = self.direction_of_good
+        if self.reference_ranges:
+            out["reference_ranges"] = list(self.reference_ranges)
         if self.writes_to_player_field:
             out["writes_to_player_field"] = self.writes_to_player_field
         return out

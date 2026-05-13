@@ -20,6 +20,7 @@ from typing import Iterable
 from django.db import models
 from django.utils import timezone
 
+from exams.bands import alert_bands as _alert_bands, band_for_value as _band_for_value
 from exams.models import ExamResult
 from .models import (
     Alert,
@@ -109,16 +110,24 @@ def _fire_alert(goal: Goal, *, severity: str, message: str) -> Alert:
 
 
 def _upsert_alert(*, player, source_type: str, source_id, severity: str, message: str) -> Alert:
-    """Generic upsert: refresh an active alert by (source_type, source_id), or create one.
+    """Generic upsert: refresh an active alert by (source_type, source_id, player), or create one.
 
     Used by both the goal evaluator and the threshold evaluator (§ AlertRule).
     Newly-created alerts also dispatch an email notification via Celery —
     re-fires don't (avoids spamming the doctor on every reading).
+
+    `player` is part of the dedup key because threshold rules (BOUND /
+    VARIATION / BAND) apply to MANY players. Without the player filter
+    the second player to trip the same rule would overwrite the first
+    one's alert instead of creating their own. Goal-source alerts are
+    naturally per-player (Goal has a player FK), so including player
+    in the filter is a no-op for them.
     """
     now = timezone.now()
     existing = Alert.objects.filter(
         source_type=source_type,
         source_id=source_id,
+        player=player,
         status=AlertStatus.ACTIVE,
     ).first()
     if existing:
@@ -514,6 +523,24 @@ def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
                 baseline=baseline, pct_change=pct_change, delta=delta,
                 direction=direction, window_desc=window_desc,
             )
+
+        elif rule.kind == AlertRuleKind.BAND:
+            current_band, alert_band_set = _band_evaluation(rule, value)
+            in_alert = (
+                current_band is not None
+                and any(b is current_band for b in alert_band_set)
+            )
+            if not in_alert:
+                # Auto-resolve: when a newer reading lands outside the alert
+                # bands, mark any previously-fired active Alert for this
+                # rule+player as RESOLVED. Keeps the team_alerts widget
+                # honest — stale alerts don't haunt the watchlist.
+                _resolve_band_alert(rule_id=rule.id, player_id=result.player_id)
+                continue
+            msg = _format_band_message(
+                rule, value=value, field_label=label, band=current_band,
+            )
+
         else:
             continue
 
@@ -526,5 +553,87 @@ def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
         )
         fired.append(alert)
     return fired
+
+
+# ---------------------------------------------------------------------------
+# BAND-rule helpers
+# ---------------------------------------------------------------------------
+
+
+def _band_evaluation(
+    rule: AlertRule, value: float,
+) -> tuple[dict | None, list[dict]]:
+    """Return (current_band, alert_band_set) for a BAND-kind rule.
+
+    - `current_band`: the band the value falls into, or None if no band
+      covers it (open-ended bands cover the extremes).
+    - `alert_band_set`: bands that are configured to fire. When the rule's
+      config carries `trigger_labels`, that wins. Otherwise we fall back
+      to `exams.bands.alert_bands()` (the reddest-band heuristic).
+    """
+    field_def = _field_definition(rule)
+    ranges = list((field_def or {}).get("reference_ranges") or [])
+    if not ranges:
+        return None, []
+
+    current_band = _band_for_value(value, ranges)
+
+    cfg = rule.config or {}
+    explicit_labels = cfg.get("trigger_labels")
+    if isinstance(explicit_labels, list) and explicit_labels:
+        wanted = set(explicit_labels)
+        alerts = [b for b in ranges if isinstance(b, dict) and b.get("label") in wanted]
+    else:
+        alerts = _alert_bands(ranges)
+
+    return current_band, alerts
+
+
+def _field_definition(rule: AlertRule) -> dict | None:
+    """Return the raw field-definition dict from the template's schema."""
+    schema = rule.template.config_schema or {}
+    for f in schema.get("fields", []) or []:
+        if isinstance(f, dict) and f.get("key") == rule.field_key:
+            return f
+    return None
+
+
+def _format_band_message(
+    rule: AlertRule, *, value: float, field_label: str, band: dict,
+) -> str:
+    """Render the message for a BAND firing. Honors rule.message_template
+    with placeholders {value}, {field_label}, {band_label}, {band_min},
+    {band_max}; otherwise produces a clean default."""
+    placeholders = {
+        "value": f"{value:g}",
+        "field_label": field_label,
+        "band_label": band.get("label") or "",
+        "band_min": "" if band.get("min") is None else f"{float(band['min']):g}",
+        "band_max": "" if band.get("max") is None else f"{float(band['max']):g}",
+    }
+    template = rule.message_template or ""
+    if template:
+        try:
+            return template.format(**placeholders)
+        except (KeyError, IndexError, ValueError):
+            pass  # fall through to default
+    label = band.get("label") or "(sin etiqueta)"
+    return f"{field_label} = {value:g} cae en banda «{label}»"
+
+
+def _resolve_band_alert(*, rule_id, player_id) -> None:
+    """Mark any active THRESHOLD alert for this (rule, player) as RESOLVED.
+
+    Only used for BAND rules — bound/variation alerts don't auto-resolve
+    today (legacy behavior preserved). This is a narrow surgical update
+    so the team_alerts widget reflects current state.
+    """
+    now = timezone.now()
+    Alert.objects.filter(
+        source_type=AlertSource.THRESHOLD,
+        source_id=rule_id,
+        player_id=player_id,
+        status=AlertStatus.ACTIVE,
+    ).update(status=AlertStatus.RESOLVED, dismissed_at=now)
 
 

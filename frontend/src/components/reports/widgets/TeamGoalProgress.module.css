@@ -1,0 +1,163 @@
+.widget {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.description {
+  font-size: 0.82rem;
+  color: #6b7280;
+  margin: 2px 0 0 0;
+}
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.summaryItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.summaryItem strong {
+  font-size: 0.85rem;
+}
+
+.summaryTotal {
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.headerCell {
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  padding: 8px 10px;
+  border-bottom: 1px solid #e5e7eb;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.headerCell:hover {
+  background: #f9fafb;
+}
+
+.alignCenter {
+  text-align: center;
+}
+
+.headerLabel {
+  display: block;
+  font-size: 0.85rem;
+}
+
+.headerSublabel {
+  display: block;
+  font-size: 0.72rem;
+  color: #6b7280;
+  font-weight: 500;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sortArrow {
+  color: #6b7280;
+  font-size: 0.7rem;
+}
+
+.playerCell {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f3f4f6;
+  white-space: nowrap;
+  color: #1f2937;
+}
+
+.cell {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f3f4f6;
+  text-align: center;
+}
+
+.cellValue {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.cellDelta {
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  margin-top: 2px;
+  opacity: 0.8;
+}
+
+/* Status palette — shared with the summary chips. */
+.statusAchieved {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.statusInProgress {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.statusMissed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.statusNoData {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.statusAbsent {
+  color: #d1d5db;
+}
+
+.empty {
+  padding: 20px 16px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: #6b7280;
+}

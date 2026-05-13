@@ -2,6 +2,7 @@
 
 import React from "react";
 
+import { bandColor, findBandForValue } from "@/lib/reference";
 import type { ComparisonTablePayload, DashboardWidget } from "@/lib/types";
 import styles from "./Widget.module.css";
 
@@ -46,26 +47,50 @@ export default function ComparisonTable({ widget }: ComparisonTableProps) {
                   {row.label}
                   {row.unit && <span className={styles.unit}> ({row.unit})</span>}
                 </td>
-                {row.values.map((value, i) => (
-                  <td key={i}>
-                    <div className={styles.valueCell}>
-                      <span>{formatValue(value)}</span>
-                      {row.deltas[i] !== null && row.deltas[i] !== 0 && (
-                        <span
-                          className={
-                            (row.deltas[i] as number) > 0 ? styles.up : styles.down
-                          }
-                        >
-                          {(row.deltas[i] as number) > 0 ? "▲" : "▼"}{" "}
-                          {Math.abs(row.deltas[i] as number).toFixed(1)}
-                        </span>
-                      )}
-                      {row.deltas[i] === 0 && (
-                        <span className={styles.flat}>—∅</span>
-                      )}
-                    </div>
-                  </td>
-                ))}
+                {row.values.map((value, i) => {
+                  // Reference-band coloring — only applies to numeric
+                  // cells with bands declared on the field. Adds a soft
+                  // inset border so the band semantics are visible
+                  // without competing with the delta indicator.
+                  const numeric =
+                    typeof value === "number"
+                      ? value
+                      : typeof value === "string" && value !== ""
+                        ? parseFloat(value)
+                        : null;
+                  const band =
+                    numeric !== null && Number.isFinite(numeric)
+                      ? findBandForValue(numeric, row.reference_ranges)
+                      : null;
+                  const borderColor = band ? bandColor(band) : null;
+                  const cellStyle: React.CSSProperties | undefined = borderColor
+                    ? { boxShadow: `inset 0 0 0 2px ${borderColor}` }
+                    : undefined;
+                  return (
+                    <td
+                      key={i}
+                      style={cellStyle}
+                      title={band ? band.label : undefined}
+                    >
+                      <div className={styles.valueCell}>
+                        <span>{formatValue(value)}</span>
+                        {row.deltas[i] !== null && row.deltas[i] !== 0 && (
+                          <span
+                            className={
+                              (row.deltas[i] as number) > 0 ? styles.up : styles.down
+                            }
+                          >
+                            {(row.deltas[i] as number) > 0 ? "▲" : "▼"}{" "}
+                            {Math.abs(row.deltas[i] as number).toFixed(1)}
+                          </span>
+                        )}
+                        {row.deltas[i] === 0 && (
+                          <span className={styles.flat}>—∅</span>
+                        )}
+                      </div>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

@@ -180,7 +180,7 @@ export default function BodyMapHeatmap({ widget }: Props) {
           Sin datos de regiones para este jugador.
           <br />
           <small style={{ color: "#9ca3af" }}>
-            Configurá <code>option_regions</code> en el campo categórico de la
+            Configura <code>option_regions</code> en el campo categórico de la
             plantilla para mapear cada opción a una región del cuerpo.
           </small>
         </div>

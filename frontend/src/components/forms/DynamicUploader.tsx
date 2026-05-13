@@ -4,7 +4,19 @@ import React, { useEffect, useMemo, useState } from "react";
 import AttachmentList from "@/components/ui/AttachmentList/AttachmentList";
 import DeferredFilePicker from "@/components/forms/DeferredFilePicker";
 import { api, ApiError, getToken } from "@/lib/api";
-import type { CalendarEvent, ExamField, ExamResult, ExamTemplate } from "@/lib/types";
+import {
+  bandColor,
+  findBandForValue,
+  formatBandRange,
+  summarizeBands,
+} from "@/lib/reference";
+import type {
+  CalendarEvent,
+  ExamField,
+  ExamResult,
+  ExamTemplate,
+  ReferenceBand,
+} from "@/lib/types";
 import styles from "./DynamicUploader.module.css";
 
 const API_URL =
@@ -244,7 +256,7 @@ export default function DynamicUploader({
     if (!isEditing) {
       for (const f of fileFields) {
         if (f.required && (queuedFiles[f.key] ?? []).length === 0) {
-          setError(`Adjuntá al menos un archivo en "${f.label}"`);
+          setError(`Adjunta al menos un archivo en "${f.label}"`);
           return;
         }
       }
@@ -283,7 +295,7 @@ export default function DynamicUploader({
             `Se guardó el registro pero ${failures.length} archivo${
               failures.length === 1 ? "" : "s"
             } no se subió: ${failures.join("; ")}. ` +
-              `Podés reintentarlo desde la pestaña.`,
+              `Puedes reintentarlo desde la pestaña.`,
           );
           // Brief pause so the user can read the warning before the parent navigates away.
           await new Promise((r) => setTimeout(r, 1500));
@@ -503,6 +515,12 @@ function FieldInput({ field, value, onChange }: FieldInputProps) {
         onChange={(e) => onChange(e.target.value)}
         required={field.required}
       />
+      {field.type === "number" && field.reference_ranges && field.reference_ranges.length > 0 && (
+        <ReferenceBandsHint
+          bands={field.reference_ranges}
+          value={typeof value === "string" || typeof value === "number" ? value : ""}
+        />
+      )}
     </label>
   );
 }
@@ -622,5 +640,39 @@ function GroupedCategoricalField({
         </select>
       </div>
     </div>
+  );
+}
+
+
+function ReferenceBandsHint({
+  bands,
+  value,
+}: {
+  bands: ReferenceBand[];
+  value: string | number;
+}) {
+  const numeric =
+    typeof value === "number" ? value : value === "" ? null : parseFloat(value);
+  const active =
+    numeric !== null && Number.isFinite(numeric)
+      ? findBandForValue(numeric, bands)
+      : null;
+
+  if (active) {
+    const color = bandColor(active);
+    return (
+      <span
+        className={styles.referenceHintActive}
+        style={{ color, borderColor: color }}
+      >
+        <strong>{active.label}</strong>
+        {formatBandRange(active) ? ` (${formatBandRange(active)})` : ""}
+      </span>
+    );
+  }
+  return (
+    <span className={styles.referenceHintStatic}>
+      Rangos: {summarizeBands(bands)}
+    </span>
   );
 }

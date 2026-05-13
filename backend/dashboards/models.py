@@ -124,6 +124,62 @@ class ChartType(models.TextChoices):
         "Team — active records (date-range filtered)",
     )
 
+    # Roster × template matrix tracking how many days have passed since
+    # each player's most recent result on each template. Drives the
+    # operational "who's overdue for evaluation?" question — green when
+    # recent, yellow when due-ish, red when overdue, gray when never.
+    TEAM_ACTIVITY_COVERAGE = (
+        "team_activity_coverage",
+        "Team — activity coverage (days since last result per template)",
+    )
+
+    # Top-N leaderboard for a single numeric metric. Aggregates each
+    # player's results in the current window (sum / avg / max / latest)
+    # and ranks. Visual flair for demos + a quick "who's leading?"
+    # answer for staff.
+    TEAM_LEADERBOARD = (
+        "team_leaderboard",
+        "Team — leaderboard (top N by a metric)",
+    )
+
+    # Per-player goal-vs-current cards. Each card surfaces a Goal's
+    # target, the player's latest reading on the goal's (template,
+    # field_key), and a status badge driven by the operator. Renders
+    # in Department layouts; auto-filters goals to those tied to
+    # templates in the same department (or to the widget's data source
+    # template when one is configured).
+    GOAL_CARD = (
+        "goal_card",
+        "Goal — current vs target cards",
+    )
+
+    # Team-wide goal progress matrix. Rows = players, columns = goal
+    # axes (per template + field_key). Each cell shows the player's
+    # current value vs target with an achieved / in-progress / missed
+    # badge driven by the operator semantics. Useful for "qué % del
+    # plantel está on-track con sus objetivos" questions.
+    TEAM_GOAL_PROGRESS = (
+        "team_goal_progress",
+        "Team — goal progress matrix (roster × goals)",
+    )
+
+    # Per-player list of active alerts. Filters by the widget's containing
+    # department (alerts whose source's template belongs to that
+    # department). Used in Department layouts (player view). No data
+    # sources required — the widget reads straight from the Alert table.
+    PLAYER_ALERTS = (
+        "player_alerts",
+        "Player — active alerts list (filtered by department)",
+    )
+
+    # Roster ranked by active-alert count. Each card lists the player's
+    # active alerts (severity + message + fired_at), department-scoped by
+    # the widget's layout. Used in TeamReportLayout. No data sources.
+    TEAM_ALERTS = (
+        "team_alerts",
+        "Team — players ranked by active alert count",
+    )
+
 
 class Aggregation(models.TextChoices):
     LATEST = "latest", "Latest result only"
@@ -478,6 +534,10 @@ class TeamReportWidget(models.Model):
             (ChartType.TEAM_TREND_LINE.value, ChartType.TEAM_TREND_LINE.label),
             (ChartType.TEAM_DISTRIBUTION.value, ChartType.TEAM_DISTRIBUTION.label),
             (ChartType.TEAM_ACTIVE_RECORDS.value, ChartType.TEAM_ACTIVE_RECORDS.label),
+            (ChartType.TEAM_ACTIVITY_COVERAGE.value, ChartType.TEAM_ACTIVITY_COVERAGE.label),
+            (ChartType.TEAM_LEADERBOARD.value, ChartType.TEAM_LEADERBOARD.label),
+            (ChartType.TEAM_GOAL_PROGRESS.value, ChartType.TEAM_GOAL_PROGRESS.label),
+            (ChartType.TEAM_ALERTS.value, ChartType.TEAM_ALERTS.label),
         ],
     )
     title = models.CharField(max_length=160)

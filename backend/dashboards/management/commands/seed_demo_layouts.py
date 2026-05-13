@@ -113,7 +113,7 @@ def _build_player_layout(
                 display_config=widget_spec.get("display_config", {}),
                 sort_order=widget_index,
             )
-            for src_index, src_spec in enumerate(widget_spec["sources"]):
+            for src_index, src_spec in enumerate(widget_spec.get("sources", [])):
                 WidgetDataSource.objects.create(
                     widget=widget,
                     template=src_spec["template"],
@@ -165,7 +165,7 @@ def _build_team_layout(
                 display_config=widget_spec.get("display_config", {}),
                 sort_order=widget_index,
             )
-            for src_index, src_spec in enumerate(widget_spec["sources"]):
+            for src_index, src_spec in enumerate(widget_spec.get("sources", [])):
                 TeamReportWidgetDataSource.objects.create(
                     widget=widget,
                     template=src_spec["template"],
@@ -185,6 +185,42 @@ def _build_team_layout(
 #   { "player": [sections], "team": [sections] }
 # Returns None for either side when required templates aren't seeded yet.
 # =============================================================================
+
+
+def _player_alerts_section() -> dict:
+    """Per-player alerts panel — auto-filtered to the layout's department.
+    Returns the same section spec for every department so the widget shows
+    up consistently across Médico / Físico / Nutricional / Táctico."""
+    return {
+        "title": "Alertas activas",
+        "is_collapsible": True,
+        "widgets": [{
+            "chart_type": ChartType.PLAYER_ALERTS,
+            "title": "Alertas del departamento",
+            "description": (
+                "Alertas activas del jugador originadas en este "
+                "departamento (bandas clínicas, umbrales, objetivos)."
+            ),
+            "column_span": 12,
+        }],
+    }
+
+
+def _team_alerts_section() -> dict:
+    """Team-side alerts ranking — same shape per department."""
+    return {
+        "title": "Jugadores con alertas",
+        "is_collapsible": True,
+        "widgets": [{
+            "chart_type": ChartType.TEAM_ALERTS,
+            "title": "Plantel · alertas activas",
+            "description": (
+                "Ranking de jugadores con alertas activas en este "
+                "departamento, ordenado por severidad."
+            ),
+            "column_span": 12,
+        }],
+    }
 
 
 def _spec_medico(department: Department) -> dict:
@@ -312,6 +348,11 @@ def _spec_medico(department: Department) -> dict:
             ],
         })
 
+    # Alerts always lead — they're the "needs attention now" surface,
+    # so they should be the first thing the doctor / coach sees when
+    # opening a profile or a department report.
+    player.insert(0, _player_alerts_section())
+    team.insert(0, _team_alerts_section())
     return {"player": player, "team": team}
 
 
@@ -435,6 +476,11 @@ def _spec_fisico(department: Department) -> dict:
             ],
         })
 
+    # Alerts always lead — they're the "needs attention now" surface,
+    # so they should be the first thing the doctor / coach sees when
+    # opening a profile or a department report.
+    player.insert(0, _player_alerts_section())
+    team.insert(0, _team_alerts_section())
     return {"player": player, "team": team}
 
 
@@ -523,93 +569,136 @@ def _spec_tactico(department: Department) -> dict:
             ],
         })
 
+    # Alerts always lead — they're the "needs attention now" surface,
+    # so they should be the first thing the doctor / coach sees when
+    # opening a profile or a department report.
+    player.insert(0, _player_alerts_section())
+    team.insert(0, _team_alerts_section())
     return {"player": player, "team": team}
 
 
 def _spec_nutricional(department: Department) -> dict:
-    """Nutricional: 5-component composition + roster matrix."""
+    """Nutricional: aligned with the post-demo feedback (May 2026).
+
+    Player view — mirrors what the nutritionist drew up:
+      Row 1:  Composición de masas (donut)  ·  % Masas (multi-line)  ·  kg Masas (multi-line)
+      Row 2:  Peso corporal  ·  Σ 6 pliegues  ·  IMO
+      Row 3:  Tabla resumen — última toma + variación de las 4 métricas clave,
+              con bordes semáforo desde `reference_ranges`.
+
+    Team view — roster matrix expandido + distribuciones por métrica clave.
+    """
     penta = _resolve_template(department, "pentacompartimental")
 
-    # Default mass colors aligned with the existing seed_nutricional_layout.
-    mass_colors = ["#3b82f6", "#f97316", "#10b981", "#f59e0b", "#a855f7"]
+    # Donut: las 5 masas. Color stops alineados con la imagen de referencia.
+    mass_colors = ["#1e3a8a", "#3b82f6", "#f59e0b", "#a855f7", "#ec4899"]
 
     player: list[dict] = []
     if penta is not None:
-        comparison_keys = _filter_keys(penta, [
-            "peso", "talla", "imc", "masa_adiposa", "masa_muscular",
-            "masa_osea", "masa_piel", "masa_residual", "suma_pliegues",
+        donut_keys = _filter_keys(penta, [
+            "masa_adiposa", "masa_muscular", "masa_osea",
+            "masa_piel", "masa_residual",
         ])
-        line_keys = _filter_keys(penta, [
-            "peso", "imc", "grasa_faulkner", "masa_adiposa", "masa_muscular",
-            "masa_osea", "masa_residual", "masa_piel", "suma_pliegues",
+        pct_keys = _filter_keys(penta, ["masa_muscular_pct", "masa_adiposa_pct"])
+        kg_keys = _filter_keys(penta, ["masa_muscular", "masa_adiposa"])
+        # IMC se suma como métrica de soporte (sin bandas — IMC con cortes
+        # OMS engaña en deportistas musculados, así que aparece como dato
+        # informativo nada más, junto a las 4 métricas que sí llevan
+        # semáforo desde `reference_ranges`).
+        summary_keys = _filter_keys(penta, [
+            "masa_muscular_pct", "masa_adiposa_pct",
+            "suma_pliegues", "imo", "imc",
         ])
-        mass_keys = _filter_keys(penta, [
-            "masa_muscular", "masa_adiposa", "masa_osea",
-            "masa_residual", "masa_piel",
-        ])
-        bar_keys = _filter_keys(penta, ["masa_adiposa", "masa_muscular"])
 
-        player.append({
-            "title": "",
-            "is_collapsible": False,
-            "widgets": [
-                {
-                    "chart_type": ChartType.COMPARISON_TABLE,
-                    "title": "Evolución antropométrica — últimas 3 tomas",
-                    "column_span": 6,
-                    "sources": [{
-                        "template": penta,
-                        "field_keys": comparison_keys,
-                        "aggregation": Aggregation.LAST_N,
-                        "aggregation_param": 3,
-                    }],
-                },
-                {
+        # Row 1 — composición + evoluciones por % y por kg (Image 2 top row).
+        row1_widgets: list[dict] = []
+        if donut_keys:
+            row1_widgets.append({
+                "chart_type": ChartType.DONUT_PER_RESULT,
+                "title": "Composición de masas",
+                "column_span": 4,
+                "display_config": {"colors": mass_colors[:len(donut_keys)]},
+                "sources": [{
+                    "template": penta,
+                    "field_keys": donut_keys,
+                    "aggregation": Aggregation.LATEST,
+                }],
+            })
+        if pct_keys:
+            row1_widgets.append({
+                "chart_type": ChartType.MULTI_LINE,
+                "title": "Evolución porcentaje de masas",
+                "column_span": 4,
+                "display_config": {"colors": ["#3b82f6", "#f59e0b"]},
+                "sources": [{
+                    "template": penta,
+                    "field_keys": pct_keys,
+                    "aggregation": Aggregation.ALL,
+                }],
+            })
+        if kg_keys:
+            row1_widgets.append({
+                "chart_type": ChartType.MULTI_LINE,
+                "title": "Evolución kg de masas",
+                "column_span": 4,
+                "display_config": {"colors": ["#3b82f6", "#f59e0b"]},
+                "sources": [{
+                    "template": penta,
+                    "field_keys": kg_keys,
+                    "aggregation": Aggregation.ALL,
+                }],
+            })
+        if row1_widgets:
+            player.append({
+                "title": "",
+                "is_collapsible": False,
+                "widgets": row1_widgets,
+            })
+
+        # Row 2 — peso / Σ 6 pliegues / IMO (Image 2 middle row).
+        row2_widgets: list[dict] = []
+        for key, title in [
+            ("peso", "Evolución peso corporal"),
+            ("suma_pliegues", "Evolución sumatoria 6 pliegues"),
+            ("imo", "Evolución IMO"),
+        ]:
+            if _filter_keys(penta, [key]):
+                row2_widgets.append({
                     "chart_type": ChartType.LINE_WITH_SELECTOR,
-                    "title": "Evolución en el tiempo",
-                    "column_span": 6,
+                    "title": title,
+                    "column_span": 4,
                     "sources": [{
                         "template": penta,
-                        "field_keys": line_keys,
+                        "field_keys": [key],
                         "aggregation": Aggregation.ALL,
                     }],
-                },
-            ],
-        })
-        if mass_keys:
+                })
+        if row2_widgets:
             player.append({
-                "title": "Fraccionamiento 5 masas",
-                "widgets": [
-                    {
-                        "chart_type": ChartType.MULTI_LINE,
-                        "title": "Evolución de las 5 masas",
-                        "column_span": 12,
-                        "display_config": {"colors": mass_colors[:len(mass_keys)]},
-                        "sources": [{
-                            "template": penta,
-                            "field_keys": mass_keys,
-                            "aggregation": Aggregation.ALL,
-                        }],
-                    },
-                ],
+                "title": "Indicadores en el tiempo",
+                "is_collapsible": False,
+                "widgets": row2_widgets,
             })
-        if bar_keys:
+
+        # Row 3 — tabla resumen con la última toma + variación. El border
+        # semáforo lo aporta `reference_ranges` en cada field (ver
+        # seed_pentacompartimental.py). aggregation_param=2 → última +
+        # anterior, que es lo que el delta del comparison_table necesita.
+        if summary_keys:
             player.append({
-                "title": "Análisis M. adiposa y M. muscular",
-                "widgets": [
-                    {
-                        "chart_type": ChartType.GROUPED_BAR,
-                        "title": "En kilogramos",
-                        "column_span": 12,
-                        "display_config": {"colors": mass_colors[:len(bar_keys)]},
-                        "sources": [{
-                            "template": penta,
-                            "field_keys": bar_keys,
-                            "aggregation": Aggregation.LAST_N,
-                            "aggregation_param": 3,
-                        }],
-                    },
-                ],
+                "title": "Resumen métricas clave",
+                "is_collapsible": False,
+                "widgets": [{
+                    "chart_type": ChartType.COMPARISON_TABLE,
+                    "title": "Última toma · variación · semáforo",
+                    "column_span": 12,
+                    "sources": [{
+                        "template": penta,
+                        "field_keys": summary_keys,
+                        "aggregation": Aggregation.LAST_N,
+                        "aggregation_param": 2,
+                    }],
+                }],
             })
 
     team: list[dict] = []
@@ -619,6 +708,9 @@ def _spec_nutricional(department: Department) -> dict:
             "is_collapsible": False,
             "widgets": [
                 {
+                    # Matrix expandido — incluye las 4 métricas-semáforo
+                    # (con bordes coloreados desde reference_ranges) y los
+                    # absolutos (peso, IMC, masas en kg) para contexto.
                     "chart_type": ChartType.TEAM_ROSTER_MATRIX,
                     "title": "Antropometría por jugador (última toma)",
                     "column_span": 12,
@@ -626,32 +718,67 @@ def _spec_nutricional(department: Department) -> dict:
                     "sources": [{
                         "template": penta,
                         "field_keys": _filter_keys(penta, [
-                            "peso", "imc", "grasa_faulkner",
-                            "masa_muscular", "masa_adiposa",
+                            "peso", "imc",
+                            "masa_muscular", "masa_muscular_pct",
+                            "masa_adiposa", "masa_adiposa_pct",
+                            "suma_pliegues", "imo",
                         ]),
                         "aggregation": Aggregation.LATEST,
                     }],
                 },
                 {
                     "chart_type": ChartType.TEAM_DISTRIBUTION,
-                    "title": "Distribución de IMC",
+                    "title": "Distribución de % Masa Adiposa",
                     "column_span": 6,
                     "display_config": {"bin_count": 8},
                     "sources": [{
                         "template": penta,
-                        "field_keys": _filter_keys(penta, ["imc"]) or ["peso"],
+                        "field_keys": _filter_keys(penta, ["masa_adiposa_pct"]) or ["peso"],
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_DISTRIBUTION,
+                    "title": "Distribución de % Masa Muscular",
+                    "column_span": 6,
+                    "display_config": {"bin_count": 8},
+                    "sources": [{
+                        "template": penta,
+                        "field_keys": _filter_keys(penta, ["masa_muscular_pct"]) or ["peso"],
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_DISTRIBUTION,
+                    "title": "Distribución de Σ 6 pliegues",
+                    "column_span": 6,
+                    "display_config": {"bin_count": 8},
+                    "sources": [{
+                        "template": penta,
+                        "field_keys": _filter_keys(penta, ["suma_pliegues"]) or ["peso"],
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_DISTRIBUTION,
+                    "title": "Distribución de IMO",
+                    "column_span": 6,
+                    "display_config": {"bin_count": 8},
+                    "sources": [{
+                        "template": penta,
+                        "field_keys": _filter_keys(penta, ["imo"]) or ["peso"],
                         "aggregation": Aggregation.LATEST,
                     }],
                 },
                 {
                     "chart_type": ChartType.TEAM_TREND_LINE,
-                    "title": "Promedio del plantel — peso, IMC, % grasa",
-                    "column_span": 6,
+                    "title": "Promedio del plantel — peso, IMC, % masa adiposa",
+                    "column_span": 12,
                     "display_config": {"bucket_size": "month"},
                     "sources": [{
                         "template": penta,
                         "field_keys": _filter_keys(penta, [
-                            "peso", "imc", "grasa_faulkner",
+                            "peso", "imc", "masa_adiposa_pct",
                         ]),
                         "aggregation": Aggregation.ALL,
                     }],
@@ -659,6 +786,11 @@ def _spec_nutricional(department: Department) -> dict:
             ],
         })
 
+    # Alerts always lead — they're the "needs attention now" surface,
+    # so they should be the first thing the doctor / coach sees when
+    # opening a profile or a department report.
+    player.insert(0, _player_alerts_section())
+    team.insert(0, _team_alerts_section())
     return {"player": player, "team": team}
 
 

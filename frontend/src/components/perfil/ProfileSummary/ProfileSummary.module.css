@@ -105,6 +105,11 @@
   grid-template-columns: 1fr;
 }
 
+.alertsCard {
+  border-left: 4px solid #dc2626;
+  padding: 16px 20px;
+}
+
 .commentsGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;

@@ -1,0 +1,95 @@
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.severityDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+.severityCritical {
+  background: #dc2626;
+}
+
+.severityWarning {
+  background: #f59e0b;
+}
+
+.severityInfo {
+  background: #6b7280;
+}
+
+.body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.message {
+  font-size: 0.82rem;
+  color: #111827;
+  font-weight: 500;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tag {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  background: #f3f4f6;
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.timestamp {
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+.overflow {
+  text-align: center;
+  font-size: 0.72rem;
+  color: #6b7280;
+  padding: 4px 0;
+}
+
+.empty {
+  padding: 14px 12px;
+  text-align: center;
+  font-size: 0.82rem;
+  color: #6b7280;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 6px;
+}

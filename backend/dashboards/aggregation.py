@@ -46,7 +46,15 @@ def _fetch_results(
     of all-time injuries) should call `_fetch_results` without passing
     the bounds — the resolver is in charge of that policy decision.
     """
-    qs = ExamResult.objects.filter(template=template, player_id=player_id)
+    # Fan out across the template's whole version family. A WidgetDataSource
+    # pointing at v2 also surfaces results that were written against v1 —
+    # field keys that no longer exist on the active version are silently
+    # dropped at the field-extraction step (see `_read`). This preserves
+    # history without requiring schema migrations on JSONB result_data.
+    qs = ExamResult.objects.filter(
+        template__family_id=template.family_id,
+        player_id=player_id,
+    )
     if date_from is not None:
         qs = qs.filter(recorded_at__gte=date_from)
     if date_to is not None:
@@ -83,6 +91,8 @@ def _field_meta(template: ExamTemplate, key: str) -> dict[str, Any]:
         "unit": field.get("unit", ""),
         "group": field.get("group", ""),
         "type": field.get("type", "text"),
+        "direction_of_good": field.get("direction_of_good", "neutral"),
+        "reference_ranges": list(field.get("reference_ranges") or []),
     }
 
 
@@ -116,6 +126,8 @@ def _empty(widget: Widget, chart_type: str) -> dict[str, Any]:
             "items": [],
             "total_results": 0,
         }
+    if chart_type == ChartType.GOAL_CARD.value:
+        return {**base, "cards": []}
     return base
 
 
@@ -540,6 +552,9 @@ _RESOLVERS: dict[str, Callable[..., dict[str, Any]]] = {
     ChartType.MULTI_LINE.value: _resolve_multi_line,
     ChartType.CROSS_EXAM_LINE.value: _resolve_cross_exam_line,
     ChartType.BODY_MAP_HEATMAP.value: _resolve_body_map_heatmap,
+    # `_resolve_goal_card` is defined below this dict to keep its
+    # imports lazy (it pulls from `api.routers` + `goals.models`).
+    # Registered at module bottom via `_RESOLVERS[...] = _resolve_goal_card`.
 }
 
 
@@ -567,3 +582,253 @@ def resolve_widget(
             ),
         }
     return handler(widget, sources, player_id, date_from, date_to)
+
+
+# ---------- goal_card -----------------------------------------------------
+
+def _resolve_goal_card(
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,  # accepted but unused; see docstring
+    date_to: datetime | None = None,    # accepted but unused; see docstring
+) -> dict[str, Any]:
+    """Active goals for this player, scoped to the widget's department.
+
+    Filter rules:
+    - Only goals with `status='active'` (cumplidas / no cumplidas /
+      canceladas se ven en la pestaña Metas, no en dashboards).
+    - If the widget has a `WidgetDataSource` with a template set →
+      restrict to goals on that template (and any older versions of
+      the same family, via `family_id`).
+    - Otherwise → restrict to goals on any template in the widget's
+      department (`widget.section.layout.department`).
+
+    Note: `date_from` / `date_to` accepted for signature parity but
+    NOT applied. Goals are future-target objects; the cross-tab date
+    filter has no meaning here.
+
+    Each card returns:
+        {
+            "id": "...", "field_label": "Peso", "field_unit": "kg",
+            "operator": "<=", "target_value": 75.0,
+            "due_date": "2026-08-01",
+            "current_value": 78.5, "current_recorded_at": "...",
+            "progress": {"achieved": false, "distance": 3.5, "distance_pct": 4.67},
+            "days_to_due": 82,
+        }
+    """
+    from datetime import date as _date
+    # Lazy imports: dashboards can't import goals/api at module load
+    # without risking a circular dep with the registry.
+    from api.routers import _resolve_goal_current_value, _goal_progress  # noqa: WPS433
+    from goals.models import Goal  # noqa: WPS433
+
+    # Department scoping: layout.department is the natural filter.
+    department = widget.section.layout.department
+
+    # GoalStatus.ACTIVE is the active sentinel — see goals/models.py.
+    goals_qs = Goal.objects.filter(
+        player_id=player_id,
+        status="active",
+    ).select_related("template")
+
+    # If admin bound a specific template via WidgetDataSource, narrow to it
+    # (via family for cross-version continuity).
+    if sources:
+        family_ids = [s.template.family_id for s in sources if s.template_id]
+        if family_ids:
+            goals_qs = goals_qs.filter(template__family_id__in=family_ids)
+    else:
+        goals_qs = goals_qs.filter(template__department_id=department.id)
+
+    goals_qs = goals_qs.order_by("due_date", "-created_at")
+
+    today = _date.today()
+    cards: list[dict[str, Any]] = []
+    for goal in goals_qs:
+        current, recorded_at = _resolve_goal_current_value(goal)
+        progress = _goal_progress(goal, current)
+        # Resolve field meta from the template's schema for label/unit.
+        meta = _field_meta(goal.template, goal.field_key)
+        cards.append({
+            "id": str(goal.id),
+            "template_name": goal.template.name,
+            "field_key": goal.field_key,
+            "field_label": meta["label"],
+            "field_unit": meta["unit"],
+            "operator": goal.operator,
+            "target_value": float(goal.target_value),
+            "due_date": goal.due_date.isoformat(),
+            "days_to_due": (goal.due_date - today).days,
+            "current_value": current,
+            "current_recorded_at": (
+                recorded_at.isoformat() if recorded_at else None
+            ),
+            "progress": progress,
+            "notes": goal.notes or "",
+        })
+
+    return {
+        "chart_type": ChartType.GOAL_CARD.value,
+        "title": widget.title,
+        "cards": cards,
+        "empty": len(cards) == 0,
+    }
+
+
+# Register goal_card after its definition — keeps the function's lazy
+# imports out of module-load order.
+_RESOLVERS[ChartType.GOAL_CARD.value] = _resolve_goal_card
+
+
+def _resolve_player_alerts(
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,  # accepted for signature parity; not used
+    date_to: datetime | None = None,
+) -> dict[str, Any]:
+    """Active alerts for this player, scoped to the widget's department.
+
+    An alert is "in this department" when the underlying source's
+    template lives in that department. Mapping by source_type:
+
+      - `goal` / `goal_warning` → Goal.template.department
+      - `threshold` → AlertRule.template.department  (covers BAND / BOUND /
+        VARIATION rules)
+      - `medication` → reserved (not yet wired); ignored for now
+
+    No `WidgetDataSource` consumed; the resolver always uses the
+    layout's department as the scope. Returns the alerts most-recent
+    first, capped at a soft limit so massive layouts don't pay for
+    rendering a 200-row list.
+    """
+    # Lazy imports avoid a circular dep when goals' AppConfig imports
+    # signal handlers that import resolvers.
+    from goals.models import Alert, AlertRule, AlertStatus, AlertSource  # noqa: WPS433
+    from goals.models import Goal  # noqa: WPS433
+
+    department = widget.section.layout.department
+    department_id = department.id
+
+    display_config = widget.display_config or {}
+    limit = int(display_config.get("limit") or 20)
+    limit = max(1, min(limit, 100))
+
+    # Pull the player's active alerts and partition by source_type so we
+    # can resolve each source's template → department in two batched
+    # queries (avoid N+1).
+    alerts = list(
+        Alert.objects
+        .filter(player_id=player_id, status=AlertStatus.ACTIVE)
+        .order_by("-fired_at")
+    )
+    if not alerts:
+        return {
+            "chart_type": ChartType.PLAYER_ALERTS.value,
+            "title": widget.title,
+            "department_id": str(department_id),
+            "department_name": department.name,
+            "alerts": [],
+            "total": 0,
+            "empty": True,
+        }
+
+    goal_ids = {
+        a.source_id for a in alerts
+        if a.source_type in (AlertSource.GOAL, AlertSource.GOAL_WARNING)
+    }
+    threshold_ids = {
+        a.source_id for a in alerts if a.source_type == AlertSource.THRESHOLD
+    }
+
+    # Resolve each source_id → (template_id, department_id, source meta).
+    goal_meta: dict = {}
+    if goal_ids:
+        for g in (
+            Goal.objects
+            .filter(id__in=goal_ids)
+            .select_related("template", "template__department")
+            .only(
+                "id", "field_key",
+                "template__id", "template__name",
+                "template__department_id",
+            )
+        ):
+            goal_meta[g.id] = {
+                "template_id": g.template_id,
+                "template_name": g.template.name,
+                "department_id": g.template.department_id,
+                "field_key": g.field_key,
+            }
+
+    rule_meta: dict = {}
+    if threshold_ids:
+        for r in (
+            AlertRule.objects
+            .filter(id__in=threshold_ids)
+            .select_related("template", "template__department")
+            .only(
+                "id", "field_key", "kind",
+                "template__id", "template__name",
+                "template__department_id",
+            )
+        ):
+            rule_meta[r.id] = {
+                "template_id": r.template_id,
+                "template_name": r.template.name,
+                "department_id": r.template.department_id,
+                "field_key": r.field_key,
+                "kind": r.kind,
+            }
+
+    filtered: list[dict[str, Any]] = []
+    for a in alerts:
+        if a.source_type in (AlertSource.GOAL, AlertSource.GOAL_WARNING):
+            meta = goal_meta.get(a.source_id)
+        elif a.source_type == AlertSource.THRESHOLD:
+            meta = rule_meta.get(a.source_id)
+        else:
+            meta = None
+        if meta is None or meta["department_id"] != department_id:
+            continue
+        filtered.append(_serialize_alert(a, meta))
+        if len(filtered) >= limit:
+            break
+
+    return {
+        "chart_type": ChartType.PLAYER_ALERTS.value,
+        "title": widget.title,
+        "department_id": str(department_id),
+        "department_name": department.name,
+        "alerts": filtered,
+        "total": len(filtered),
+        "empty": len(filtered) == 0,
+    }
+
+
+def _serialize_alert(alert, meta: dict | None) -> dict[str, Any]:
+    """Shape one Alert row into the widget payload.
+
+    `meta` comes from the dept-scoping batch lookup above; when the alert
+    can't be tied back to a source (orphaned), we still surface enough
+    to render the message — `template_name` / `field_key` degrade to "".
+    """
+    return {
+        "id": str(alert.id),
+        "source_type": alert.source_type,
+        "source_id": str(alert.source_id),
+        "severity": alert.severity,
+        "message": alert.message,
+        "fired_at": alert.fired_at.isoformat(),
+        "last_fired_at": (
+            alert.last_fired_at.isoformat() if alert.last_fired_at else None
+        ),
+        "trigger_count": alert.trigger_count,
+        "template_name": (meta or {}).get("template_name", ""),
+        "field_key": (meta or {}).get("field_key", ""),
+    }
+
+
+_RESOLVERS[ChartType.PLAYER_ALERTS.value] = _resolve_player_alerts

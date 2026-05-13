@@ -167,13 +167,14 @@ class Alert(models.Model):
 class AlertRuleKind(models.TextChoices):
     BOUND = "bound", "Límite (umbral fijo)"
     VARIATION = "variation", "Variación (% vs. ventana)"
+    BAND = "band", "Banda de referencia (clínica)"
 
 
 class AlertRule(models.Model):
     """A configured rule that raises a threshold-driven Alert when a new
     ExamResult satisfies it.
 
-    Two kinds:
+    Three kinds:
       * `bound` — `config = {"upper": <num>?, "lower": <num>?}`. Either side
         optional; the engine fires when `value > upper` OR `value < lower`.
       * `variation` — `config = {"window": {"kind": "last_n", "n": int} | {"kind": "timedelta", "days": int},
@@ -184,6 +185,13 @@ class AlertRule(models.Model):
         OR |value - mean| ≥ threshold_units (respecting the direction
         filter). At least one threshold must be set; both can be set
         together (logical OR).
+      * `band` — `config = {}` (empty) or `{"trigger_labels": [str, ...]}`.
+        The engine resolves the field's `reference_ranges` to find the
+        alert band(s) via `exams.bands.alert_bands()` (reddest-band
+        heuristic with explicit overrides). When `trigger_labels` is set,
+        only bands whose label appears in the list trigger — overrides
+        the heuristic entirely. The rule auto-resolves a previously-fired
+        Alert when a newer reading lands outside the alert band(s).
 
     `category` (nullable) lets you scope a rule to one category — e.g. CK
     threshold of 1500 for adults vs 1000 for U-21. Null means "applies to
@@ -211,11 +219,14 @@ class AlertRule(models.Model):
     kind = models.CharField(max_length=12, choices=AlertRuleKind.choices)
     config = models.JSONField(
         default=dict,
+        blank=True,
         help_text=(
             'bound: {"upper": float?, "lower": float?}. '
             'variation: {"window": {"kind":"last_n","n":int} or {"kind":"timedelta","days":int}, '
             '"threshold_pct": float?, "threshold_units": float?, '
-            '"direction": "any"|"increase"|"decrease"} — at least one threshold required.'
+            '"direction": "any"|"increase"|"decrease"} — at least one threshold required. '
+            'band: {} (auto-detect alert band via color heuristic) or '
+            '{"trigger_labels": ["Elevado", ...]} to fire on specific bands.'
         ),
     )
     severity = models.CharField(
@@ -342,6 +353,39 @@ class AlertRule(models.Model):
                 raise ValidationError({
                     "config": "variation.direction must be 'any', 'increase', or 'decrease'."
                 })
+
+        elif self.kind == AlertRuleKind.BAND:
+            # The only configurable knob is an optional list of band labels
+            # that override the reddest-band heuristic. Empty config = use
+            # heuristic, which is the common case.
+            labels = cfg.get("trigger_labels")
+            if labels is not None:
+                if not isinstance(labels, list) or not all(
+                    isinstance(x, str) and x for x in labels
+                ):
+                    raise ValidationError({
+                        "config": (
+                            "band.trigger_labels must be a list of non-empty "
+                            "band labels (e.g. [\"Elevado\"])."
+                        )
+                    })
+            # Also surface the upfront error if the bound field has no
+            # reference_ranges configured — otherwise the rule would silently
+            # never fire and confuse the admin.
+            if self.template_id and self.field_key:
+                schema = self.template.config_schema or {}
+                for f in schema.get("fields", []) or []:
+                    if isinstance(f, dict) and f.get("key") == self.field_key:
+                        if not (f.get("reference_ranges") or []):
+                            raise ValidationError({
+                                "field_key": (
+                                    f"Field '{self.field_key}' has no "
+                                    "reference_ranges configured — band "
+                                    "rules require them. Add ranges on the "
+                                    "template, or use a bound rule instead."
+                                )
+                            })
+                        break
 
     def __str__(self) -> str:
         scope = self.category.name if self.category_id else "(all categories)"

@@ -49,6 +49,18 @@ class Category(models.Model):
         blank=True,
         help_text="Departments active for this category. Must belong to the same club.",
     )
+    external_config = models.JSONField(
+        default=dict, blank=True,
+        help_text=(
+            "Provider binding for external match-data APIs. Leave empty for "
+            "categories not covered by any provider (e.g. academy / youth). "
+            "API-Football shape (pulls every competition the team played "
+            "that season — league, cup, continental, friendlies): "
+            '<code>{"provider": "api_football", "team_id": 257, '
+            '"season": 2026}</code>. Optional <code>league_ids</code> '
+            "array restricts the sync to specific competitions."
+        ),
+    )
 
     class Meta:
         unique_together = ("club", "name")

@@ -6,6 +6,7 @@ import Link from "next/link";
 import MatchesCalendar from "@/components/partidos/MatchesCalendar";
 import { api, ApiError } from "@/lib/api";
 import { useCategoryContext } from "@/context/CategoryContext";
+import { usePermission } from "@/lib/permissions";
 import type { CalendarEvent } from "@/lib/types";
 import styles from "./page.module.css";
 
@@ -18,6 +19,7 @@ export default function PartidosPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [view, setView] = useState<View>("calendar");
   const [reloadKey, setReloadKey] = useState(0);
+  const canAddMatch = usePermission("events.add_event");
 
   // Calendar viewing month — defaults to current month.
   const [calMonth, setCalMonth] = useState<{ year: number; month: number }>(() => {
@@ -102,9 +104,11 @@ export default function PartidosPage() {
             cargas de datos (GPS, etc.).
           </p>
         </div>
-        <Link href="/partidos/nuevo" className={styles.primaryBtn}>
-          + Nuevo partido
-        </Link>
+        {canAddMatch && (
+          <Link href="/partidos/nuevo" className={styles.primaryBtn}>
+            + Nuevo partido
+          </Link>
+        )}
       </header>
 
       <div className={styles.toolbar}>

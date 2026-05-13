@@ -201,3 +201,14 @@ DEFAULT_FROM_EMAIL = env(
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL", default="http://localhost:3000",
 )
+
+# --- API-Football v3 integration ---
+# Native API endpoint (NOT the RapidAPI gateway) — auth via the
+# `x-apisports-key` header. Leave the key empty in environments that
+# shouldn't talk to the upstream (CI, fresh local dev); the integration
+# code treats empty as "disabled" and the sync tasks become no-ops.
+API_FOOTBALL_KEY = env("API_FOOTBALL_KEY", default="")
+API_FOOTBALL_BASE_URL = env(
+    "API_FOOTBALL_BASE_URL",
+    default="https://v3.football.api-sports.io",
+)

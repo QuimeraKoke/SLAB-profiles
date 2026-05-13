@@ -46,8 +46,11 @@ NUMERIC_BASELINES: dict[str, tuple[float, float]] = {
     # Pentacompartimental
     "peso": (65.0, 85.0),
     "talla": (165.0, 190.0),
-    "humero": (5.8, 7.0),
-    "femur": (9.0, 10.5),
+    # Biepicondylar diameters — tuned slightly down so the Rocha bone-mass
+    # formula produces values that let IMO span the full band spectrum
+    # (Bajo ↔ Élite) rather than collapse into "Bajo" for every player.
+    "humero": (5.4, 6.4),
+    "femur": (8.4, 9.6),
     "biestiloideo": (5.2, 6.2),
     "torax": (95.0, 108.0),
     "cintura": (72.0, 85.0),
@@ -56,12 +59,16 @@ NUMERIC_BASELINES: dict[str, tuple[float, float]] = {
     "muslo_gluteo": (56.0, 64.0),
     "muslo_medio": (51.0, 58.0),
     "pierna_perim": (37.0, 42.0),
-    "pliegue_triceps": (6.0, 11.0),
-    "pliegue_subescapular": (8.0, 13.0),
-    "pliegue_supra": (7.0, 12.0),
-    "pliegue_abdomen": (10.0, 16.0),
-    "pliegue_muslo": (10.0, 15.0),
-    "pliegue_pierna": (4.0, 8.0),
+    # Pliegues calibrated for elite soccer players — produces Σ6 ≈ 26-48mm,
+    # giving a healthy spread across the Élite / Bueno / Aceptable bands
+    # of the Nutricional dashboards. The pre-2026 baselines were generic-
+    # population values and pushed every player into "Elevado" (>50mm).
+    "pliegue_triceps": (3.5, 6.5),
+    "pliegue_subescapular": (5.0, 8.0),
+    "pliegue_supra": (4.0, 7.0),
+    "pliegue_abdomen": (6.0, 11.0),
+    "pliegue_muslo": (5.0, 10.0),
+    "pliegue_pierna": (3.0, 6.0),
     "envergadura": (175.0, 195.0),
     "long_brazo": (55.0, 65.0),
     "long_pierna": (90.0, 105.0),

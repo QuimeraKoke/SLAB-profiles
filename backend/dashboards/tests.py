@@ -1648,6 +1648,110 @@ class TeamDistributionTests(TestCase):
         payload = resolve_team_widget(widget, self.cat)
         self.assertLessEqual(payload["bin_count"], 30)
 
+    def test_no_band_overlay_when_field_has_no_reference_ranges(self):
+        # The default template in setUp() has no reference_ranges. Verify
+        # we don't emit `band_counts` and bins don't carry a `color`.
+        for i, p in enumerate(self.players):
+            ExamResult.objects.create(
+                player=p, template=self.template,
+                recorded_at=timezone.now(),
+                result_data={"peso": 70 + i * 2},
+            )
+        widget = self._build_widget(bin_count=5)
+        payload = resolve_team_widget(widget, self.cat)
+        self.assertNotIn("band_counts", payload)
+        for b in payload["bins"]:
+            self.assertNotIn("color", b)
+            self.assertNotIn("band_label", b)
+
+    def test_band_overlay_colors_bins_and_emits_counts(self):
+        # Reseed the template with reference_ranges on `peso`.
+        self.template.config_schema = {
+            "fields": [
+                {
+                    "key": "peso", "type": "number", "label": "Peso", "unit": "kg",
+                    "reference_ranges": [
+                        {"label": "Bajo",   "max": 75,            "color": "#16a34a"},
+                        {"label": "Normal", "min": 75, "max": 85, "color": "#86efac"},
+                        {"label": "Alto",   "min": 85,            "color": "#dc2626"},
+                    ],
+                }
+            ]
+        }
+        self.template.save(update_fields=["config_schema"])
+
+        # Five players, weights 70-90 stepping 5. Bands:
+        #   70 → Bajo, 75 → Bajo (boundary lands in lower band by
+        #                         first-match-wins), 80 → Normal,
+        #   85 → Normal (boundary), 90 → Alto.
+        for i, p in enumerate(self.players):
+            ExamResult.objects.create(
+                player=p, template=self.template,
+                recorded_at=timezone.now(),
+                result_data={"peso": 70 + i * 5},
+            )
+
+        widget = self._build_widget(bin_count=5)
+        payload = resolve_team_widget(widget, self.cat)
+
+        # band_counts present, ordered as declared, every band has a count.
+        counts = payload["band_counts"]
+        self.assertEqual(len(counts), 3)
+        labels = [c["label"] for c in counts]
+        self.assertEqual(labels, ["Bajo", "Normal", "Alto"])
+        by_label = {c["label"]: c["count"] for c in counts}
+        # Sum equals N — every player landed in a band.
+        self.assertEqual(sum(by_label.values()), 5)
+        # Bajo gets {70, 75}, Normal gets {80, 85}, Alto gets {90}.
+        self.assertEqual(by_label, {"Bajo": 2, "Normal": 2, "Alto": 1})
+
+        # Every bin now carries a color matching one of the configured bands.
+        configured_colors = {"#16a34a", "#86efac", "#dc2626"}
+        for b in payload["bins"]:
+            self.assertIn("color", b)
+            self.assertIn(b["color"], configured_colors)
+            self.assertIn("band_label", b)
+
+    def test_coloring_none_disables_band_overlay(self):
+        # Same band config, but display_config.coloring="none" should
+        # suppress band_counts and per-bin colors.
+        self.template.config_schema = {
+            "fields": [
+                {
+                    "key": "peso", "type": "number", "label": "Peso", "unit": "kg",
+                    "reference_ranges": [
+                        {"label": "Bajo",   "max": 75,            "color": "#16a34a"},
+                        {"label": "Normal", "min": 75,            "color": "#86efac"},
+                    ],
+                }
+            ]
+        }
+        self.template.save(update_fields=["config_schema"])
+        for i, p in enumerate(self.players):
+            ExamResult.objects.create(
+                player=p, template=self.template,
+                recorded_at=timezone.now(),
+                result_data={"peso": 70 + i * 5},
+            )
+
+        layout = TeamReportLayout.objects.create(department=self.dept, category=self.cat)
+        section = TeamReportSection.objects.create(layout=layout)
+        widget = TeamReportWidget.objects.create(
+            section=section,
+            chart_type=ChartType.TEAM_DISTRIBUTION.value,
+            title="Dist",
+            display_config={"bin_count": 5, "coloring": "none"},
+        )
+        TeamReportWidgetDataSource.objects.create(
+            widget=widget, template=self.template,
+            field_keys=["peso"], aggregation=Aggregation.LATEST,
+        )
+
+        payload = resolve_team_widget(widget, self.cat)
+        self.assertNotIn("band_counts", payload)
+        for b in payload["bins"]:
+            self.assertNotIn("color", b)
+
 
 # =============================================================================
 # Team aggregation — team_active_records resolver
@@ -1790,3 +1894,204 @@ class TeamActiveRecordsTests(TestCase):
         payload = resolve_team_widget(widget, self.cat)
         self.assertTrue(payload["empty"])
         self.assertIn("Data Source", payload["error"])
+
+
+# =============================================================================
+# player_alerts + team_alerts resolvers
+# =============================================================================
+
+
+def _make_banded_template_for_alerts(department, *, field_key="valor"):
+    """Helper: template with reference_ranges including a red band."""
+    return ExamTemplate.objects.create(
+        name=f"T-{department.slug}",
+        slug=f"t-{department.slug}",
+        department=department,
+        config_schema={
+            "fields": [{
+                "key": field_key, "label": "Valor", "type": "number", "unit": "U",
+                "reference_ranges": [
+                    {"label": "OK",      "max": 100, "color": "#16a34a"},
+                    {"label": "Elevado", "min": 100, "color": "#dc2626"},
+                ],
+            }],
+        },
+    )
+
+
+class PlayerAlertsResolverTests(TestCase):
+    """Coverage for `_resolve_player_alerts`. Department scoping is the
+    interesting behavior — every other branch is glue."""
+
+    def setUp(self):
+        self.club = Club.objects.create(name="FC")
+        self.medico = Department.objects.create(club=self.club, name="Médico", slug="medico")
+        self.nutri = Department.objects.create(club=self.club, name="Nutri", slug="nutri")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.medico, self.nutri)
+        self.player = Player.objects.create(
+            category=self.cat, first_name="Juan", last_name="P", is_active=True,
+        )
+
+        # Two banded templates: one per department, each with a BAND rule
+        # that fires when value lands in the red band.
+        self.t_medico = _make_banded_template_for_alerts(self.medico)
+        self.t_medico.applicable_categories.add(self.cat)
+        self.t_nutri = _make_banded_template_for_alerts(self.nutri)
+        self.t_nutri.applicable_categories.add(self.cat)
+
+        from goals.models import AlertRule, AlertRuleKind, AlertSeverity
+        AlertRule.objects.create(
+            template=self.t_medico, field_key="valor",
+            kind=AlertRuleKind.BAND, config={}, severity=AlertSeverity.CRITICAL,
+        )
+        AlertRule.objects.create(
+            template=self.t_nutri, field_key="valor",
+            kind=AlertRuleKind.BAND, config={}, severity=AlertSeverity.CRITICAL,
+        )
+
+        # Both templates get a red-band reading → both should fire alerts.
+        ExamResult.objects.create(
+            player=self.player, template=self.t_medico,
+            recorded_at=timezone.now(),
+            result_data={"valor": 150},  # red
+        )
+        ExamResult.objects.create(
+            player=self.player, template=self.t_nutri,
+            recorded_at=timezone.now(),
+            result_data={"valor": 150},  # red
+        )
+
+    def _widget_for_department(self, department):
+        layout = DepartmentLayout.objects.create(department=department, category=self.cat)
+        section = LayoutSection.objects.create(layout=layout)
+        widget = Widget.objects.create(
+            section=section,
+            chart_type=ChartType.PLAYER_ALERTS.value,
+            title="Alertas",
+        )
+        return widget
+
+    def test_returns_only_alerts_from_same_department(self):
+        widget = self._widget_for_department(self.medico)
+        payload = resolve_widget(widget, self.player.id)
+        self.assertEqual(payload["total"], 1)
+        only = payload["alerts"][0]
+        self.assertEqual(only["template_name"], self.t_medico.name)
+        self.assertEqual(only["severity"], "critical")
+        # And the nutri template's alert is NOT in this department payload.
+        for a in payload["alerts"]:
+            self.assertNotEqual(a["template_name"], self.t_nutri.name)
+
+    def test_empty_when_no_alerts_in_department(self):
+        # Fresh department layout has alerts, but if we create a 3rd dept
+        # with no rules / no alerts, the resolver returns empty.
+        other = Department.objects.create(club=self.club, name="Otro", slug="otro")
+        self.cat.departments.add(other)
+        widget = self._widget_for_department(other)
+        payload = resolve_widget(widget, self.player.id)
+        self.assertTrue(payload["empty"])
+        self.assertEqual(payload["total"], 0)
+
+    def test_dismissed_alerts_excluded(self):
+        from goals.models import Alert, AlertStatus
+        Alert.objects.filter(player=self.player).update(status=AlertStatus.DISMISSED)
+        widget = self._widget_for_department(self.medico)
+        payload = resolve_widget(widget, self.player.id)
+        self.assertTrue(payload["empty"])
+
+
+class TeamAlertsResolverTests(TestCase):
+    """Coverage for `_resolve_team_alerts`. Ranking + department scoping."""
+
+    def setUp(self):
+        self.club = Club.objects.create(name="FC")
+        self.dept = Department.objects.create(club=self.club, name="Nutri", slug="nutri")
+        self.other_dept = Department.objects.create(club=self.club, name="Otro", slug="otro")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.dept, self.other_dept)
+        self.template = _make_banded_template_for_alerts(self.dept)
+        self.template.applicable_categories.add(self.cat)
+
+        from goals.models import AlertRule, AlertRuleKind, AlertSeverity
+        AlertRule.objects.create(
+            template=self.template, field_key="valor",
+            kind=AlertRuleKind.BAND, config={}, severity=AlertSeverity.CRITICAL,
+        )
+
+        self.heavy = Player.objects.create(
+            category=self.cat, first_name="Heavy", last_name="A", is_active=True,
+        )
+        self.light = Player.objects.create(
+            category=self.cat, first_name="Light", last_name="B", is_active=True,
+        )
+        self.safe = Player.objects.create(
+            category=self.cat, first_name="Safe", last_name="C", is_active=True,
+        )
+
+        # heavy: 2 alerts (older + newer reading both red → resolver fires
+        # once and refreshes via _upsert_alert; effectively 1 alert per
+        # rule per player). To get TWO alerts on heavy we add another
+        # template+rule below.
+        ExamResult.objects.create(
+            player=self.heavy, template=self.template,
+            recorded_at=timezone.now(),
+            result_data={"valor": 150},
+        )
+        ExamResult.objects.create(
+            player=self.light, template=self.template,
+            recorded_at=timezone.now(),
+            result_data={"valor": 130},
+        )
+        ExamResult.objects.create(
+            player=self.safe, template=self.template,
+            recorded_at=timezone.now(),
+            result_data={"valor": 50},  # safe — no alert
+        )
+        # Second template & rule in the SAME department to give heavy 2 alerts.
+        second_template = _make_banded_template_for_alerts(self.dept, field_key="otro")
+        second_template.applicable_categories.add(self.cat)
+        AlertRule.objects.create(
+            template=second_template, field_key="otro",
+            kind=AlertRuleKind.BAND, config={}, severity=AlertSeverity.CRITICAL,
+        )
+        ExamResult.objects.create(
+            player=self.heavy, template=second_template,
+            recorded_at=timezone.now(),
+            result_data={"otro": 150},
+        )
+
+    def _team_widget(self, department):
+        layout = TeamReportLayout.objects.create(department=department, category=self.cat)
+        section = TeamReportSection.objects.create(layout=layout)
+        return TeamReportWidget.objects.create(
+            section=section,
+            chart_type=ChartType.TEAM_ALERTS.value,
+            title="Alertas equipo",
+        )
+
+    def test_ranks_players_by_critical_count(self):
+        widget = self._team_widget(self.dept)
+        payload = resolve_team_widget(widget, self.cat)
+        self.assertFalse(payload["empty"])
+        names = [c["player_name"] for c in payload["players"]]
+        # heavy has 2 critical → first. light has 1. safe has 0 → not listed.
+        self.assertEqual(names[0], "Heavy A")
+        self.assertEqual(names[1], "Light B")
+        self.assertNotIn("Safe C", names)
+
+    def test_other_department_widget_excludes_alerts_from_this_dept(self):
+        # The same alerts exist, but the widget lives in a different
+        # department's layout — payload should be empty.
+        widget = self._team_widget(self.other_dept)
+        payload = resolve_team_widget(widget, self.cat)
+        self.assertTrue(payload["empty"])
+        self.assertEqual(payload["total_alerts"], 0)
+
+    def test_alert_count_and_max_severity(self):
+        widget = self._team_widget(self.dept)
+        payload = resolve_team_widget(widget, self.cat)
+        heavy_card = next(c for c in payload["players"] if c["player_name"] == "Heavy A")
+        self.assertEqual(heavy_card["alert_count"], 2)
+        self.assertEqual(heavy_card["critical_count"], 2)
+        self.assertEqual(heavy_card["max_severity"], "critical")

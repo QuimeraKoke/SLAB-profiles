@@ -154,7 +154,7 @@ export default function AttachmentList({
       {!readOnly && (
         <div className={styles.dropZone}>
           <span>
-            <strong>{hint ?? "Adjuntar archivos"}</strong> · arrastrá aquí o
+            <strong>{hint ?? "Adjuntar archivos"}</strong> · arrastra aquí o
           </span>
           <button
             type="button"

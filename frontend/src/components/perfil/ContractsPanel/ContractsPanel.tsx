@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import AttachmentList from "@/components/ui/AttachmentList/AttachmentList";
 import { api, ApiError } from "@/lib/api";
+import { usePermission } from "@/lib/permissions";
 import type { Contract, ContractCreateIn, ContractType } from "@/lib/types";
 import styles from "./ContractsPanel.module.css";
 
@@ -46,6 +47,12 @@ export default function ContractsPanel({ playerId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Contract | "new" | null>(null);
   const [expandedAttachmentsId, setExpandedAttachmentsId] = useState<string | null>(null);
+  // Action gates: the section is only mounted when view_contract is
+  // granted (see ProfileHeader), but add/change/delete are independent
+  // perms — assigned granularly per-user from the admin.
+  const canAdd = usePermission("core.add_contract");
+  const canChange = usePermission("core.change_contract");
+  const canDelete = usePermission("core.delete_contract");
 
   const refresh = async () => {
     try {
@@ -86,7 +93,7 @@ export default function ContractsPanel({ playerId }: Props) {
     <div className={styles.panel}>
       <div className={styles.toolbar}>
         <h4 className={styles.title}>Contratos · {contracts.length}</h4>
-        {!editing && (
+        {!editing && canAdd && (
           <button type="button" className={styles.newBtn} onClick={() => setEditing("new")}>
             + Nuevo contrato
           </button>
@@ -163,23 +170,24 @@ export default function ContractsPanel({ playerId }: Props) {
                         >
                           {attachmentsOpen ? "Ocultar archivos" : "Archivos"}
                         </button>
-                        <button
-                          type="button"
-                          className={styles.iconBtn}
-                          onClick={() => setEditing(c)}
-                          disabled={!c.salary_visible}
-                          title={c.salary_visible ? "Editar" : "Solo administradores pueden editar"}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          className={`${styles.iconBtn} ${styles.danger}`}
-                          onClick={() => handleDelete(c)}
-                          disabled={!c.salary_visible}
-                        >
-                          Borrar
-                        </button>
+                        {canChange && (
+                          <button
+                            type="button"
+                            className={styles.iconBtn}
+                            onClick={() => setEditing(c)}
+                          >
+                            Editar
+                          </button>
+                        )}
+                        {canDelete && (
+                          <button
+                            type="button"
+                            className={`${styles.iconBtn} ${styles.danger}`}
+                            onClick={() => handleDelete(c)}
+                          >
+                            Borrar
+                          </button>
+                        )}
                       </td>
                     </tr>
                     {attachmentsOpen && (

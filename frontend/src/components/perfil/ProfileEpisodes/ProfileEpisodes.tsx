@@ -6,6 +6,7 @@ import Link from "next/link";
 import DynamicUploader from "@/components/forms/DynamicUploader";
 import Modal from "@/components/ui/Modal/Modal";
 import { api, ApiError } from "@/lib/api";
+import { usePermission } from "@/lib/permissions";
 import type {
   Episode,
   ExamResult,
@@ -31,6 +32,9 @@ export default function ProfileEpisodes({ player }: Props) {
   } | null>(null);
   // Bumping reloadKey re-runs the loader effect after a successful edit.
   const [reloadKey, setReloadKey] = useState(0);
+  // The "+ Nueva lesión" button records a new ExamResult and may
+  // also open a new Episode — both gated by add_examresult.
+  const canAddResult = usePermission("exams.add_examresult");
 
   useEffect(() => {
     let cancelled = false;
@@ -77,7 +81,7 @@ export default function ProfileEpisodes({ player }: Props) {
           Lesiones · {open.length} abierta{open.length === 1 ? "" : "s"}
           {closed.length > 0 && ` · ${closed.length} cerrada${closed.length === 1 ? "" : "s"}`}
         </h3>
-        {newHref && (
+        {newHref && canAddResult && (
           <Link href={newHref} className={styles.newBtn}>
             + Nueva lesión
           </Link>

@@ -15,8 +15,30 @@ interface Props {
 // Most-recent → oldest, dark → light. Keeps the eye on the latest reading.
 const SERIES_COLORS = ["#6d28d9", "#9061f9", "#b5a0ff", "#d4caff", "#e9e3ff"];
 
+// In position mode each row owns a base color; older series fade toward
+// transparent on top of that base. Returns an inline `background` value.
+const POSITION_SERIES_ALPHAS = [1.0, 0.7, 0.45, 0.28, 0.16];
+function positionBarColor(base: string, idx: number): string {
+  const alpha = POSITION_SERIES_ALPHAS[idx] ?? 0.12;
+  // base is a hex string like "#a855f7" — convert to rgba so we can fade.
+  const hex = base.replace("#", "");
+  const full = hex.length === 3
+    ? hex.split("").map((c) => c + c).join("")
+    : hex;
+  const r = parseInt(full.slice(0, 2), 16);
+  const g = parseInt(full.slice(2, 4), 16);
+  const b = parseInt(full.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+type Row = TeamHorizontalComparisonPayload["rows"][number];
+type GroupRow = Extract<Row, { group_id: string }>;
+type PlayerRow = Extract<Row, { player_id: string }>;
+const isGroupRow = (row: Row): row is GroupRow => "group_id" in row;
+
 export default function TeamHorizontalComparison({ widget }: Props) {
   const data = widget.data as TeamHorizontalComparisonPayload;
+  const isByPosition = data.grouping === "position";
 
   // Track the user's explicit pick. The "effective" key falls back to the
   // resolver's default whenever the picked key isn't in the current
@@ -58,6 +80,7 @@ export default function TeamHorizontalComparison({ widget }: Props) {
           fields={data.fields ?? []}
           selectedKey={selectedKey}
           onSelect={setPickedKey}
+          isByPosition={isByPosition}
         />
         <div className={styles.empty}>
           {data.error
@@ -86,32 +109,55 @@ export default function TeamHorizontalComparison({ widget }: Props) {
         fields={data.fields ?? []}
         selectedKey={selectedKey}
         onSelect={setPickedKey}
+        isByPosition={isByPosition}
       />
 
-      {/* Legend showing what each color means by position. */}
-      <div className={styles.legend} aria-hidden="true">
-        {Array.from({ length: seriesCount }).map((_, i) => (
-          <span key={i} className={styles.legendItem}>
-            <span
-              className={styles.legendSwatch}
-              style={{ background: SERIES_COLORS[i] ?? "#cbd5e1" }}
-            />
-            {i === 0
-              ? "Más reciente"
-              : i === 1
-                ? "Anterior"
-                : `${i + 1}ª anterior`}
-          </span>
-        ))}
-      </div>
+      {isByPosition ? (
+        <div className={styles.legend} aria-hidden="true">
+          {(data.groups ?? []).map((g) => (
+            <span key={g.id} className={styles.legendItem}>
+              <span
+                className={styles.legendSwatch}
+                style={{ background: g.color }}
+              />
+              {g.name}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <div className={styles.legend} aria-hidden="true">
+          {Array.from({ length: seriesCount }).map((_, i) => (
+            <span key={i} className={styles.legendItem}>
+              <span
+                className={styles.legendSwatch}
+                style={{ background: SERIES_COLORS[i] ?? "#cbd5e1" }}
+              />
+              {i === 0
+                ? "Más reciente"
+                : i === 1
+                  ? "Anterior"
+                  : `${i + 1}ª anterior`}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className={styles.body}>
         {data.rows.map((row) => {
           const values = row.values?.[selectedKey] ?? [];
+          const isGroup = isGroupRow(row);
+          const rowKey = isGroup ? row.group_id : (row as PlayerRow).player_id;
+          const rowName = isGroup ? row.group_name : (row as PlayerRow).player_name;
           return (
-            <div key={row.player_id} className={styles.row}>
-              <div className={styles.playerName} title={row.player_name}>
-                {row.player_name}
+            <div key={rowKey} className={styles.row}>
+              <div className={styles.playerName} title={rowName}>
+                {isGroup && (
+                  <span
+                    className={styles.positionDot}
+                    style={{ background: row.color }}
+                  />
+                )}
+                <span className={styles.playerNameText}>{rowName}</span>
               </div>
               <div className={styles.bars}>
                 {values.length === 0 ? (
@@ -119,13 +165,17 @@ export default function TeamHorizontalComparison({ widget }: Props) {
                 ) : (
                   values.map((v, i) => {
                     const widthPct = Math.max(2, (v.value / max) * 100);
+                    const bg = isGroup
+                      ? positionBarColor(row.color, i)
+                      : (SERIES_COLORS[i] ?? "#cbd5e1");
                     return (
                       <div key={i} className={styles.barRow}>
                         <div
                           className={styles.bar}
                           style={{
                             width: `${widthPct}%`,
-                            background: SERIES_COLORS[i] ?? "#cbd5e1",
+                            background: bg,
+                            color: isGroup && i >= 2 ? "#111827" : "#ffffff",
                           }}
                           title={`${v.label} · ${v.value}${unitLabel}`}
                         >
@@ -154,9 +204,10 @@ interface HeaderProps {
   fields: { key: string; label: string; unit: string }[];
   selectedKey: string;
   onSelect: (key: string) => void;
+  isByPosition: boolean;
 }
 
-function Header({ widget, field, fields, selectedKey, onSelect }: HeaderProps) {
+function Header({ widget, field, fields, selectedKey, onSelect, isByPosition }: HeaderProps) {
   const showSelector = fields.length > 1;
   return (
     <header className={styles.header}>
@@ -164,6 +215,11 @@ function Header({ widget, field, fields, selectedKey, onSelect }: HeaderProps) {
         <h4 className={styles.title}>{widget.title}</h4>
         {widget.description && (
           <p className={styles.description}>{widget.description}</p>
+        )}
+        {isByPosition && (
+          <span className={styles.meta}>
+            Promedio mensual por posición · últimos meses con datos
+          </span>
         )}
       </div>
       {showSelector ? (

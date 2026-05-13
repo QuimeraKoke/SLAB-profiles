@@ -4,8 +4,12 @@ import React from "react";
 
 import type { TeamReportWidget } from "@/lib/types";
 import TeamActiveRecords from "./TeamActiveRecords";
+import TeamActivityCoverage from "./TeamActivityCoverage";
+import TeamAlerts from "./TeamAlerts";
 import TeamDistribution from "./TeamDistribution";
+import TeamGoalProgress from "./TeamGoalProgress";
 import TeamHorizontalComparison from "./TeamHorizontalComparison";
+import TeamLeaderboard from "./TeamLeaderboard";
 import TeamRosterMatrix from "./TeamRosterMatrix";
 import TeamStatusCounts from "./TeamStatusCounts";
 import TeamTrendLine from "./TeamTrendLine";
@@ -21,6 +25,10 @@ const teamWidgetRegistry: Record<
   team_trend_line: TeamTrendLine,
   team_distribution: TeamDistribution,
   team_active_records: TeamActiveRecords,
+  team_activity_coverage: TeamActivityCoverage,
+  team_leaderboard: TeamLeaderboard,
+  team_goal_progress: TeamGoalProgress,
+  team_alerts: TeamAlerts,
 };
 
 export function renderTeamWidget(widget: TeamReportWidget): React.ReactNode {

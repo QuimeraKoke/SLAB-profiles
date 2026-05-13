@@ -184,3 +184,25 @@
 .cancelBtn:hover:not(:disabled) {
   background-color: #f9fafb;
 }
+
+/* Clinical reference band hint shown below numeric inputs when the
+ * template field defines reference_ranges. Two states: static summary
+ * when the field is empty, active-band badge while typing. */
+.referenceHintStatic {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.referenceHintActive {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, currentColor 8%, #ffffff);
+}

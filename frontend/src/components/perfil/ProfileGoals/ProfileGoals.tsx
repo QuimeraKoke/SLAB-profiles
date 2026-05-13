@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { api, ApiError } from "@/lib/api";
+import { usePermission } from "@/lib/permissions";
 import type {
   Alert as AlertModel,
   ExamField,
@@ -39,6 +40,8 @@ export default function ProfileGoals({ player }: Props) {
   const [alerts, setAlerts] = useState<AlertModel[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const canAdd = usePermission("goals.add_goal");
+  const canChange = usePermission("goals.change_goal");
 
   const refresh = async () => {
     try {
@@ -102,7 +105,7 @@ export default function ProfileGoals({ player }: Props) {
 
       <div className={styles.toolbar}>
         <h3 className={styles.title}>Objetivos · {goals.length}</h3>
-        {!showForm && (
+        {!showForm && canAdd && (
           <button
             type="button"
             className={styles.newBtn}
@@ -113,7 +116,7 @@ export default function ProfileGoals({ player }: Props) {
         )}
       </div>
 
-      {showForm && (
+      {showForm && canAdd && (
         <GoalForm
           player={player}
           onCreated={handleCreated}
@@ -128,7 +131,12 @@ export default function ProfileGoals({ player }: Props) {
       ) : (
         <div className={styles.list}>
           {goals.map((g) => (
-            <GoalCard key={g.id} goal={g} onCancel={handleCancel} />
+            <GoalCard
+              key={g.id}
+              goal={g}
+              onCancel={handleCancel}
+              canCancel={canChange}
+            />
           ))}
         </div>
       )}
@@ -140,7 +148,13 @@ export default function ProfileGoals({ player }: Props) {
 // Goal card
 // ---------------------------------------------------------------------------
 
-function GoalCard({ goal, onCancel }: { goal: Goal; onCancel: (g: Goal) => void }) {
+function GoalCard({
+  goal, onCancel, canCancel,
+}: {
+  goal: Goal;
+  onCancel: (g: Goal) => void;
+  canCancel: boolean;
+}) {
   const op = OPERATOR_LABELS[goal.operator];
   const statusClass =
     goal.status === "met"
@@ -159,18 +173,25 @@ function GoalCard({ goal, onCancel }: { goal: Goal; onCancel: (g: Goal) => void 
           ? "Cancelado"
           : "Activo";
 
-  const targetStr = `${goal.target_value}${goal.field_unit ? ` ${goal.field_unit}` : ""}`;
-  const lastStr =
-    goal.last_value !== null
-      ? `${goal.last_value}${goal.field_unit ? ` ${goal.field_unit}` : ""}`
-      : "Sin datos";
+  const unitSuffix = goal.field_unit ? ` ${goal.field_unit}` : "";
+  const targetStr = `${goal.target_value}${unitSuffix}`;
+  // Prefer the live `current_value` over the evaluator-cached `last_value`
+  // — the latter can lag behind reality between scheduled runs.
+  const currentValue = goal.current_value;
+  const currentStr =
+    currentValue !== null ? `${currentValue}${unitSuffix}` : "Sin datos";
 
-  // Color the "last value" red/green when we have one.
-  let lastValueClass = "";
-  if (goal.last_value !== null) {
-    const ok = compare(goal.last_value, goal.operator, goal.target_value);
-    lastValueClass = ok ? styles.good : styles.bad;
-  }
+  // Color the current value green/red based on the server-computed
+  // `progress.achieved`. Falls back to neutral when no reading exists.
+  const currentValueClass =
+    goal.progress?.achieved === true
+      ? styles.good
+      : goal.progress?.achieved === false
+        ? styles.bad
+        : "";
+
+  const distance = goal.progress?.distance;
+  const distancePct = goal.progress?.distance_pct;
 
   return (
     <div className={styles.card}>
@@ -189,10 +210,27 @@ function GoalCard({ goal, onCancel }: { goal: Goal; onCancel: (g: Goal) => void 
       </div>
       <div className={styles.row}>
         <span className={styles.rowLabel}>Valor actual</span>
-        <span className={`${styles.rowValue} ${lastValueClass}`}>{lastStr}</span>
+        <span className={`${styles.rowValue} ${currentValueClass}`}>
+          {currentStr}
+          {currentValue !== null && distance !== null && distance !== 0 && (
+            <span className={styles.deltaInline}>
+              {" "}({distance > 0 ? "+" : ""}{distance}
+              {distancePct !== null ? `, ${distancePct > 0 ? "+" : ""}${distancePct.toFixed(1)}%` : ""}
+              {" "}vs objetivo)
+            </span>
+          )}
+        </span>
       </div>
+      {goal.current_recorded_at && (
+        <div className={styles.row}>
+          <span className={styles.rowLabel}>Medido el</span>
+          <span className={styles.rowValueMuted}>
+            {formatDate(goal.current_recorded_at)}
+          </span>
+        </div>
+      )}
       {goal.notes && <div className={styles.notes}>{goal.notes}</div>}
-      {goal.status === "active" && (
+      {goal.status === "active" && canCancel && (
         <div className={styles.cardActions}>
           <button type="button" className={styles.linkBtn} onClick={() => onCancel(goal)}>
             Cancelar
@@ -201,16 +239,6 @@ function GoalCard({ goal, onCancel }: { goal: Goal; onCancel: (g: Goal) => void 
       )}
     </div>
   );
-}
-
-function compare(actual: number, op: GoalOperator, target: number): boolean {
-  switch (op) {
-    case "<=": return actual <= target;
-    case "<":  return actual < target;
-    case "==": return actual === target;
-    case ">=": return actual >= target;
-    case ">":  return actual > target;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -279,7 +307,7 @@ function GoalForm({ player, onCreated, onCancel }: FormProps) {
     e.preventDefault();
     setError(null);
     if (!templateId || !fieldKey || !targetValue) {
-      setError("Completá plantilla, campo y valor objetivo.");
+      setError("Completa plantilla, campo y valor objetivo.");
       return;
     }
     const target = Number(targetValue);

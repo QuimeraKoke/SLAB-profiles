@@ -19,6 +19,11 @@ class UserOut(Schema):
     last_name: str = ""
     is_staff: bool
     is_superuser: bool
+    # All Django permission codenames the user effectively has (group +
+    # direct user perms; superusers receive a sentinel `["*"]`). The
+    # frontend uses this to hide buttons / sections / pages without
+    # round-tripping for each check.
+    permissions: list[str] = []
 
 
 class MembershipOut(Schema):
@@ -315,6 +320,19 @@ class GoalPatchIn(Schema):
     warn_days_before: int | None = None
 
 
+class GoalProgressOut(Schema):
+    """Live computed progress against a goal — see list_player_goals."""
+
+    # True when the latest reading already satisfies the operator.
+    # Null when there's no reading yet (current_value is None).
+    achieved: bool | None = None
+    # Signed delta: current - target. Negative = below target.
+    distance: float | None = None
+    # Same delta as a % of target. Useful for progress bars; null when
+    # target is 0 (division undefined).
+    distance_pct: float | None = None
+
+
 class GoalOut(Schema):
     id: UUID
     player_id: UUID
@@ -332,6 +350,11 @@ class GoalOut(Schema):
     evaluated_at: datetime | None = None
     warn_days_before: int | None = None
     created_at: datetime
+    # Live "current vs target" — re-computed on every list, distinct from
+    # last_value which the evaluator stores at scheduled run time.
+    current_value: float | None = None
+    current_recorded_at: datetime | None = None
+    progress: GoalProgressOut = GoalProgressOut()
 
 
 class AlertOut(Schema):

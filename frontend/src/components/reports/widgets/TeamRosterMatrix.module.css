@@ -107,8 +107,24 @@
 
 .cellValue {
   font-weight: 500;
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   line-height: 1.2;
+}
+
+/* Semaphore dot for reference bands. Rendered AFTER the numeric value
+ * so it doesn't push the number around when bands are mixed (only some
+ * columns have bands). Sized to match the value's x-height visually. */
+.bandDot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  /* Subtle dark border so light-colored bands (yellow/amber) stay
+   * visible against the team-range purple background gradient. */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
 }
 
 /* Variation indicator (▲/▼ + signed magnitude). Colors are direction-only,
@@ -133,6 +149,18 @@
 
 .deltaFlat {
   color: #9ca3af;
+}
+
+/* When the field has a `direction_of_good`, the judgment-based palette
+ * overrides up/down. Used for "this delta is clinically good" (green) or
+ * "clinically bad" (red). Tones intentionally muted so a sea of greens
+ * doesn't compete with the data values themselves. */
+.deltaGood {
+  color: #15803d;
+}
+
+.deltaBad {
+  color: #b91c1c;
 }
 
 .missingCell {

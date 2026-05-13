@@ -4,6 +4,7 @@ import styles from './ProfileHeader.module.css';
 import ContractsPanel from '@/components/perfil/ContractsPanel/ContractsPanel';
 import Modal from '@/components/ui/Modal/Modal';
 import { api } from '@/lib/api';
+import { usePermission } from '@/lib/permissions';
 import type { Alert, PlayerDetail, Sex } from '@/lib/types';
 
 interface ProfileHeaderProps {
@@ -61,6 +62,7 @@ export default function ProfileHeader({ player }: ProfileHeaderProps) {
 
   const [activeAlertCount, setActiveAlertCount] = useState(0);
   const [showContracts, setShowContracts] = useState(false);
+  const canViewContract = usePermission("core.view_contract");
   useEffect(() => {
     let cancelled = false;
     api<Alert[]>(`/players/${player.id}/alerts?status=active`)
@@ -169,37 +171,41 @@ export default function ProfileHeader({ player }: ProfileHeaderProps) {
           </div>
         </div>
 
-        <div className={styles.contractInfo}>
-          <span className={styles.contractLabel}>CONTRATO VIGENTE</span>
-          {contract ? (
-            <>
-              <span className={styles.contractValue}>
-                {contract.season_label}
-                {contract.salary_visible && contract.total_gross_amount !== null && (
-                  <span> · {formatMoney(contract.total_gross_amount, contract.salary_currency)}</span>
-                )}
-              </span>
-            </>
-          ) : (
-            <span className={styles.contractValue}>—</span>
-          )}
-          <button
-            className={styles.verMasBtn}
-            onClick={() => setShowContracts(true)}
-            type="button"
-          >
-            <FileText size={14} />
-            Ver más
-          </button>
-        </div>
+        {canViewContract && (
+          <div className={styles.contractInfo}>
+            <span className={styles.contractLabel}>CONTRATO VIGENTE</span>
+            {contract ? (
+              <>
+                <span className={styles.contractValue}>
+                  {contract.season_label}
+                  {contract.salary_visible && contract.total_gross_amount !== null && (
+                    <span> · {formatMoney(contract.total_gross_amount, contract.salary_currency)}</span>
+                  )}
+                </span>
+              </>
+            ) : (
+              <span className={styles.contractValue}>—</span>
+            )}
+            <button
+              className={styles.verMasBtn}
+              onClick={() => setShowContracts(true)}
+              type="button"
+            >
+              <FileText size={14} />
+              Ver más
+            </button>
+          </div>
+        )}
       </div>
-      <Modal
-        open={showContracts}
-        title={`Contratos · ${fullName}`}
-        onClose={() => setShowContracts(false)}
-      >
-        <ContractsPanel playerId={player.id} />
-      </Modal>
+      {canViewContract && (
+        <Modal
+          open={showContracts}
+          title={`Contratos · ${fullName}`}
+          onClose={() => setShowContracts(false)}
+        >
+          <ContractsPanel playerId={player.id} />
+        </Modal>
+      )}
     </div>
   );
 }

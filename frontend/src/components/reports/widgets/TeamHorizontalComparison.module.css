@@ -29,6 +29,13 @@
   color: #6b7280;
 }
 
+.meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
 .fieldTag {
   font-size: 0.7rem;
   font-weight: 600;
@@ -122,9 +129,24 @@
   font-weight: 600;
   color: #111827;
   padding-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.playerNameText {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.positionDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
 }
 
 .bars {

@@ -1,0 +1,157 @@
+.widget {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.description {
+  margin: 4px 0 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+.totalTag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #b91c1c;
+  background: #fee2e2;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.9rem;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 6px;
+}
+
+.playerList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.playerCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.playerHeader {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 4px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.playerHeader:hover {
+  background: #f3f4f6;
+}
+
+.severityRail {
+  width: 4px;
+  align-self: stretch;
+  border-radius: 2px;
+}
+
+.severityCritical {
+  background: #dc2626;
+}
+
+.severityWarning {
+  background: #f59e0b;
+}
+
+.severityInfo {
+  background: #6b7280;
+}
+
+.playerName {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.countCluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.countPill {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #374151;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.countCritical {
+  color: #b91c1c;
+  background: #fee2e2;
+  border-color: #fecaca;
+}
+
+.chevron {
+  font-size: 0.7rem;
+  color: #6b7280;
+  width: 12px;
+  text-align: center;
+}
+
+.playerBody {
+  padding: 10px 12px;
+  background: #ffffff;
+  border-top: 1px solid #f3f4f6;
+}

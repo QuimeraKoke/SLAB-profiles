@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Activity, Thermometer, Stethoscope, FileHeart } from "lucide-react";
+import { Activity, AlertTriangle, Thermometer, Stethoscope, FileHeart } from "lucide-react";
 
+import PlayerAlertsList from "@/components/perfil/PlayerAlertsList/PlayerAlertsList";
 import { api, ApiError } from "@/lib/api";
+import type { AlertItem } from "@/lib/types";
 import styles from "./ProfileSummary.module.css";
 
 interface MatchStats {
@@ -46,6 +48,7 @@ interface Props {
 
 export default function ProfileSummary({ playerId }: Props) {
   const [data, setData] = useState<SummaryPayload | null>(null);
+  const [alerts, setAlerts] = useState<AlertItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -53,6 +56,7 @@ export default function ProfileSummary({ playerId }: Props) {
     Promise.resolve().then(() => {
       if (cancelled) return;
       setData(null);
+      setAlerts(null);
       setError(null);
     });
     api<SummaryPayload>(`/players/${playerId}/summary`)
@@ -65,6 +69,15 @@ export default function ProfileSummary({ playerId }: Props) {
             err instanceof ApiError ? err.message : "Error al cargar el resumen",
           );
         }
+      });
+    // Alerts load independently — a 4xx on /alerts shouldn't blank the
+    // whole summary. Errors swallow silently; the panel just hides.
+    api<AlertItem[]>(`/players/${playerId}/alerts?status=active`)
+      .then((list) => {
+        if (!cancelled) setAlerts(list);
+      })
+      .catch(() => {
+        if (!cancelled) setAlerts([]);
       });
     return () => {
       cancelled = true;
@@ -81,6 +94,8 @@ export default function ProfileSummary({ playerId }: Props) {
 
   return (
     <div className={styles.container}>
+      <AlertsPanel alerts={alerts} />
+
       <div className={styles.topRow}>
         <MatchStatsCard stats={data?.match_stats ?? null} loading={data === null} />
         <PhysicalCard stats={data?.physical ?? null} loading={data === null} />
@@ -272,6 +287,28 @@ function Row({ label, value, suffix, highlight, color }: RowProps) {
         {value}
         {suffix ?? ""}
       </span>
+    </div>
+  );
+}
+
+function AlertsPanel({ alerts }: { alerts: AlertItem[] | null }) {
+  // Render nothing while loading — keeps the layout from flickering with
+  // a placeholder card. The other Summary cards already handle their
+  // own loading states.
+  if (alerts === null) return null;
+  if (alerts.length === 0) return null;
+  return (
+    <div className={`${styles.card} ${styles.alertsCard}`}>
+      <div className={styles.cardHeader}>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <AlertTriangle size={14} />
+          ALERTAS ACTIVAS
+        </div>
+        <div className={styles.cardHeaderRight}>
+          {alerts.length} ACTIVA{alerts.length === 1 ? "" : "S"}
+        </div>
+      </div>
+      <PlayerAlertsList alerts={alerts} limit={6} />
     </div>
   );
 }
