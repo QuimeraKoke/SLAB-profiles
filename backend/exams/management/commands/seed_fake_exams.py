@@ -5,16 +5,20 @@ player's UUID) mean re-running with --reset reproduces the same shape.
 
 Examples:
 
-    # Default: 6 historical entries per (player × applicable template), spread
-    # across the last 12 weeks, in every club.
+    # Default: weekly cadence, weeks+1 = 13 entries per (player × applicable
+    # template) — one per week from `now - 12 weeks` to `now`, every club.
     docker compose exec backend python manage.py seed_fake_exams
 
-    # Wipe existing results first, then seed.
+    # Wipe existing results first, then seed weekly.
     docker compose exec backend python manage.py seed_fake_exams --reset
 
-    # Heavier dataset, single club:
+    # Heavier dataset, single club, 24 weeks of weekly data:
     docker compose exec backend python manage.py seed_fake_exams \
-        --club "Demo FC" --count 12 --weeks 24
+        --club "Demo FC" --weeks 24
+
+    # Legacy spread mode (N results spread evenly across the window):
+    docker compose exec backend python manage.py seed_fake_exams \
+        --cadence spread --count 6 --weeks 12
 
 Notes
 -----
@@ -26,6 +30,9 @@ Notes
   are computed by the live formula engine.
 * `recorded_at` is spread evenly across the time window. The newest result
   lands at "now" so the latest stat-card values are current.
+* Special-cased templates (`lesiones`, `medicacion`, `gps_*`, daily notes)
+  use their own cadence — they're episodic / date-range / per-event, not
+  weekly check-ins, so the cadence flag doesn't apply to them.
 """
 from __future__ import annotations
 
@@ -233,23 +240,50 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--club", default=None,
                             help="Scope to one club by name. Default: all clubs.")
-        parser.add_argument("--count", type=int, default=6,
-                            help="Historical results per (player × template). Default: 6.")
+        parser.add_argument("--count", type=int, default=None,
+                            help=(
+                                "Historical results per (player × template). "
+                                "Ignored when --cadence=weekly (then count is "
+                                "derived as weeks + 1, one reading per week). "
+                                "Default with --cadence=spread: 6."
+                            ))
         parser.add_argument("--weeks", type=int, default=12,
                             help="Time window for spreading results. Default: 12 weeks.")
+        parser.add_argument("--cadence",
+                            choices=["weekly", "spread"], default="weekly",
+                            help=(
+                                "How to space results within --weeks. "
+                                "`weekly` (default): one result every 7 days, "
+                                "weeks+1 results per (player × template). "
+                                "`spread`: --count results spread evenly across "
+                                "the window (legacy behavior)."
+                            ))
         parser.add_argument("--reset", action="store_true",
                             help="Delete every existing ExamResult in scope before seeding.")
 
     def handle(self, *args, **options):
         club_name = options["club"]
-        count = options["count"]
+        cadence = options["cadence"]
         weeks = options["weeks"]
         reset = options["reset"]
 
-        if count <= 0:
-            raise CommandError("--count must be positive.")
         if weeks <= 0:
             raise CommandError("--weeks must be positive.")
+
+        # Cadence resolves to a concrete (count, step) the loop below uses.
+        # Weekly fixes step to 7 days and generates weeks+1 readings so the
+        # window has both endpoints (oldest = now - weeks, newest = now).
+        if cadence == "weekly":
+            if options["count"] is not None:
+                self.stdout.write(self.style.WARNING(
+                    "--count is ignored when --cadence=weekly. Using "
+                    f"weeks + 1 = {weeks + 1} results per player × template."
+                ))
+            count = weeks + 1
+        else:
+            count = options["count"] if options["count"] is not None else 6
+            if count <= 0:
+                raise CommandError("--count must be positive.")
 
         clubs = Club.objects.all()
         if club_name:
