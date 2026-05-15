@@ -5,9 +5,24 @@ from django.db import models
 from django.utils.text import slugify
 
 
+def _club_logo_upload_path(instance, filename: str) -> str:
+    """Per-club logo path so multiple clubs can coexist without collision.
+    Extension preserved so PNG / SVG / JPG all work."""
+    return f"clubs/{instance.id}/logo/{filename}"
+
+
 class Club(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=120)
+    logo = models.ImageField(
+        upload_to=_club_logo_upload_path,
+        null=True, blank=True,
+        help_text=(
+            "Logo del club. Aparece en la portada de los reportes PDF "
+            "y como cabecera estándar. PNG con fondo transparente o "
+            "JPG funcionan bien; ideal ~600px de alto."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:

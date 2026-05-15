@@ -129,19 +129,32 @@ def _build_player_layout(
 
 
 def _build_team_layout(
-    department: Department, category: Category, name: str, sections: list[dict],
+    department: Department, category: Category, name: str,
+    sections: list[dict],
+    *,
+    match_selector_config: dict | None = None,
 ) -> tuple[str, int]:
-    """Same pattern as `_build_player_layout` but for TeamReportLayout."""
+    """Same pattern as `_build_player_layout` but for TeamReportLayout.
+
+    `match_selector_config` is an optional JSON blob set on the
+    TeamReportLayout to enable the per-match hero selector at the top
+    of the report page (see TeamReportLayout.match_selector_config in
+    `dashboards/models.py` for the expected shape).
+    """
     existing = TeamReportLayout.objects.filter(
         department=department, category=category,
     ).first()
     if existing:
         existing.sections.all().delete()
         layout = existing
+        layout.name = name
+        layout.match_selector_config = match_selector_config or {}
+        layout.save(update_fields=["name", "match_selector_config", "updated_at"])
         action = "rebuilt"
     else:
         layout = TeamReportLayout.objects.create(
             department=department, category=category, name=name, is_active=True,
+            match_selector_config=match_selector_config or {},
         )
         action = "created"
 
@@ -224,11 +237,14 @@ def _team_alerts_section() -> dict:
 
 
 def _spec_medico(department: Department) -> dict:
-    """Médico: injuries (Lesiones — episodic), CK trend, hidratación, medication."""
+    """Médico: injuries (Lesiones — episodic), CK trend, hidratación,
+    medication, daily molestias log, daily Check-IN wellness."""
     lesiones = _resolve_template(department, "lesiones")
     ck = _resolve_template(department, "ck")
     hidra = _resolve_template(department, "hidratacion")
     medicacion = _resolve_template(department, "medicacion")
+    molestias = _resolve_template(department, "molestias")
+    check_in = _resolve_template(department, "check_in")
 
     player: list[dict] = []
     if lesiones is not None:
@@ -299,32 +315,49 @@ def _spec_medico(department: Department) -> dict:
             ],
         })
 
-    team: list[dict] = []
-    if lesiones is not None:
-        team.append({
-            "title": "Disponibilidad",
-            "is_collapsible": False,
-            "widgets": [
-                {
-                    "chart_type": ChartType.TEAM_STATUS_COUNTS,
-                    "title": "Plantel disponible para entrenar / jugar",
-                    "column_span": 12,
-                    "display_config": {
-                        "stage_colors": {
-                            "available": "#16a34a",
-                            "injured": "#dc2626",
-                            "recovery": "#ea580c",
-                            "reintegration": "#eab308",
-                        },
-                    },
-                    "sources": [{
-                        "template": lesiones,
-                        "field_keys": ["stage"],
-                        "aggregation": Aggregation.LATEST,
-                    }],
-                },
-            ],
+    if molestias is not None:
+        player.append({
+            "title": "Molestias recientes",
+            "widgets": [{
+                "chart_type": ChartType.ACTIVITY_LOG,
+                "title": "Últimas molestias registradas",
+                "column_span": 12,
+                "display_config": {"limit": 15},
+                "sources": [{
+                    "template": molestias,
+                    "field_keys": _filter_keys(molestias, [
+                        "tipo", "zona", "comentarios",
+                    ]),
+                    "aggregation": Aggregation.LAST_N,
+                    "aggregation_param": 15,
+                }],
+            }],
         })
+
+    if check_in is not None:
+        player.append({
+            "title": "Check-IN diario",
+            "widgets": [{
+                "chart_type": ChartType.LINE_WITH_SELECTOR,
+                "title": "Evolución de las 5 dimensiones",
+                "column_span": 12,
+                "sources": [{
+                    "template": check_in,
+                    "field_keys": _filter_keys(check_in, [
+                        "doms", "animo", "estres", "fatiga", "sueno",
+                        "total_bienestar",
+                    ]),
+                    "aggregation": Aggregation.ALL,
+                }],
+            }],
+        })
+
+    team: list[dict] = []
+    # NOTE: the "Disponibilidad / Plantel disponible" team_status_counts
+    # widget used to live here. Removed once the executive-summary block
+    # (KPI strip + 4-column-by-status table with player names) covered
+    # the same information directly on the cover — the chart became
+    # redundant. Re-add by uncommenting from git history if needed.
     if medicacion is not None:
         team.append({
             "title": "Tratamiento activo",
@@ -346,6 +379,157 @@ def _spec_medico(department: Department) -> dict:
                     }],
                 },
             ],
+        })
+
+    if ck is not None:
+        team.append({
+            "title": "CK del plantel",
+            "widgets": [{
+                "chart_type": ChartType.TEAM_LEADERBOARD,
+                "title": "CK por jugador",
+                "description": (
+                    "Última medición de CK por jugador. Líneas: límite "
+                    "inferior, superior y promedio del plantel."
+                ),
+                "column_span": 12,
+                "chart_height": 320,
+                "display_config": {
+                    "style": "vertical_bars",
+                    "aggregator": "latest",
+                    "order": "desc",
+                    "limit": 30,
+                    "show_team_avg_line": True,
+                    "reference_lines": [
+                        {"value": 200, "label": "Límite inferior", "color": "#16a34a"},
+                        {"value": 500, "label": "Límite superior", "color": "#dc2626"},
+                    ],
+                },
+                "sources": [{
+                    "template": ck,
+                    "field_keys": _filter_keys(ck, ["valor"]),
+                    "aggregation": Aggregation.LATEST,
+                }],
+            }],
+        })
+
+    if hidra is not None:
+        team.append({
+            "title": "Densidad urinaria",
+            "widgets": [{
+                "chart_type": ChartType.TEAM_LEADERBOARD,
+                "title": "Densidad urinaria por jugador",
+                "description": (
+                    "Última lectura por jugador. Zona amarilla = "
+                    "hidratación límite (1.020–1.030). Verde por debajo."
+                ),
+                "column_span": 12,
+                "chart_height": 320,
+                "display_config": {
+                    "style": "vertical_bars",
+                    "aggregator": "latest",
+                    "order": "desc",
+                    "limit": 30,
+                    # Zoom: values span 1.000–1.040 — the differences live
+                    # in the 3rd decimal, so a 0→1.040 chart crushes them
+                    # into identical-looking bars. y_min/y_max + decimals=3
+                    # make the variation actually readable.
+                    "y_min": 1.000,
+                    "y_max": 1.040,
+                    "decimals": 3,
+                    "reference_bands": [
+                        {
+                            "min": 1.000,
+                            "max": 1.020,
+                            "label": "Hidratado",
+                            "color": "#bbf7d0",
+                        },
+                        {
+                            "min": 1.020,
+                            "max": 1.030,
+                            "label": "Amarillo",
+                            "color": "#fef08a",
+                        },
+                        {
+                            "min": 1.030,
+                            "max": 1.040,
+                            "label": "Deshidratado",
+                            "color": "#fecaca",
+                        },
+                    ],
+                },
+                "sources": [{
+                    "template": hidra,
+                    "field_keys": _filter_keys(hidra, ["densidad"]),
+                    "aggregation": Aggregation.LATEST,
+                }],
+            }],
+        })
+
+    if molestias is not None:
+        team.append({
+            "title": "Molestias del plantel",
+            "widgets": [{
+                "chart_type": ChartType.TEAM_ACTIVITY_LOG,
+                "title": "Últimas molestias reportadas",
+                "description": "Hoja diaria de tratamientos médicos.",
+                "column_span": 12,
+                "display_config": {"limit": 25},
+                "sources": [{
+                    "template": molestias,
+                    "field_keys": _filter_keys(molestias, [
+                        "tipo", "zona", "comentarios",
+                    ]),
+                    "aggregation": Aggregation.LAST_N,
+                    "aggregation_param": 25,
+                }],
+            }],
+        })
+
+    if check_in is not None:
+        team.append({
+            "title": "Check-IN del plantel",
+            "widgets": [{
+                "chart_type": ChartType.TEAM_DAILY_GROUPED_BARS,
+                "title": "Promedio diario por dimensión",
+                "description": (
+                    "Cada barra es el promedio del plantel para una "
+                    "dimensión, por día (escala 1-5). La línea muestra "
+                    "el Total Bienestar (suma de las 5 dimensiones, "
+                    "rango 5-25)."
+                ),
+                "column_span": 12,
+                "chart_height": 360,
+                "display_config": {
+                    "show_total_line": True,
+                    "total_label": "Total Bienestar",
+                    "total_color": "#111827",
+                    "day_limit": 7,
+                    # Fixed axis ranges: bars stay on the Likert 1-5 scale,
+                    # the total-line axis on its native 5-25 sum range.
+                    # Without these recharts auto-scales each axis to
+                    # the data's local min/max and the chart looks
+                    # different every day depending on the team's mood.
+                    "y_min": 1,
+                    "y_max": 5,
+                    "total_y_min": 5,
+                    "total_y_max": 25,
+                    "decimals": 1,
+                    "field_colors": {
+                        "doms":   "#dc2626",
+                        "animo":  "#16a34a",
+                        "estres": "#f59e0b",
+                        "fatiga": "#8b5cf6",
+                        "sueno":  "#0ea5e9",
+                    },
+                },
+                "sources": [{
+                    "template": check_in,
+                    "field_keys": _filter_keys(check_in, [
+                        "doms", "animo", "estres", "fatiga", "sueno",
+                    ]),
+                    "aggregation": Aggregation.ALL,
+                }],
+            }],
         })
 
     # Alerts always lead — they're the "needs attention now" surface,
@@ -430,58 +614,237 @@ def _spec_fisico(department: Department) -> dict:
         })
 
     team: list[dict] = []
+    team_match_selector_config: dict | None = None
     if gps_match is not None:
-        team.append({
-            "title": "Estado físico del plantel",
-            "is_collapsible": False,
-            "widgets": [
-                {
-                    "chart_type": ChartType.TEAM_ROSTER_MATRIX,
-                    "title": "Promedios por jugador (último partido)",
-                    "column_span": 12,
-                    "display_config": {"coloring": "vs_team_range", "variation": "absolute"},
-                    "sources": [{
-                        "template": gps_match,
-                        "field_keys": _filter_keys(gps_match, [
-                            "tot_dist_total", "max_vel_total", "hsr_total",
-                            "sprint_total", "player_load_total",
-                        ]),
-                        "aggregation": Aggregation.LATEST,
-                    }],
-                },
-                {
-                    "chart_type": ChartType.TEAM_DISTRIBUTION,
-                    "title": "Distribución — distancia por partido",
-                    "column_span": 6,
-                    "display_config": {"bin_count": 8},
-                    "sources": [{
-                        "template": gps_match,
-                        "field_keys": ["tot_dist_total"],
-                        "aggregation": Aggregation.LATEST,
-                    }],
-                },
-                {
-                    "chart_type": ChartType.TEAM_TREND_LINE,
-                    "title": "Promedio del plantel en el tiempo",
-                    "column_span": 6,
-                    "display_config": {"bucket_size": "month"},
-                    "sources": [{
-                        "template": gps_match,
-                        "field_keys": _filter_keys(gps_match, [
-                            "tot_dist_total", "max_vel_total", "player_load_total",
-                        ]),
-                        "aggregation": Aggregation.ALL,
-                    }],
-                },
-            ],
-        })
+        # Físico team report = per-match GPS dashboard. The selector hero
+        # at the top scopes EVERY widget below to the chosen match.
+        team_match_selector_config = {
+            "enabled": True,
+            "event_type": "match",
+            "required": True,
+            "label": "Partido",
+            "show_recent": 12,
+        }
+        team.extend(_gps_team_sections(gps_match))
 
     # Alerts always lead — they're the "needs attention now" surface,
     # so they should be the first thing the doctor / coach sees when
     # opening a profile or a department report.
     player.insert(0, _player_alerts_section())
     team.insert(0, _team_alerts_section())
-    return {"player": player, "team": team}
+    return {
+        "player": player,
+        "team": team,
+        "team_match_selector_config": team_match_selector_config,
+    }
+
+
+def _gps_team_sections(gps_match) -> list[dict]:
+    """Build the 3-section GPS match report: General / Primer T. / Segundo T.
+
+    Same widget shapes in each half, just swapping `_total` → `_p1` / `_p2`
+    suffixes. Keeps the seed compact and the page narrative consistent.
+    """
+    def keys_for(suffix: str) -> dict:
+        # Helpers so the section block stays readable.
+        return {
+            "tot_dist": f"tot_dist_{suffix}",
+            "mpm": f"mpm_{suffix}",
+            "tot_dur": f"tot_dur_{suffix}",
+            "hsr": f"hsr_{suffix}",
+            "sprint": f"sprint_{suffix}",
+            "dist70": f"dist_70_85_{suffix}",
+            "dist85": f"dist_85_95_{suffix}",
+            "acc_dec": f"acc_dec_{suffix}",
+            "acc": f"acc_{suffix}",
+            "dec": f"dec_{suffix}",
+            "max_vel": f"max_vel_{suffix}",
+            "hiaa": f"hiaa_{suffix}",
+            "hmld": f"hmld_{suffix}",
+            "player_load": f"player_load_{suffix}",
+        }
+
+    def per_half_sections(label: str, suffix: str) -> dict:
+        k = keys_for(suffix)
+        return {
+            "title": label,
+            "is_collapsible": True,
+            "default_collapsed": False,
+            "widgets": [
+                {
+                    "chart_type": ChartType.TEAM_MATCH_SUMMARY,
+                    "title": f"Resumen agregado — {label.lower()}",
+                    "column_span": 12,
+                    "display_config": {"per_player_aggregator": "latest"},
+                    "sources": [{
+                        "template": gps_match,
+                        "field_keys": _filter_keys(gps_match, [
+                            k["tot_dist"], k["mpm"], k["hsr"], k["sprint"],
+                            k["acc_dec"], k["max_vel"], k["hiaa"], k["hmld"],
+                        ]),
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_HORIZONTAL_COMPARISON,
+                    "title": "Distancia + Metros por minuto",
+                    "column_span": 12,
+                    "chart_height": 520,
+                    "display_config": {"mode": "multi_field"},
+                    "sources": [{
+                        "template": gps_match,
+                        "field_keys": _filter_keys(gps_match, [k["tot_dist"], k["mpm"]]),
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_LEADERBOARD,
+                    "title": "Sprints (>25 km/h)",
+                    "column_span": 6,
+                    "chart_height": 300,
+                    "display_config": {
+                        "style": "vertical_bars",
+                        "aggregator": "sum",
+                        "order": "desc",
+                        "limit": 20,
+                    },
+                    "sources": [{
+                        "template": gps_match,
+                        "field_keys": _filter_keys(gps_match, [k["sprint"]]),
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_LEADERBOARD,
+                    "title": "Velocidad máxima",
+                    "column_span": 6,
+                    "chart_height": 300,
+                    "display_config": {
+                        "style": "vertical_bars",
+                        "aggregator": "max",
+                        "order": "desc",
+                        "limit": 20,
+                    },
+                    "sources": [{
+                        "template": gps_match,
+                        "field_keys": _filter_keys(gps_match, [k["max_vel"]]),
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+            ],
+        }
+
+    sections: list[dict] = []
+
+    # ---- General (totals across the match) ----
+    g = keys_for("total")
+    sections.append({
+        "title": "General",
+        "is_collapsible": False,
+        "widgets": [
+            {
+                "chart_type": ChartType.TEAM_MATCH_SUMMARY,
+                "title": "Totales del partido",
+                "column_span": 12,
+                "display_config": {"per_player_aggregator": "latest"},
+                "sources": [{
+                    "template": gps_match,
+                    "field_keys": _filter_keys(gps_match, [
+                        g["tot_dist"], g["mpm"], g["hsr"], g["sprint"],
+                        g["acc_dec"], g["max_vel"], g["hiaa"], g["hmld"],
+                    ]),
+                    "aggregation": Aggregation.LATEST,
+                }],
+            },
+            {
+                "chart_type": ChartType.TEAM_HORIZONTAL_COMPARISON,
+                "title": "Distancia + Metros por minuto",
+                "column_span": 12,
+                "chart_height": 520,
+                "display_config": {"mode": "multi_field"},
+                "sources": [{
+                    "template": gps_match,
+                    "field_keys": _filter_keys(gps_match, [g["tot_dist"], g["mpm"]]),
+                    "aggregation": Aggregation.LATEST,
+                }],
+            },
+            # NOTE: "Zonas 75-85% / 85-95% V max — Por posición" widget
+            # (team_horizontal_comparison with mode=multi_field +
+            # group_by=position) used to live here. Removed — the
+            # group_by=position branch on multi_field doesn't have a
+            # matplotlib renderer yet so the PDF was falling back to a
+            # raw key/value dump. Reinstate once
+            # `_render_team_horizontal_comparison_by_position` lands.
+            {
+                "chart_type": ChartType.TEAM_STACKED_BARS,
+                "title": "Aceleraciones y desaceleraciones",
+                "description": "Acc ≥3 + Dec ≥3 + Acc&Dec ≥3 apilados por jugador.",
+                "column_span": 12,
+                "chart_height": 420,
+                "display_config": {
+                    "aggregator": "sum",
+                    "order": "desc",
+                    "field_colors": {
+                        g["acc"]: "#dc2626",
+                        g["dec"]: "#0ea5e9",
+                        g["acc_dec"]: "#facc15",
+                    },
+                },
+                "sources": [{
+                    "template": gps_match,
+                    "field_keys": _filter_keys(gps_match, [
+                        g["acc"], g["dec"], g["acc_dec"],
+                    ]),
+                    "aggregation": Aggregation.LATEST,
+                }],
+            },
+            {
+                "chart_type": ChartType.TEAM_LEADERBOARD,
+                "title": "HIAA",
+                "description": "Acciones de alta intensidad. La línea marca el promedio del plantel.",
+                "column_span": 12,
+                "chart_height": 320,
+                "display_config": {
+                    "style": "vertical_bars",
+                    "aggregator": "sum",
+                    "order": "desc",
+                    "limit": 20,
+                    # The team-average reference is computed in the
+                    # admin / live; for the demo we hardcode 100 as
+                    # a sensible target ceiling. Adjust per club.
+                    "reference_line": {
+                        "value": 100,
+                        "label": "Objetivo",
+                        "color": "#0ea5e9",
+                    },
+                },
+                "sources": [{
+                    "template": gps_match,
+                    "field_keys": _filter_keys(gps_match, [g["hiaa"]]),
+                    "aggregation": Aggregation.LATEST,
+                }],
+            },
+            {
+                "chart_type": ChartType.TEAM_ROSTER_MATRIX,
+                "title": "Resumen jugador × métrica",
+                "column_span": 12,
+                "display_config": {"coloring": "vs_team_range"},
+                "sources": [{
+                    "template": gps_match,
+                    "field_keys": _filter_keys(gps_match, [
+                        g["tot_dur"], g["tot_dist"], g["mpm"],
+                        g["hsr"], g["sprint"], g["acc_dec"],
+                        g["max_vel"], g["hiaa"],
+                    ]),
+                    "aggregation": Aggregation.LATEST,
+                }],
+            },
+        ],
+    })
+
+    sections.append(per_half_sections("Primer tiempo", "p1"))
+    sections.append(per_half_sections("Segundo tiempo", "p2"))
+    return sections
 
 
 def _spec_tactico(department: Department) -> dict:
@@ -889,6 +1252,7 @@ class Command(BaseCommand):
             else:
                 action, n = _build_team_layout(
                     dept, category, f"{label} report", spec["team"],
+                    match_selector_config=spec.get("team_match_selector_config"),
                 )
                 self.stdout.write(self.style.SUCCESS(
                     f"  · {label} team report: {action} with {n} widget(s) "

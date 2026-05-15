@@ -9,6 +9,8 @@ import DateRangeControl, {
 } from "@/components/common/DateRangeControl";
 import ProfileDepartment from "@/components/perfil/ProfileDepartment/ProfileDepartment";
 import DownloadExcelButton from "@/components/reports/DownloadExcelButton";
+import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
+import MatchSelector from "@/components/reports/MatchSelector";
 import ReportFilters, { defaultFilters } from "@/components/reports/ReportFilters";
 import type { ReportFiltersValue } from "@/components/reports/ReportFilters";
 import TeamReportDashboard from "@/components/reports/TeamReportDashboard";
@@ -40,6 +42,7 @@ export default function ReportePage({ params }: PageProps) {
   // Default "plantel" keeps backward-compat for users with bookmarks.
   const tabFromUrl = (searchParams.get("tab") as TabKey) || "plantel";
   const playerFromUrl = searchParams.get("player") ?? "";
+  const matchFromUrl = searchParams.get("match_id") ?? "";
 
   const [department, setDepartment] = useState<Department | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -61,12 +64,20 @@ export default function ReportePage({ params }: PageProps) {
     tabFromUrl === "por_jugador" ? "por_jugador" : "plantel";
   const selectedPlayerId = playerFromUrl;
 
-  const updateUrl = (next: { tab?: TabKey; player?: string | null }) => {
+  const updateUrl = (next: {
+    tab?: TabKey;
+    player?: string | null;
+    match?: string | null;
+  }) => {
     const sp = new URLSearchParams(searchParams.toString());
     if (next.tab !== undefined) sp.set("tab", next.tab);
     if (next.player !== undefined) {
       if (next.player) sp.set("player", next.player);
       else sp.delete("player");
+    }
+    if (next.match !== undefined) {
+      if (next.match) sp.set("match_id", next.match);
+      else sp.delete("match_id");
     }
     router.replace(`/reportes/${deptSlug}?${sp.toString()}`);
   };
@@ -133,12 +144,24 @@ export default function ReportePage({ params }: PageProps) {
     }
     if (filters.date.from) params.set("date_from", filters.date.from);
     if (filters.date.to) params.set("date_to", filters.date.to);
+    if (matchFromUrl) params.set("match_id", matchFromUrl);
     api<TeamReportResponse>(`/reports/${department.slug}?${params}`)
       .then((data) => {
         if (cancelled) return;
         setLayout(data.layout);
         setLayoutFetched(true);
         setError(null);
+        // Required-mode auto-pick: if the backend selected a match for
+        // us (URL was empty), reflect it in the URL so deep-linking +
+        // the dropdown's `value=` stay coherent.
+        const sel = data.layout?.match_selector;
+        if (
+          sel?.enabled
+          && sel.selected_id
+          && sel.selected_id !== matchFromUrl
+        ) {
+          updateUrl({ match: sel.selected_id });
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -150,7 +173,8 @@ export default function ReportePage({ params }: PageProps) {
     return () => {
       cancelled = true;
     };
-  }, [department, categoryId, categoryLoading, filters]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [department, categoryId, categoryLoading, filters, matchFromUrl]);
 
   const selectedPlayer = useMemo(
     () => players.find((p) => p.id === selectedPlayerId) ?? null,
@@ -186,29 +210,47 @@ export default function ReportePage({ params }: PageProps) {
                 value={filters}
                 onChange={setFilters}
               />
-              {layout && (
-                <DownloadExcelButton
-                  deptSlug={department.slug}
-                  sections={layout.sections}
-                  meta={{
-                    departmentName: department.name,
-                    categoryName: layout.category.name,
-                    filters: {
-                      positionLabel: filterPositionLabel(filters.positionId, positions),
-                      playerNames: filterPlayerNames(filters.playerIds, players),
-                      dateFrom: filters.date.from,
-                      dateTo: filters.date.to,
-                    },
-                  }}
-                />
+              {layout && categoryId && (
+                <>
+                  <DownloadExcelButton
+                    deptSlug={department.slug}
+                    sections={layout.sections}
+                    meta={{
+                      departmentName: department.name,
+                      categoryName: layout.category.name,
+                      filters: {
+                        positionLabel: filterPositionLabel(filters.positionId, positions),
+                        playerNames: filterPlayerNames(filters.playerIds, players),
+                        dateFrom: filters.date.from,
+                        dateTo: filters.date.to,
+                      },
+                    }}
+                  />
+                  <DownloadPdfButton
+                    endpoint={buildTeamPdfEndpoint(
+                      department.slug, categoryId, filters, matchFromUrl,
+                    )}
+                    filename={`reporte-${department.slug}-${layout.category.name}.pdf`.replace(/\s+/g, "_")}
+                  />
+                </>
               )}
             </>
           ) : (
-            <PlayerPicker
-              players={players}
-              selectedId={selectedPlayerId}
-              onChange={(id) => updateUrl({ player: id || null })}
-            />
+            <>
+              <PlayerPicker
+                players={players}
+                selectedId={selectedPlayerId}
+                onChange={(id) => updateUrl({ player: id || null })}
+              />
+              {selectedPlayer && (
+                <DownloadPdfButton
+                  endpoint={buildPlayerPdfEndpoint(
+                    selectedPlayer.id, department.slug, playerDateRange,
+                  )}
+                  filename={`reporte-${selectedPlayer.first_name}_${selectedPlayer.last_name}-${department.slug}.pdf`}
+                />
+              )}
+            </>
           )}
         </div>
       </header>
@@ -240,6 +282,12 @@ export default function ReportePage({ params }: PageProps) {
         <>
           {!layoutFetched && !error && (
             <div className={styles.muted}>Cargando reporte…</div>
+          )}
+          {layout?.match_selector?.enabled && (
+            <MatchSelector
+              config={layout.match_selector}
+              onChange={(id) => updateUrl({ match: id || null })}
+            />
           )}
           {layout ? (
             <TeamReportDashboard sections={layout.sections} />
@@ -309,6 +357,35 @@ function PlayerPicker({ players, selectedId, onChange }: PlayerPickerProps) {
       </select>
     </label>
   );
+}
+
+function buildTeamPdfEndpoint(
+  deptSlug: string,
+  categoryId: string,
+  filters: ReportFiltersValue,
+  matchId: string,
+): string {
+  const params = new URLSearchParams({ category_id: categoryId });
+  if (filters.positionId) params.set("position_id", filters.positionId);
+  if (filters.playerIds.length > 0) {
+    params.set("player_ids", filters.playerIds.join(","));
+  }
+  if (filters.date.from) params.set("date_from", filters.date.from);
+  if (filters.date.to) params.set("date_to", filters.date.to);
+  if (matchId) params.set("match_id", matchId);
+  return `/reports/${deptSlug}/team.pdf?${params.toString()}`;
+}
+
+function buildPlayerPdfEndpoint(
+  playerId: string,
+  deptSlug: string,
+  dateRange: DateRangeValue,
+): string {
+  const params = new URLSearchParams();
+  if (dateRange.date.from) params.set("date_from", dateRange.date.from);
+  if (dateRange.date.to) params.set("date_to", dateRange.date.to);
+  const qs = params.toString();
+  return `/players/${playerId}/departments/${deptSlug}/report.pdf${qs ? "?" + qs : ""}`;
 }
 
 function filterPositionLabel(positionId: string, positions: Position[]): string {

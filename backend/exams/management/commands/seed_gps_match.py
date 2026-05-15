@@ -162,6 +162,10 @@ class Command(BaseCommand):
                 template = ExamTemplate.objects.create(
                     name=name, department=department,
                     config_schema=config_schema, input_config=INPUT_CONFIG,
+                    # GPS match results are intrinsically per-match —
+                    # without an Event link the per-half / per-match
+                    # reporting can't aggregate correctly.
+                    link_to_match=True,
                 )
                 if opts["all_applicable_categories"]:
                     cats = Category.objects.filter(club=club, departments=department)
@@ -180,9 +184,13 @@ class Command(BaseCommand):
                 continue
             template.config_schema = config_schema
             template.input_config = INPUT_CONFIG
+            template.link_to_match = True
             if opts["unlock"]:
                 template.is_locked = False
-            template.save(update_fields=["config_schema", "input_config", "is_locked", "updated_at"])
+            template.save(update_fields=[
+                "config_schema", "input_config", "link_to_match",
+                "is_locked", "updated_at",
+            ])
             self.stdout.write(self.style.SUCCESS(
                 f"[{club.name}] updated template '{name}' "
                 f"({len(config_schema['fields'])} fields, input_modes={INPUT_CONFIG['input_modes']})."

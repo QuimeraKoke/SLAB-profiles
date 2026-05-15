@@ -179,6 +179,12 @@
   filter: brightness(0.92);
 }
 
+.barEmpty {
+  font-size: 0.72rem;
+  color: #9ca3af;
+  padding: 0 4px;
+}
+
 .barValue {
   font-size: 0.72rem;
   font-weight: 600;

@@ -15,6 +15,17 @@ interface Props {
 // Most-recent → oldest, dark → light. Keeps the eye on the latest reading.
 const SERIES_COLORS = ["#6d28d9", "#9061f9", "#b5a0ff", "#d4caff", "#e9e3ff"];
 
+// Multi-field mode: one distinct color per field. Picked to be readable
+// over white, with enough hue separation to scan a row at a glance.
+const FIELD_COLORS = [
+  "#dc2626", // red
+  "#0ea5e9", // sky blue
+  "#16a34a", // green
+  "#f59e0b", // amber
+  "#8b5cf6", // violet
+  "#ec4899", // pink
+];
+
 // In position mode each row owns a base color; older series fade toward
 // transparent on top of that base. Returns an inline `background` value.
 const POSITION_SERIES_ALPHAS = [1.0, 0.7, 0.45, 0.28, 0.16];
@@ -39,6 +50,7 @@ const isGroupRow = (row: Row): row is GroupRow => "group_id" in row;
 export default function TeamHorizontalComparison({ widget }: Props) {
   const data = widget.data as TeamHorizontalComparisonPayload;
   const isByPosition = data.grouping === "position";
+  const isMultiField = data.mode === "multi_field";
 
   // Track the user's explicit pick. The "effective" key falls back to the
   // resolver's default whenever the picked key isn't in the current
@@ -71,6 +83,24 @@ export default function TeamHorizontalComparison({ widget }: Props) {
     return all.length > 0 ? Math.max(...all) : 1;
   }, [data.rows, selectedKey]);
 
+  // Multi-field mode: each field gets its own max so bars across players
+  // are comparable WITHIN that field. We can't share a scale across
+  // distinct metrics (distance in meters vs rate in m/min would crush
+  // one of them to a sliver).
+  const maxByField = useMemo(() => {
+    const out: Record<string, number> = {};
+    if (!isMultiField) return out;
+    for (const field of data.fields ?? []) {
+      let m = 0;
+      for (const row of data.rows ?? []) {
+        const list = row.values?.[field.key] ?? [];
+        for (const v of list) if (v.value > m) m = v.value;
+      }
+      out[field.key] = m > 0 ? m : 1;
+    }
+    return out;
+  }, [isMultiField, data.fields, data.rows]);
+
   if (data.empty || (data.rows ?? []).length === 0) {
     return (
       <div className={styles.widget}>
@@ -81,6 +111,7 @@ export default function TeamHorizontalComparison({ widget }: Props) {
           selectedKey={selectedKey}
           onSelect={setPickedKey}
           isByPosition={isByPosition}
+          isMultiField={isMultiField}
         />
         <div className={styles.empty}>
           {data.error
@@ -110,9 +141,22 @@ export default function TeamHorizontalComparison({ widget }: Props) {
         selectedKey={selectedKey}
         onSelect={setPickedKey}
         isByPosition={isByPosition}
+        isMultiField={isMultiField}
       />
 
-      {isByPosition ? (
+      {isMultiField ? (
+        <div className={styles.legend} aria-hidden="true">
+          {(data.fields ?? []).map((f, i) => (
+            <span key={f.key} className={styles.legendItem}>
+              <span
+                className={styles.legendSwatch}
+                style={{ background: FIELD_COLORS[i % FIELD_COLORS.length] }}
+              />
+              {f.label}{f.unit ? ` (${f.unit})` : ""}
+            </span>
+          ))}
+        </div>
+      ) : isByPosition ? (
         <div className={styles.legend} aria-hidden="true">
           {(data.groups ?? []).map((g) => (
             <span key={g.id} className={styles.legendItem}>
@@ -144,10 +188,68 @@ export default function TeamHorizontalComparison({ widget }: Props) {
 
       <div className={styles.body}>
         {data.rows.map((row) => {
-          const values = row.values?.[selectedKey] ?? [];
           const isGroup = isGroupRow(row);
           const rowKey = isGroup ? row.group_id : (row as PlayerRow).player_id;
           const rowName = isGroup ? row.group_name : (row as PlayerRow).player_name;
+
+          if (isMultiField) {
+            // Multi-field: one bar per configured field, colored by field
+            // index, sized vs the per-field team-wide max so each metric
+            // is comparable across players in its own scale.
+            const fields = data.fields ?? [];
+            const hasAny = fields.some(
+              (f) => (row.values?.[f.key] ?? []).length > 0,
+            );
+            return (
+              <div key={rowKey} className={styles.row}>
+                <div className={styles.playerName} title={rowName}>
+                  <span className={styles.playerNameText}>{rowName}</span>
+                </div>
+                <div className={styles.bars}>
+                  {!hasAny ? (
+                    <div className={styles.noData}>—</div>
+                  ) : (
+                    fields.map((f, i) => {
+                      const list = row.values?.[f.key] ?? [];
+                      const v = list[0];
+                      if (!v) {
+                        return (
+                          <div key={f.key} className={styles.barRow}>
+                            <div className={styles.barEmpty}>—</div>
+                            <span className={styles.barDate}>{f.label}</span>
+                          </div>
+                        );
+                      }
+                      const fieldMax = maxByField[f.key] || 1;
+                      const widthPct = Math.max(2, (v.value / fieldMax) * 100);
+                      const color = FIELD_COLORS[i % FIELD_COLORS.length];
+                      const fieldUnit = f.unit ? ` ${f.unit}` : "";
+                      return (
+                        <div key={f.key} className={styles.barRow}>
+                          <div
+                            className={styles.bar}
+                            style={{
+                              width: `${widthPct}%`,
+                              background: color,
+                              color: "#ffffff",
+                            }}
+                            title={`${f.label} · ${v.value}${fieldUnit}`}
+                          >
+                            <span className={styles.barValue}>
+                              {formatNumber(v.value)}{fieldUnit}
+                            </span>
+                          </div>
+                          <span className={styles.barDate}>{f.label}</span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          const values = row.values?.[selectedKey] ?? [];
           return (
             <div key={rowKey} className={styles.row}>
               <div className={styles.playerName} title={rowName}>
@@ -205,10 +307,13 @@ interface HeaderProps {
   selectedKey: string;
   onSelect: (key: string) => void;
   isByPosition: boolean;
+  isMultiField: boolean;
 }
 
-function Header({ widget, field, fields, selectedKey, onSelect, isByPosition }: HeaderProps) {
-  const showSelector = fields.length > 1;
+function Header({ widget, field, fields, selectedKey, onSelect, isByPosition, isMultiField }: HeaderProps) {
+  // Multi-field mode shows every metric as a bar, so no single-field
+  // picker is meaningful. Position mode also fixes the metric.
+  const showSelector = fields.length > 1 && !isMultiField;
   return (
     <header className={styles.header}>
       <div>

@@ -38,6 +38,7 @@ def resolve_team_widget(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    event_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Resolve a team-scoped widget against a category roster.
 
@@ -54,6 +55,11 @@ def resolve_team_widget(
     every aggregation runs. `LATEST` / `LAST_N` / `ALL` semantics stay the
     same — they just operate on the bounded queryset. Endpoint callers
     are expected to cap the window (currently 90 days at the API layer).
+
+    Optional `event_id` restricts every ExamResult queryset to results
+    linked to that Event (i.e., one specific match). Used by per-match
+    report layouts (e.g. GPS match reports). Episode / Goal / Alert
+    based resolvers ignore this param — they're not match-scoped.
     """
     chart_type = widget.chart_type
     common = {
@@ -61,6 +67,7 @@ def resolve_team_widget(
         "player_ids": player_ids,
         "date_from": date_from,
         "date_to": date_to,
+        "event_id": event_id,
     }
     if chart_type == ChartType.TEAM_HORIZONTAL_COMPARISON.value:
         return _resolve_team_horizontal_comparison(widget, category, **common)
@@ -82,6 +89,14 @@ def resolve_team_widget(
         return _resolve_team_goal_progress(widget, category, **common)
     if chart_type == ChartType.TEAM_ALERTS.value:
         return _resolve_team_alerts(widget, category, **common)
+    if chart_type == ChartType.TEAM_STACKED_BARS.value:
+        return _resolve_team_stacked_bars(widget, category, **common)
+    if chart_type == ChartType.TEAM_MATCH_SUMMARY.value:
+        return _resolve_team_match_summary(widget, category, **common)
+    if chart_type == ChartType.TEAM_ACTIVITY_LOG.value:
+        return _resolve_team_activity_log(widget, category, **common)
+    if chart_type == ChartType.TEAM_DAILY_GROUPED_BARS.value:
+        return _resolve_team_daily_grouped_bars(widget, category, **common)
     return _empty(widget, chart_type, error=f"Unsupported chart type: {chart_type}")
 
 
@@ -110,16 +125,24 @@ def _apply_date_window(
     qs,
     date_from: datetime | None,
     date_to: datetime | None,
+    event_id: UUID | None = None,
 ):
     """Bound an ExamResult / Episode queryset by `recorded_at` (or
     `started_at` for Episode). Each resolver passes the right field via
     its own query construction — this helper handles ExamResult only.
     Callers that need Episode filtering apply it inline.
+
+    When `event_id` is set, also narrows the queryset to results linked
+    to that single Event (per-match report layouts). Folded into this
+    helper because every ExamResult-based resolver already calls it —
+    keeps the call-site noise to one extra kwarg.
     """
     if date_from is not None:
         qs = qs.filter(recorded_at__gte=date_from)
     if date_to is not None:
         qs = qs.filter(recorded_at__lte=date_to)
+    if event_id is not None:
+        qs = qs.filter(event_id=event_id)
     return qs
 
 
@@ -182,6 +205,20 @@ def _empty(widget: TeamReportWidget, chart_type: str, error: str = "") -> dict[s
         base["players"] = []
         base["total_alerts"] = 0
         base["department_name"] = ""
+    elif chart_type == ChartType.TEAM_STACKED_BARS.value:
+        base["fields"] = []
+        base["aggregator"] = "sum"
+        base["order"] = "desc"
+    elif chart_type == ChartType.TEAM_MATCH_SUMMARY.value:
+        base["cards"] = []
+        base["sample_size"] = 0
+    elif chart_type == ChartType.TEAM_ACTIVITY_LOG.value:
+        base["entries"] = []
+        base["limit"] = 0
+    elif chart_type == ChartType.TEAM_DAILY_GROUPED_BARS.value:
+        base["fields"] = []
+        base["buckets"] = []
+        base["show_total_line"] = False
     if error:
         base["error"] = error
     return base
@@ -246,6 +283,7 @@ def _resolve_team_horizontal_comparison(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    event_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Per-player horizontal bar groups, one bar per recent reading.
 
@@ -315,6 +353,8 @@ def _resolve_team_horizontal_comparison(
     display_config = widget.display_config or {}
     group_raw = display_config.get("group_by", "none")
     group_by = group_raw if group_raw in {"none", "position"} else "none"
+    mode_raw = display_config.get("mode", "by_reading")
+    mode = mode_raw if mode_raw in {"by_reading", "multi_field"} else "by_reading"
 
     def _make_key(source_pk: UUID, field_key: str) -> str:
         # Single-source: keep raw field_key for cleaner payloads.
@@ -324,10 +364,16 @@ def _resolve_team_horizontal_comparison(
 
     # Build the flat fields list (one entry per (source, field_key)) +
     # remember per-source limits so the right N applies when bucketing.
+    # In `multi_field` mode every field carries the LATEST reading only —
+    # the visualization renders one bar per field per player (no recency
+    # dropdown), so the per-source limit is forced to 1 regardless of the
+    # admin's aggregation_param. Keeps payload tight and resolver simple.
     fields_meta: list[dict[str, Any]] = []
     source_limits: dict[UUID, int] = {}
     for source in sources:
-        if source.aggregation == Aggregation.LAST_N:
+        if mode == "multi_field":
+            source_limits[source.pk] = 1
+        elif source.aggregation == Aggregation.LAST_N:
             source_limits[source.pk] = max(1, min(int(source.aggregation_param or 3), 12))
         else:
             source_limits[source.pk] = 3
@@ -356,7 +402,7 @@ def _resolve_team_horizontal_comparison(
     if group_by == "position":
         return _resolve_team_horizontal_comparison_by_position(
             widget, fields_meta, players, sources, _make_key,
-            source_limits, overall_limit, date_from, date_to,
+            source_limits, overall_limit, date_from, date_to, event_id,
         )
 
     # Initialize buckets keyed by every synthetic key.
@@ -374,7 +420,7 @@ def _resolve_team_horizontal_comparison(
                 template__family_id=source.template.family_id,
                 player_id__in=player_index.keys(),
             ),
-            date_from, date_to,
+            date_from, date_to, event_id,
         ).order_by("player_id", "-recorded_at").values(
             "player_id", "recorded_at", "result_data",
         )
@@ -419,6 +465,10 @@ def _resolve_team_horizontal_comparison(
         "chart_type": ChartType.TEAM_HORIZONTAL_COMPARISON.value,
         "title": widget.title,
         "grouping": "none",
+        # `mode` discriminates the frontend rendering:
+        #   "by_reading"  → dropdown + N bars per row (most-recent → oldest)
+        #   "multi_field" → no dropdown, one bar per field per row
+        "mode": mode,
         "fields": fields_meta,
         "default_field_key": fields_meta[0]["key"] if fields_meta else "",
         "limit_per_player": overall_limit,
@@ -440,6 +490,7 @@ def _resolve_team_roster_matrix(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    event_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Roster × metrics matrix — rows = players, columns = field keys.
 
@@ -592,7 +643,7 @@ def _resolve_team_roster_matrix(
                 template__family_id=source.template.family_id,
                 player_id__in=player_index.keys(),
             ),
-            date_from, date_to,
+            date_from, date_to, event_id,
         ).order_by("player_id", "-recorded_at").values(
             "player_id", "recorded_at", "result_data",
         )
@@ -681,6 +732,7 @@ def _resolve_team_status_counts(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,  # accepted for signature parity; see docstring
     date_to: datetime | None = None,    # accepted for signature parity; see docstring
+    event_id: UUID | None = None,       # ignored — episodic, not per-match
 ) -> dict[str, Any]:
     """Squad availability snapshot — answers "who's ready to play?"
 
@@ -891,6 +943,7 @@ def _resolve_team_trend_line(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    event_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Multi-series line chart: team average per metric over time.
 
@@ -1013,7 +1066,7 @@ def _resolve_team_trend_line(
     if group_by == "position":
         return _resolve_team_trend_line_by_position(
             widget, fields_meta, players, sources, bucket_size, _make_key,
-            date_from, date_to,
+            date_from, date_to, event_id,
         )
 
     # ---- group_by == "none" (legacy team-wide path) ----
@@ -1034,7 +1087,7 @@ def _resolve_team_trend_line(
                 template__family_id=source.template.family_id,
                 player_id__in=player_index.keys(),
             ),
-            date_from, date_to,
+            date_from, date_to, event_id,
         ).order_by("recorded_at").values("recorded_at", "result_data")
         for row in results:
             start = _bucket_start(row["recorded_at"], bucket_size)
@@ -1117,6 +1170,7 @@ def _resolve_team_trend_line_by_position(
     _make_key,
     date_from: datetime | None,
     date_to: datetime | None,
+    event_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Variant of `_resolve_team_trend_line` that emits one series per
     position. The team-wide path stays untouched; this one only runs
@@ -1181,7 +1235,7 @@ def _resolve_team_trend_line_by_position(
                 template__family_id=source.template.family_id,
                 player_id__in=player_group.keys(),
             ),
-            date_from, date_to,
+            date_from, date_to, event_id,
         ).order_by("recorded_at").values("player_id", "recorded_at", "result_data")
         for row in results:
             group_key = player_group.get(row["player_id"])
@@ -1245,6 +1299,7 @@ def _resolve_team_horizontal_comparison_by_position(
     overall_limit: int,
     date_from: datetime | None,
     date_to: datetime | None,
+    event_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Position-grouped variant of `_resolve_team_horizontal_comparison`.
 
@@ -1307,7 +1362,7 @@ def _resolve_team_horizontal_comparison_by_position(
                 template__family_id=source.template.family_id,
                 player_id__in=player_group.keys(),
             ),
-            date_from, date_to,
+            date_from, date_to, event_id,
         ).order_by("recorded_at").values("player_id", "recorded_at", "result_data")
         for row in results:
             gkey = player_group.get(row["player_id"])
@@ -1386,6 +1441,7 @@ def _resolve_team_distribution(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    event_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Histogram of latest values across the roster for a single metric.
 
@@ -1485,7 +1541,7 @@ def _resolve_team_distribution(
             template__family_id=template.family_id,
             player_id__in=player_index.keys(),
         ),
-        date_from, date_to,
+        date_from, date_to, event_id,
     ).order_by("player_id", "-recorded_at").values("player_id", "result_data")
     latest_by_player: dict[UUID, float] = {}
     for row in results:
@@ -1650,6 +1706,7 @@ def _resolve_team_active_records(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,  # accepted but unused; see docstring
     date_to: datetime | None = None,    # accepted but unused; see docstring
+    event_id: UUID | None = None,       # ignored — current-state, not per-match
 ) -> dict[str, Any]:
     """List of records currently "active" based on date-range fields.
 
@@ -1810,6 +1867,7 @@ def _resolve_team_activity_coverage(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,  # accepted but unused; see docstring
     date_to: datetime | None = None,    # accepted but unused; see docstring
+    event_id: UUID | None = None,       # ignored — current-state, not per-match
 ) -> dict[str, Any]:
     """Operational "who's overdue for evaluation?" matrix.
 
@@ -1985,6 +2043,7 @@ def _resolve_team_leaderboard(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    event_id: UUID | None = None,
 ) -> dict[str, Any]:
     """Top-N ranking by a single numeric metric.
 
@@ -2037,10 +2096,7 @@ def _resolve_team_leaderboard(
             ),
         )
 
-    field_key = field_keys[0]
     template: ExamTemplate = source.template
-    meta = _field_meta(template, field_key)
-
     display_config = widget.display_config or {}
     aggregator = display_config.get("aggregator") or "sum"
     if aggregator not in {"sum", "avg", "max", "latest"}:
@@ -2048,12 +2104,130 @@ def _resolve_team_leaderboard(
     limit = max(3, min(int(display_config.get("limit") or 5), 20))
     order = "asc" if display_config.get("order") == "asc" else "desc"
 
+    # Mode discriminates the payload shape:
+    #   "single"      → top-N by ONE metric (legacy, default)
+    #   "multi_field" → grouped vertical bars, all roster players,
+    #                   N values per player (one per field_key). Sorted by
+    #                   the FIRST field's value (admins can reorder by
+    #                   moving the field_keys list).
+    mode_raw = display_config.get("mode", "single")
+    mode = mode_raw if mode_raw in {"single", "multi_field"} else "single"
+
+    # Single-mode rendering style:
+    #   "list"          → podium-style ordered list (default)
+    #   "vertical_bars" → vertical bar chart, every roster player visible
+    style_raw = display_config.get("style", "list")
+    style = style_raw if style_raw in {"list", "vertical_bars"} else "list"
+
+    # Reference overlays on vertical bars charts. Three coexist:
+    #   - `reference_line`  (legacy, single dict — kept for backward compat)
+    #   - `reference_lines` (list of dicts: [{value, label, color}, ...])
+    #   - `reference_bands` (list of dicts: [{min, max, label, color}])
+    #   - `show_team_avg_line` (bool — auto-add the live mean as a line)
+    # All four are merged into a single `reference_lines` array + a
+    # `reference_bands` array on the payload. The legacy single
+    # `reference_line` is also emitted unchanged for old frontend reads.
+    reference_lines: list[dict[str, Any]] = []
+
+    raw_ref_single = display_config.get("reference_line")
+    if isinstance(raw_ref_single, dict) and "value" in raw_ref_single:
+        try:
+            v = float(raw_ref_single["value"])
+        except (TypeError, ValueError):
+            v = None
+        if v is not None:
+            reference_lines.append({
+                "value": v,
+                "label": str(raw_ref_single.get("label") or ""),
+                "color": str(raw_ref_single.get("color") or "#0ea5e9"),
+            })
+
+    for raw in display_config.get("reference_lines") or []:
+        if not isinstance(raw, dict) or "value" not in raw:
+            continue
+        try:
+            v = float(raw["value"])
+        except (TypeError, ValueError):
+            continue
+        reference_lines.append({
+            "value": v,
+            "label": str(raw.get("label") or ""),
+            "color": str(raw.get("color") or "#0ea5e9"),
+        })
+
+    reference_bands: list[dict[str, Any]] = []
+    for raw in display_config.get("reference_bands") or []:
+        if not isinstance(raw, dict):
+            continue
+        b_min = raw.get("min")
+        b_max = raw.get("max")
+        try:
+            band_min = float(b_min) if b_min is not None else None
+            band_max = float(b_max) if b_max is not None else None
+        except (TypeError, ValueError):
+            continue
+        if band_min is None and band_max is None:
+            continue
+        reference_bands.append({
+            "min": band_min,
+            "max": band_max,
+            "label": str(raw.get("label") or ""),
+            "color": str(raw.get("color") or "#fef3c7"),
+        })
+
+    show_team_avg_line = bool(display_config.get("show_team_avg_line"))
+
+    # Optional Y-axis zoom. When set, the frontend scales every bar +
+    # ref-line + ref-band against this range INSTEAD of `0 → maxValue`.
+    # Useful for metrics where values cluster near 1 (urinary specific
+    # gravity 1.000–1.040, pH, etc.) — without zoom the bars look
+    # identical because differences live in the third decimal.
+    def _as_float(raw) -> float | None:
+        if raw is None:
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    y_min = _as_float(display_config.get("y_min"))
+    y_max = _as_float(display_config.get("y_max"))
+
+    # Decimal precision for value labels on the chart. Defaults to None
+    # (frontend picks 0-2 based on integer-ness); set explicitly when
+    # differences live in the third decimal (urine density, pH, etc.).
+    raw_decimals = display_config.get("decimals")
+    try:
+        decimals: int | None = (
+            int(raw_decimals) if raw_decimals is not None else None
+        )
+    except (TypeError, ValueError):
+        decimals = None
+    if decimals is not None:
+        decimals = max(0, min(decimals, 6))
+
+    # Legacy single-field key (kept for the payload). The first reference
+    # line — when set — is what older frontends still read as `reference_line`.
+    reference_line: dict[str, Any] | None = (
+        reference_lines[0] if reference_lines else None
+    )
+
+    field_key = field_keys[0]
+    meta = _field_meta(template, field_key)
+
     players = list(_roster_query(category, position_id, player_ids))
     player_index = {p.id: p for p in players}
     if not player_index:
         return {
             "chart_type": ChartType.TEAM_LEADERBOARD.value,
             "title": widget.title,
+            "mode": mode,
+            "style": style,
+            "reference_line": reference_line,
+            "reference_lines": reference_lines,
+            "reference_bands": reference_bands,
+            "y_min": y_min,
+            "y_max": y_max,
             "field": {"key": field_key, "label": meta["label"], "unit": meta["unit"]},
             "aggregator": aggregator,
             "order": order,
@@ -2062,13 +2236,29 @@ def _resolve_team_leaderboard(
             "empty": True,
         }
 
+    if mode == "multi_field":
+        payload = _resolve_team_leaderboard_multi_field(
+            widget, template, field_keys, player_index,
+            date_from, date_to, event_id, aggregator, order, limit,
+        )
+        # Pass-through for multi_field too; frontend can opt to render
+        # a per-field reference line later.
+        payload["style"] = style
+        payload["reference_line"] = reference_line
+        payload["reference_lines"] = reference_lines
+        payload["reference_bands"] = reference_bands
+        payload["y_min"] = y_min
+        payload["y_max"] = y_max
+        payload["decimals"] = decimals
+        return payload
+
     # Fan out across the template family for cross-version continuity.
     results = _apply_date_window(
         ExamResult.objects.filter(
             template__family_id=template.family_id,
             player_id__in=player_index.keys(),
         ),
-        date_from, date_to,
+        date_from, date_to, event_id,
     ).order_by("player_id", "-recorded_at").values(
         "player_id", "recorded_at", "result_data",
     )
@@ -2115,15 +2305,170 @@ def _resolve_team_leaderboard(
             "samples": sample_count,
         })
 
+    # In `vertical_bars` style we want EVERY roster player visible, not
+    # just the top-N — the chart loses meaning if players are missing.
+    # Limit still applies in `list` style.
+    if style == "vertical_bars":
+        # Re-rank including players with zero/no samples (sentinel value=0).
+        ranked_full: list[tuple[UUID, float, int]] = list(ranked)
+        already = {pid for pid, _, _ in ranked_full}
+        for pid in player_index.keys() - already:
+            ranked_full.append((pid, 0.0, 0))
+        ranked_full.sort(key=lambda triple: triple[1], reverse=(order == "desc"))
+        rows = []
+        for i, (pid, value, sample_count) in enumerate(ranked_full, start=1):
+            player = player_index[pid]
+            rows.append({
+                "rank": i,
+                "player_id": str(pid),
+                "player_name": f"{player.first_name} {player.last_name}".strip(),
+                "value": round(value, 4),
+                "samples": sample_count,
+            })
+
+    # Auto-add the team-average line. Computed from the actual rows
+    # AFTER aggregation so the line reflects what the user sees, not
+    # the raw underlying samples.
+    if show_team_avg_line and rows:
+        numeric_values = [r["value"] for r in rows if isinstance(r["value"], (int, float))]
+        if numeric_values:
+            team_avg = sum(numeric_values) / len(numeric_values)
+            reference_lines.append({
+                "value": round(team_avg, 4),
+                "label": "Promedio equipo",
+                "color": "#6b7280",
+            })
+
     return {
         "chart_type": ChartType.TEAM_LEADERBOARD.value,
         "title": widget.title,
+        "mode": "single",
+        "style": style,
+        # Legacy field — first ref line. Kept for old frontends.
+        "reference_line": reference_line,
+        # New: arrays. Frontend prefers these when present.
+        "reference_lines": reference_lines,
+        "reference_bands": reference_bands,
+        "y_min": y_min,
+        "y_max": y_max,
+        "decimals": decimals,
         "field": {"key": field_key, "label": meta["label"], "unit": meta["unit"]},
         "aggregator": aggregator,
         "order": order,
         "limit": limit,
         "rows": rows,
         "empty": len(rows) == 0,
+    }
+
+
+def _resolve_team_leaderboard_multi_field(
+    widget: TeamReportWidget,
+    template: ExamTemplate,
+    field_keys: list[str],
+    player_index: dict[UUID, Player],
+    date_from: datetime | None,
+    date_to: datetime | None,
+    event_id: UUID | None,
+    aggregator: str,
+    order: str,
+    limit: int,
+) -> dict[str, Any]:
+    """Multi-field leaderboard variant: every player gets a value per
+    field. The frontend renders grouped vertical bars, one group per
+    player, one bar per field. Sorted by the FIRST field's value (move
+    fields up/down in the data source to change the sort key)."""
+    results = _apply_date_window(
+        ExamResult.objects.filter(
+            template__family_id=template.family_id,
+            player_id__in=player_index.keys(),
+        ),
+        date_from, date_to, event_id,
+    ).order_by("player_id", "-recorded_at").values(
+        "player_id", "recorded_at", "result_data",
+    )
+
+    # samples_by_player_field[pid][fk] = list[(recorded_at, value)]
+    samples: dict[UUID, dict[str, list[tuple[datetime, float]]]] = {}
+    for row in results:
+        pid = row["player_id"]
+        data = row["result_data"] or {}
+        recorded_at = row["recorded_at"]
+        per_field = samples.setdefault(pid, {})
+        for fk in field_keys:
+            v = _safe_float(data.get(fk))
+            if v is None:
+                continue
+            per_field.setdefault(fk, []).append((recorded_at, v))
+
+    def _aggregate(series: list[tuple[datetime, float]]) -> float:
+        values = [v for _, v in series]
+        if aggregator == "avg":
+            return sum(values) / len(values)
+        if aggregator == "max":
+            return max(values)
+        if aggregator == "latest":
+            return series[0][1]
+        return sum(values)
+
+    fields_meta = []
+    for fk in field_keys:
+        meta = _field_meta(template, fk)
+        fields_meta.append({
+            "key": fk,
+            "label": meta["label"],
+            "unit": meta["unit"],
+        })
+
+    rows_unsorted: list[dict[str, Any]] = []
+    sort_key = field_keys[0]
+    for pid, player in player_index.items():
+        per_field = samples.get(pid, {})
+        values_by_field: dict[str, float | None] = {}
+        for fk in field_keys:
+            series = per_field.get(fk, [])
+            values_by_field[fk] = (
+                round(_aggregate(series), 4) if series else None
+            )
+        # Players with no samples on the sort field are pushed to the
+        # bottom regardless of order. Sentinel: +inf for asc, -inf for desc.
+        sort_value = values_by_field.get(sort_key)
+        rows_unsorted.append({
+            "player_id": str(pid),
+            "player_name": f"{player.first_name} {player.last_name}".strip(),
+            "values": values_by_field,
+            "_sort": sort_value,
+        })
+
+    sentinel = float("-inf") if order == "desc" else float("inf")
+    rows_unsorted.sort(
+        key=lambda r: (r["_sort"] if r["_sort"] is not None else sentinel),
+        reverse=(order == "desc"),
+    )
+    capped = rows_unsorted[:limit]
+    rows: list[dict[str, Any]] = []
+    for i, row in enumerate(capped, start=1):
+        rows.append({
+            "rank": i,
+            "player_id": row["player_id"],
+            "player_name": row["player_name"],
+            "values": row["values"],
+        })
+
+    has_any_data = any(
+        any(v is not None for v in row["values"].values())
+        for row in rows
+    )
+
+    return {
+        "chart_type": ChartType.TEAM_LEADERBOARD.value,
+        "title": widget.title,
+        "mode": "multi_field",
+        "fields": fields_meta,
+        "aggregator": aggregator,
+        "order": order,
+        "limit": limit,
+        "rows": rows,
+        "empty": not has_any_data,
     }
 
 
@@ -2140,6 +2485,7 @@ def _resolve_team_goal_progress(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,  # accepted but unused; see docstring
     date_to: datetime | None = None,    # accepted but unused; see docstring
+    event_id: UUID | None = None,       # ignored — current-state, not per-match
 ) -> dict[str, Any]:
     """Roster × active-goals matrix.
 
@@ -2328,6 +2674,7 @@ def _resolve_team_alerts(
     player_ids: Sequence[UUID] | None = None,
     date_from: datetime | None = None,  # accepted; alerts are point-in-time
     date_to: datetime | None = None,
+    event_id: UUID | None = None,       # ignored — alerts aren't per-match
 ) -> dict[str, Any]:
     """Players ranked by active-alert count, scoped to the layout's department.
 
@@ -2490,4 +2837,596 @@ def _resolve_team_alerts(
         # (e.g. all alerts belong to a different department); treat that as
         # empty so the frontend renders the friendly "Sin alertas" state.
         "empty": len(cards) == 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# team_stacked_bars
+# ---------------------------------------------------------------------------
+
+# Default palette when admins don't override via display_config.field_colors.
+# Picked to match the WIMU-style report: red / cyan / yellow stack is the
+# canonical Acc / Dec / Acc+Dec breakdown coaches recognize at a glance.
+_STACKED_DEFAULT_COLORS = [
+    "#dc2626",  # red
+    "#0ea5e9",  # cyan / sky
+    "#facc15",  # yellow
+    "#16a34a",  # green
+    "#8b5cf6",  # violet
+    "#f97316",  # orange
+]
+
+
+def _resolve_team_stacked_bars(
+    widget: TeamReportWidget,
+    category: Category,
+    *,
+    position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    event_id: UUID | None = None,
+) -> dict[str, Any]:
+    """One horizontal stacked bar per player composed of N field
+    segments. Reads its data binding from the widget's first
+    `TeamReportWidgetDataSource`. Every `field_keys` entry becomes a
+    stacked segment, in declaration order.
+
+    `display_config`:
+        {
+            "aggregator": "sum" | "avg" | "max" | "latest",  // default "sum"
+            "order": "desc" | "asc",                          // default "desc"
+            "field_colors": {"acc_3_total": "#dc2626", ...},  // optional palette override
+            "limit": 30                                       // default 30, clamp [5, 60]
+        }
+
+    Sort key: total across all stacked fields. Useful for "who's
+    accumulating the most accelerations + decelerations" workload views.
+    """
+    source = widget.data_sources.first()
+    if source is None:
+        return _empty(
+            widget, ChartType.TEAM_STACKED_BARS.value,
+            error=(
+                "Configura una Data Source en este widget: elige la "
+                "plantilla y los campos numéricos a apilar."
+            ),
+        )
+    field_keys = source.field_keys or []
+    if not field_keys:
+        return _empty(
+            widget, ChartType.TEAM_STACKED_BARS.value,
+            error=(
+                f"La data source para '{source.template.name}' no tiene "
+                "field_keys. Agrega al menos dos campos numéricos."
+            ),
+        )
+
+    template: ExamTemplate = source.template
+    display_config = widget.display_config or {}
+    aggregator = display_config.get("aggregator") or "sum"
+    if aggregator not in {"sum", "avg", "max", "latest"}:
+        aggregator = "sum"
+    order = "asc" if display_config.get("order") == "asc" else "desc"
+    limit = max(5, min(int(display_config.get("limit") or 30), 60))
+    color_overrides = display_config.get("field_colors") or {}
+
+    fields_meta: list[dict[str, Any]] = []
+    for i, fk in enumerate(field_keys):
+        meta = _field_meta(template, fk)
+        fields_meta.append({
+            "key": fk,
+            "label": meta["label"],
+            "unit": meta["unit"],
+            "color": (
+                color_overrides.get(fk)
+                or _STACKED_DEFAULT_COLORS[i % len(_STACKED_DEFAULT_COLORS)]
+            ),
+        })
+
+    players = list(_roster_query(category, position_id, player_ids))
+    player_index = {p.id: p for p in players}
+    if not player_index:
+        return {
+            "chart_type": ChartType.TEAM_STACKED_BARS.value,
+            "title": widget.title,
+            "fields": fields_meta,
+            "aggregator": aggregator,
+            "order": order,
+            "rows": [],
+            "empty": True,
+        }
+
+    results = _apply_date_window(
+        ExamResult.objects.filter(
+            template__family_id=template.family_id,
+            player_id__in=player_index.keys(),
+        ),
+        date_from, date_to, event_id,
+    ).order_by("player_id", "-recorded_at").values(
+        "player_id", "recorded_at", "result_data",
+    )
+
+    # samples[pid][field_key] = list[(recorded_at, value)]
+    samples: dict[UUID, dict[str, list[tuple[datetime, float]]]] = {}
+    for row in results:
+        pid = row["player_id"]
+        data = row["result_data"] or {}
+        recorded_at = row["recorded_at"]
+        per_field = samples.setdefault(pid, {})
+        for fk in field_keys:
+            v = _safe_float(data.get(fk))
+            if v is None:
+                continue
+            per_field.setdefault(fk, []).append((recorded_at, v))
+
+    def _aggregate(series: list[tuple[datetime, float]]) -> float:
+        values = [v for _, v in series]
+        if aggregator == "avg":
+            return sum(values) / len(values)
+        if aggregator == "max":
+            return max(values)
+        if aggregator == "latest":
+            return series[0][1]
+        return sum(values)
+
+    rows_raw: list[dict[str, Any]] = []
+    for pid, player in player_index.items():
+        per_field = samples.get(pid, {})
+        seg_values: dict[str, float | None] = {}
+        total = 0.0
+        any_value = False
+        for fk in field_keys:
+            series = per_field.get(fk, [])
+            if not series:
+                seg_values[fk] = None
+                continue
+            v = round(_aggregate(series), 4)
+            seg_values[fk] = v
+            total += v
+            any_value = True
+        if not any_value:
+            continue
+        rows_raw.append({
+            "player_id": str(pid),
+            "player_name": f"{player.first_name} {player.last_name}".strip(),
+            "values": seg_values,
+            "total": round(total, 4),
+        })
+
+    rows_raw.sort(key=lambda r: r["total"], reverse=(order == "desc"))
+    rows = rows_raw[:limit]
+
+    return {
+        "chart_type": ChartType.TEAM_STACKED_BARS.value,
+        "title": widget.title,
+        "fields": fields_meta,
+        "aggregator": aggregator,
+        "order": order,
+        "rows": rows,
+        "empty": len(rows) == 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# team_match_summary
+# ---------------------------------------------------------------------------
+
+
+def _resolve_team_match_summary(
+    widget: TeamReportWidget,
+    category: Category,
+    *,
+    position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    event_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Compact aggregate-stats strip for a match. One mini-card per
+    field showing SUM / AVG / STD across all roster players (after
+    position / player / event filters).
+
+    Reads from the widget's first data source. Each `field_keys` entry
+    becomes a card. Aggregations are computed per-player first (so a
+    player with multiple results in the window doesn't skew the AVG/STD
+    relative to a player with one result), then aggregated team-wide.
+
+    Per-player intra-window aggregator (controls how multiple readings
+    per player collapse into one value before team stats):
+        display_config = {"per_player_aggregator": "sum" | "avg" | "max" | "latest"}
+    Default "latest" — match reports usually want the single match's
+    reading even if a player has multiple records in the date window.
+    """
+    source = widget.data_sources.first()
+    if source is None:
+        return _empty(
+            widget, ChartType.TEAM_MATCH_SUMMARY.value,
+            error=(
+                "Configura una Data Source en este widget: elige la "
+                "plantilla y los campos a resumir."
+            ),
+        )
+    field_keys = source.field_keys or []
+    if not field_keys:
+        return _empty(
+            widget, ChartType.TEAM_MATCH_SUMMARY.value,
+            error=(
+                f"La data source para '{source.template.name}' no tiene "
+                "field_keys."
+            ),
+        )
+
+    template: ExamTemplate = source.template
+    display_config = widget.display_config or {}
+    pp_agg = display_config.get("per_player_aggregator") or "latest"
+    if pp_agg not in {"sum", "avg", "max", "latest"}:
+        pp_agg = "latest"
+
+    players = list(_roster_query(category, position_id, player_ids))
+    player_index = {p.id: p for p in players}
+    if not player_index:
+        return {
+            "chart_type": ChartType.TEAM_MATCH_SUMMARY.value,
+            "title": widget.title,
+            "cards": [],
+            "sample_size": 0,
+            "empty": True,
+        }
+
+    results = _apply_date_window(
+        ExamResult.objects.filter(
+            template__family_id=template.family_id,
+            player_id__in=player_index.keys(),
+        ),
+        date_from, date_to, event_id,
+    ).order_by("player_id", "-recorded_at").values(
+        "player_id", "recorded_at", "result_data",
+    )
+
+    # samples[pid][fk] = list[value], newest-first (queryset order_by).
+    samples: dict[UUID, dict[str, list[float]]] = {}
+    for row in results:
+        pid = row["player_id"]
+        data = row["result_data"] or {}
+        per_field = samples.setdefault(pid, {})
+        for fk in field_keys:
+            v = _safe_float(data.get(fk))
+            if v is None:
+                continue
+            per_field.setdefault(fk, []).append(v)
+
+    def _per_player(values: list[float]) -> float:
+        if pp_agg == "sum":
+            return sum(values)
+        if pp_agg == "avg":
+            return sum(values) / len(values)
+        if pp_agg == "max":
+            return max(values)
+        return values[0]  # latest
+
+    cards: list[dict[str, Any]] = []
+    sample_size = 0
+    for fk in field_keys:
+        meta = _field_meta(template, fk)
+        per_player_values: list[float] = []
+        for pid in player_index.keys():
+            vs = samples.get(pid, {}).get(fk)
+            if vs:
+                per_player_values.append(_per_player(vs))
+        if per_player_values:
+            n = len(per_player_values)
+            total = sum(per_player_values)
+            mean = total / n
+            if n > 1:
+                variance = sum((v - mean) ** 2 for v in per_player_values) / (n - 1)
+                std = variance ** 0.5
+            else:
+                std = 0.0
+            cards.append({
+                "field_key": fk,
+                "label": meta["label"],
+                "unit": meta["unit"],
+                "sum": round(total, 4),
+                "avg": round(mean, 4),
+                "std": round(std, 4),
+                "min": round(min(per_player_values), 4),
+                "max": round(max(per_player_values), 4),
+                "n": n,
+            })
+            sample_size = max(sample_size, n)
+        else:
+            cards.append({
+                "field_key": fk,
+                "label": meta["label"],
+                "unit": meta["unit"],
+                "sum": None, "avg": None, "std": None,
+                "min": None, "max": None, "n": 0,
+            })
+
+    return {
+        "chart_type": ChartType.TEAM_MATCH_SUMMARY.value,
+        "title": widget.title,
+        "cards": cards,
+        "sample_size": sample_size,
+        "per_player_aggregator": pp_agg,
+        "empty": sample_size == 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# team_activity_log
+# ---------------------------------------------------------------------------
+
+
+def _resolve_team_activity_log(
+    widget: TeamReportWidget,
+    category: Category,
+    *,
+    position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    event_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Team-wide timeline of the most recent ExamResults across the
+    roster. Each entry surfaces the player name + the configured
+    field values, newest first.
+
+    `display_config`:
+        {"limit": 20}  // total entries to return; clamp [5, 100]
+
+    Multi-source supported: an admin can configure Molestias + Lesiones
+    + Medicación on the same widget for a combined medical-events feed.
+    """
+    sources = list(widget.data_sources.all().select_related("template"))
+    if not sources:
+        return _empty(widget, ChartType.TEAM_ACTIVITY_LOG.value, error=(
+            "Configura una Data Source en este widget: elige la "
+            "plantilla y los campos a listar."
+        ))
+
+    display_config = widget.display_config or {}
+    limit = max(5, min(int(display_config.get("limit") or 20), 100))
+
+    players = list(_roster_query(category, position_id, player_ids))
+    player_by_id = {p.id: p for p in players}
+    if not player_by_id:
+        return {
+            "chart_type": ChartType.TEAM_ACTIVITY_LOG.value,
+            "title": widget.title,
+            "entries": [],
+            "limit": limit,
+            "empty": True,
+        }
+
+    entries: list[dict[str, Any]] = []
+    for source in sources:
+        template = source.template
+        field_keys = source.field_keys or []
+        meta_by_key = {fk: _field_meta(template, fk) for fk in field_keys}
+
+        qs = _apply_date_window(
+            ExamResult.objects.filter(
+                template__family_id=template.family_id,
+                player_id__in=player_by_id.keys(),
+            ),
+            date_from, date_to, event_id,
+        ).order_by("-recorded_at")[:limit]
+
+        for result in qs:
+            player = player_by_id.get(result.player_id)
+            if player is None:
+                continue
+            raw = result.result_data or {}
+            fields_payload = [
+                {
+                    "key": fk,
+                    "label": meta_by_key[fk]["label"],
+                    "unit": meta_by_key[fk]["unit"],
+                    "value": raw.get(fk),
+                }
+                for fk in field_keys
+            ]
+            entries.append({
+                "id": str(result.id),
+                "recorded_at": result.recorded_at.isoformat(),
+                "template_name": template.name,
+                "player_id": str(player.id),
+                "player_name": f"{player.first_name} {player.last_name}".strip(),
+                "fields": fields_payload,
+            })
+
+    entries.sort(key=lambda e: e["recorded_at"], reverse=True)
+    entries = entries[:limit]
+
+    return {
+        "chart_type": ChartType.TEAM_ACTIVITY_LOG.value,
+        "title": widget.title,
+        "entries": entries,
+        "limit": limit,
+        "empty": len(entries) == 0,
+    }
+
+
+# ---------------------------------------------------------------------------
+# team_daily_grouped_bars
+# ---------------------------------------------------------------------------
+
+
+# Default palette per-field; admins can override via display_config.
+# Picked to track the wellness color convention: cool blues + warm
+# accents so green/yellow/red stay reserved for severity banding
+# (which this widget doesn't use).
+_DAILY_BAR_COLORS = [
+    "#6366f1",  # indigo
+    "#0ea5e9",  # sky
+    "#10b981",  # emerald
+    "#f59e0b",  # amber
+    "#ef4444",  # red
+    "#8b5cf6",  # violet
+]
+
+
+def _resolve_team_daily_grouped_bars(
+    widget: TeamReportWidget,
+    category: Category,
+    *,
+    position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    event_id: UUID | None = None,
+) -> dict[str, Any]:
+    """Team mean per (field × day) buckets. One X-axis tick per day,
+    N bars per tick (one per configured field_key), optionally an
+    overlay line showing the per-day sum of the bar values.
+
+    `display_config`:
+        {
+            "show_total_line": true,
+            "total_label": "Total Bienestar",
+            "total_color": "#111827",
+            "field_colors": {"animo": "#16a34a", ...},
+            "day_limit": 7  // most-recent N days; default 7
+        }
+    """
+    source = widget.data_sources.first()
+    if source is None:
+        return _empty(widget, ChartType.TEAM_DAILY_GROUPED_BARS.value, error=(
+            "Configura una Data Source: plantilla + 2 o más campos numéricos."
+        ))
+    field_keys = source.field_keys or []
+    if not field_keys:
+        return _empty(widget, ChartType.TEAM_DAILY_GROUPED_BARS.value, error=(
+            f"La data source para '{source.template.name}' no tiene field_keys."
+        ))
+
+    template: ExamTemplate = source.template
+    display_config = widget.display_config or {}
+    show_total_line = bool(display_config.get("show_total_line"))
+    total_label = display_config.get("total_label") or "Total"
+    total_color = display_config.get("total_color") or "#111827"
+    color_overrides = display_config.get("field_colors") or {}
+    day_limit = max(2, min(int(display_config.get("day_limit") or 7), 60))
+
+    # Optional axis zoom for the bars (left Y) and the total line (right Y).
+    # When set, the frontend pins Recharts' axis domain so daily values
+    # don't auto-scale into nonsense ranges (1-5 Likert clipped to 0-3
+    # because no one had 4s/5s today). Both ends optional.
+    def _as_float(raw) -> float | None:
+        if raw is None:
+            return None
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            return None
+
+    y_min = _as_float(display_config.get("y_min"))
+    y_max = _as_float(display_config.get("y_max"))
+    total_y_min = _as_float(display_config.get("total_y_min"))
+    total_y_max = _as_float(display_config.get("total_y_max"))
+
+    raw_decimals = display_config.get("decimals")
+    try:
+        decimals = int(raw_decimals) if raw_decimals is not None else None
+    except (TypeError, ValueError):
+        decimals = None
+    if decimals is not None:
+        decimals = max(0, min(decimals, 6))
+
+    fields_meta: list[dict[str, Any]] = []
+    for i, fk in enumerate(field_keys):
+        m = _field_meta(template, fk)
+        fields_meta.append({
+            "key": fk,
+            "label": m["label"],
+            "unit": m["unit"],
+            "color": (
+                color_overrides.get(fk)
+                or _DAILY_BAR_COLORS[i % len(_DAILY_BAR_COLORS)]
+            ),
+        })
+
+    players = list(_roster_query(category, position_id, player_ids))
+    player_ids_set = {p.id for p in players}
+    if not player_ids_set:
+        return {
+            "chart_type": ChartType.TEAM_DAILY_GROUPED_BARS.value,
+            "title": widget.title,
+            "fields": fields_meta,
+            "buckets": [],
+            "show_total_line": show_total_line,
+            "total_label": total_label,
+            "total_color": total_color,
+            "y_min": y_min,
+            "y_max": y_max,
+            "total_y_min": total_y_min,
+            "total_y_max": total_y_max,
+            "decimals": decimals,
+            "empty": True,
+        }
+
+    results = _apply_date_window(
+        ExamResult.objects.filter(
+            template__family_id=template.family_id,
+            player_id__in=player_ids_set,
+        ),
+        date_from, date_to, event_id,
+    ).values("recorded_at", "result_data")
+
+    # bucket_iso → field_key → [values]
+    buckets: dict[str, dict[str, list[float]]] = {}
+    for row in results:
+        day_iso = row["recorded_at"].date().isoformat()
+        per_field = buckets.setdefault(day_iso, {})
+        raw = row["result_data"] or {}
+        for fk in field_keys:
+            v = _safe_float(raw.get(fk))
+            if v is None:
+                continue
+            per_field.setdefault(fk, []).append(v)
+
+    # Newest-first, then take the most recent N, then re-sort ascending
+    # for chart rendering (chronological left → right).
+    ordered_days = sorted(buckets.keys(), reverse=True)[:day_limit]
+    ordered_days.sort()
+
+    buckets_payload: list[dict[str, Any]] = []
+    for iso in ordered_days:
+        per_field = buckets[iso]
+        means: dict[str, float | None] = {}
+        running_total = 0.0
+        any_field = False
+        for fk in field_keys:
+            vs = per_field.get(fk, [])
+            if vs:
+                mean = round(sum(vs) / len(vs), 4)
+                means[fk] = mean
+                running_total += mean
+                any_field = True
+            else:
+                means[fk] = None
+        bucket_dt = datetime.fromisoformat(iso)
+        buckets_payload.append({
+            "iso": iso,
+            "label": _format_short_date(bucket_dt),
+            "values": means,
+            "total": round(running_total, 4) if any_field else None,
+        })
+
+    return {
+        "chart_type": ChartType.TEAM_DAILY_GROUPED_BARS.value,
+        "title": widget.title,
+        "fields": fields_meta,
+        "buckets": buckets_payload,
+        "show_total_line": show_total_line,
+        "total_label": total_label,
+        "total_color": total_color,
+        "y_min": y_min,
+        "y_max": y_max,
+        "total_y_min": total_y_min,
+        "total_y_max": total_y_max,
+        "decimals": decimals,
+        "empty": len(buckets_payload) == 0,
     }

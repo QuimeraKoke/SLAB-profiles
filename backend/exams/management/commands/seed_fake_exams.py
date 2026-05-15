@@ -43,7 +43,8 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
-from core.models import Club, Player
+from core.models import Category, Club, Player
+from events.models import Event
 from exams.calculations import compute_result_data
 from exams.models import ExamResult, ExamTemplate
 
@@ -109,7 +110,7 @@ NUMERIC_BASELINES: dict[str, tuple[float, float]] = {
 
 # Slugs that need episode-aware or date-range-aware generation. The main
 # loop SKIPS these templates and dispatches to dedicated handlers below.
-SPECIAL_TEMPLATE_SLUGS = {"lesiones", "medicacion"}
+SPECIAL_TEMPLATE_SLUGS = {"lesiones", "medicacion", "molestias", "check_in"}
 
 # Realistic Lesiones content. Picks one combo per episode so the Episode's
 # `title_template` ("{type} — {body_part}") renders something believable.
@@ -332,6 +333,16 @@ class Command(BaseCommand):
                 .filter(slug__in=SPECIAL_TEMPLATE_SLUGS)
             }
 
+            # Pre-create match events for each (category × week tick).
+            # Any template with link_to_match=True needs an event linked
+            # at insert time. We index by the exact recorded_at the loop
+            # uses below, so the lookup is O(1).
+            match_event_by_category_step: dict[tuple, Event] = (
+                self._pre_create_match_events(
+                    club, count, step, now, reset=reset,
+                )
+            )
+
             with transaction.atomic():
                 for player in players:
                     baseline = self._baseline_for(player.id)
@@ -350,12 +361,21 @@ class Command(BaseCommand):
                             result_data, inputs_snapshot = compute_result_data(
                                 template, raw_data, player=player,
                             )
+                            # link_to_match templates need a real event —
+                            # look up the pre-created event for this
+                            # (category, week tick).
+                            ev: Event | None = None
+                            if template.link_to_match:
+                                ev = match_event_by_category_step.get(
+                                    (player.category_id, i),
+                                )
                             ExamResult.objects.create(
                                 player=player,
                                 template=template,
                                 recorded_at=recorded_at,
                                 result_data=result_data,
                                 inputs_snapshot=inputs_snapshot,
+                                event=ev,
                             )
                             total_created += 1
 
@@ -376,6 +396,22 @@ class Command(BaseCommand):
                         total_created += self._seed_medicacion_for_player(
                             player, medicacion_t, rng, now,
                         )
+                    molestias_t = templates_by_slug.get("molestias")
+                    if (
+                        molestias_t is not None
+                        and molestias_t in templates
+                    ):
+                        total_created += self._seed_molestias_for_player(
+                            player, molestias_t, rng, now,
+                        )
+                    check_in_t = templates_by_slug.get("check_in")
+                    if (
+                        check_in_t is not None
+                        and check_in_t in templates
+                    ):
+                        total_created += self._seed_check_in_for_player(
+                            player, check_in_t, rng, now,
+                        )
 
             self.stdout.write(self.style.SUCCESS(
                 f"Club '{club.name}': seeded results for {len(players)} player(s)."
@@ -389,6 +425,73 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _pre_create_match_events(
+        self,
+        club: Club,
+        count: int,
+        step: timedelta,
+        now: datetime,
+        *,
+        reset: bool,
+    ) -> dict[tuple, Event]:
+        """For every category in the club that has at least one
+        link_to_match template, pre-create `count` match events spaced
+        like the result loop (one per week tick). Returns a lookup
+        `{(category_id, tick_index): Event}` consumed by the inserter.
+
+        When `reset=True` we also wipe any pre-existing synthetic
+        seed-events on the same dates so re-running stays idempotent.
+        Manually-created Events (without `metadata.seed=True`) are
+        left alone.
+        """
+        # Find categories that own at least one link_to_match template.
+        cat_ids_needing_events: set = set()
+        link_templates = ExamTemplate.objects.filter(
+            department__club=club, link_to_match=True,
+        ).prefetch_related("applicable_categories")
+        for t in link_templates:
+            for cat in t.applicable_categories.all():
+                cat_ids_needing_events.add(cat.id)
+
+        if not cat_ids_needing_events:
+            return {}
+
+        out: dict[tuple, Event] = {}
+        categories = Category.objects.filter(
+            id__in=cat_ids_needing_events,
+        ).select_related("club")
+
+        for cat in categories:
+            # We need a department FK on every Event; for match events
+            # we pick any departent the category opted into (events are
+            # cross-cutting). Falls back to the first link_to_match
+            # template's department for stable seeding.
+            dept = (
+                link_templates.filter(applicable_categories=cat).first().department
+            )
+            if reset:
+                # Wipe previous seed-generated synthetic match events.
+                Event.objects.filter(
+                    club=cat.club, category=cat,
+                    event_type=Event.TYPE_MATCH,
+                    metadata__seed=True,
+                ).delete()
+            for i in range(count):
+                starts_at = now - step * (count - 1 - i)
+                title = f"Partido sim. {starts_at:%d %b %Y}"
+                ev = Event.objects.create(
+                    club=cat.club,
+                    department=dept,
+                    event_type=Event.TYPE_MATCH,
+                    title=title,
+                    starts_at=starts_at,
+                    scope=Event.SCOPE_CATEGORY,
+                    category=cat,
+                    metadata={"seed": True, "source": "seed_fake_exams"},
+                )
+                out[(cat.id, i)] = ev
+        return out
 
     def _baseline_for(self, player_id) -> dict[str, Any]:
         """Per-player baseline that's deterministic in player.id."""
@@ -646,4 +749,108 @@ class Command(BaseCommand):
             )
             created += 1
 
+        return created
+
+    # ------------------------------------------------------------------
+    # Molestias — sporadic daily-log entries (~1-2 per week per player)
+    # ------------------------------------------------------------------
+
+    _MOLESTIAS_TIPOS = [
+        "Kinesiología", "Quiropráctica", "Fisiatría",
+        "Masoterapia", "Crioterapia", "Termoterapia",
+    ]
+    _MOLESTIAS_ZONAS = [
+        "Cuello", "Espalda alta", "Espalda baja",
+        "Hombro izq.", "Hombro der.",
+        "Muslo izq.", "Muslo der.",
+        "Rodilla izq.", "Rodilla der.",
+        "Pantorrilla izq.", "Pantorrilla der.",
+        "Tobillo izq.", "Tobillo der.",
+    ]
+    _MOLESTIAS_COMENTARIOS = [
+        "Tratamiento preventivo + activación pre sesión.",
+        "Sobrecarga de fin de semana. TMO + crioterapia.",
+        "Punto gatillo a la palpación. Liberación miofascial.",
+        "Rigidez matinal moderada. Movilizaciones articulares.",
+        "Molestia post entrenamiento. Manejo conservador.",
+        "Trabajo correctivo + ejercicios de estabilización.",
+    ]
+
+    def _seed_molestias_for_player(
+        self, player, template: "ExamTemplate", rng: random.Random,
+        now: datetime,
+    ) -> int:
+        """Sprinkle ~1-2 molestias entries per week across the last 8
+        weeks. Independent random seed per player so re-runs are stable.
+        """
+        weeks_back = 8
+        entries_per_week_distribution = [0, 0, 1, 1, 1, 2, 2, 3]
+        created = 0
+        for w in range(weeks_back):
+            n = rng.choice(entries_per_week_distribution)
+            for _ in range(n):
+                day_offset = rng.randint(0, 6)
+                hour = rng.randint(9, 17)
+                recorded_at = (
+                    now - timedelta(weeks=w + 1)
+                    + timedelta(days=day_offset, hours=hour)
+                )
+                raw_data = {
+                    "tipo": rng.choice(self._MOLESTIAS_TIPOS),
+                    "zona": rng.choice(self._MOLESTIAS_ZONAS),
+                    "comentarios": rng.choice(self._MOLESTIAS_COMENTARIOS),
+                }
+                result_data, inputs_snapshot = compute_result_data(
+                    template, raw_data, player=player,
+                )
+                ExamResult.objects.create(
+                    player=player,
+                    template=template,
+                    recorded_at=recorded_at,
+                    result_data=result_data,
+                    inputs_snapshot=inputs_snapshot,
+                )
+                created += 1
+        return created
+
+    # ------------------------------------------------------------------
+    # Check-IN — daily wellness checklist, 1 entry/day per player
+    # ------------------------------------------------------------------
+
+    def _seed_check_in_for_player(
+        self, player, template: "ExamTemplate", rng: random.Random,
+        now: datetime,
+    ) -> int:
+        """One Check-IN per day for the last 30 days. Each axis is a
+        Likert 1-5 sampled around a per-player baseline so the trend
+        feels realistic (a player drifting toward fatigue, another
+        consistently rested, etc.)."""
+        days_back = 30
+        # Per-player baseline ∈ [3.0, 4.5] biased toward good values.
+        baseline = 3.0 + (rng.random() * 1.5)
+        created = 0
+        for d in range(days_back, 0, -1):
+            # Daily jitter ±0.8 around baseline, clamped 1..5.
+            def sample_axis() -> int:
+                v = baseline + (rng.random() - 0.5) * 1.6
+                return max(1, min(5, round(v)))
+            recorded_at = now - timedelta(days=d, hours=rng.randint(7, 9))
+            raw_data = {
+                "doms":   sample_axis(),
+                "animo":  sample_axis(),
+                "estres": sample_axis(),
+                "fatiga": sample_axis(),
+                "sueno":  sample_axis(),
+            }
+            result_data, inputs_snapshot = compute_result_data(
+                template, raw_data, player=player,
+            )
+            ExamResult.objects.create(
+                player=player,
+                template=template,
+                recorded_at=recorded_at,
+                result_data=result_data,
+                inputs_snapshot=inputs_snapshot,
+            )
+            created += 1
         return created

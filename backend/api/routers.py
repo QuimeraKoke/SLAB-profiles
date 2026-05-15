@@ -1340,6 +1340,7 @@ def get_team_report(
     date_from: str | None = None,
     date_to: str | None = None,
     player_ids: str | None = None,
+    match_id: str | None = None,
 ):
     """Return the active TeamReportLayout for `(department, category)`.
 
@@ -1353,6 +1354,12 @@ def get_team_report(
       - `date_from` / `date_to`: ISO-8601 dates bounding ExamResult
         `recorded_at`. Capped at 90 days at the API layer. `status_counts`
         and `active_records` ignore these by design (current-state widgets).
+      - `match_id`: when the layout's `match_selector_config.enabled` is
+        true, narrows every ExamResult queryset to results linked to
+        this Event. Ignored when the selector isn't enabled. Required
+        mode (`config.required=true`): if `match_id` is missing or
+        invalid, the API auto-selects the most recent match in scope so
+        the page renders something useful on first load.
     """
     from uuid import UUID as _UUID
 
@@ -1410,6 +1417,46 @@ def get_team_report(
     if layout is None:
         return {"layout": None}
 
+    # -------- Match selector resolution --------
+    # The layout's stored config drives what the frontend renders + how
+    # the resolver filters. When `enabled=true`, we expose the dropdown
+    # options and the currently-selected match id. When `required=true`
+    # we auto-pick the most recent match if the caller didn't pass one
+    # so the page doesn't render an empty state on first load.
+    raw_cfg = layout.match_selector_config or {}
+    selector_enabled = bool(raw_cfg.get("enabled"))
+    selector_required = bool(raw_cfg.get("required"))
+    selector_event_type = (
+        raw_cfg.get("event_type") or Event.TYPE_MATCH
+    )
+    selector_show_recent = max(1, min(int(raw_cfg.get("show_recent") or 10), 50))
+    selector_label = raw_cfg.get("label") or "Partido"
+
+    selector_options: list[Event] = []
+    parsed_match_id: _UUID | None = None
+    if selector_enabled:
+        # Recent matches in scope: matches tied to this category, of the
+        # configured event_type, newest first. Soft cap via show_recent.
+        selector_options = list(
+            Event.objects
+            .filter(
+                club_id=category.club_id,
+                event_type=selector_event_type,
+                category_id=category.id,
+            )
+            .order_by("-starts_at")[:selector_show_recent]
+        )
+        if match_id:
+            try:
+                candidate = _UUID(match_id)
+            except (TypeError, ValueError):
+                candidate = None
+            if candidate is not None and any(e.id == candidate for e in selector_options):
+                parsed_match_id = candidate
+        # Required + nothing valid passed → auto-select the most recent.
+        if parsed_match_id is None and selector_required and selector_options:
+            parsed_match_id = selector_options[0].id
+
     sections_payload = []
     for section in layout.sections.all():
         widgets_payload = []
@@ -1429,6 +1476,7 @@ def get_team_report(
                         player_ids=parsed_player_ids or None,
                         date_from=parsed_from,
                         date_to=parsed_to,
+                        event_id=parsed_match_id,
                     ),
                 }
             )
@@ -1450,8 +1498,157 @@ def get_team_report(
             "category": category,
             "name": layout.name,
             "sections": sections_payload,
+            "match_selector": {
+                "enabled": selector_enabled,
+                "event_type": selector_event_type,
+                "required": selector_required,
+                "label": selector_label,
+                "show_recent": selector_show_recent,
+                "options": [
+                    {
+                        "id": e.id,
+                        "title": e.title,
+                        "starts_at": e.starts_at,
+                        "location": e.location or "",
+                    }
+                    for e in selector_options
+                ],
+                "selected_id": parsed_match_id,
+            },
         }
     }
+
+
+# ---------- PDF reports ----------
+
+
+@api.get("/reports/{department_slug}/team.pdf")
+def download_team_report_pdf(
+    request,
+    department_slug: str,
+    category_id: str,
+    position_id: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    player_ids: str | None = None,
+    match_id: str | None = None,
+):
+    """Render the team-view report as a PDF (landscape A4).
+
+    Same filter inputs as `GET /reports/{slug}` so the download button
+    can pass through the exact URL query params the user is already
+    looking at. Auth scoping mirrors the JSON endpoint.
+    """
+    from uuid import UUID as _UUID
+
+    from django.http import HttpResponse
+
+    from dashboards.pdf.team_report import render_team_pdf
+
+    membership = get_membership(request.user)
+
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+
+    dept = scope_departments(
+        Department.objects.filter(club_id=category.club_id), membership,
+    ).filter(slug=department_slug).first()
+    if dept is None:
+        raise HttpError(404, "Department not found")
+
+    parsed_position_id: _UUID | None = None
+    if position_id:
+        try:
+            cand = _UUID(position_id)
+        except (TypeError, ValueError):
+            cand = None
+        if cand is not None and Position.objects.filter(
+            pk=cand, club_id=category.club_id,
+        ).exists():
+            parsed_position_id = cand
+
+    parsed_player_ids: list[_UUID] = []
+    if player_ids:
+        for raw in player_ids.split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                parsed_player_ids.append(_UUID(raw))
+            except (TypeError, ValueError):
+                continue
+
+    parsed_from, parsed_to = _parse_date_window(date_from, date_to)
+
+    parsed_match_id: _UUID | None = None
+    if match_id:
+        try:
+            mid = _UUID(match_id)
+        except (TypeError, ValueError):
+            mid = None
+        if mid is not None and Event.objects.filter(
+            pk=mid, category_id=category.id,
+        ).exists():
+            parsed_match_id = mid
+
+    pdf_bytes = render_team_pdf(
+        department=dept,
+        category=category,
+        position_id=parsed_position_id,
+        player_ids=parsed_player_ids or None,
+        date_from=parsed_from,
+        date_to=parsed_to,
+        event_id=parsed_match_id,
+    )
+
+    filename = f"reporte-{department_slug}-{category.name}.pdf".replace(" ", "_")
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api.get("/players/{player_id}/departments/{department_slug}/report.pdf")
+def download_player_department_pdf(
+    request,
+    player_id: str,
+    department_slug: str,
+    date_from: str | None = None,
+    date_to: str | None = None,
+):
+    """Per-player department report as a PDF (portrait A4)."""
+    from django.http import HttpResponse
+
+    from dashboards.pdf.player_report import render_player_pdf
+
+    membership = get_membership(request.user)
+
+    player = scope_players(
+        Player.objects.select_related("category__club"), membership,
+    ).filter(pk=player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+
+    dept = scope_departments(
+        Department.objects.filter(club_id=player.category.club_id), membership,
+    ).filter(slug=department_slug).first()
+    if dept is None:
+        raise HttpError(404, "Department not found")
+
+    parsed_from, parsed_to = _parse_date_window(date_from, date_to)
+
+    pdf_bytes = render_player_pdf(
+        player=player, department=dept,
+        date_from=parsed_from, date_to=parsed_to,
+    )
+
+    name = f"{player.first_name}-{player.last_name}".replace(" ", "_")
+    filename = f"reporte-{name}-{department_slug}.pdf"
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
 
 
 # ---------- Events ----------

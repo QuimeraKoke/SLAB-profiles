@@ -985,6 +985,31 @@ class ExamResult(models.Model):
         ]
         ordering = ("-recorded_at",)
 
+    def clean(self) -> None:
+        """Enforce `template.link_to_match` — if the template requires a
+        match link, every result MUST point at an Event. Caught at
+        `full_clean()` (admin save, API serializers) and at signal-time
+        in `events/services` writers. We don't add a DB-level constraint
+        because legacy data exists without events; the validator is the
+        single point of truth and the backfill command brings old rows
+        into compliance over time.
+        """
+        from django.core.exceptions import ValidationError
+
+        super().clean()
+        if (
+            self.template_id
+            and getattr(self.template, "link_to_match", False)
+            and self.event_id is None
+        ):
+            raise ValidationError({
+                "event": (
+                    f"La plantilla '{self.template.name}' requiere vincular "
+                    "el resultado a un Evento (partido). Selecciona el "
+                    "partido al que pertenece esta carga."
+                ),
+            })
+
     def __str__(self) -> str:
         return f"{self.template.name} – {self.player} @ {self.recorded_at:%Y-%m-%d}"
 

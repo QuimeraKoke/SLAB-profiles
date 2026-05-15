@@ -180,6 +180,49 @@ class ChartType(models.TextChoices):
         "Team — players ranked by active alert count",
     )
 
+    # Per-player horizontal stacked bars. One row per player, one bar
+    # split into N colored segments (one per field_key). Sort is by
+    # the row's total (sum of all field values) descending — useful
+    # for Acc + Dec breakdowns, period workload composition, etc.
+    TEAM_STACKED_BARS = (
+        "team_stacked_bars",
+        "Team — stacked bars per player (composition of N fields)",
+    )
+
+    # Per-player activity log — last N ExamResults rendered as a
+    # timeline list. Each entry shows date + a couple of summary fields
+    # configured via the WidgetDataSource.field_keys. Used by the
+    # 'Molestias' daily-log pattern in the medical department.
+    ACTIVITY_LOG = (
+        "activity_log",
+        "Activity log (per-player timeline of recent entries)",
+    )
+
+    # Team-scoped variant: same shape but rosters across all players in
+    # the category, newest first. Used for the team-wide medical-events
+    # feed (lesiones / molestias / medicación combined chronology).
+    TEAM_ACTIVITY_LOG = (
+        "team_activity_log",
+        "Team — activity log (recent entries across the roster)",
+    )
+
+    # Per-day grouped bars across the team: one X-axis tick per day in
+    # the window, one bar per configured field (team mean for that
+    # field on that day). Optional overlay line for the per-day SUM of
+    # the field means (e.g. "Total Bienestar" on a Check-IN chart).
+    TEAM_DAILY_GROUPED_BARS = (
+        "team_daily_grouped_bars",
+        "Team — daily grouped bars (N metrics × daily buckets)",
+    )
+
+    # Compact aggregate-statistics strip for a match. One mini-card per
+    # configured field showing SUM / AVG / STD across the roster. Used
+    # as the "team-wide totals" footer in match-scoped GPS layouts.
+    TEAM_MATCH_SUMMARY = (
+        "team_match_summary",
+        "Team — match-aggregate statistics strip",
+    )
+
 
 class Aggregation(models.TextChoices):
     LATEST = "latest", "Latest result only"
@@ -455,6 +498,17 @@ class TeamReportLayout(models.Model):
             "shows the placeholder 'no report configured' state."
         ),
     )
+    match_selector_config = models.JSONField(
+        default=dict, blank=True,
+        help_text=(
+            "Per-match scoping for this layout. When enabled, the report page "
+            "renders a match selector and every widget filters its data to the "
+            "chosen Event. Shape: "
+            '<code>{"enabled": true, "event_type": "match", "required": true, '
+            '"label": "Partido", "show_recent": 10}</code>. '
+            "Empty / disabled → date-window mode (current behavior)."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -538,6 +592,10 @@ class TeamReportWidget(models.Model):
             (ChartType.TEAM_LEADERBOARD.value, ChartType.TEAM_LEADERBOARD.label),
             (ChartType.TEAM_GOAL_PROGRESS.value, ChartType.TEAM_GOAL_PROGRESS.label),
             (ChartType.TEAM_ALERTS.value, ChartType.TEAM_ALERTS.label),
+            (ChartType.TEAM_STACKED_BARS.value, ChartType.TEAM_STACKED_BARS.label),
+            (ChartType.TEAM_MATCH_SUMMARY.value, ChartType.TEAM_MATCH_SUMMARY.label),
+            (ChartType.TEAM_ACTIVITY_LOG.value, ChartType.TEAM_ACTIVITY_LOG.label),
+            (ChartType.TEAM_DAILY_GROUPED_BARS.value, ChartType.TEAM_DAILY_GROUPED_BARS.label),
         ],
     )
     title = models.CharField(max_length=160)

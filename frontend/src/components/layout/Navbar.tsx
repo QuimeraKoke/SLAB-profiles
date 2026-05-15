@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Search, Bell, Menu } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
 import { useCategoryContext } from "@/context/CategoryContext";
 import type { AlertWithPlayer } from "@/lib/types";
 import styles from "./Navbar.module.css";
@@ -47,6 +48,9 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const { categories, categoryId, setCategoryId } = useCategoryContext();
+  const { membership } = useAuth();
+  const club = membership?.club ?? null;
+  const clubInitial = club?.name?.trim()?.[0]?.toUpperCase() ?? "·";
 
   // Poll active alerts on mount + every 30s. Failures are silent so a
   // backend hiccup doesn't render a broken navbar — the badge just won't
@@ -136,9 +140,20 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
         </div>
         <div className={styles.teamDivider}></div>
         <div className={styles.teamSection}>
-          <div className={styles.teamLogo}>U</div>
+          {club?.logo_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={club.logo_url}
+              alt={`Logo ${club.name}`}
+              className={styles.teamLogoImg}
+            />
+          ) : (
+            <div className={styles.teamLogo} aria-hidden="true">{clubInitial}</div>
+          )}
           <div className={styles.teamText}>
-            <h1 className={styles.teamTitle}>Perfil Jugadores — Universidad de Chile</h1>
+            <h1 className={styles.teamTitle}>
+              Perfil Jugadores{club ? ` — ${club.name}` : ""}
+            </h1>
             <p className={styles.teamSubtitle}>Información integral de los jugadores del club</p>
           </div>
         </div>

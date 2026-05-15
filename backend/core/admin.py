@@ -38,7 +38,20 @@ class ContractInline(admin.StackedInline):
 
 @admin.register(Club)
 class ClubAdmin(admin.ModelAdmin):
-    list_display = ("name", "created_at")
+    list_display = ("name", "logo_preview", "created_at")
+    fields = ("name", "logo", "created_at")
+    readonly_fields = ("created_at",)
+
+    def logo_preview(self, obj: Club) -> str:
+        if not obj.logo:
+            return "—"
+        from django.utils.html import format_html
+        return format_html(
+            '<img src="{}" style="max-height: 40px; max-width: 80px;" />',
+            obj.logo.url,
+        )
+
+    logo_preview.short_description = "Logo"
 
 
 @admin.register(Department)

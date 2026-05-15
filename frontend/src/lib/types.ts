@@ -37,6 +37,11 @@ export interface LoginResponse {
 export interface Club {
   id: string;
   name: string;
+  /** Signed URL to the club logo when uploaded, null otherwise.
+   *  Source: `Club.logo` (ImageField) via storage backend. The URL
+   *  expires (5 min on the dev MinIO config) so don't cache it
+   *  across user-session lifetimes. */
+  logo_url?: string | null;
 }
 
 export interface Department {
@@ -536,6 +541,32 @@ export interface CalendarEvent {
 // ---------- Configurable dashboards ----------
 
 /** Resolved chart-ready payload returned by the backend. Shape varies by chart_type. */
+/** One row in an activity-log timeline. Each `fields` entry is a raw
+ *  key/value pair from the result so the frontend can render arbitrary
+ *  schemas without compile-time knowledge of which fields exist. */
+export interface ActivityLogField {
+  key: string;
+  label: string;
+  unit: string;
+  value: string | number | boolean | null;
+}
+
+export interface ActivityLogEntry {
+  id: string;
+  recorded_at: string;
+  template_name: string;
+  fields: ActivityLogField[];
+}
+
+export interface ActivityLogPayload {
+  chart_type: "activity_log";
+  title: string;
+  entries: ActivityLogEntry[];
+  limit: number;
+  empty?: boolean;
+  error?: string;
+}
+
 export type WidgetData =
   | ComparisonTablePayload
   | LineWithSelectorPayload
@@ -546,6 +577,7 @@ export type WidgetData =
   | BodyMapHeatmapPayload
   | GoalCardPayload
   | PlayerAlertsPayload
+  | ActivityLogPayload
   | UnsupportedPayload
   | EmptyPayload;
 
@@ -742,6 +774,13 @@ export interface TeamHorizontalComparisonPayload {
   /** "none" (default — one row per player) or "position" (rows = positions,
    *  bars = monthly means across players in that position). */
   grouping?: "none" | "position";
+  /** Render mode:
+   *  - "by_reading" (default): dropdown picks which field, bars within a
+   *    row represent recent readings of that field (most-recent → oldest).
+   *  - "multi_field": no dropdown; each row shows one bar per field_key
+   *    side by side, each field gets its own color. Each value is the
+   *    latest reading in the data window. */
+  mode?: "by_reading" | "multi_field";
   fields: { key: string; label: string; unit: string }[];
   default_field_key: string;
   limit_per_player: number;
@@ -942,6 +981,103 @@ export interface PlayerAlertsPayload {
   error?: string;
 }
 
+/** Team mean per (field × day). One bucket per day in the window,
+ *  each carrying the mean of every configured field across the roster.
+ *  Optional overlay line for the per-day sum of bar values. */
+export interface TeamDailyGroupedBarsPayload {
+  chart_type: "team_daily_grouped_bars";
+  title: string;
+  fields: {
+    key: string;
+    label: string;
+    unit: string;
+    color: string;
+  }[];
+  buckets: {
+    iso: string;
+    label: string;
+    values: Record<string, number | null>;
+    total: number | null;
+  }[];
+  show_total_line: boolean;
+  total_label: string;
+  total_color: string;
+  /** Fixed Y-axis domain for the BARS axis (left). Optional. */
+  y_min?: number | null;
+  y_max?: number | null;
+  /** Fixed Y-axis domain for the TOTAL LINE axis (right). Optional. */
+  total_y_min?: number | null;
+  total_y_max?: number | null;
+  /** Forced decimal precision for tooltip values. Optional. */
+  decimals?: number | null;
+  empty?: boolean;
+  error?: string;
+}
+
+/** Compact stat-cards strip aggregating one match across the roster.
+ *  Each card = one field with SUM / AVG / STD / MIN / MAX / N. */
+export interface TeamMatchSummaryPayload {
+  chart_type: "team_match_summary";
+  title: string;
+  cards: {
+    field_key: string;
+    label: string;
+    unit: string;
+    sum: number | null;
+    avg: number | null;
+    std: number | null;
+    min: number | null;
+    max: number | null;
+    n: number;
+  }[];
+  sample_size: number;
+  per_player_aggregator?: "sum" | "avg" | "max" | "latest";
+  empty?: boolean;
+  error?: string;
+}
+
+/** Stacked horizontal bars per player. One bar per row, composed of N
+ *  colored segments (one per configured field_key). Sorted by total
+ *  across all stacked fields. Use case: Acc + Dec + Acc&Dec breakdown. */
+export interface TeamStackedBarsPayload {
+  chart_type: "team_stacked_bars";
+  title: string;
+  fields: {
+    key: string;
+    label: string;
+    unit: string;
+    color: string;
+  }[];
+  aggregator: "sum" | "avg" | "max" | "latest";
+  order: "asc" | "desc";
+  rows: {
+    player_id: string;
+    player_name: string;
+    /** Per-field value or null when the player has no readings on that
+     *  field. The stack drops the segment when null. */
+    values: Record<string, number | null>;
+    total: number;
+  }[];
+  empty?: boolean;
+  error?: string;
+}
+
+/** Team-wide activity-log timeline. Same shape as the per-player
+ *  ActivityLogPayload but every entry carries `player_id` / `player_name`. */
+export interface TeamActivityLogEntry extends ActivityLogEntry {
+  player_id: string;
+  player_name: string;
+}
+
+export interface TeamActivityLogPayload {
+  chart_type: "team_activity_log";
+  title: string;
+  entries: TeamActivityLogEntry[];
+  limit: number;
+  empty?: boolean;
+  error?: string;
+}
+
 /** Team-wide active-alerts ranking, scoped to the widget's department. */
 export interface TeamAlertsPayload {
   chart_type: "team_alerts";
@@ -982,22 +1118,70 @@ export interface TeamActiveRecordsPayload {
   error?: string;
 }
 
-/** Top-N ranking by a single numeric metric, aggregated across the
- *  active window. Aggregator is sum / avg / max / latest. */
+/** Top-N ranking. Two modes:
+ *  - "single" (default): one metric ranked top-N.
+ *  - "multi_field": every roster player gets a value per configured
+ *    field. Sorted by the FIRST field's value (move data source's
+ *    field_keys order to change the sort key). Frontend renders grouped
+ *    vertical bars: one group per player, one bar per field. */
 export interface TeamLeaderboardPayload {
   chart_type: "team_leaderboard";
   title: string;
-  field: { key: string; label: string; unit: string } | null;
+  mode?: "single" | "multi_field";
+  /** Single-mode rendering style. `list` = podium-style ordered list
+   *  (legacy, default). `vertical_bars` = vertical bar chart with every
+   *  roster player visible — required when using `reference_lines`. */
+  style?: "list" | "vertical_bars";
+  /** Legacy single ref line. New frontends prefer `reference_lines`. */
+  reference_line?: {
+    value: number;
+    label: string;
+    color: string;
+  } | null;
+  /** Array of horizontal lines (target, upper/lower limit, team avg). */
+  reference_lines?: {
+    value: number;
+    label: string;
+    color: string;
+  }[];
+  /** Shaded horizontal zones between two Y values (clinical "safe zone"). */
+  reference_bands?: {
+    min: number | null;
+    max: number | null;
+    label: string;
+    color: string;
+  }[];
+  /** Zoom the Y axis to a custom range. Useful when values cluster near
+   *  a non-zero number (urine specific gravity 1.000–1.040, etc.) and
+   *  the default `0 → max` rendering crushes the differences. Both
+   *  optional; missing falls back to auto (y_min=0, y_max=data max). */
+  y_min?: number | null;
+  y_max?: number | null;
+  /** Forced decimal precision for displayed values. When null/undefined
+   *  the frontend picks 0-2 dynamically. Bump to 3 for densities, pH. */
+  decimals?: number | null;
+  /** Present in "single" mode; null otherwise. */
+  field?: { key: string; label: string; unit: string } | null;
+  /** Present in "multi_field" mode — one entry per configured field. */
+  fields?: { key: string; label: string; unit: string }[];
   aggregator: "sum" | "avg" | "max" | "latest";
   order: "asc" | "desc";
   limit: number;
-  rows: {
-    rank: number;
-    player_id: string;
-    player_name: string;
-    value: number;
-    samples: number;
-  }[];
+  rows: (
+    | {
+        rank: number;
+        player_id: string;
+        player_name: string;
+        value: number;
+        samples: number;
+      }
+    | {
+        rank: number;
+        player_id: string;
+        player_name: string;
+        values: Record<string, number | null>;
+      }
+  )[];
   empty?: boolean;
   error?: string;
 }
@@ -1081,6 +1265,10 @@ export type TeamWidgetData =
   | TeamLeaderboardPayload
   | TeamGoalProgressPayload
   | TeamAlertsPayload
+  | TeamStackedBarsPayload
+  | TeamMatchSummaryPayload
+  | TeamActivityLogPayload
+  | TeamDailyGroupedBarsPayload
   | UnsupportedPayload
   | EmptyPayload;
 
@@ -1104,6 +1292,27 @@ export interface TeamReportSection {
   widgets: TeamReportWidget[];
 }
 
+export interface TeamMatchOption {
+  id: string;
+  title: string;
+  starts_at: string;
+  location: string;
+}
+
+export interface TeamMatchSelectorConfig {
+  enabled: boolean;
+  event_type: string;
+  required: boolean;
+  label: string;
+  show_recent: number;
+  options: TeamMatchOption[];
+  /** The match the backend resolved against. May be set even when the
+   *  user didn't pass `?match_id=` — required-mode layouts auto-pick
+   *  the most recent match. The frontend should sync its URL to this
+   *  value on first load. */
+  selected_id: string | null;
+}
+
 export interface TeamReportResponse {
   layout: {
     id: string;
@@ -1111,5 +1320,6 @@ export interface TeamReportResponse {
     category: Category;
     name: string;
     sections: TeamReportSection[];
+    match_selector: TeamMatchSelectorConfig;
   } | null;
 }

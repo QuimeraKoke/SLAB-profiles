@@ -51,6 +51,19 @@ class LoginOut(Schema):
 class ClubOut(Schema):
     id: UUID
     name: str
+    logo_url: str | None = None
+
+    @staticmethod
+    def resolve_logo_url(obj) -> str | None:
+        """Return the (signed) storage URL when the club has a logo
+        uploaded. Returns None for clubs without one — the frontend
+        falls back to the initial-based avatar in that case."""
+        if not getattr(obj, "logo", None):
+            return None
+        try:
+            return obj.logo.url
+        except (ValueError, AttributeError):
+            return None
 
 
 class DepartmentOut(Schema):
@@ -502,12 +515,35 @@ class TeamReportSectionOut(Schema):
     widgets: list[TeamWidgetPayloadOut]
 
 
+class MatchSelectorOptionOut(Schema):
+    """One option in the match-selector dropdown — surfaces the data the
+    frontend needs to render and identify each pickable match."""
+    id: UUID
+    title: str
+    starts_at: datetime
+    location: str = ""
+
+
+class MatchSelectorConfigOut(Schema):
+    """Effective config for the match selector on this layout. When
+    `enabled=False` the frontend must NOT render the selector even if
+    the layout's stored config has stale keys."""
+    enabled: bool = False
+    event_type: str = "match"
+    required: bool = False
+    label: str = "Partido"
+    show_recent: int = 10
+    options: list[MatchSelectorOptionOut] = []
+    selected_id: UUID | None = None
+
+
 class TeamReportLayoutOut(Schema):
     id: UUID
     department: DepartmentOut
     category: CategoryOut
     name: str
     sections: list[TeamReportSectionOut] = []
+    match_selector: MatchSelectorConfigOut = MatchSelectorConfigOut()
 
 
 class TeamReportResponseOut(Schema):

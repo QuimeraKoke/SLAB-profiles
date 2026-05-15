@@ -198,6 +198,37 @@ function serializeLeaderboard(
   data: TeamLeaderboardPayload,
   title: string,
 ): AOA {
+  // Two shapes depending on resolver mode. multi_field => one column per
+  // configured field (plus rank/player). single => the legacy 4-column
+  // Posición/Jugador/Valor/Tomas table.
+  if (data.mode === "multi_field") {
+    const fields = data.fields ?? [];
+    const header: (string | number | null)[] = ["Posición", "Jugador"];
+    for (const f of fields) {
+      header.push(f.unit ? `${f.label} (${f.unit})` : f.label);
+    }
+    const rows: AOA = [
+      [title],
+      [`Agregador: ${data.aggregator} · Orden: ${data.order} · Top ${data.limit}`],
+      [],
+      header,
+    ];
+    if (data.empty || data.rows.length === 0) {
+      rows.push(["Sin datos"]);
+      return rows;
+    }
+    for (const row of data.rows) {
+      if (!("values" in row)) continue;
+      const out: (string | number | null)[] = [row.rank, row.player_name];
+      for (const f of fields) {
+        const v = row.values[f.key];
+        out.push(typeof v === "number" ? v : null);
+      }
+      rows.push(out);
+    }
+    return rows;
+  }
+
   const fieldLabel = data.field
     ? data.field.unit
       ? `${data.field.label} (${data.field.unit})`
@@ -215,7 +246,9 @@ function serializeLeaderboard(
     return rows;
   }
   for (const row of data.rows) {
-    rows.push([row.rank, row.player_name, row.value, row.samples]);
+    if ("value" in row) {
+      rows.push([row.rank, row.player_name, row.value, row.samples]);
+    }
   }
   return rows;
 }

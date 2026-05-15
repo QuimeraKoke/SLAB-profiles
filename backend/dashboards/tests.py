@@ -11,6 +11,7 @@ from django.test import TestCase
 from django.utils import timezone
 
 from core.models import Category, Club, Department, Player
+from events.models import Event
 from exams.models import ExamResult, ExamTemplate
 
 from .aggregation import resolve_widget
@@ -2095,3 +2096,102 @@ class TeamAlertsResolverTests(TestCase):
         self.assertEqual(heavy_card["alert_count"], 2)
         self.assertEqual(heavy_card["critical_count"], 2)
         self.assertEqual(heavy_card["max_severity"], "critical")
+
+
+# =============================================================================
+# event_id passthrough — per-match scoping
+# =============================================================================
+
+
+class EventIdFilterTests(TestCase):
+    """Cover the new `event_id` kwarg threaded through resolve_team_widget.
+
+    The widget under test is `team_horizontal_comparison`; the filtering
+    behavior lives in `_apply_date_window` which every ExamResult-based
+    resolver calls, so coverage on one resolver also exercises the helper.
+    """
+
+    def setUp(self):
+        self.club = Club.objects.create(name="FC")
+        self.dept = Department.objects.create(club=self.club, name="F", slug="f")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.dept)
+        self.template = ExamTemplate.objects.create(
+            name="GPS", slug="gps", department=self.dept,
+            config_schema={"fields": [
+                {"key": "distancia", "type": "number", "label": "Distancia", "unit": "m"},
+            ]},
+        )
+        self.template.applicable_categories.add(self.cat)
+
+        self.alice = Player.objects.create(
+            category=self.cat, first_name="Alice", last_name="A", is_active=True,
+        )
+
+        # Two matches with one result each — same player, different events.
+        self.match_old = Event.objects.create(
+            club=self.club, department=self.dept,
+            event_type=Event.TYPE_MATCH, title="vs Old",
+            starts_at=timezone.now() - timedelta(days=14),
+            scope=Event.SCOPE_CATEGORY, category=self.cat,
+        )
+        self.match_new = Event.objects.create(
+            club=self.club, department=self.dept,
+            event_type=Event.TYPE_MATCH, title="vs New",
+            starts_at=timezone.now() - timedelta(days=2),
+            scope=Event.SCOPE_CATEGORY, category=self.cat,
+        )
+        ExamResult.objects.create(
+            player=self.alice, template=self.template, event=self.match_old,
+            recorded_at=self.match_old.starts_at,
+            result_data={"distancia": 9000},
+        )
+        ExamResult.objects.create(
+            player=self.alice, template=self.template, event=self.match_new,
+            recorded_at=self.match_new.starts_at,
+            result_data={"distancia": 11000},
+        )
+
+    def _widget(self):
+        layout = TeamReportLayout.objects.create(department=self.dept, category=self.cat)
+        section = TeamReportSection.objects.create(layout=layout)
+        widget = TeamReportWidget.objects.create(
+            section=section,
+            chart_type=ChartType.TEAM_HORIZONTAL_COMPARISON.value,
+            title="GPS",
+        )
+        TeamReportWidgetDataSource.objects.create(
+            widget=widget, template=self.template, field_keys=["distancia"],
+            aggregation=Aggregation.LAST_N, aggregation_param=5,
+        )
+        return widget
+
+    def test_without_event_id_returns_all_matches(self):
+        widget = self._widget()
+        payload = resolve_team_widget(widget, self.cat)
+        row = payload["rows"][0]
+        readings = row["values"]["distancia"]
+        # Two readings (one per match) when no event filter applied.
+        self.assertEqual(len(readings), 2)
+
+    def test_event_id_filters_to_one_match(self):
+        widget = self._widget()
+        payload = resolve_team_widget(widget, self.cat, event_id=self.match_new.id)
+        row = payload["rows"][0]
+        readings = row["values"]["distancia"]
+        self.assertEqual(len(readings), 1)
+        self.assertEqual(readings[0]["value"], 11000)
+
+    def test_event_id_with_no_results_returns_empty_payload(self):
+        # A third match with no results — payload should still render but
+        # carry zero readings for the player.
+        orphan = Event.objects.create(
+            club=self.club, department=self.dept,
+            event_type=Event.TYPE_MATCH, title="vs No One",
+            starts_at=timezone.now(),
+            scope=Event.SCOPE_CATEGORY, category=self.cat,
+        )
+        widget = self._widget()
+        payload = resolve_team_widget(widget, self.cat, event_id=orphan.id)
+        # Frontend renders "Sin datos" — empty=True when no rows have data.
+        self.assertTrue(payload["empty"])

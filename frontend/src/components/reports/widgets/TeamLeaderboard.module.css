@@ -120,3 +120,230 @@
   font-size: 0.85rem;
   color: #6b7280;
 }
+
+/* ---------- multi_field mode ---------- */
+
+.legend {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 0.72rem;
+  color: #4b5563;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.multiBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.multiRow {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 12px;
+  align-items: start;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.multiRow:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.multiName {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #111827;
+  padding-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.multiBars {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.multiBarRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+}
+
+.multiBar {
+  height: 18px;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: #ffffff;
+  min-width: 24px;
+}
+
+.multiBarEmpty {
+  font-size: 0.72rem;
+  color: #9ca3af;
+  padding: 0 4px;
+}
+
+.multiBarValue {
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.15);
+}
+
+.multiBarLabel {
+  flex-shrink: 0;
+  color: #6b7280;
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .multiRow {
+    grid-template-columns: 100px 1fr;
+  }
+}
+
+/* ---------- vertical_bars style ---------- */
+
+.vBarsChart {
+  width: 100%;
+  overflow-x: auto;
+  padding-top: 24px;
+}
+
+.vBarsArea {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  /* Bottom padding leaves room for rotated player labels (~70px tall
+     after rotating ~9-char strings at -45deg) so they don't overlap the
+     chart's bottom border or clip out of the widget.
+     Left padding (60px) gives the first column's label room to diagonal
+     past the chart's left edge — without it, "L. Barrera" gets clipped
+     to "barrera". Right padding (20px) is just a safety margin in case
+     a max-width-overflow label ends up wider than expected. */
+  min-height: 240px;
+  height: 240px;
+  position: relative;
+  padding: 0 20px 78px 60px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.vBarCol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
+  min-width: 32px;
+  position: relative;
+}
+
+.vBarValue {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #111827;
+  font-variant-numeric: tabular-nums;
+}
+
+.vBar {
+  width: 28px;
+  background: #0ea5e9;
+  border-radius: 4px 4px 0 0;
+  transition: filter 120ms ease;
+  min-height: 2px;
+}
+
+.vBar:hover {
+  filter: brightness(0.92);
+}
+
+.vBarLabel {
+  /* Each label hangs from just below the bar and angles down-left at
+     -45deg. We position the label's RIGHT edge at the bar's center
+     (right: 50%) and rotate around its top-right corner — so the
+     label diagonals leftward + downward INTO the column's own space,
+     never crossing into the next bar's column to the right. This
+     prevents the right-edge clipping seen with the legacy
+     center-anchored layout. */
+  position: absolute;
+  top: 100%;
+  right: 50%;
+  margin-top: 6px;
+  transform-origin: top right;
+  transform: rotate(-45deg);
+  font-size: 0.7rem;
+  color: #4b5563;
+  white-space: nowrap;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.refLine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 2px dashed #0ea5e9;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.refBand {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.4;
+}
+
+.refBandLabel {
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #4b5563;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.refLabel {
+  position: absolute;
+  right: 4px;
+  top: -16px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: #ffffff;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+}

@@ -3,6 +3,7 @@
 import React from "react";
 
 import type { DashboardWidget } from "@/lib/types";
+import ActivityLog from "./ActivityLog";
 import BodyMapHeatmap from "./BodyMapHeatmap";
 import ComparisonTable from "./ComparisonTable";
 import LineWithSelector from "./LineWithSelector";
@@ -22,6 +23,7 @@ const widgetRegistry: Record<string, React.ComponentType<{ widget: DashboardWidg
   body_map_heatmap: BodyMapHeatmap,
   goal_card: GoalCard,
   player_alerts: PlayerAlerts,
+  activity_log: ActivityLog,
 };
 
 export function renderWidget(widget: DashboardWidget): React.ReactNode {

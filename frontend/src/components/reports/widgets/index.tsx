@@ -5,12 +5,16 @@ import React from "react";
 import type { TeamReportWidget } from "@/lib/types";
 import TeamActiveRecords from "./TeamActiveRecords";
 import TeamActivityCoverage from "./TeamActivityCoverage";
+import TeamActivityLog from "./TeamActivityLog";
 import TeamAlerts from "./TeamAlerts";
+import TeamDailyGroupedBars from "./TeamDailyGroupedBars";
 import TeamDistribution from "./TeamDistribution";
 import TeamGoalProgress from "./TeamGoalProgress";
 import TeamHorizontalComparison from "./TeamHorizontalComparison";
 import TeamLeaderboard from "./TeamLeaderboard";
+import TeamMatchSummary from "./TeamMatchSummary";
 import TeamRosterMatrix from "./TeamRosterMatrix";
+import TeamStackedBars from "./TeamStackedBars";
 import TeamStatusCounts from "./TeamStatusCounts";
 import TeamTrendLine from "./TeamTrendLine";
 import Unsupported from "./Unsupported";
@@ -29,6 +33,10 @@ const teamWidgetRegistry: Record<
   team_leaderboard: TeamLeaderboard,
   team_goal_progress: TeamGoalProgress,
   team_alerts: TeamAlerts,
+  team_stacked_bars: TeamStackedBars,
+  team_match_summary: TeamMatchSummary,
+  team_activity_log: TeamActivityLog,
+  team_daily_grouped_bars: TeamDailyGroupedBars,
 };
 
 export function renderTeamWidget(widget: TeamReportWidget): React.ReactNode {

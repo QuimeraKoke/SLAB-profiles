@@ -832,3 +832,86 @@ def _serialize_alert(alert, meta: dict | None) -> dict[str, Any]:
 
 
 _RESOLVERS[ChartType.PLAYER_ALERTS.value] = _resolve_player_alerts
+
+
+def _resolve_activity_log(
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict[str, Any]:
+    """Last N ExamResults for the player rendered as a chronological
+    list. Each source contributes the fields the timeline should
+    surface (e.g. 'tipo', 'zona', 'comentarios' for Molestias).
+
+    `display_config`:
+        {"limit": 10}  // max entries to return; clamp [3, 50]
+
+    Returns a payload sharing the shape with `team_activity_log` so
+    a single frontend list component renders both. Items carry the
+    raw field values + a `field_label` lookup so the frontend can
+    render arbitrary key/value pairs without knowing the schema.
+    """
+    if not sources:
+        return _empty(widget, ChartType.ACTIVITY_LOG.value) | {
+            "entries": [],
+            "error": (
+                "Configura una Data Source en este widget: elige la "
+                "plantilla y los campos a listar."
+            ),
+        }
+
+    display_config = widget.display_config or {}
+    limit = max(3, min(int(display_config.get("limit") or 10), 50))
+
+    # Collect entries across every data source on the widget. Mostly
+    # single-source (Molestias), but supports merging Molestias + a
+    # related daily-notes template into one chronology if needed.
+    entries: list[dict[str, Any]] = []
+    for source in sources:
+        template = source.template
+        field_keys = source.field_keys or []
+        meta_by_key = {fk: _field_meta(template, fk) for fk in field_keys}
+
+        qs = ExamResult.objects.filter(
+            template__family_id=template.family_id,
+            player_id=player_id,
+        )
+        if date_from is not None:
+            qs = qs.filter(recorded_at__gte=date_from)
+        if date_to is not None:
+            qs = qs.filter(recorded_at__lte=date_to)
+
+        for result in qs.order_by("-recorded_at")[:limit]:
+            fields_payload = []
+            raw = result.result_data or {}
+            for fk in field_keys:
+                meta = meta_by_key[fk]
+                fields_payload.append({
+                    "key": fk,
+                    "label": meta["label"],
+                    "unit": meta["unit"],
+                    "value": raw.get(fk),
+                })
+            entries.append({
+                "id": str(result.id),
+                "recorded_at": result.recorded_at.isoformat(),
+                "template_name": template.name,
+                "fields": fields_payload,
+            })
+
+    # Cross-source ordering + cap.
+    entries.sort(key=lambda e: e["recorded_at"], reverse=True)
+    entries = entries[:limit]
+
+    return {
+        "chart_type": ChartType.ACTIVITY_LOG.value,
+        "title": widget.title,
+        "entries": entries,
+        "limit": limit,
+        "empty": len(entries) == 0,
+    }
+
+
+_RESOLVERS[ChartType.ACTIVITY_LOG.value] = _resolve_activity_log
