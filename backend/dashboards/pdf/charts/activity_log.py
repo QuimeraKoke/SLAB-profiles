@@ -11,7 +11,13 @@ from reportlab.lib.units import cm, mm
 from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
 from . import register
-from ..scaffold import COLOR_MUTED, COLOR_PRIMARY, COLOR_RULE, styles
+from ..scaffold import (
+    COLOR_MUTED,
+    COLOR_PRIMARY,
+    COLOR_RULE,
+    styles,
+    wrap_header_cells,
+)
 
 
 def _render(widget, payload: dict[str, Any]) -> list:
@@ -26,7 +32,7 @@ def _render(widget, payload: dict[str, Any]) -> list:
             Spacer(1, 4 * mm),
         ]
 
-    rows = [["Fecha", "Plantilla", "Detalle"]]
+    rows = [wrap_header_cells(["Fecha", "Plantilla", "Detalle"], align="left")]
     for e in entries:
         rows.append([
             _fmt_iso(e.get("recorded_at")),
@@ -37,15 +43,15 @@ def _render(widget, payload: dict[str, Any]) -> list:
     tbl = Table(rows, colWidths=[2.6 * cm, 3.5 * cm, 11.5 * cm], hAlign="LEFT")
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), COLOR_PRIMARY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
         ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
         ("TEXTCOLOR", (0, 1), (0, -1), COLOR_MUTED),
         ("TEXTCOLOR", (1, 1), (-1, -1), COLOR_PRIMARY),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, 0), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+        ("TOPPADDING", (0, 1), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
         ("LINEBELOW", (0, 0), (-1, -2), 0.3, COLOR_RULE),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))

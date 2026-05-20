@@ -67,6 +67,48 @@
   padding: 24px;
 }
 
+.modeTabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: -1px;
+  flex-wrap: wrap;
+}
+
+.modeTab {
+  background-color: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.modeTab:hover {
+  background-color: #f3f4f6;
+  color: #111827;
+}
+
+.modeTabActive {
+  background-color: #ffffff;
+  color: #5b21b6;
+  border-color: #e5e7eb;
+  position: relative;
+}
+
+.modeTabActive::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background-color: #ffffff;
+}
+
 .loading {
   padding: 16px;
   color: #6b7280;

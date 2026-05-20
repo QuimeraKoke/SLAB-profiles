@@ -169,7 +169,9 @@ def render_team_pdf(
                     _render_widget_row(row_widgets, payloads, body_styles)
                 )
             sections.append({
-                "title": section.title or "Sección",
+                # Empty section titles render headerless in scaffold —
+                # widgets already carry their own titles.
+                "title": section.title or "",
                 "flowables": section_flowables,
             })
     else:

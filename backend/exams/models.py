@@ -974,6 +974,13 @@ class ExamResult(models.Model):
             "PROTECT prevents accidental episode deletion while results exist."
         ),
     )
+    legacy_raw = models.JSONField(
+        default=dict, blank=True,
+        help_text=(
+            "Source row(s) from a legacy system this result was migrated from. "
+            "Populated by `manage.py migrate_legacy_data`; empty for native rows."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1058,6 +1065,10 @@ class Episode(models.Model):
         help_text="Set when the episode transitions to 'closed' (= recorded_at of the closing result).",
     )
     metadata = models.JSONField(default=dict, blank=True)
+    legacy_raw = models.JSONField(
+        default=dict, blank=True,
+        help_text="Source row(s) from a legacy system this episode was migrated from.",
+    )
     created_by = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
         related_name="created_episodes",

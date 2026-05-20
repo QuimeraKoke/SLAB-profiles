@@ -206,10 +206,15 @@ def cover_page(meta: dict[str, Any], pagesize: tuple[float, float]) -> list:
 
 
 def section_block(section: dict[str, Any]) -> list:
-    """One section = a bar-style title + flowables. The section ends
-    with a PageBreak so each major section opens on a fresh page —
-    consistent rhythm + room for future per-section narrative."""
-    elements: list = section_header(section["title"])
+    """One section = optional bar-style title + flowables. The section
+    ends with a PageBreak so each major section opens on a fresh page.
+
+    Sections with an empty/missing title render with no header — the
+    widgets themselves carry titles, so a placeholder header like
+    "Sección" was just visual noise.
+    """
+    title = (section.get("title") or "").strip()
+    elements: list = section_header(title) if title else [Spacer(1, 4 * mm)]
     elements.extend(section.get("flowables", []))
     elements.append(PageBreak())
     return elements
@@ -280,6 +285,36 @@ def _styles() -> dict[str, ParagraphStyle]:
 def styles() -> dict[str, ParagraphStyle]:
     """Public accessor for orchestrators that need paragraph styles."""
     return _styles()
+
+
+def wrap_header_cells(
+    labels: list[str],
+    *,
+    align: str = "center",
+    font_size: float = 8.0,
+) -> list[Paragraph]:
+    """Wrap each header label in a Paragraph so long labels word-wrap
+    inside the column instead of overflowing the cell or getting
+    truncated with an ellipsis. Returns a list of reportlab Paragraph
+    objects suitable for use as a Table header row.
+
+    `align` is one of "left" / "center" / "right" (case-insensitive).
+    `font_size` lets a caller pick a tighter size for narrow columns;
+    `leading` is auto-set to `font_size + 1.5` so two-line headers
+    stack cleanly.
+    """
+    alignment = {"left": TA_LEFT, "center": TA_CENTER, "right": 2}.get(
+        align.lower(), TA_CENTER,
+    )
+    style = ParagraphStyle(
+        "header_white",
+        fontName="Helvetica-Bold",
+        fontSize=font_size,
+        textColor=colors.white,
+        alignment=alignment,
+        leading=font_size + 1.5,
+    )
+    return [Paragraph(str(label), style) for label in labels]
 
 
 # --- Helpers consumed by the team / player orchestrators -----------------

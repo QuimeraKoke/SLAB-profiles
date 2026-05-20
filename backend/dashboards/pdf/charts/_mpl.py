@@ -84,33 +84,43 @@ def figure_to_flowable(
     Width-selection priority (highest first):
     1. Explicit `width_cm` argument — but clamped to the active
        widget-content-width context when the chart would overflow its
-       cell (e.g. a "24cm wide" chart placed into a half-width row).
-       Height is scaled proportionally on clamp so the aspect ratio
-       is preserved.
+       cell.
     2. Active widget-content-width context (set by the orchestrator
        when packing widgets into multi-column rows).
     3. `DEFAULT_LANDSCAPE_WIDTH_CM` fallback.
 
-    Default height is the 2.2:1 width/height aspect ratio. Pass
-    `height_cm` explicitly when the chart benefits from a different
-    one — e.g. tall horizontal bar charts that should fill the page
-    top-to-bottom.
+    Height defaults to whatever preserves the matplotlib figsize
+    aspect ratio so we never stretch the rendered PNG. (The previous
+    default of 2.2:1 worked for landscape full-width charts but
+    horizontally stretched anything narrower, producing pixelated
+    text and squashed-looking axes.) Pass `height_cm` explicitly only
+    when the chart needs a non-natural aspect.
     """
+    # Pull figsize BEFORE we close the figure inside `savefig`.
+    fig_w_in, fig_h_in = fig.get_size_inches()
+    natural_aspect = (fig_h_in / fig_w_in) if fig_w_in > 0 else (1.0 / 2.2)
+
     ctx_width = current_widget_width_cm()
     if width_cm is None:
         final_width = ctx_width if ctx_width is not None else DEFAULT_LANDSCAPE_WIDTH_CM
-        final_height = height_cm if height_cm is not None else (final_width / 2.2)
+        final_height = height_cm if height_cm is not None else (final_width * natural_aspect)
     else:
         if ctx_width is not None and ctx_width < width_cm:
             scale = ctx_width / width_cm
             final_width = ctx_width
-            final_height = (height_cm * scale) if height_cm is not None else (final_width / 2.2)
+            final_height = (
+                (height_cm * scale) if height_cm is not None
+                else (final_width * natural_aspect)
+            )
         else:
             final_width = width_cm
-            final_height = height_cm if height_cm is not None else (final_width / 2.2)
+            final_height = height_cm if height_cm is not None else (final_width * natural_aspect)
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=140, bbox_inches="tight")
+    # Higher DPI than the previous 140 to cut visible aliasing on the
+    # narrower side-by-side charts; bbox_inches="tight" trims the
+    # outer whitespace so the per-axis labels sit close to the frame.
+    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
     plt.close(fig)
     buf.seek(0)
     img = Image(buf, width=final_width * cm, height=final_height * cm)
@@ -122,7 +132,7 @@ def figsize_for_current_width(
     height_in: float = 4.5,
     *,
     default_cm: float = DEFAULT_LANDSCAPE_WIDTH_CM,
-    min_width_in: float = 4.5,
+    min_width_in: float = 3.5,
 ) -> tuple[float, float]:
     """Matplotlib figsize tuned to the active widget cell width.
 

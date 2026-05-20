@@ -11,7 +11,15 @@ from reportlab.lib.units import cm, mm
 from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
 from . import register
-from ..scaffold import COLOR_CRIT, COLOR_MUTED, COLOR_PRIMARY, COLOR_RULE, COLOR_WARN, styles
+from ..scaffold import (
+    COLOR_CRIT,
+    COLOR_MUTED,
+    COLOR_PRIMARY,
+    COLOR_RULE,
+    COLOR_WARN,
+    styles,
+    wrap_header_cells,
+)
 
 
 _SEVERITY_LABELS = {"critical": "Crítica", "warning": "Adv.", "info": "Info"}
@@ -40,17 +48,19 @@ def _render(widget, payload: dict[str, Any]) -> list:
             -datetime.fromisoformat(a["fired_at"]).timestamp() if a.get("fired_at") else 0,
         ),
     )
-    rows = [["Severidad", "Plantilla", "Mensaje", "Fecha"]]
+    rows = [wrap_header_cells(
+        ["Severidad", "Plantilla", "Mensaje", "Fecha"], align="left",
+    )]
     style_cmds = [
         ("BACKGROUND", (0, 0), (-1, 0), COLOR_PRIMARY),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", 9),
         ("FONT", (0, 1), (-1, -1), "Helvetica", 9),
         ("TEXTCOLOR", (1, 1), (-1, -1), COLOR_PRIMARY),
         ("LEFTPADDING", (0, 0), (-1, -1), 8),
         ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, 0), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+        ("TOPPADDING", (0, 1), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
         ("LINEBELOW", (0, 0), (-1, -2), 0.3, COLOR_RULE),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]

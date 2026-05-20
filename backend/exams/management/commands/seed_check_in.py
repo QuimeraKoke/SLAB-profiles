@@ -75,6 +75,20 @@ SCHEMA: dict = {
                 {"label": "Bueno",     "min": 19, "color": "#16a34a"},
             ],
         },
+        # Extra optional fields (from the legacy wellness table). Not part
+        # of the 5-dimension Hooper-Mackinnon questionnaire but useful
+        # context when the player flags a sore zone or weighs in.
+        {
+            "key": "zona_dolor", "label": "Zona de dolor",
+            "type": "text", "placeholder": "Ej: 'isquiotibial izquierdo'",
+            "group": "Contexto",
+        },
+        {
+            "key": "peso", "label": "Peso (auto-reporte)",
+            "type": "number", "unit": "kg",
+            "group": "Contexto",
+            "help_text": "Peso reportado por el jugador en el check-in. No reemplaza la pesa oficial del staff.",
+        },
     ],
 }
 

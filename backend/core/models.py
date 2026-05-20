@@ -197,16 +197,56 @@ class Player(models.Model):
         blank=True,
     )
     first_name = models.CharField(max_length=80)
+    middle_name = models.CharField(
+        max_length=80, blank=True,
+        help_text="Segundo nombre. Optional — Spanish full names often use both.",
+    )
     last_name = models.CharField(max_length=80)
+    second_last_name = models.CharField(
+        max_length=80, blank=True,
+        help_text="Segundo apellido. Optional — common in Spanish naming convention.",
+    )
     date_of_birth = models.DateField(null=True, blank=True)
     sex = models.CharField(
         max_length=1, choices=SEX_CHOICES, blank=True,
         help_text="Used by clinical reference formulas (e.g. anthropometric calculations).",
     )
+    national_id = models.CharField(
+        max_length=40, blank=True, db_index=True,
+        help_text="National ID (e.g. RUT in Chile, DNI in Argentina). Free-form to support any format.",
+    )
     nationality = models.CharField(
         max_length=80,
         blank=True,
         help_text="Free-form, e.g. 'Chile'. We can promote this to an FK later.",
+    )
+    PREFERRED_FOOT_RIGHT = "right"
+    PREFERRED_FOOT_LEFT = "left"
+    PREFERRED_FOOT_BOTH = "both"
+    PREFERRED_FOOT_CHOICES = [
+        (PREFERRED_FOOT_RIGHT, "Derecho"),
+        (PREFERRED_FOOT_LEFT, "Izquierdo"),
+        (PREFERRED_FOOT_BOTH, "Ambos"),
+    ]
+    preferred_foot = models.CharField(
+        max_length=8, choices=PREFERRED_FOOT_CHOICES, blank=True,
+        help_text="Pie hábil. Used for scouting / tactical context.",
+    )
+    secondary_position = models.ForeignKey(
+        Position,
+        on_delete=models.SET_NULL,
+        related_name="players_secondary",
+        null=True,
+        blank=True,
+        help_text="A second position the player can fill, in addition to `position`.",
+    )
+    photo_url = models.URLField(
+        max_length=500, blank=True,
+        help_text=(
+            "Public URL of the player's headshot. Useful when the photo lives in "
+            "an external CDN / Google Drive; for SLAB-hosted photos the standard "
+            "ImageField on the admin should be used (future work)."
+        ),
     )
     # Cached "latest known" anthropometric values. Updated automatically when
     # an exam template field marks itself as `writes_to_player_field` (see
@@ -226,6 +266,15 @@ class Player(models.Model):
         help_text=(
             "Cached availability status — recomputed from open episodes on "
             "episodic exam templates. Worst stage across all open episodes wins."
+        ),
+    )
+    legacy_raw = models.JSONField(
+        default=dict, blank=True,
+        help_text=(
+            "Verbatim copy of the source row(s) from a legacy system this player "
+            "was migrated from. Populated by `manage.py migrate_legacy_data`; "
+            "should be empty for players created directly in SLAB. Lets us re-run "
+            "a migration with a refined mapping without re-querying the source."
         ),
     )
     created_at = models.DateTimeField(auto_now_add=True)
@@ -269,10 +318,12 @@ class PlayerAlias(models.Model):
     SOURCE_MANUAL = "manual"
     SOURCE_CATAPULT = "catapult"
     SOURCE_WIMU = "wimu"
+    SOURCE_WYSCOUT = "wyscout"
     SOURCE_CHOICES = [
         (SOURCE_MANUAL, "Manual"),
         (SOURCE_CATAPULT, "Catapult"),
         (SOURCE_WIMU, "Wimu"),
+        (SOURCE_WYSCOUT, "Wyscout"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -408,6 +459,10 @@ class Contract(models.Model):
     # Provenance
     agent_name = models.CharField(max_length=200, blank=True)
     notes = models.TextField(blank=True)
+    legacy_raw = models.JSONField(
+        default=dict, blank=True,
+        help_text="Source row(s) from a legacy system this contract was migrated from.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

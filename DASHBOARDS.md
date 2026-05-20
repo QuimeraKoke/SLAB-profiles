@@ -117,6 +117,8 @@ whole thing.
 
 ## 3. Reference — built-in chart types
 
+### Per-player widgets (DepartmentLayout)
+
 | `chart_type`         | Best for                                          | Required data shape                                              |
 | -------------------- | ------------------------------------------------- | ---------------------------------------------------------------- |
 | `comparison_table`   | Last N takes side-by-side, with deltas            | 1 source · `last_n` · multiple `field_keys` (one row per field)  |
@@ -125,6 +127,28 @@ whole thing.
 | `donut_per_result`   | Body-composition fractions, one donut per take    | 1 source · `last_n` · `field_keys` that sum to a meaningful whole |
 | `grouped_bar`        | Compare a few values across recent takes          | 1 source · `last_n` · 2–5 `field_keys`                           |
 | `body_map_heatmap`   | Counts per body region (e.g. injury frequency)    | 1 source · `all` (or `last_n`) · **exactly 1** categorical `field_key` whose `option_regions` map each option to a body region (e.g. `{"Muslo der.": "right_thigh"}`). |
+| `goal_card`          | Per-player active-goal cards (target vs current)  | 0 sources (department-scoped) or 1 source pinning a template     |
+| `player_alerts`      | Active alerts for this player, filtered to the widget's department | 0 sources (resolver reads `Alert` table directly)               |
+| `activity_log`       | Timeline of recent ExamResults (e.g. Molestias daily log) | 1+ sources · `last_n` · field_keys that should appear in each row card |
+
+### Team widgets (TeamReportLayout)
+
+| `chart_type`                     | Best for                                                         | Notes                                                                           |
+| -------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `team_horizontal_comparison`     | Player ranking with N recent readings per bar (default) or N fields per row (`display_config.mode: "multi_field"`) | `group_by: "position"` aggregates monthly per position group instead of per player |
+| `team_roster_matrix`             | Roster × metrics latest-value matrix with optional reference-band coloring | `coloring: "vs_team_range"` or `"none"`; `variation: "absolute"` / `"percent"` / `"off"` |
+| `team_status_counts`             | Squad availability snapshot (episodic templates)                 | Reads `template.episode_config.open_stages`                                     |
+| `team_trend_line`                | Team-mean per metric over time (week/month buckets)              | `group_by: "position"` splits into one line per position group                   |
+| `team_distribution`              | Histogram of latest values across the roster                     | Auto-uses field's `reference_ranges` to color bins + emit a band-counts chip row |
+| `team_active_records`            | Current-state list keyed on date-range fields (e.g. active meds) | `start_field` / `end_field` configurable                                        |
+| `team_activity_coverage`         | "Who's overdue for evaluation?" matrix (days since last result)  | `green_max` / `yellow_max` thresholds                                           |
+| `team_leaderboard`               | Top-N by a metric — list style OR `style: "vertical_bars"` with full roster | Supports `reference_lines[]`, `reference_bands[]`, `show_team_avg_line`, `y_min` / `y_max` zoom, `decimals`, `mode: "multi_field"` for grouped vertical bars |
+| `team_goal_progress`             | Roster × goals matrix (achieved / in-progress / missed)          | Pulls Goals from the layout's department                                        |
+| `team_alerts`                    | Players ranked by active-alert count (department-scoped)         | Each card embeds `<PlayerAlertsList>` with the alerts                            |
+| `team_stacked_bars`              | Composition stacked horizontal bars per player (e.g. Acc+Dec+Acc&Dec) | Sorted by total descending; `field_colors` map override                          |
+| `team_match_summary`             | Match-aggregate stat-card strip (SUM/AVG/STD/MIN/MAX per field)  | `per_player_aggregator` controls per-player collapse before team stats          |
+| `team_activity_log`              | Team-wide timeline of recent ExamResults (newest first)          | Multi-source supported; each row shows player name + field values               |
+| `team_daily_grouped_bars`        | Daily team-mean grouped bars across N metrics + optional total line overlay | `y_min`/`y_max` for the bars axis, `total_y_min`/`total_y_max` for the line axis |
 
 ### Reserved (configure now, render later)
 

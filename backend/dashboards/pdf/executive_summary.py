@@ -107,13 +107,19 @@ def team_executive_summary(
     crit = sum(1 for a in department_alerts if a.severity == "critical")
     warn = sum(1 for a in department_alerts if a.severity == "warning")
 
-    elements.append(_kpi_row([
-        ("Plantel",       str(len(roster)),   None),
-        ("Disponibles",   str(available),     COLOR_OK if available == len(roster) else COLOR_PRIMARY),
-        ("No disp.",      str(not_available), COLOR_CRIT if not_available > 0 else COLOR_MUTED),
-        ("Críticas",      str(crit),          COLOR_CRIT if crit > 0 else COLOR_OK),
-        ("Advertencias",  str(warn),          COLOR_WARN if warn > 0 else COLOR_MUTED),
-    ]))
+    elements.append(_kpi_row(
+        [
+            ("Plantel",       str(len(roster)),   None),
+            ("Disponibles",   str(available),     COLOR_OK if available == len(roster) else COLOR_PRIMARY),
+            ("No disp.",      str(not_available), COLOR_CRIT if not_available > 0 else COLOR_MUTED),
+            ("Críticas",      str(crit),          COLOR_CRIT if crit > 0 else COLOR_OK),
+            ("Advertencias",  str(warn),          COLOR_WARN if warn > 0 else COLOR_MUTED),
+        ],
+        # Landscape A4 content frame — matches team_report
+        # _LANDSCAPE_CONTENT_WIDTH_CM minus a small inset so the strip
+        # never visually butts against the page edges.
+        total_width_cm=24.0,
+    ))
     elements.append(Spacer(1, 6 * mm))
 
     # Roster by status — 4 columns (Disponible / Lesionado / Recuperación /
@@ -385,13 +391,18 @@ def player_executive_summary(
         player.position.name if player.position_id else "—"
     )
 
-    elements.append(_kpi_row([
-        ("Estado",       status_label,   status_color),
-        ("Posición",     position_label, COLOR_PRIMARY),
-        ("Alertas",      str(total),     COLOR_PRIMARY if total > 0 else COLOR_OK),
-        ("Críticas",     str(crit),      COLOR_CRIT if crit > 0 else COLOR_OK),
-        ("Advertencias", str(warn),      COLOR_WARN if warn > 0 else COLOR_MUTED),
-    ]))
+    elements.append(_kpi_row(
+        [
+            ("Estado",       status_label,   status_color),
+            ("Posición",     position_label, COLOR_PRIMARY),
+            ("Alertas",      str(total),     COLOR_PRIMARY if total > 0 else COLOR_OK),
+            ("Críticas",     str(crit),      COLOR_CRIT if crit > 0 else COLOR_OK),
+            ("Advertencias", str(warn),      COLOR_WARN if warn > 0 else COLOR_MUTED),
+        ],
+        # Portrait A4 content frame — must match
+        # player_report._PORTRAIT_CONTENT_WIDTH_CM.
+        total_width_cm=17.5,
+    ))
     elements.append(Spacer(1, 5 * mm))
 
     if department_alerts:
@@ -449,23 +460,33 @@ def _alerts_list_for_player(alerts, styles) -> Any:
 # --- Shared: KPI strip ----------------------------------------------------
 
 
-def _kpi_row(kpis: list[tuple[str, str, Any | None]]) -> Any:
+def _kpi_row(
+    kpis: list[tuple[str, str, Any | None]],
+    *,
+    total_width_cm: float = 24.0,
+) -> Any:
     """Render a horizontal strip of KPI cards. Each tuple is
     (label, value, optional color override for the value).
 
+    `total_width_cm` must match the page's content frame. The team
+    report is landscape (~24cm usable for KPIs after margins); the
+    player report is portrait (~17.5cm). When the wrong width is
+    passed, the strip silently overflows the left margin and the
+    first column gets clipped (Recuperación → "uperación").
+
     Sized tight on purpose: the status-columns table below uses
     most of the remaining vertical space and we want 15+ rows to fit
-    on the same page. Reducing the KPI value font from 22pt → 17pt
-    and the row heights frees ~1cm of vertical room.
+    on the same page. Reducing the KPI value font and the row heights
+    frees ~1cm of vertical room.
     """
     styles = _styles()
-    # Compact KPI value style — overrides the default `kpi_value` (22pt)
-    # so the exec-summary page stays single-page even with 15+ players
-    # per status column.
+    # Smaller value font on narrow pages so the longest label fits the
+    # column. Tuned so "Recuperación" (12 glyphs at 12pt) fits ~3.5cm.
+    value_fontsize = 17 if total_width_cm >= 22 else 12
     compact_value = ParagraphStyle(
         "kpi_value_compact", parent=styles["body"],
-        fontName="Helvetica-Bold", fontSize=17, alignment=TA_CENTER,
-        textColor=COLOR_PRIMARY, leading=20,
+        fontName="Helvetica-Bold", fontSize=value_fontsize, alignment=TA_CENTER,
+        textColor=COLOR_PRIMARY, leading=value_fontsize + 3,
     )
     cells_top: list = []
     cells_bot: list = []
@@ -476,13 +497,15 @@ def _kpi_row(kpis: list[tuple[str, str, Any | None]]) -> Any:
         if color_override is not None:
             style_cmds.append(("TEXTCOLOR", (i, 1), (i, 1), color_override))
 
-    width_per = (28 * cm - 4 * cm) / max(1, len(kpis))  # 28cm ~ landscape A4 content width
-    # Explicit rowHeights — tight to leave room for 15-row status table.
+    width_per = (total_width_cm * cm) / max(1, len(kpis))
+    # Explicit rowHeights — tight to leave room for the status table on
+    # the team page; the player page has no status table so a little
+    # extra room is fine.
     tbl = Table(
         [cells_top, cells_bot],
         colWidths=[width_per] * len(kpis),
-        rowHeights=[0.55 * cm, 0.85 * cm],
-        hAlign="CENTER",
+        rowHeights=[0.55 * cm, 0.95 * cm],
+        hAlign="LEFT",
     )
     style_cmds.extend([
         ("BOX", (0, 0), (-1, -1), 0.5, COLOR_RULE),

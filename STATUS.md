@@ -1289,6 +1289,973 @@ hit `?template_slug=lesiones` and pick `templates.find((t) => t.slug
 templates (if any) surface only through their department's
 `DepartmentCard` like normal exam templates.
 
+### 3.27 Cross-cutting filters on team reports (date range + player subset)
+
+**`GET /api/reports/{department_slug}`** now accepts three optional
+query params on top of the existing `category_id` / `position_id`:
+
+- `date_from` / `date_to` — ISO-8601 strings bounding
+  `ExamResult.recorded_at` BEFORE each widget's aggregation runs. `LATEST`
+  / `LAST_N` / `ALL` semantics stay the same — they just operate on the
+  bounded queryset.
+- `player_ids` — comma-separated UUIDs that narrow the roster. Chosen
+  players still appear on roster-shaped widgets (matrix, status counts)
+  even when they have no data in the window — empty cells are by
+  design, since the selection itself is the user's frame of reference.
+
+**Cap at 90 days** is enforced at the API layer via the new
+module-level `_parse_date_window()` helper in `backend/api/routers.py`.
+The frontend pins inverted/over-wide ranges automatically, but the
+server re-enforces independently so a bypassed UI can't request years
+of data.
+
+**Per-resolver policy on date filtering** in `team_aggregation.py`:
+- `horizontal_comparison`, `roster_matrix`, `trend_line`, `distribution`
+  — apply the bounds.
+- `status_counts`, `active_records` — accept the params for signature
+  parity but **do not apply** them. These are "current state" widgets:
+  who's available *today*, what prescriptions are active *now*. Cutting
+  by `recorded_at` would hide injuries diagnosed before the window or
+  medications whose row was created earlier.
+
+**Frontend** (`/reportes/[deptSlug]`):
+- `components/common/DateRangeControl.tsx` — extracted, reusable
+  control with `default` / `compact` variants. Presets: 30 / 60 / 90
+  days + Personalizado. Custom-range UI enforces the 90-day cap by
+  pinning the opposite bound when widened past it.
+- `components/reports/ReportFilters.tsx` — adds a player multi-select
+  next to the existing position dropdown. Includes search, "Seleccionar
+  todos", "Limpiar", and click-outside dismiss.
+- `TeamDistribution` widget renders a "Con N jugadores — referencia
+  limitada" badge when the resolved roster has fewer than 5 players
+  (threshold lives in the component as `LIMITED_REFERENCE_THRESHOLD`).
+  Backend includes `roster_size` in the distribution payload so the
+  frontend can audit the rule.
+
+### 3.28 Excel export — client-side, what's-on-screen
+
+Both `/reportes/[deptSlug]` and `/perfil/[id]` (per-department tab)
+have a "📥 Descargar Excel" button that builds a workbook from the
+widgets currently rendered. Filters already applied server-side mean
+the payload is the source of truth — the exporter transcribes it.
+
+**Library**: `xlsx@^0.18.5` (SheetJS, community), loaded via dynamic
+`await import("xlsx")` on click so the ~500 KB module stays out of the
+initial bundle.
+
+**Shared primitives** in `frontend/src/lib/export/shared.ts`:
+`uniqueSheetName` (Excel's 31-char + forbidden-char rules), `formatScalar`
+(numbers stay numeric so downstream formulas keep working; booleans →
+"Sí"/"No"; objects → JSON), `formatDateTime`, `formatDateOnly`, and
+`buildFilename(segments[], date)` with diacritics-stripping slug
+helper.
+
+**Per-flow modules**:
+- `lib/export/teamReport.ts` — 6 serializers (one per team widget
+  chart type). First sheet is "Resumen" with filter snapshot
+  (departamento, categoría, posición, jugadores seleccionados, rango).
+  Filename: `reporte-{deptSlug}-YYYY-MM-DD.xlsx`.
+- `lib/export/playerReport.ts` — 7 serializers (one per per-player
+  chart type). First sheet captures player + department + window.
+  Filename: `perfil-{nombre-jugador}-{deptSlug}-YYYY-MM-DD.xlsx`.
+
+**Format choices per widget type**:
+- Tables (`roster_matrix`, `comparison_table`, `active_records`): wide.
+- Charts (`line_with_selector`, `multi_line`, `cross_exam_line`,
+  `horizontal_comparison`): tidy (long format — Métrica, Unidad, Fecha,
+  Valor) so the user can pivot in Excel.
+- `status_counts`: two sections — resumen por estado + detalle de
+  jugadores.
+- `distribution`: tres secciones — stats, bins, detalle por jugador.
+- `body_map_heatmap`: conteo por región + breakdown por etapa cuando
+  hay episodios.
+
+### 3.29 Per-player date filter (cross-tab)
+
+`/perfil/[id]` now has a page-level date-range control rendered next
+to the title of every department tab. State lives at the page level
+(`perfil/[id]/page.tsx`) so switching between Médico / Físico /
+Nutricional preserves the window — no reset on tab change.
+
+**Per-player resolver chain** in `dashboards/aggregation.py`:
+`_fetch_results()` accepts `date_from` / `date_to` and applies them
+before the source's `aggregation` rule runs. All 7 resolvers
+(`comparison_table`, `line_with_selector`, `donut_per_result`,
+`grouped_bar`, `multi_line`, `cross_exam_line`, `body_map_heatmap`)
+thread the bounds through their signature. `body_map_heatmap` accepts
+the params but **does not apply** them — a body map of injuries "in
+the last 30 days" would hide a recovering ACL diagnosed two months
+ago. The dispatcher `resolve_widget()` propagates the kwargs.
+
+**Important deliberate exclusions on the frontend** in
+`ProfileDepartment.tsx`: only the layout-widget fetch
+(`/players/{id}/views?date_from=…&date_to=…`) carries the filter. The
+"+ Agregar examen" template picker and the legacy per-template
+history cards intentionally keep showing every template + full
+timeline — narrowing those by date would confuse the carga workflow.
+
+### 3.30 Auth UI polish
+
+**Logout button** in the sidebar (`components/layout/Sidebar.tsx`)
+in a new `.bottomSection` under the nav menu. Uses the existing
+`AuthContext.logout()`. Hover state uses a soft red (`rgba(220, 38,
+38, 0.12)` + `#fca5a5`) to signal destructive intent without shouting.
+
+**Sidebar profile block** reorganized: line 1 shows the user's real
+name via the new `displayName()` helper, falling back through
+`"First Last"` → `username` → email local-part. Line 2 shows the full
+email. Both lines use `text-overflow: ellipsis` + `title="…"` tooltips
+to handle long emails without breaking the layout. Required surfacing
+`first_name` / `last_name` on the `UserOut` schema (default `""` for
+older accounts where the admin hasn't completed those fields).
+
+### 3.31 Template versioning (`ExamTemplate.family_id` + fork action)
+
+The PRD-mandated "what happens when a locked template's schema needs
+to change" workflow. Locked templates can no longer have their
+`config_schema` mutated in-place; instead the admin forks a new
+version that becomes the active write target, while old `ExamResult`
+rows stay pointing at the prior version.
+
+**Model**: three fields on `ExamTemplate`:
+- `family_id: UUIDField` — shared by every version of the same
+  template. Backfilled per-row (one family per existing template) in
+  migration `0018_examtemplate_versioning.py`.
+- `version: PositiveIntegerField` — already existed, now meaningful.
+- `is_active_version: BooleanField` — exactly one True per family,
+  enforced by a partial-unique constraint
+  (`exam_tpl_one_active_per_family`). Paired with
+  `(family_id, version)` uniqueness so concurrent fork attempts can't
+  duplicate.
+
+**Fork flow** — `ExamTemplate.fork_new_version()`:
+1. Clones the row into v+1 inside a transaction. The clone starts
+   `is_locked=False` so the admin can edit schema.
+2. Bulk-creates copies of all `TemplateField` rows.
+3. Copies the `applicable_categories` M2M.
+4. **Reassigns every `WidgetDataSource` + `TeamReportWidgetDataSource`**
+   from the old → new version so dashboards keep working without
+   manual relinking.
+5. Atomically flips the active flag (old → False, new → True).
+
+Triggered from the Django Admin via the `fork_new_version_action`
+listed under "Acciones" on the ExamTemplate changelist. Single-select
+is the common case; multi-select works but is unusual. Forking from a
+non-active version is rejected to prevent ambiguous chains.
+
+**Cross-version reads (option a + c)**: dashboards fan out across the
+whole family via `template__family_id=…` filters in both per-player
+(`dashboards/aggregation.py::_fetch_results`) and team
+(`dashboards/team_aggregation.py`, all 6 resolvers) aggregations. Old
+results surface automatically; field keys removed/renamed in the new
+version silently drop because `result_data.get(...)` returns None.
+At save time of a non-v1 version, `ExamTemplateAdmin.save_related()`
+diffs against v(N−1) and surfaces a `messages.WARNING` listing
+specifically which keys were removed.
+
+**Active-version routing for writes**:
+- `GET /api/players/{id}/templates` (registrar picker) filters
+  `is_active_version=True` — historical versions don't appear as
+  options for new entries.
+- `exams/calculations.py::_build_template_namespaces` (cross-template
+  formula references) resolves slugs against the active version, then
+  fans out by `family_id` for the result lookup.
+- `POST /api/results` is unaffected because the registrar already
+  posts with the explicit `template_id` from the picker.
+- New classmethod `ExamTemplate.active_for_slug(slug, …)` available
+  for seed scripts / future write paths that need slug-based routing.
+
+**Slug uniqueness** stays club-wide but now only conflicts between
+**active versions of different families** — a v2 can keep the slug
+`pentacompartimental` because it shares the family with the now-inactive
+v1.
+
+**Migration**: `0018_examtemplate_versioning.py` adds the fields,
+backfills each existing template into its own one-row family
+(`family_id=uuid4(), is_active_version=True`), then layers on the
+constraints + the `(slug, is_active_version)` index. Verified against
+the demo DB: 14/14 templates backfilled cleanly; full test suite (145
+tests) green.
+
+**Operational notes**:
+- Admins should consciously fork *before* making breaking changes. A
+  forked v2 starts identical to v1 — make schema edits there.
+- Old versions are NOT deleted. Their `ExamResult` rows are the
+  source of truth for historical data; deleting an old version is
+  blocked by `on_delete=PROTECT` on `ExamResult.template`.
+- Deferred to Slice 3 (not built): `field_remap` JSON config per
+  version so renamed fields can resurrect historical data
+  (currently silently drops, with the schema-drift warning as the
+  user-visible signal).
+
+### 3.32 Path operativo polish (Path 2)
+
+Four small/medium improvements bundled into one delivery aimed at
+making the demo more usable and visually informative for the staff.
+
+**3.32.1 `first_name` / `last_name` required at User add**
+(`backend/core/admin.py`). Subclassed `UserAdmin` with a custom
+`add_form` (`RequiredFieldsUserCreationForm`) so the three fields
+(`first_name`, `last_name`, `email`) are required at creation time
+from the admin UI. Model stays `blank=True` so fixtures /
+`createsuperuser` / programmatic creation still work.
+
+**3.32.2 Direction-of-good colors in `team_roster_matrix`**.
+`TemplateField` gains a `direction_of_good` field (`up` / `down` /
+`neutral`, default `neutral` — migration `0019_templatefield_direction_of_good`).
+Backend resolvers expose the value via `_field_meta`; the
+`team_roster_matrix` payload passes it on every column. Frontend
+`TeamRosterMatrix.tsx` upgrades `computeDelta` to derive a `judgment`
+field (`good` / `bad` / `neutral`) and a new `deltaClass()` helper
+picks the right CSS class. Neutral fields keep the legacy blue/orange
+palette so nothing breaks for existing layouts. Both
+`rebuild_template_fields()` and `fork_new_version()` copy the new
+field so seed/restore/clone flows stay consistent.
+
+**3.32.3 New `team_activity_coverage` widget** — operational
+"who's overdue for evaluation?" matrix:
+- Rows = players, columns = templates configured on the widget.
+- Each cell shows days-since-last-result with semaphore color: green
+  ≤ green_max, yellow up to yellow_max, red beyond, gray for "never
+  evaluated". Thresholds configurable via `display_config.green_max`
+  / `yellow_max`, defaults 30 / 60.
+- Single MAX-aggregated query across `(player_id, family_id)` keeps
+  performance predictable at roster scale.
+- Fan-out by `family_id` — history from older template versions
+  counts toward "last result".
+- `date_from` / `date_to` accepted but **not applied** (this widget
+  is inherently "all-time, today is the reference"); applying the
+  window would hide players whose only result fell outside it.
+- Frontend renderer: sortable, hover tooltip with exact date, "never"
+  always sorts to the bottom regardless of direction.
+- Excel serializer + Spanish header / legend included.
+
+**3.32.4 New `team_leaderboard` widget** — top-N podium by a single
+metric:
+- `display_config`: `aggregator` (`sum` / `avg` / `max` / `latest`,
+  default `sum`), `limit` (default 5, clamp [3, 20]), `order` (`desc`
+  default / `asc`).
+- Frontend renders a ranked list with gold / silver / bronze tints
+  for ranks 1-3 + per-row sample count.
+- Excel serializer with metric label + aggregator + ranking.
+
+Both new widgets registered on `TeamReportWidget.chart_type` choices
+(migrations `0010_alter_teamreportwidget_chart_type_and_more.py` and
+`0011_alter_teamreportwidget_chart_type_and_more.py`); both
+contribute payload-shaped entries to `_empty()` for friendly empty
+states.
+
+Total surface: 4 backend migrations, 2 new frontend widget renderers,
+2 Excel serializers, extended TS types. Test suite stays at 145 green.
+
+### 3.33 Permissions (Django Groups + custom gates)
+
+Action-level access control layered on top of the existing
+`StaffMembership` scoping. The two are orthogonal:
+
+- **`StaffMembership`** → what data slice you see (club / categories /
+  departments).
+- **Django Group** → what actions you can take on that slice.
+
+A "Médico de Sub-20 solo lectura" = `StaffMembership(departments=Médico,
+categories=Sub-20)` + Group("Solo Lectura"). A "Médico de Sub-20
+editor" = same membership + Group("Editor"). Switching read vs edit
+is a one-click change in `/admin/auth/user/<id>/`.
+
+**Two seeded groups** via `backend/core/management/commands/seed_role_groups.py`:
+
+| Group | Perms |
+|---|---|
+| **Editor** | full CRUD (`view_*`, `add_*`, `change_*`, `delete_*`) over ExamResult, Episode, Goal, Event, Player, Attachment, Alert, AlertRule — 32 codenames in total |
+| **Solo Lectura** | only `view_*` over the same models — 8 codenames |
+
+Both seed runs are idempotent and re-run safely. The command also
+**backfills** existing users without a group into Editor — preserves
+the demo's "everyone can edit" baseline so adding the permissions
+layer doesn't lock anyone out overnight.
+
+**Contract permissions are NOT in the seeded groups**. `view_contract`,
+`add_contract`, `change_contract`, `delete_contract` are granular —
+assigned per-user from `/admin/auth/user/<id>/` → "User permissions"
+multi-select. Rationale: the contract section is sensitive (salary)
+and the user wanted explicit, individual control rather than implicit
+group inheritance.
+
+**Backend gates** (`api/routers.py`):
+
+- **`_has_perm(user, codename)`** — thin helper around
+  `user.has_perm`; superusers bypass via the `is_superuser` short-circuit.
+- **`@require_perm("app.codename")`** decorator — raises
+  `HttpError(403, "No tenés permiso para esta acción (...)")` on
+  failure. Defined at module top so endpoints below can use it.
+- **Endpoints gated** (every POST / PATCH / DELETE on user-mutable
+  data):
+  - `/players` POST/PATCH/DELETE → `core.add_player` / `change_player` / `delete_player`
+  - `/contracts` GET/POST/PATCH/DELETE → `core.view_contract` / `add_contract` / `change_contract` / `delete_contract`
+  - `/results` POST/PATCH/DELETE/bulk/team → `exams.add_examresult` / `change_examresult` / `delete_examresult`
+  - `/events` POST/PATCH/DELETE → `events.add_event` / `change_event` / `delete_event`
+  - `/goals` POST/PATCH/DELETE → `goals.add_goal` / `change_goal` / `delete_goal`
+  - `/alerts/{id}` PATCH → `goals.change_alert`
+  - `/attachments` POST/DELETE → `attachments.add_attachment` / `delete_attachment`
+  - `/episodes/{id}` PATCH → `exams.change_episode`
+- **`_user_can_see_salary()` rewritten** to delegate to
+  `_has_perm(user, "core.view_contract")` — replaces the old
+  `is_staff`-based gate.
+- **`_serialize_user()`** projects the Django User into the payload
+  with `permissions: string[]` (codenames; superusers receive `["*"]`).
+  Surfaced on `/auth/login` + `/auth/me`.
+
+**Frontend** (`frontend/src/lib/permissions.ts`):
+
+- **`hasPermission(user, codename)`** — pure helper; honors the `"*"`
+  sentinel for superusers.
+- **`usePermission(codename)`** — React hook variant; re-renders on
+  auth user change.
+- **`useAnyPermission(codenames[])`** — convenience for hiding entire
+  action bars when none of their buttons are permitted.
+
+**UI patterns**: the **entire button bar is hidden** when its action
+isn't allowed (per the user's preference — not "show but disabled").
+A roster-table column collapses entirely when neither edit nor delete
+is permitted (header `<th>` + body cells dropped together).
+
+**Gates applied across the app**:
+
+| Surface | Codename | Effect |
+|---|---|---|
+| `ProfileHeader` → contract block | `core.view_contract` | Block + modal hidden when denied |
+| `ContractsPanel` → "+ Nuevo / Editar / Borrar" | `core.add_contract` / `change_contract` / `delete_contract` | Buttons hidden per-action |
+| `DashboardEntryPanel` → "Registrar nueva entrada" bar | `exams.add_examresult` | Whole bar hidden |
+| `DepartmentCard` history → ✏️ / 🗑 column | `exams.change_examresult` / `delete_examresult` | Column collapses when both denied |
+| `/configuraciones/jugadores` → "+ Nuevo" + actions | `core.add_player` / `change_player` / `delete_player` | Add hidden; row actions collapsed; activo/inactivo becomes static text without change_player |
+| `/partidos` → "+ Nuevo partido" | `events.add_event` | Button hidden |
+| `ProfileGoals` → "+ Crear objetivo" + "Cancelar" | `goals.add_goal` / `goals.change_goal` | Buttons hidden |
+| `ProfileEvents` → toolbar + per-card actions | `events.add_event` / `change_event` / `delete_event` | Toolbar + card-actions row hidden when none permitted |
+| `ProfileEpisodes` → "+ Nueva lesión" | `exams.add_examresult` | Button hidden (lesión = ExamResult-on-episodic-template) |
+
+**403 UX**: the `api()` helper propagates the backend's `detail`
+string as `ApiError.message`. Existing component error-banners pick
+up the Spanish 403 message ("No tenés permiso para esta acción
+(...)") naturally — no toast infrastructure required.
+
+**Verification**: smoke test confirmed `Editor` group → 32 perms;
+superuser → `["*"]`; 145/145 tests green; TS + lint clean; `next
+build` passes.
+
+**What's NOT covered (deferred)**:
+- A pre-canned "Cuerpo Técnico" group that bundles
+  `view_contract`. For now contracts visibility is purely granular.
+- Permission-aware route guards (e.g. 403 page for whole routes).
+  Today, the relevant button is hidden in the sidebar → the user
+  can't navigate. Direct URLs would hit a 403 from the backend.
+- Bulk permission assignment via `StaffMembership` (currently
+  Django's User admin is the only assignment surface).
+
+**Migration path**: no new schema. Just run
+`python manage.py seed_role_groups` once after deploy (already wired
+into `scripts/seed_all.sh` as step 7). Existing users get assigned
+to Editor by the backfill so nobody loses access.
+
+### 3.34 Clinical reference bands (`TemplateField.reference_ranges`)
+
+Per-field multi-band reference ranges that drive (a) a contextual
+form hint while the doctor enters a value, and (b) cell-border
+coloring on widgets. Designed as a single canonical structure — not
+a `value_min` / `value_max` simple-mode plus a richer one — to avoid
+two ways of expressing the same intent.
+
+**Model**: `TemplateField.reference_ranges = JSONField(default=list)`.
+Each band:
+
+```json
+{
+  "label": "Normal",
+  "min": 30,        // inclusive, optional (band open below)
+  "max": 200,       // exclusive, optional (band open above)
+  "color": "#16a34a"  // optional, label-based default fallback
+}
+```
+
+**Validation** in `TemplateField._validate_reference_ranges()` (called
+from `clean()` when `reference_ranges` is non-empty):
+- Each band needs a `label` and at least one bound.
+- `min < max` per band.
+- Bands ordered low → high after sort.
+- At most one band open on each end (lowest without `min`, highest
+  without `max`); intermediate bands must have both bounds.
+- Bands must be disjoint (`curr.min >= prev.max`).
+- Field type must be `number` or `calculated`.
+
+**Lifecycle plumbing** — propagated through:
+- `to_schema_dict()` → `config_schema["fields"][*]`.
+- `rebuild_template_fields()` → reads from JSON back into rows.
+- `fork_new_version()` → cloned into v+1.
+- Both `aggregation._field_meta` and `team_aggregation._field_meta`
+  surface the bands on every column / row of the resolved payload.
+- The `team_roster_matrix` payload includes a `reference_ranges`
+  list per column; `comparison_table` per-row via the existing
+  `{**meta, ...}` spread.
+
+**Frontend** (`frontend/src/lib/reference.ts` — new helpers):
+- `findBandForValue(value, bands)` — locates the active band.
+  `min` inclusive, `max` exclusive so chained bands don't
+  double-claim boundary values.
+- `bandColor(band)` — explicit override > label-keyword mapping
+  ("normal" → green, "elevado" → orange, "severo" → red, "bajo" →
+  amber, fallback gray).
+- `summarizeBands(bands)` / `formatBandRange(band)` — compact text
+  rendering for the hint.
+
+**Form hint** (`DynamicUploader.tsx` → new `ReferenceBandsHint`):
+- Empty input: static one-liner summary
+  (`Rangos: Bajo <30 · Normal 30-200 · Elevado 200-400 · Severo ≥400`).
+- While typing: dynamic active-band badge in the band's color
+  (`**Normal** (30-200)` with subtle background tint).
+- Renders only when `field.type === "number"` and bands non-empty;
+  silent no-op otherwise.
+
+**Widget coloring**:
+- `TeamRosterMatrix` (`components/reports/widgets/TeamRosterMatrix.tsx`):
+  `box-shadow: inset 0 0 0 2px <band color>` on each cell whose
+  value lands in a band. Sits above the existing `vs_team_range`
+  background coloring without competing — backgrounds remain for the
+  team-range gradient, borders carry clinical semantics. Tooltip
+  extended with the band label.
+- `ComparisonTable` (`components/dashboards/widgets/ComparisonTable.tsx`):
+  same border treatment; numeric cells only. Delta arrows / colors
+  unchanged.
+
+**Operational notes**:
+- `direction_of_good` and `reference_ranges` are complementary, not
+  redundant: the first opinionates about *change direction*, the
+  second about *absolute value position*. A reading in "Normal"
+  whose delta is dropping can still trigger a green delta if
+  `direction_of_good=down`. Kept separate by design.
+- Authoring in admin is via raw JSONField for now (Slice 1). A
+  nested formset for visual band editing is deferred until a real
+  authoring pain emerges; the help_text on the field carries an
+  example.
+- `team_distribution` does NOT yet render band zones on the
+  histogram. Deferred.
+- No auto-cascade from bands to `AlertRule.bound`. Independent
+  systems by decision; could be added as a "Crear AlertRule desde
+  estas bandas" admin button later.
+
+**Migration**: `0020_templatefield_reference_ranges.py`. Field
+defaults to empty list — every existing TemplateField becomes
+opt-in. No backfill needed.
+
+### 3.35 Nutricional rework — post-demo feedback (May 2026)
+
+Set of seed-only changes triggered by feedback from the nutrition
+area after the first demo. Zero code changes — every gap was
+config. Documents both what changed and what was deliberately left
+out so the rationale is recoverable.
+
+**Pentacompartimental schema** (`seed_pentacompartimental.py`):
+
+| Change | Rationale |
+|---|---|
+| Removed `grasa_faulkner` calculated field | Faulkner formula isn't used by this club's nutritionist |
+| `suma_pliegues` formula: 4 → 6 skinfolds | Display field said "Σ 4" but the area uses Σ 6 (triceps + subescapular + supra + abdomen + muslo + pierna). Note: `masa_adiposa` was already correctly using 6. |
+| `suma_pliegues` label: "Σ 4 pliegues" → "Σ 6 pliegues" | Match the new formula |
+| Added `masa_adiposa_pct` calculated (`masa_adiposa / peso * 100`) | Reference table on Image 3 lists % values, not kg |
+| Added `masa_muscular_pct` calculated (`masa_muscular / peso * 100`) | Same |
+| Added `imo` calculated (`masa_muscular / masa_osea`, Índice Muscular/Óseo) | Fourth metric on the nutritionist's semaphore — composite indicator |
+| Added `reference_ranges` on 4 metrics | Image 3 bands confirmed verbatim with the nutritionist |
+| Added `direction_of_good` to the 4 metrics | Drives semantic color (green = "good", red = "bad") on widget deltas |
+
+**Reference band values** (per nutricionist confirmation):
+
+- `masa_adiposa_pct` (less is better):
+  Élite <16 · Bueno 16-19 · Aceptable 19-23 · Elevado >23
+- `masa_muscular_pct` (more is better):
+  Bajo <47 · Aceptable 47-48 · Bueno 48-54 · Élite >54
+- `suma_pliegues` (less is better):
+  Élite <30 · Bueno 30-40 · Aceptable 40-50 · Elevado >50
+- `imo` (more is better):
+  Bajo <3.8 · Aceptable 3.8-4.2 · Bueno 4.2-4.5 · Élite >4.5
+
+**Player-view layout** (`seed_demo_layouts.py::_spec_nutricional`):
+
+Rewritten to mirror the nutritionist's sketch (Image 2 of the
+feedback). Three sections:
+
+- **Row 1 (top, no title)**: composition donut · % masses multi-line ·
+  kg masses multi-line.
+- **Row 2 ("Indicadores en el tiempo")**: peso · Σ 6 pliegues · IMO,
+  one `line_with_selector` each.
+- **Row 3 ("Resumen métricas clave")**: `comparison_table` with the 4
+  semáforo metrics + IMC. `aggregation=last_n` with param 2 so each
+  row shows latest + prior + auto-delta. Reference bands paint the
+  cell border via the cross-cutting band-coloring infra (§3.34).
+
+**Team-view layout** (Reporte Antropométrico per nutricionist's PDF):
+
+- `team_roster_matrix` expanded from 5 → 8 columns: `peso, imc,
+  masa_muscular, masa_muscular_pct, masa_adiposa, masa_adiposa_pct,
+  suma_pliegues, imo`. Cell borders on the 4 semáforo metrics, vs-team
+  background coloring on absolutes.
+- **4 `team_distribution` widgets**, one per semáforo metric — visual
+  spread of the roster against each band.
+- `team_trend_line` for `peso, imc, masa_adiposa_pct` over time.
+
+**Fake-data tuning** (`seed_fake_exams.py`):
+
+The original `NUMERIC_BASELINES` were calibrated for a generic
+population. After re-seeding, every player landed in the worst band
+("Elevado" for Σ 6 pliegues, "Bajo" for IMO). Recalibrated for elite
+soccer demographics:
+
+| Field group | Before | After | Why |
+|---|---|---|---|
+| `pliegue_*` (6 fields) | sum ≈ 45-75mm | sum ≈ 26-48mm | Elite athletes have low subcutaneous fat |
+| `humero`, `femur` diameters | 5.8-7.0 / 9.0-10.5 cm | 5.4-6.4 / 8.4-9.6 cm | Slightly slimmer to lift IMO into its higher bands |
+
+Resulting band distribution across the 30 First-Team players:
+
+| Metric | Élite | Bueno | Aceptable | Elevado / Bajo |
+|---|---|---|---|---|
+| % Masa Adiposa | 30 | 0 | 0 | 0 |
+| % Masa Muscular | 0 | 16 | 6 | 8 (Bajo) |
+| Σ 6 pliegues | 0 | 24 | 6 | 0 |
+| IMO | 0 | 0 | 3 | 27 (Bajo) |
+
+% Adiposa landing all Élite is realistic for professional footballers.
+IMO biases low because the Rocha bone-mass formula produces high
+masa_osea (10-15 kg) while the band thresholds (>4.5 = Élite) implicitly
+assume Drinkwater-style 8-10 kg bone mass — a known formula-vs-
+reference mismatch we accepted for now. Σ 6 pliegues + % Muscular have
+good visual variety across bands; the semáforo will be clearly
+demonstrable on those.
+
+**Deliberate non-additions** (documented so we don't re-litigate):
+
+- **No `reference_ranges` on `imc`**. WHO bands (18.5 / 25 / 30) flag
+  muscular athletes as overweight. Misleading for the target population;
+  IMC stays as informational-only.
+- **No "Última Medición" in `ProfileHeader`**. The comparison-table
+  column header already carries the latest date — adding it to the
+  shared header would be ambiguous across departments.
+- **No `view_imc` dedicated widget**. IMC appears as a column in
+  `team_roster_matrix` and as a row in the player view's
+  comparison_table; that's enough exposure.
+
+**Open questions for the nutritionist** (not blocking the demo):
+
+- `Objetivo General` field shown in the header of Image 2 — should be
+  resolved via the existing Goal system, or a free-text field on
+  Player? Pending decision.
+- Somatotipo (Heath-Carter), ICC (cintura/cadera), Densidad Corporal —
+  common adjuncts in sports nutrition that the nutritionist didn't
+  request. Easy to add as calculated fields if requested later.
+
+**Apply commands** (already executed on the local dev DB):
+
+```bash
+docker compose exec backend python manage.py seed_pentacompartimental \
+    --department-slug nutricional --all-applicable-categories \
+    --club "Universidad de Chile" --unlock
+docker compose exec backend python manage.py sync_template_fields --all
+docker compose exec backend python manage.py seed_demo_layouts \
+    --club "Universidad de Chile" --category "Primer Equipo"
+docker compose exec backend python manage.py seed_fake_exams \
+    --reset --club "Universidad de Chile"
+```
+
+All four are idempotent + included in `scripts/seed_all.sh`, so
+deploying to Railway needs no special steps beyond a fresh `bash
+scripts/seed_all.sh` run.
+
+### 3.36 Department Hub — Plantel + Por jugador tabs
+
+Navigation/UX rework triggered by post-demo feedback from the
+nutritionist:
+
+> "Soy nutricionista, intuitivamente voy a Reportes → Nutricional.
+> Pero solo veo el plantel. Para ver el todo del jugador tengo que
+> ir a Equipo, click jugador, click pestaña nutricional. Eso no es
+> intuitivo — debería tener una sección Nutrición y desde ahí ver
+> todo del jugador y cargar datos."
+
+The platform was forcing nutritionists to cross-navigate
+(`/reportes/<dept>` → `/equipo` → `/perfil/<id>` → tab) when their
+mental model was "I work in my department". The fix is purely
+front-end reorganization — no backend changes.
+
+**`/reportes/[deptSlug]/page.tsx`** refactored to expose **two
+top-level tabs**:
+
+| Tab | Content | URL |
+|---|---|---|
+| **Plantel** (default) | Existing team-level dashboard: filters, team widgets, Excel download | `?tab=plantel` |
+| **Por jugador** | Player picker + the full per-player view (same content as `/perfil/<id>?tab=<dept>`) | `?tab=por_jugador&player=<uuid>` |
+
+**Implementation choices**:
+
+- **Component reuse**: the "Por jugador" tab mounts `<ProfileDepartment>`
+  directly — the same component that backs `/perfil/<id>?tab=<dept>`.
+  Coherence between the two entry points is guaranteed by construction.
+- **URL-driven state**: `?tab` and `?player` query params persist
+  the user's selection. Shareable links, back/forward survives,
+  refresh-safe.
+- **Filter scoping**:
+  - Plantel tab: existing team filters (position, players, date)
+    + Excel download.
+  - Por jugador tab: just the player picker + each-player's own
+    date range (independent from the team-level filter).
+- **Category reset behavior**: when the global category changes
+  (navbar picker) the selected player resets if it no longer
+  belongs to the new category — prevents a stale `?player=<id>`
+  from pointing at someone the user can't see.
+
+**Files touched**:
+
+- `frontend/src/app/(dashboard)/reportes/[deptSlug]/page.tsx` —
+  rewritten with the tab+picker structure. Imports `<DateRangeControl>`
+  and `<ProfileDepartment>` from the shared component tree.
+- `frontend/src/app/(dashboard)/reportes/[deptSlug]/page.module.css`
+  — added `.tabs`, `.tab`, `.tabActive` matching the `ProfileTabs`
+  visual treatment so the app stays consistent.
+
+**Backend**: zero changes. The endpoints used by "Por jugador"
+(`GET /players/{id}/views`, `/results`, `/templates`) all existed.
+
+**Verified**: TS + lint clean, `next build` passes, both tabs
+exercise the existing components without modification.
+
+**What this also fixes implicitly**:
+
+- The nutritionist asked "I can't select per player or all players" —
+  with "Por jugador" + the existing multi-select on "Plantel", both
+  axes of selection are now natively supported within the department
+  context.
+- "Cargar examen" is now reachable from inside the department hub
+  (via the `DashboardEntryPanel` that `ProfileDepartment` renders).
+
+**Deferred (not blocking)**:
+- A "Pendientes" tab (jugadores vencidos de evaluación) — would reuse
+  `team_activity_coverage` content. Worth adding when the nutritionist
+  asks for it.
+- Department-hub entries elevated to top-level sidebar items (instead
+  of nested under "Reportes"). Keeps the current sidebar lean; if
+  multiple users ask for it, easy refactor.
+
+---
+
+### 3.37 BAND alert rules — bridging reference bands to the alert engine
+
+`AlertRuleKind` gained a third value: **`BAND`**. A BAND rule fires
+when an `ExamResult`'s numeric reading on `(template, field_key)` lands
+in a band that's been declared "alert-worthy" on the field's
+`reference_ranges`. The bridge means template authors only configure
+clinical bands ONCE (on the field) and the alert engine derives
+firing rules from them automatically.
+
+**Alert-band detection** — `exams/bands.py`:
+- `band_for_value(value, bands)` — first-match-wins band lookup
+  (shared with `_resolve_team_distribution` and the BAND evaluator).
+- `alert_bands(bands)` — returns the bands that should fire alerts.
+  Resolution order:
+  1. Bands marked `"alert": true` explicitly → return all of them.
+  2. Otherwise: the single "reddest" band by RGB warmth
+     (`R - max(G, B)`), provided its score clears a threshold (50/255).
+     Bands with `"alert": false` are excluded.
+  3. If nothing qualifies (no colors set, all cool palette) → empty.
+
+**Rule config**:
+```json
+{}                              // auto-detect alert bands
+{"trigger_labels": ["Elevado"]} // explicit band-label override
+```
+
+**Auto-resolve**: BAND alerts auto-resolve when a newer reading lands
+OUTSIDE the alert band(s). `_resolve_band_alert` in
+`goals/evaluator.py` flips the active Alert to `RESOLVED` so the
+widget reflects current state instead of a forever-frozen "historical
+worry". `BOUND` and `VARIATION` alerts retain their no-auto-resolve
+behavior (legacy semantics preserved).
+
+**`_upsert_alert` bug fix (incidental, important):** before this
+sprint the alert-upsert filter keyed only on `(source_type, source_id,
+status)`. For threshold rules (one rule × many players) the second
+player's alert overwrote the first's. Filter now includes `player`
+so each player gets their own Alert row. Discovered through the
+multi-player BAND tests.
+
+**Seeding** — `python manage.py seed_band_alerts`:
+- Walks every active template, finds fields with `reference_ranges`
+  containing an alert band, creates/upserts a `BAND` rule per field.
+- Backfill: evaluates each player's LATEST result on each rule and
+  fires/resolves alerts accordingly (CURRENT state, not historical
+  log).
+- Re-runnable. Preserves admin-edited severity/message_template on
+  existing rules. Deactivates rules whose field lost its alert band.
+- Flags:
+  - `--dry-run` — report without writing.
+  - `--no-backfill` — only create/update rules; skip Alert generation.
+  - `--include-all-versions` — seed rules on every template version,
+    not just `is_active_version=True`.
+  - `--severity warning|critical|info` — default for new rules
+    (default `critical`).
+
+**JSON config blank=True**: `AlertRule.config = JSONField(default=dict,
+blank=True)` so the validator accepts BAND rules with empty `{}`
+(heuristic mode). Was previously rejected by `full_clean()` because
+`{}` counted as "blank" without the flag.
+
+**Files**:
+- `exams/bands.py` (new module, pure Python, dep-light)
+- `goals/models.py` — `AlertRuleKind.BAND` + validation
+- `goals/evaluator.py` — `_band_evaluation`, `_format_band_message`,
+  `_resolve_band_alert`
+- `goals/management/commands/seed_band_alerts.py` (new)
+- Migrations `goals/0008` (kind+config) + `goals/0009` (blank=True)
+
+**Tests**: 8 BandRuleEvaluator + 3 validation + 8 seed-command (all
+in `goals/tests.py`).
+
+---
+
+### 3.38 Alerts widgets — `player_alerts` + `team_alerts`
+
+Surfaces the persisted `Alert` records onto dashboards. Both widgets
+filter by their layout's department; the team variant also ranks
+players by critical-alert count.
+
+**`player_alerts`** (per-player widget, lives in `DepartmentLayout`):
+- Resolver `_resolve_player_alerts` in `dashboards/aggregation.py`.
+- Filters `Alert.objects.filter(player=p, status=ACTIVE)` and narrows
+  to alerts whose source's template lives in `widget.section.layout.department`.
+- Source-type mapping: `goal` / `goal_warning` → `Goal.template`;
+  `threshold` → `AlertRule.template`. `medication` (reserved) is
+  ignored until wired.
+- `display_config.limit` (default 20, clamp 1-100).
+- Payload: `{alerts: [{id, source_type, severity, message, fired_at,
+  template_name, field_key, ...}], total, department_name}`.
+
+**`team_alerts`** (team widget, lives in `TeamReportLayout`):
+- Resolver `_resolve_team_alerts` in `dashboards/team_aggregation.py`.
+- Iterates Alerts for the roster, partitions by player, sorts by
+  `critical_count desc → alert_count desc → last_name asc`.
+- `display_config.limit_per_player` (default 5) / `limit_players`
+  (default 30).
+- Payload: `{players: [{player_name, alert_count, critical_count,
+  max_severity, alerts: [...]}]}`.
+
+**Shared frontend list** —
+`frontend/src/components/perfil/PlayerAlertsList/PlayerAlertsList.tsx`:
+- Renders one alert per row with severity dot (critical=red,
+  warning=amber, info=gray) + source icon (Trophy for goals,
+  AlertTriangle for threshold/BAND).
+- `showPlayer` prop for the team variant.
+- Consumed by **3 surfaces**: per-player widget, team-widget cards,
+  and the player profile **Resumen** panel (which fetches
+  `/players/{id}/alerts?status=active` directly and embeds the list
+  with a red `border-left` accent).
+
+**Summary panel** (`ProfileSummary.tsx`): a new card "ALERTAS
+ACTIVAS" appears above the existing 3 stat cards when the player has
+at least one active alert. Hidden when empty (no noise).
+
+**Seed integration**: `_player_alerts_section()` and
+`_team_alerts_section()` helpers in `seed_demo_layouts.py` insert
+both widgets as the **first section** of every department's player
+and team layouts. They're heritable across the 4 departments (medical
+/ physical / tactical / nutritional) and the per-department resolver
+filtering keeps each layout showing only its own department's
+alerts.
+
+**Files**:
+- `dashboards/aggregation.py` — `_resolve_player_alerts` + register
+- `dashboards/team_aggregation.py` — `_resolve_team_alerts` + register
+- `dashboards/models.py` — `PLAYER_ALERTS` + `TEAM_ALERTS` chart types
+- Migration `dashboards/0014`
+- `frontend/src/components/perfil/PlayerAlertsList/` (shared list)
+- `frontend/src/components/dashboards/widgets/PlayerAlerts.tsx`
+- `frontend/src/components/reports/widgets/TeamAlerts.tsx`
+- `frontend/src/components/perfil/ProfileSummary/ProfileSummary.tsx`
+  — added `<AlertsPanel>` + `.alertsCard` style with red border-left.
+
+**Tests**: 3 PlayerAlertsResolver + 3 TeamAlertsResolver in
+`dashboards/tests.py`.
+
+---
+
+### 3.39 Per-match GPS team report (Físico)
+
+Replaces the date-window aggregation with a **single-match scoped**
+report driven by a hero "match selector" at the top of the page.
+Mirrors the WIMU-style GPS export coaches recognize.
+
+**Match selector** — `TeamReportLayout.match_selector_config` (JSONB):
+```json
+{
+  "enabled": true,
+  "event_type": "match",
+  "required": true,
+  "label": "Partido",
+  "show_recent": 12
+}
+```
+- API endpoint `/reports/{slug}` reads `?match_id=` query param.
+  When `required` and no `match_id` is passed, the resolver
+  auto-selects the most recent match in scope (handoff: the
+  frontend syncs the URL on first load so deep-linking works).
+- Backend threads `event_id` through `resolve_team_widget` and into
+  every ExamResult-based resolver via `_apply_date_window(qs, ...,
+  event_id)`. Episode/Goal/Alert-based resolvers accept the kwarg
+  but ignore it (no semantic match).
+- Frontend `MatchSelector.tsx` (hero dark component) — big match
+  title + date + venue + dropdown of recent matches. URL-driven.
+
+**`ExamResult.event` becomes required for `link_to_match` templates**:
+- `ExamResult.clean()` now raises a `ValidationError` when
+  `template.link_to_match=True` and `event is None`.
+- `seed_gps_match.py` updated to set `link_to_match=True` on creation
+  + refresh.
+- `seed_fake_exams.py` pre-creates match events per (category, week)
+  and links GPS results at insert time — so re-seeding always
+  produces a fully-linked corpus.
+- New command `python manage.py backfill_match_events` links
+  orphaned results to existing match events within ±N days
+  (`--window-days`, default 3), optionally creates synthetic events
+  (`--create-synthetic`).
+
+**4 new chart types**:
+- **`team_horizontal_comparison` / `team_leaderboard` `mode: "multi_field"`** —
+  one bar per FIELD per player instead of the legacy dropdown +
+  recent-readings view. Used for Distancia + M/Min side-by-side
+  ranking. Backwards compatible: missing/unknown mode → legacy
+  "by_reading" / "single" behavior.
+- **`team_leaderboard.style: "vertical_bars"`** — switches the
+  podium list to a vertical bar chart with every roster player
+  visible, supports `reference_lines` (array), `reference_bands`
+  (array of shaded zones), `show_team_avg_line` (auto-mean overlay),
+  `y_min`/`y_max` (Y-axis zoom for densities near 1.0), and
+  `decimals` (forced precision).
+- **`team_stacked_bars`** — one horizontal stacked bar per player
+  composed of N field segments (Acc + Dec + Acc&Dec). Sorted by
+  total descending.
+- **`team_match_summary`** — compact stat-card strip aggregating one
+  match across the roster (SUM / AVG / STD / MIN / MAX / N per
+  field). `per_player_aggregator` controls how multiple readings
+  per player collapse before team stats.
+
+**Seed** — `_spec_fisico` rebuilt with 4 sections: Alertas /
+General / Primer tiempo / Segundo tiempo. Match-selector required.
+Widgets use the segmented field keys (`tot_dist_total`, `tot_dist_p1`,
+`tot_dist_p2`) automatically generated by
+`build_segmented_fields(METRICS, SEGMENTS)` in the gps_match template.
+
+**Files**:
+- `dashboards/models.py` — `TeamReportLayout.match_selector_config`
+  + 4 new ChartType values
+- Migrations `dashboards/0015`–`0017`
+- `dashboards/team_aggregation.py` — `event_id` threaded through 13
+  resolver signatures + new resolvers
+- `api/routers.py` — `?match_id=` handling + selector payload
+- `api/schemas.py` — `MatchSelectorConfigOut` + `MatchSelectorOptionOut`
+- `exams/models.py` — `ExamResult.clean()` link_to_match guard
+- `exams/management/commands/backfill_match_events.py` (new)
+- `frontend/src/components/reports/MatchSelector.tsx` + CSS
+- `frontend/src/components/reports/widgets/` — `TeamStackedBars`,
+  `TeamMatchSummary`, updated `TeamLeaderboard` + `TeamHorizontalComparison`
+- `frontend/src/app/(dashboard)/reportes/[deptSlug]/page.tsx`
+  — reads `?match_id=`, renders the selector
+
+**Tests**: 3 EventIdFilterTests in `dashboards/tests.py`.
+
+---
+
+### 3.40 Medical templates — Molestias + Check-IN — and supporting widgets
+
+Two new daily templates rounding out the medical department's
+mental + manual-therapy surfaces. Both seed-only — admins configure
+through the standard ExamTemplate admin once seeded.
+
+**`molestias`** (daily medical-treatment log, non-episodic):
+- Fields: `tipo` (Kinesiología / Quiropráctica / Fisiatría /
+  Masoterapia / Crioterapia / Termoterapia / Otro), `zona` (body
+  region with `option_regions` mapping to the canonical body-map
+  keys — overlays the same heatmap as Lesiones), `comentarios`
+  (multiline text).
+- Multiple entries per (player, day) allowed.
+- Command: `python manage.py seed_molestias --create-if-missing
+  --department-slug medico --all-applicable-categories --club <name>`.
+
+**`check_in`** (daily wellness checklist, non-episodic):
+- Five 1-5 Likert fields: `doms` (delayed-onset muscle soreness),
+  `animo`, `estres`, `fatiga`, `sueno`. Convention: 1 = worst,
+  5 = best in EVERY dimension (DOMS=5 means "no muscle pain";
+  Estrés=5 means "calm"). Matches Hooper-Mackinnon family.
+- `direction_of_good: "up"` on all five.
+- `reference_ranges` per field: `Bajo (1-2, red)` / `Aceptable (3,
+  amber)` / `Bueno (4-5, green)`. Auto-detected as BAND alerts when
+  `seed_band_alerts` runs.
+- Calculated `total_bienestar = doms+animo+estres+fatiga+sueno`
+  (range 5-25). Its own three-band split: <12 / 13-18 / 19+.
+- Command: `python manage.py seed_check_in ...`.
+
+**New chart types**:
+
+- **`activity_log`** (per-player) + **`team_activity_log`** (team) —
+  timeline list of recent ExamResults. Each entry surfaces the
+  configured `field_keys` as label:value rows. Team variant
+  prepends the player name on each row. Multi-source supported
+  (merge molestias + medicación into one feed).
+- **`team_daily_grouped_bars`** — N bars per day in the window
+  (one per `field_keys[i]`, sized by team mean for that day),
+  optional overlay LINE showing the per-day sum (e.g. "Total
+  Bienestar" on Check-IN). Built on recharts `ComposedChart`.
+  Honors `y_min`/`y_max` for the bars axis, `total_y_min`/
+  `total_y_max` for the line axis, and `decimals` for tooltip
+  precision. The configurable per-axis pinning prevents recharts
+  from auto-rescaling each day's chart into nonsense ranges.
+
+**`team_leaderboard` Y-axis zoom**: `display_config.y_min` +
+`y_max` + `decimals` let widgets pin a custom Y range for metrics
+that cluster near a non-zero number (urine density 1.000-1.040, pH,
+etc.). Without zoom the bars looked identical because all the
+variance lived in the 3rd decimal place. Densidad urinaria widget
+in `_spec_medico` uses `y_min=1.000, y_max=1.040, decimals=3` +
+3 reference bands (Hidratado green / Amarillo / Deshidratado red).
+
+**Seed** — `_spec_medico` gains 2 player-view sections (Molestias
+recientes + Check-IN diario) and 4 team-view sections (Molestias
+del plantel + Check-IN del plantel + CK del plantel + Densidad
+urinaria). CK uses `team_leaderboard.vertical_bars` with 3
+reference lines (lower 200, upper 500, team avg dynamic).
+
+**Fake-data generation** — `seed_fake_exams.py`:
+- `SPECIAL_TEMPLATE_SLUGS` extended with `molestias` + `check_in`.
+- `_seed_molestias_for_player`: 8 weeks of sporadic entries
+  (0-3 per week per player) from a curated pool of tipo/zona
+  combos.
+- `_seed_check_in_for_player`: 30 days of daily Check-INs with a
+  per-player baseline ∈ [3.0, 4.5] + Likert jitter ±0.8 clamped
+  to 1-5. Produces realistic variation per player + per day.
+
+**Files**:
+- `exams/management/commands/seed_molestias.py` (new)
+- `exams/management/commands/seed_check_in.py` (new)
+- `exams/management/commands/seed_fake_exams.py` — extended
+  SPECIAL_TEMPLATE_SLUGS + 2 new handler methods
+- `dashboards/models.py` — 3 new ChartType values
+- Migrations `dashboards/0018`–`0019`
+- `dashboards/aggregation.py` — `_resolve_activity_log`
+- `dashboards/team_aggregation.py` — `_resolve_team_activity_log`
+  + `_resolve_team_daily_grouped_bars` + y_min/y_max/decimals
+  extension on the leaderboard
+- `frontend/src/components/dashboards/activity/ActivityLogList.tsx`
+  (shared list)
+- `frontend/src/components/dashboards/widgets/ActivityLog.tsx`
+- `frontend/src/components/reports/widgets/TeamActivityLog.tsx`
+- `frontend/src/components/reports/widgets/TeamDailyGroupedBars.tsx`
+- `frontend/src/lib/types.ts` — `ActivityLogPayload`,
+  `TeamActivityLogPayload`, `TeamDailyGroupedBarsPayload`,
+  leaderboard payload extended
+
 ---
 
 ## 4. Management commands
@@ -1405,13 +2372,15 @@ Roughly ordered by clinical value:
 | ~~**`ProfileSummary` from real data**~~          | ✅ Shipped. `GET /api/players/{id}/summary` aggregates from `rendimiento_de_partido`, `gps_rendimiento_fisico_de_partido`, and last 3 `lesiones` episodes. See §3.25. |
 | ~~**Sort timeline & lists by `fecha`**~~         | ✅ Shipped. `ProfileTimeline.tsx` uses an `effectiveDate(result)` helper — prefers `result_data.fecha` when present, falls back to `recorded_at`. |
 | ~~**Edit-in-place results**~~                    | ✅ Shipped. `PATCH /api/results/{id}` (formula re-run + Episode refresh + Player.status recompute) + `DELETE /api/results/{id}` (cascades to Attachments + S3). Pencil/trash on `DepartmentCard` rows + `ResultsHistoryPanel` on the registrar. See §3.23. |
-| **Template versioning**                          | Auto-fork on schema edit when `is_locked=True`, store `version+1`, preserve historical results pointing at v1. PRD calls this out as required. |
+| ~~**Template versioning**~~                      | ✅ Shipped (Slices 1 + 2). `family_id` groups all versions; explicit "Crear nueva versión" admin action forks v+1, copies fields, reassigns data sources, flips active flag atomically. Cross-version reads via `template__family_id`. Schema-drift warning on save. Slice 3 (`field_remap` for renames) deferred. See §3.31. |
 | ~~**Threshold rules + alarms**~~                 | ✅ Shipped. `AlertRule` model with `bound` + `variation` kinds, evaluator wired into the same post-save signal as goals, per-category overrides via nullable FK, idempotent re-fire with `trigger_count`. See §3.15 (Goal) + §3.17 (threshold). |
 | **Real interactive `BodyMap`**                   | SVG anatomical figure with clickable zones. Currently a placeholder list. (Note: `body_map_heatmap` widget DOES render an SVG figure with region-counts heatmap — this remaining item is the *clickable* version.) |
 | ~~**Player contract / agreement**~~              | ✅ Shipped. `Contract` model with full UChile-style schema (Inicio/Fin/Porcentaje/Total Bruto + free-text bonos/cláusulas), multiple-per-player history, `PlayerDetail.current_contract` embed, ProfileHeader real block + ContractsPanel with create/edit/delete. Salary fields redacted for non-staff. |
 | ~~**Notifications (in-app + email)**~~          | ✅ Shipped. Email dispatch via `goals.tasks.send_alert_email` — recipients resolved through `StaffMembership` department + category scoping. In-app surface is the navbar bell with 30s polling + drillable dropdown. Still deferred: per-user opt-out, multi-channel router (Slack / Teams), digest email, and a generic `Notification`/`NotificationChannel` model so non-Alert events route through the same plumbing. |
-| **Logout UI affordance**                         | `AuthContext.logout()` exists but no button is wired anywhere visible. Add to navbar / sidebar profile section. |
+| ~~**Logout UI affordance**~~                     | ✅ Shipped. Button at the bottom of the Sidebar with hover-red destructive cue. Profile block also reorganized: real name on line 1 (via `displayName()` helper), full email on line 2 with ellipsis + tooltip. See §3.30. |
 | ~~**Team reports system**~~                      | ✅ Shipped. Parallel to per-player dashboards. 6 chart types, multi-source, cross-cutting position filter. See §3.19. Authoring under Django Admin → "Team report — Layouts/Sections/Widgets/Widget data sources". |
+| ~~**Cross-cutting date + player filters on reports**~~ | ✅ Shipped. `date_from` / `date_to` (90-day cap) + `player_ids` accepted by both `/api/reports/{slug}` (team) and `/api/players/{id}/views` (per-player). Date control extracted to `components/common/DateRangeControl.tsx`. See §3.27 + §3.29. |
+| ~~**Excel export — client-side, what's-on-screen**~~ | ✅ Shipped. Buttons on `/reportes/[deptSlug]` and `/perfil/[id]` (per-tab). SheetJS loaded via dynamic import. Shared helpers in `lib/export/shared.ts`; separate serializers for team (`teamReport.ts`) and per-player (`playerReport.ts`). See §3.28. |
 | ~~**Player CRUD (configuraciones)**~~            | ✅ Shipped. `/configuraciones/jugadores` with create/edit/toggle-active/delete. POST/PATCH/DELETE `/api/players` endpoints. See §3.20. |
 | ~~**Medication template + WADA alerts**~~        | ✅ Shipped. 61 medicines from CSV, 17 WADA-flagged, cascading dropdown via `option_groups`, post-save signal that fires alerts via `option_risk` field-config map. See §3.21. |
 | ~~**Tablet / mobile responsive layout**~~        | ✅ Shipped. Sidebar slide-in with backdrop ≤1024px; widget grid 3-tier (12-col desktop / max-2-per-row tablet / always-12 mobile). See §3.22. |
@@ -1428,8 +2397,11 @@ Roughly ordered by clinical value:
 | **Recurring events**                             | `event.recurrence_rule` JSONField + an `EventSeries` model. RFC 5545/rrule library. |
 | **Type-specific event fields**                   | `match.metadata` already has shape; could promote to typed admin form. Medical_checkup → linked ExamTemplate; training → planned drills; etc. |
 | **Goals timeline on Event**                      | `event.metadata.goals[]` array (minute, scorer_id, kind). Surfaced as a sub-table on `/partidos/[id]/editar`. |
-| **More team widgets**                            | From the original ranked palette: `team_activity_coverage` (overdue evaluations), `team_goal_progress`, `team_leaderboard`, `team_scatter`. Patterns established by the 6 shipped widgets. |
-| **Direction-of-good colors for variation deltas**| Currently neutral blue/orange in roster_matrix. Add `direction_of_good` per field config to map up/down to good/bad → green/red. |
+| ~~**More team widgets**~~ (partial)              | ✅ `team_activity_coverage` + `team_leaderboard` shipped (see §3.32). Still pending: `team_goal_progress` (depends on populated goals across the roster) and `team_scatter` (low demand). |
+| ~~**Direction-of-good colors for variation deltas**~~ | ✅ Shipped. `TemplateField.direction_of_good` (`up` / `down` / `neutral`) drives green/red coloring on `team_roster_matrix` deltas; neutral keeps the legacy blue/orange. See §3.32. |
+| **`first_name` / `last_name` required when creating Users in Admin** | ✅ Shipped. Custom `SLABUserAdmin` with `RequiredFieldsUserCreationForm` gates creation through the admin UI. Model stays `blank=True` so CLI / fixtures are unaffected. See §3.32. |
+| ~~**Clinical reference bands per TemplateField**~~ | ✅ Shipped. `TemplateField.reference_ranges` (multi-band JSON, server-validated for disjointness/ordering). Drives form hints (static summary + dynamic active band) and cell-border coloring on `team_roster_matrix` + `comparison_table`. See §3.34. Open follow-ups: nested-formset authoring UI, distribution-widget zones, optional auto-prefill of `AlertRule.bound`. |
+| ~~**Action-level permissions (Editor / Solo Lectura + granular contract)**~~ | ✅ Shipped. Django Groups + `@require_perm` decorator gate every mutation endpoint; orthogonal to `StaffMembership` scoping. Two seeded groups (Editor / Solo Lectura) + `view_contract` as a granular per-user perm. Frontend `usePermission` hook hides whole button bars. See §3.33. Deferred: pre-canned "Cuerpo Técnico" group, permission-aware route guards, bulk assignment via StaffMembership. |
 
 ### 6.2 Tech debt / cleanup
 
@@ -1444,6 +2416,9 @@ Things that work today but should be tidied before they confuse the next contrib
 | ~~Remove unused `Profile{Statistics,Performance,Medical,Nutritional}`~~ | ✅ Done. All four directories removed. |
 | ~~Fake players (`Jugador Unila`, `Jugador Dorila`)~~ | ✅ Already cleaned in DB (30 real First Team players). |
 | ~~Lint / TS cleanup~~                              | ✅ Done. Lint went 24 → 0; pre-existing TS errors in `BulkIngestForm` and `LineWithSelector` fixed. Canonical patterns documented in agent memory. |
+| ~~Operator/admin documentation~~                   | ✅ Done. `MANUAL_USUARIO.md` (Spanish, non-technical, Admin-only) and `MANUAL_ADMIN.md` (devops/superadmin reference) at repo root. Cover roles, daily flows, template authoring, layouts, alerts, troubleshooting. |
+| ~~Reproducible demo seed for fresh containers~~    | ✅ Done. `backend/scripts/seed_all.sh` runs migrate + all seeds in order + `ensure_template_categories` safety-net + `seed_fake_exams --reset` + verification block (per-template result counts, detached templates flagged). Run from Railway shell with `bash scripts/seed_all.sh`. |
+| ~~Railway deployment fixes~~                       | ✅ Done. `CSRF_TRUSTED_ORIGINS` env var + `SECURE_PROXY_SSL_HEADER` for TLS-terminating proxy; Whitenoise for `/static/` of Django Admin; frontend Dockerfile switched to `npm run build` + `npm run start` with `ARG NEXT_PUBLIC_API_URL` so the value is baked into the bundle; `RAILWAY_DEPLOY.md` updated. |
 | Auto-sync `TemplateField` rows on seed-command writes | Currently requires `python manage.py sync_template_fields` after each seed. A post_save signal on `ExamTemplate` could detect JSON↔rows divergence and auto-rebuild rows. Risk: bidirectional-sync infinite loop without careful guards. |
 | "Sin partido" rows in `MatchHistoryTable` empty state | Today only the empty-state copy mentions orphans; rows without an event linked are silently dropped from the history table. Consider showing them with a "(sin partido)" label so doctors notice unlinked entries. |
 

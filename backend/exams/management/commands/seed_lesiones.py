@@ -48,7 +48,10 @@ LESIONES_SCHEMA: dict = {
             "group": "Diagnóstico", "required": True,
             "options": [
                 "Cabeza", "Cuello", "Hombro izq.", "Hombro der.",
-                "Brazo izq.", "Brazo der.", "Antebrazo izq.", "Antebrazo der.",
+                "Brazo izq.", "Brazo der.",
+                "Codo izq.", "Codo der.",
+                "Antebrazo izq.", "Antebrazo der.",
+                "Muñeca izq.", "Muñeca der.",
                 "Mano izq.", "Mano der.", "Pecho", "Abdomen",
                 "Espalda alta", "Espalda baja",
                 "Cadera / pelvis",
@@ -62,7 +65,7 @@ LESIONES_SCHEMA: dict = {
             # front + back silhouettes; limbs share keys across both views,
             # torso splits (chest/abdomen front-only, upper_back/lower_back
             # back-only). Tobillo still aliases calf — refine when we add
-            # ankles as a region.
+            # ankles as a region. Codo aliases brazo, Muñeca aliases mano.
             "option_regions": {
                 "Cabeza": "head",
                 "Cuello": "neck",
@@ -70,8 +73,12 @@ LESIONES_SCHEMA: dict = {
                 "Hombro der.": "right_shoulder",
                 "Brazo izq.": "left_arm",
                 "Brazo der.": "right_arm",
+                "Codo izq.": "left_arm",
+                "Codo der.": "right_arm",
                 "Antebrazo izq.": "left_forearm",
                 "Antebrazo der.": "right_forearm",
+                "Muñeca izq.": "left_hand",
+                "Muñeca der.": "right_hand",
                 "Mano izq.": "left_hand",
                 "Mano der.": "right_hand",
                 "Pecho": "chest",
@@ -129,6 +136,39 @@ LESIONES_SCHEMA: dict = {
             "key": "actual_return_date", "label": "Retorno efectivo",
             "type": "date", "group": "Pronóstico",
             "placeholder": "Completar al cerrar el episodio",
+        },
+
+        # === Contexto clínico (extendido a partir del histórico legacy) ===
+        {
+            "key": "causa", "label": "Causa", "type": "categorical",
+            "group": "Contexto clínico",
+            "options": ["Sobrecarga", "Traumática", "Sobreuso", "Otra"],
+            "help_text": "Mecanismo lesional principal.",
+        },
+        {
+            "key": "exposicion", "label": "Exposición", "type": "categorical",
+            "group": "Contexto clínico",
+            "options": ["Entrenamiento", "Partido", "Evento externo", "Otro"],
+            "help_text": "Dónde ocurrió la lesión.",
+        },
+        {
+            "key": "tratamiento", "label": "Tratamiento", "type": "categorical",
+            "group": "Contexto clínico",
+            "options": ["Kinésico", "Reposo deportivo", "Kinésico + quirúrgico", "Otro"],
+        },
+        {
+            "key": "is_recurrencia", "label": "¿Es recurrencia?", "type": "boolean",
+            "group": "Contexto clínico",
+            "help_text": "Marque si el jugador ya tuvo esta misma lesión antes.",
+        },
+        {
+            "key": "dias_perdidos", "label": "Días perdidos", "type": "number", "unit": "días",
+            "group": "Contexto clínico",
+            "help_text": "Días totales de baja (puede usarse para inferir severidad).",
+        },
+        {
+            "key": "partidos_perdidos", "label": "Partidos perdidos", "type": "number", "unit": "partidos",
+            "group": "Contexto clínico",
         },
 
         # === Notas + adjuntos ===

@@ -34,6 +34,15 @@ function resolveInputMode(
   return enabled[0] ?? "single";
 }
 
+// Spanish labels for the tab strip. Keep keys aligned with
+// `ExamInputMode` so adding a new mode is one line + one label.
+const MODE_LABELS: Record<ExamInputMode, string> = {
+  single: "Por jugador",
+  bulk_ingest: "Por equipo · subir archivo",
+  team_table: "Por equipo · tabla",
+  quick_list: "Lista rápida",
+};
+
 interface PageProps {
   params: Promise<{ id: string; templateId: string }>;
 }
@@ -162,7 +171,18 @@ export default function RegistrarExamPage({ params }: PageProps) {
 
   const departmentName = template.department?.name ?? "Departamento";
   const modeOverride = searchParams.get("mode");
+  const enabledModes = (template.input_config?.input_modes ?? ["single"]) as ExamInputMode[];
   const mode = resolveInputMode(template, modeOverride);
+  const showModeTabs = enabledModes.length > 1;
+
+  const onPickMode = (next: ExamInputMode) => {
+    // Sync via URL so a refresh / share-link preserves the choice and
+    // resolveInputMode() in this same component keeps the override in
+    // its enabled-modes guard.
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("mode", next);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
 
   const showEpisodePicker =
     template.is_episodic
@@ -179,7 +199,9 @@ export default function RegistrarExamPage({ params }: PageProps) {
         <div className={styles.titles}>
           <span className={styles.eyebrow}>
             {player.first_name} {player.last_name} · {departmentName}
-            <span className={styles.modeTag}>{mode}</span>
+            {!showModeTabs && (
+              <span className={styles.modeTag}>{mode}</span>
+            )}
           </span>
           <h1 className={styles.title}>Nueva entrada · {template.name}</h1>
         </div>
@@ -188,6 +210,30 @@ export default function RegistrarExamPage({ params }: PageProps) {
       {template.show_injuries && (
         <div style={{ marginBottom: 16 }}>
           <InjuryPanel player={player} />
+        </div>
+      )}
+
+      {showModeTabs && !showEpisodePicker && (
+        <div className={styles.modeTabs} role="tablist" aria-label="Modo de carga">
+          {enabledModes.map((m) => {
+            const active = m === mode;
+            return (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={
+                  active
+                    ? `${styles.modeTab} ${styles.modeTabActive}`
+                    : styles.modeTab
+                }
+                onClick={() => onPickMode(m)}
+              >
+                {MODE_LABELS[m] ?? m}
+              </button>
+            );
+          })}
         </div>
       )}
 

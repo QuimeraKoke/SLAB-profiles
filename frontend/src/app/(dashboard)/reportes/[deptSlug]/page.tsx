@@ -242,14 +242,10 @@ export default function ReportePage({ params }: PageProps) {
                 selectedId={selectedPlayerId}
                 onChange={(id) => updateUrl({ player: id || null })}
               />
-              {selectedPlayer && (
-                <DownloadPdfButton
-                  endpoint={buildPlayerPdfEndpoint(
-                    selectedPlayer.id, department.slug, playerDateRange,
-                  )}
-                  filename={`reporte-${selectedPlayer.first_name}_${selectedPlayer.last_name}-${department.slug}.pdf`}
-                />
-              )}
+              {/* PDF download for the selected player lives inside the
+                  embedded ProfileDepartment below, next to the Excel
+                  button. Two stacked PDF buttons in the header + body
+                  was redundant; keeping only the contextual one. */}
             </>
           )}
         </div>
@@ -374,18 +370,6 @@ function buildTeamPdfEndpoint(
   if (filters.date.to) params.set("date_to", filters.date.to);
   if (matchId) params.set("match_id", matchId);
   return `/reports/${deptSlug}/team.pdf?${params.toString()}`;
-}
-
-function buildPlayerPdfEndpoint(
-  playerId: string,
-  deptSlug: string,
-  dateRange: DateRangeValue,
-): string {
-  const params = new URLSearchParams();
-  if (dateRange.date.from) params.set("date_from", dateRange.date.from);
-  if (dateRange.date.to) params.set("date_to", dateRange.date.to);
-  const qs = params.toString();
-  return `/players/${playerId}/departments/${deptSlug}/report.pdf${qs ? "?" + qs : ""}`;
 }
 
 function filterPositionLabel(positionId: string, positions: Position[]): string {

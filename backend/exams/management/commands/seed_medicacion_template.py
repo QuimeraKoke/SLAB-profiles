@@ -106,6 +106,37 @@ def _build_schema(medicines: list[dict]) -> dict:
                 "option_actions": option_actions,
             },
             {
+                "key": "tipo",
+                "label": "Tipo de medicamento",
+                "type": "categorical",
+                "group": "Curso",
+                "help_text": (
+                    "Grupo terapéutico declarado por el equipo médico legacy "
+                    "(distinto del WADA group). Útil para reportes agregados."
+                ),
+                "options": [
+                    "Aines",
+                    "Analgesico",
+                    "Relajante muscular",
+                    "Inductor del sueño",
+                    "Antialergicos",
+                    "Vitaminas",
+                    "Antigripal",
+                    "Antiespasmodico",
+                    "Antiacido y antiulcerosos",
+                    "Antitusivos",
+                    "Antidiarreico",
+                    "Corticoides",
+                    "Antiemetico",
+                    "Antibioticos",
+                    "Hialuronico",
+                    "Anestesia",
+                    "Medicina regenerativa",
+                    "Antipiretico",
+                    "Otro",
+                ],
+            },
+            {
                 "key": "via_admin",
                 "label": "Vía de administración",
                 "type": "categorical",
@@ -128,6 +159,13 @@ def _build_schema(medicines: list[dict]) -> dict:
                 "type": "text",
                 "group": "Curso",
                 "placeholder": "Ej: 1 comprimido cada 8 hs por 5 días",
+            },
+            {
+                "key": "cantidad",
+                "label": "Cantidad de comprimidos / unidades",
+                "type": "number",
+                "group": "Curso",
+                "help_text": "Número de comprimidos administrados en este registro (no la dosis total del curso).",
             },
             {
                 "key": "fecha_inicio",
