@@ -6,9 +6,9 @@ import styles from "./DateRangeControl.module.css";
 
 /** Maximum span (in days) the date range can cover. Enforced both here
  *  and in the backend so a bypassed UI can't pull years of data. */
-export const DATE_WINDOW_MAX_DAYS = 90;
+export const DATE_WINDOW_MAX_DAYS = 730;
 
-export type DatePreset = "30" | "60" | "90" | "custom";
+export type DatePreset = "30" | "60" | "90" | "180" | "365" | "730" | "custom";
 
 export interface DateRange {
   /** ISO date "YYYY-MM-DD". Empty string when not set. */
@@ -30,7 +30,7 @@ interface Props {
 }
 
 /** Period dropdown + optional custom from/to date inputs. Enforces the
- *  90-day cap on the client (the server re-enforces it independently). */
+ *  2-year cap on the client (the server re-enforces it independently). */
 export default function DateRangeControl({ value, onChange, variant = "default" }: Props) {
   const { preset, date } = value;
 
@@ -86,6 +86,9 @@ export default function DateRangeControl({ value, onChange, variant = "default" 
           <option value="30">Últimos 30 días</option>
           <option value="60">Últimos 60 días</option>
           <option value="90">Últimos 90 días</option>
+          <option value="180">Últimos 6 meses</option>
+          <option value="365">Último año</option>
+          <option value="730">Últimos 2 años</option>
           <option value="custom">Personalizado</option>
         </select>
       </label>

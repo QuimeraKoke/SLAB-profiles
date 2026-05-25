@@ -59,7 +59,7 @@ export default function TeamAlerts({ widget }: Props) {
       ) : (
         <ul className={styles.playerList}>
           {players.map((p) => {
-            const isOpen = expanded[p.player_id] ?? true;
+            const isOpen = expanded[p.player_id] ?? false;
             return (
               <li key={p.player_id} className={styles.playerCard}>
                 <button

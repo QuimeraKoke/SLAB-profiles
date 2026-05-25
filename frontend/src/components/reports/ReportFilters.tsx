@@ -28,13 +28,17 @@ interface Props {
   players: PlayerSummary[];
   value: ReportFiltersValue;
   onChange: (next: ReportFiltersValue) => void;
+  /** Hide the date-range picker. Set when the layout has a match selector —
+   *  the chosen match already scopes time, so a date filter is redundant
+   *  (and confusing). */
+  hideDateRange?: boolean;
 }
 
 /** Filter bar for /reportes/[deptSlug]: position dropdown + player
  * multi-select + date-range picker. Stateless on its own — caller owns
  * the value and decides when to refetch. */
 export default function ReportFilters({
-  positions, players, value, onChange,
+  positions, players, value, onChange, hideDateRange = false,
 }: Props) {
   return (
     <div className={styles.bar}>
@@ -61,11 +65,13 @@ export default function ReportFilters({
         onChange={(ids) => onChange({ ...value, playerIds: ids })}
       />
 
-      <DateRangeControl
-        variant="compact"
-        value={{ preset: value.preset, date: value.date }}
-        onChange={(next) => onChange({ ...value, preset: next.preset, date: next.date })}
-      />
+      {!hideDateRange && (
+        <DateRangeControl
+          variant="compact"
+          value={{ preset: value.preset, date: value.date }}
+          onChange={(next) => onChange({ ...value, preset: next.preset, date: next.date })}
+        />
+      )}
     </div>
   );
 }

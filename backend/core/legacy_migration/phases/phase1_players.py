@@ -377,18 +377,25 @@ def _import_one_player(
     # Photo copy: try after the player record is committed so we have
     # the legacy_id stable. Failures are logged but never block the
     # main migration — the URL fallback handles outages gracefully.
-    photo_url = _photo_for(row)
-    if photo_url:
-        try:
-            final_url = copy_player_photo_to_storage(photo_url, legacy_id)
-            if final_url and final_url != player.photo_url:
-                player.photo_url = final_url
-                player.save(update_fields=["photo_url"])
-        except Exception as exc:   # noqa: BLE001
-            ctx.audit.warn(
-                f"phase1_players: photo copy failed for jugador {legacy_id}: "
-                f"{type(exc).__name__}: {exc}",
-            )
+    # Honour --skip-photos for fast local re-runs; the slowest step in
+    # phase 1 is the Drive fetch.
+    if ctx.skip_photos:
+        ctx.audit.info(
+            f"phase1_players: photo copy skipped (--skip-photos) for jugador {legacy_id}"
+        )
+    else:
+        photo_url = _photo_for(row)
+        if photo_url:
+            try:
+                final_url = copy_player_photo_to_storage(photo_url, legacy_id)
+                if final_url and final_url != player.photo_url:
+                    player.photo_url = final_url
+                    player.save(update_fields=["photo_url"])
+            except Exception as exc:   # noqa: BLE001
+                ctx.audit.warn(
+                    f"phase1_players: photo copy failed for jugador {legacy_id}: "
+                    f"{type(exc).__name__}: {exc}",
+                )
 
     ctx.player_by_legacy_id[legacy_id] = str(player.id)
     ctx.audit.record(

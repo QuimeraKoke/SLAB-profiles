@@ -51,10 +51,6 @@ SCHEMA: dict = {
         {"key": "t3",                 "label": "T3",                 "type": "number", "unit": "ng/dL",  "group": "Tiroides"},
         {"key": "t4_libre",           "label": "T4 libre",           "type": "number", "unit": "ng/dL",  "group": "Tiroides"},
 
-        # === Otras mediciones ===
-        {"key": "densidad_urinaria",  "label": "Densidad urinaria",  "type": "number", "unit": "g/mL",   "group": "Otros",
-         "help_text": "Indicador de hidratación. También disponible como variable en 'Fase densidad'."},
-
         # === Calculados ===
         {
             "key": "indice_testo_cortisol", "label": "Índice T/C", "type": "calculated", "unit": "",

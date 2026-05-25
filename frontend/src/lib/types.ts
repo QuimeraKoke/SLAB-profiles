@@ -1164,7 +1164,10 @@ export interface TeamLeaderboardPayload {
   field?: { key: string; label: string; unit: string } | null;
   /** Present in "multi_field" mode — one entry per configured field. */
   fields?: { key: string; label: string; unit: string }[];
-  aggregator: "sum" | "avg" | "max" | "latest";
+  aggregator: "sum" | "avg" | "max" | "min" | "latest";
+  /** Date window the resolver used (from filter / per-page picker).
+   *  Both edges optional. ISO "YYYY-MM-DD" when present. */
+  window?: { from?: string | null; to?: string | null } | null;
   order: "asc" | "desc";
   limit: number;
   rows: (
@@ -1174,6 +1177,13 @@ export interface TeamLeaderboardPayload {
         player_name: string;
         value: number;
         samples: number;
+        /** Per-aggregator values for client-side switching. Empty when
+         *  the player had no samples in the window. */
+        aggregates?: Partial<Record<"sum" | "avg" | "max" | "min" | "latest", number>>;
+        /** Per-aggregator dates — only present for aggregations that map
+         *  to a specific recorded_at (`latest`, `max`, `min`). `sum` /
+         *  `avg` span the window, so they don't get a date here. */
+        dates?: Partial<Record<"latest" | "max" | "min", string>>;
       }
     | {
         rank: number;

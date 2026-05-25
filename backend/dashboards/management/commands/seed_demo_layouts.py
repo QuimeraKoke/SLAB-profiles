@@ -237,11 +237,11 @@ def _team_alerts_section() -> dict:
 
 
 def _spec_medico(department: Department) -> dict:
-    """Médico: injuries (Lesiones — episodic), CK trend, hidratación,
+    """Médico: injuries (Lesiones — episodic), CK trend, densidad urinaria,
     medication, daily molestias log, daily Check-IN wellness."""
     lesiones = _resolve_template(department, "lesiones")
     ck = _resolve_template(department, "ck")
-    hidra = _resolve_template(department, "hidratacion")
+    hidra = _resolve_template(department, "densidad_urinaria")
     medicacion = _resolve_template(department, "medicacion")
     molestias = _resolve_template(department, "molestias")
     check_in = _resolve_template(department, "check_in")
@@ -281,11 +281,11 @@ def _spec_medico(department: Department) -> dict:
     if hidra is not None:
         measures_widgets.append({
             "chart_type": ChartType.LINE_WITH_SELECTOR,
-            "title": "Hidratación — evolución",
+            "title": "Densidad urinaria — evolución",
             "column_span": 6,
             "sources": [{
                 "template": hidra,
-                "field_keys": _filter_keys(hidra, ["densidad"]),
+                "field_keys": _filter_keys(hidra, ["densidad_urinaria"]),
                 "aggregation": Aggregation.ALL,
             }],
         })
@@ -623,7 +623,11 @@ def _spec_fisico(department: Department) -> dict:
             "event_type": "match",
             "required": True,
             "label": "Partido",
-            "show_recent": 12,
+            # 0 = no cap (capped at 500 in the resolver). past_only=True
+            # filters out scheduled / future matches so the dropdown
+            # only lists games that have already been played.
+            "show_recent": 0,
+            "past_only": True,
         }
         team.extend(_gps_team_sections(gps_match))
 

@@ -1,5 +1,5 @@
 """Create the three small clinical-indicator templates for Médico:
-CK, Hidratación, and CMJ.
+CK, Densidad urinaria, and CMJ.
 
 These were originally authored ad-hoc via Django Admin; this command
 makes them reproducible so a fresh DB boots into the full demo state.
@@ -42,22 +42,22 @@ CK_INPUT_CONFIG: dict = {
 }
 
 
-# --- Hidratación — urine specific gravity ---
-HIDRA_SCHEMA: dict = {
+# --- Densidad urinaria (formerly "Hidratación") — urine specific gravity ---
+DENSIDAD_URINARIA_SCHEMA: dict = {
     "fields": [
         {"key": "fecha", "label": "Fecha", "type": "date", "group": "Toma", "required": True},
         {
-            "key": "densidad", "label": "Densidad urinaria",
+            "key": "densidad_urinaria", "label": "Densidad urinaria",
             "type": "number", "group": "Toma", "chart_type": "line",
         },
         {
-            "key": "note", "label": "Notas", "type": "text",
+            "key": "notas", "label": "Notas", "type": "text",
             "multiline": True, "rows": 2, "group": "Toma",
         },
     ],
 }
 
-HIDRA_INPUT_CONFIG: dict = {
+DENSIDAD_URINARIA_INPUT_CONFIG: dict = {
     "input_modes": ["team_table", "single"],
     "default_input_mode": "team_table",
     "team_table": {"shared_fields": ["fecha"]},
@@ -98,7 +98,7 @@ CMJ_INPUT_CONFIG: dict = {
 
 TEMPLATES = [
     ("CK", "ck", CK_SCHEMA, CK_INPUT_CONFIG),
-    ("Hidratación", "hidratacion", HIDRA_SCHEMA, HIDRA_INPUT_CONFIG),
+    ("Densidad urinaria", "densidad_urinaria", DENSIDAD_URINARIA_SCHEMA, DENSIDAD_URINARIA_INPUT_CONFIG),
     ("CMJ", "cmj", CMJ_SCHEMA, CMJ_INPUT_CONFIG),
 ]
 
@@ -106,7 +106,7 @@ TEMPLATES = [
 class Command(BaseCommand):
     help = (
         "Create / refresh the Médico clinical-indicator templates "
-        "(CK, Hidratación, CMJ)."
+        "(CK, Densidad urinaria, CMJ)."
     )
 
     def add_arguments(self, parser):

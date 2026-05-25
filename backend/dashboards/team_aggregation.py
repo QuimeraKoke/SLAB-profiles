@@ -54,7 +54,7 @@ def resolve_team_widget(
     Optional `date_from` / `date_to` bound `ExamResult.recorded_at` before
     every aggregation runs. `LATEST` / `LAST_N` / `ALL` semantics stay the
     same — they just operate on the bounded queryset. Endpoint callers
-    are expected to cap the window (currently 90 days at the API layer).
+    are expected to cap the window (currently 730 days at the API layer).
 
     Optional `event_id` restricts every ExamResult queryset to results
     linked to that Event (i.e., one specific match). Used by per-match
@@ -2274,22 +2274,49 @@ def _resolve_team_leaderboard(
             (row["recorded_at"], v),
         )
 
-    def _aggregate(samples: list[tuple[datetime, float]]) -> float:
+    def _aggregate(samples: list[tuple[datetime, float]], mode: str) -> float:
         values = [v for _, v in samples]
-        if aggregator == "avg":
+        if mode == "avg":
             return sum(values) / len(values)
-        if aggregator == "max":
+        if mode == "max":
             return max(values)
-        if aggregator == "latest":
+        if mode == "min":
+            return min(values)
+        if mode == "latest":
             # Results already ordered newest-first per player (see queryset).
             return samples[0][1]
         return sum(values)
+
+    # Compute every aggregator per player up-front so the frontend can
+    # toggle (sum / avg / max / min / latest) without a refetch.
+    all_aggregators = ("sum", "avg", "max", "min", "latest")
+    aggregates_by_player: dict[UUID, dict[str, float]] = {}
+    # The specific recorded_at that each "single-point" aggregator
+    # corresponds to — used by the frontend to show a date alongside the
+    # bar (e.g. "Última toma · 18 may"). `sum` / `avg` span the whole
+    # window so they don't get a date.
+    dates_by_player: dict[UUID, dict[str, str]] = {}
+    for pid, samples in samples_by_player.items():
+        if not samples:
+            continue
+        aggregates_by_player[pid] = {
+            m: round(_aggregate(samples, m), 4) for m in all_aggregators
+        }
+        # samples is newest-first (DESC recorded_at).
+        latest_dt = samples[0][0]
+        max_sample = max(samples, key=lambda s: s[1])
+        min_sample = min(samples, key=lambda s: s[1])
+        dates_by_player[pid] = {
+            "latest": latest_dt.date().isoformat(),
+            "max": max_sample[0].date().isoformat(),
+            "min": min_sample[0].date().isoformat(),
+        }
 
     ranked: list[tuple[UUID, float, int]] = []
     for pid, samples in samples_by_player.items():
         if not samples:
             continue
-        ranked.append((pid, _aggregate(samples), len(samples)))
+        ranked.append((pid, _aggregate(samples, aggregator), len(samples)))
 
     ranked.sort(key=lambda triple: triple[1], reverse=(order == "desc"))
     top = ranked[:limit]
@@ -2303,6 +2330,10 @@ def _resolve_team_leaderboard(
             "player_name": f"{player.first_name} {player.last_name}".strip(),
             "value": round(value, 4),
             "samples": sample_count,
+            # Per-aggregator values for client-side switching. Empty dict
+            # for players with no samples (they only appear in vertical_bars).
+            "aggregates": aggregates_by_player.get(pid, {}),
+            "dates": dates_by_player.get(pid, {}),
         })
 
     # In `vertical_bars` style we want EVERY roster player visible, not
@@ -2324,6 +2355,8 @@ def _resolve_team_leaderboard(
                 "player_name": f"{player.first_name} {player.last_name}".strip(),
                 "value": round(value, 4),
                 "samples": sample_count,
+                "aggregates": aggregates_by_player.get(pid, {}),
+                "dates": dates_by_player.get(pid, {}),
             })
 
     # Auto-add the team-average line. Computed from the actual rows
@@ -2339,11 +2372,20 @@ def _resolve_team_leaderboard(
                 "color": "#6b7280",
             })
 
+    # Window the resolver actually used — surfaced so the frontend can
+    # render a "del X al Y" caption. Both edges optional; missing means
+    # the filter wasn't bounded on that side.
+    window_payload: dict[str, str | None] = {
+        "from": date_from.date().isoformat() if date_from else None,
+        "to": date_to.date().isoformat() if date_to else None,
+    }
+
     return {
         "chart_type": ChartType.TEAM_LEADERBOARD.value,
         "title": widget.title,
         "mode": "single",
         "style": style,
+        "window": window_payload,
         # Legacy field — first ref line. Kept for old frontends.
         "reference_line": reference_line,
         # New: arrays. Frontend prefers these when present.

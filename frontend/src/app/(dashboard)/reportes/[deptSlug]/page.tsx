@@ -142,8 +142,14 @@ export default function ReportePage({ params }: PageProps) {
     if (filters.playerIds.length > 0) {
       params.set("player_ids", filters.playerIds.join(","));
     }
-    if (filters.date.from) params.set("date_from", filters.date.from);
-    if (filters.date.to) params.set("date_to", filters.date.to);
+    // When the layout exposes a match selector, the chosen match scopes
+    // time — sending date_from/to in addition would just confuse the
+    // resolver. We still send them on the first request (before layout
+    // is loaded) because we don't yet know whether the layout uses match
+    // selection; the backend ignores the dates for match-scoped widgets.
+    const skipDates = layout?.match_selector?.enabled === true;
+    if (!skipDates && filters.date.from) params.set("date_from", filters.date.from);
+    if (!skipDates && filters.date.to) params.set("date_to", filters.date.to);
     if (matchFromUrl) params.set("match_id", matchFromUrl);
     api<TeamReportResponse>(`/reports/${department.slug}?${params}`)
       .then((data) => {
@@ -209,6 +215,7 @@ export default function ReportePage({ params }: PageProps) {
                 players={players}
                 value={filters}
                 onChange={setFilters}
+                hideDateRange={layout?.match_selector?.enabled === true}
               />
               {layout && categoryId && (
                 <>

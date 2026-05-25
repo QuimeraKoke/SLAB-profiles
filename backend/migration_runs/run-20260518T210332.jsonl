@@ -1,0 +1,1 @@
+{"level": "info", "message": "migration: start", "club": "Universidad de Chile", "dry_run": false, "date_from": "2025-01-01", "date_to": "2026-12-31", "legacy_dsn": "192.168.1.24:5432/uchile", "phases": ["phase0", "phase1", "phase2", "phase3", "phase4", "phase5", "phase6"], "ts": "2026-05-18T21:03:32"}

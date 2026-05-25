@@ -30,6 +30,11 @@ def run(ctx: MigrationContext) -> None:
 
     equipo_lookup = _load_equipo_lookup(ctx)
     competicion_lookup = _load_competicion_lookup(ctx)
+    # competicion_temporada_id → SLAB Category. Built up-front so each
+    # match only does a dict lookup instead of a per-row category
+    # resolver. Without this, /partidos filters by navbar category and
+    # silently hides every migrated match.
+    category_by_ct = _load_category_by_competicion(ctx)
 
     department = ctx.get_department("tactico")
 
@@ -42,7 +47,9 @@ def run(ctx: MigrationContext) -> None:
 
     for row in rows:
         try:
-            _import_one_partido(ctx, row, equipo_lookup, competicion_lookup, department)
+            _import_one_partido(
+                ctx, row, equipo_lookup, competicion_lookup, category_by_ct, department,
+            )
         except Exception as exc:   # noqa: BLE001
             ctx.audit.record(
                 phase="phase3",
@@ -60,6 +67,7 @@ def _import_one_partido(
     row: dict,
     equipo_lookup: dict[int, str],
     competicion_lookup: dict[int, str],
+    category_by_ct: dict[int, Any],
     department,
 ) -> None:
     legacy_id = row["id_partido"]
@@ -128,11 +136,15 @@ def _import_one_partido(
         )
         return
 
+    category = category_by_ct.get(row.get("competicion_temporada_id"))
+
     if existing:
         existing.title = title[:140]
         existing.starts_at = starts_at
         existing.metadata = metadata
         existing.legacy_raw = legacy_raw
+        if category is not None:
+            existing.category = category
         with transaction.atomic():
             existing.save()
         ev = existing
@@ -144,6 +156,7 @@ def _import_one_partido(
                 department=department,
                 event_type=Event.TYPE_MATCH,
                 scope=Event.SCOPE_CATEGORY,
+                category=category,
                 title=title[:140],
                 starts_at=starts_at,
                 metadata=metadata,
@@ -169,6 +182,43 @@ def _load_equipo_lookup(ctx: MigrationContext) -> dict[int, str]:
         r["id_equipo"]: r["nombre"]
         for r in ctx.legacy_db.iter_rows("SELECT id_equipo, nombre FROM equipo")
     }
+
+
+def _load_category_by_competicion(ctx: MigrationContext) -> dict[int, Any]:
+    """Resolve competicion_temporada_id → SLAB Category.
+
+    Legacy chain: `partido → competicion_temporada → competicion →
+    categoria`. We piggyback on `ctx.category_by_legacy_id` (populated
+    by phase 0) instead of re-matching on names — that map already
+    applied CATEGORY_NAME_MAP (PEM → "Primer Equipo") and the female
+    suffix, so we get correct matches for first-team rows that phase 0
+    renamed.
+    """
+    from core.models import Category
+
+    sql = """
+        SELECT ct.id_competicion_temporada AS id,
+               c.categoria_id              AS cat_id
+          FROM competicion_temporada ct
+          JOIN competicion c ON c.id_competicion = ct.competicion_id
+    """
+    # Single SELECT to materialise the SLAB Category objects keyed by
+    # UUID — avoids a per-row query inside the loop.
+    cat_uuids = list({u for u in ctx.category_by_legacy_id.values()})
+    slab_cats_by_uuid = {str(c.id): c for c in Category.objects.filter(id__in=cat_uuids)}
+
+    out: dict[int, Any] = {}
+    for r in ctx.legacy_db.iter_rows(sql):
+        legacy_cat_id = r["cat_id"]
+        if legacy_cat_id is None:
+            continue
+        slab_uuid = ctx.category_by_legacy_id.get(legacy_cat_id)
+        if not slab_uuid:
+            continue
+        slab_cat = slab_cats_by_uuid.get(slab_uuid)
+        if slab_cat is not None:
+            out[r["id"]] = slab_cat
+    return out
 
 
 def _load_competicion_lookup(ctx: MigrationContext) -> dict[int, str]:

@@ -130,7 +130,7 @@ def health(request):
 # we cap it to keep responses bounded — a bypassed UI can't load arbitrary
 # years of data. Cap value applies uniformly across team and per-player
 # endpoints so the two layers stay consistent.
-DATE_WINDOW_MAX_DAYS = 90
+DATE_WINDOW_MAX_DAYS = 730
 
 
 def _parse_date_window(
@@ -1248,7 +1248,7 @@ def get_player_view(
     falls back to the legacy auto-rendered template grid in that case.
 
     Optional `date_from` / `date_to` (ISO-8601) bound `ExamResult.recorded_at`
-    before each widget runs its aggregation. Capped at 90 days; widgets like
+    before each widget runs its aggregation. Capped at 730 days; widgets like
     `body_map_heatmap` ignore the bounds by design (see resolver docs).
     """
     membership = get_membership(request.user)
@@ -1352,7 +1352,7 @@ def get_team_report(
       - `position_id`: narrows roster to players at this position.
       - `player_ids`: comma-separated UUIDs; further narrows roster.
       - `date_from` / `date_to`: ISO-8601 dates bounding ExamResult
-        `recorded_at`. Capped at 90 days at the API layer. `status_counts`
+        `recorded_at`. Capped at 730 days at the API layer. `status_counts`
         and `active_records` ignore these by design (current-state widgets).
       - `match_id`: when the layout's `match_selector_config.enabled` is
         true, narrows every ExamResult queryset to results linked to
@@ -1429,7 +1429,17 @@ def get_team_report(
     selector_event_type = (
         raw_cfg.get("event_type") or Event.TYPE_MATCH
     )
-    selector_show_recent = max(1, min(int(raw_cfg.get("show_recent") or 10), 50))
+    # `show_recent <= 0` means "no limit" — capped at 500 so a misconfig
+    # can't load thousands of rows into the dropdown. Positive values keep
+    # the original soft-cap-50 ceiling. Use explicit `is None` so a
+    # configured `0` doesn't get coalesced back to the default 10.
+    raw_show_recent_val = raw_cfg.get("show_recent")
+    raw_show_recent = 10 if raw_show_recent_val is None else int(raw_show_recent_val)
+    if raw_show_recent <= 0:
+        selector_show_recent = 500
+    else:
+        selector_show_recent = max(1, min(raw_show_recent, 50))
+    selector_past_only = bool(raw_cfg.get("past_only"))
     selector_label = raw_cfg.get("label") or "Partido"
 
     selector_options: list[Event] = []
@@ -1437,14 +1447,18 @@ def get_team_report(
     if selector_enabled:
         # Recent matches in scope: matches tied to this category, of the
         # configured event_type, newest first. Soft cap via show_recent.
+        # `past_only` clips out scheduled / future matches — useful for
+        # views that aggregate finished-match data only.
+        from django.utils import timezone as _tz
+        options_qs = Event.objects.filter(
+            club_id=category.club_id,
+            event_type=selector_event_type,
+            category_id=category.id,
+        )
+        if selector_past_only:
+            options_qs = options_qs.filter(starts_at__lte=_tz.now())
         selector_options = list(
-            Event.objects
-            .filter(
-                club_id=category.club_id,
-                event_type=selector_event_type,
-                category_id=category.id,
-            )
-            .order_by("-starts_at")[:selector_show_recent]
+            options_qs.order_by("-starts_at")[:selector_show_recent]
         )
         if match_id:
             try:
@@ -2539,3 +2553,153 @@ def update_episode(request, episode_id: str, payload: EpisodePatchIn):
         recompute_player_status(episode.player)
 
     return _serialize_episode(episode)
+
+
+# --- App usage analytics ---------------------------------------------------
+#
+# Bucketed counts of ExamResults grouped by department, for the /uso page.
+# Superuser-only — the audience is platform admins watching adoption, not
+# clinical staff. Scoped to the membership's club; superusers without a
+# membership see all clubs.
+
+@api.get("/admin/usage")
+def admin_usage(
+    request,
+    category_id: str | None = None,
+    bucket: str = "week",
+    n: int = 12,
+):
+    """Time-bucketed ExamResult counts by department.
+
+    Returns a flat array shaped for direct consumption by a stacked
+    bar chart: each item is one bucket with one numeric column per
+    department slug, plus a `departments` index of {slug, name} for the
+    chart legend.
+    """
+    from datetime import timedelta
+    from django.db.models import Count
+    from django.db.models.functions import TruncMonth, TruncWeek
+    from django.utils import timezone
+
+    if not request.user.is_superuser:
+        raise HttpError(403, "Solo administradores pueden ver el uso de la app.")
+
+    if bucket not in {"week", "month"}:
+        raise HttpError(400, "bucket debe ser 'week' o 'month'")
+    # 120 covers 10 years monthly or ~2.3 years weekly — large enough
+    # for any reasonable platform-adoption analysis without risking
+    # runaway aggregation queries.
+    n = max(1, min(n, 120))
+
+    now = timezone.now()
+    if bucket == "week":
+        cutoff = now - timedelta(weeks=n)
+        trunc = TruncWeek
+    else:
+        cutoff = now - timedelta(days=n * 31)
+        trunc = TruncMonth
+
+    qs = ExamResult.objects.filter(recorded_at__gte=cutoff)
+    if category_id:
+        qs = qs.filter(player__category_id=category_id)
+
+    rows = (
+        qs.annotate(b=trunc("recorded_at"))
+        .values("b", "template__department__slug", "template__department__name")
+        .annotate(count=Count("id"))
+        .order_by("b")
+    )
+
+    # Pivot rows → {bucket_iso: {dept_slug: count}}; collect dept index.
+    departments: dict[str, str] = {}
+    pivot: dict[str, dict[str, int]] = {}
+    for r in rows:
+        slug = r["template__department__slug"]
+        name = r["template__department__name"]
+        b = r["b"]
+        if not b:
+            continue
+        key = b.date().isoformat()
+        departments[slug] = name
+        pivot.setdefault(key, {})[slug] = r["count"]
+
+    # Fill empty buckets so the chart x-axis has continuous ticks even on
+    # weeks where nobody recorded anything (otherwise the missing bar
+    # silently lies about engagement).
+    series: list[dict[str, Any]] = []
+    bucket_start = cutoff
+    for i in range(n):
+        if bucket == "week":
+            # Match Django's TruncWeek (Monday-anchored).
+            ws = bucket_start + timedelta(weeks=i)
+            ws = ws - timedelta(days=ws.weekday())
+            key = ws.date().isoformat()
+        else:
+            ws = bucket_start + timedelta(days=i * 31)
+            ws = ws.replace(day=1)
+            key = ws.date().isoformat()
+        entry: dict[str, Any] = {"bucket": key}
+        counts = pivot.get(key, {})
+        for slug in departments:
+            entry[slug] = counts.get(slug, 0)
+        series.append(entry)
+
+    # Per-template totals AND time series for the same window + filter.
+    # Templates are returned sorted by total desc so the legend / stack order
+    # surface the heaviest contributors first.
+    template_meta: dict[str, dict[str, Any]] = {}
+    template_pivot: dict[str, dict[str, int]] = {}
+    template_totals: dict[str, int] = {}
+
+    template_rows = (
+        qs.annotate(b=trunc("recorded_at"))
+        .values(
+            "b",
+            "template__slug",
+            "template__name",
+            "template__department__slug",
+            "template__department__name",
+        )
+        .annotate(count=Count("id"))
+        .order_by("b")
+    )
+    for r in template_rows:
+        slug = r["template__slug"]
+        if slug is None:
+            continue
+        template_meta[slug] = {
+            "slug": slug,
+            "name": r["template__name"],
+            "department_slug": r["template__department__slug"],
+            "department_name": r["template__department__name"],
+        }
+        b = r["b"]
+        if not b:
+            continue
+        key = b.date().isoformat()
+        template_pivot.setdefault(key, {})[slug] = r["count"]
+        template_totals[slug] = template_totals.get(slug, 0) + r["count"]
+
+    # Sort templates by total desc — heavy contributors come first.
+    sorted_slugs = sorted(template_meta.keys(), key=lambda s: -template_totals.get(s, 0))
+    templates_out = [
+        {**template_meta[s], "count": template_totals.get(s, 0)} for s in sorted_slugs
+    ]
+
+    # Build the parallel time-series with zero-filling so the x-axis ticks
+    # stay continuous even on weeks where a template recorded nothing.
+    templates_series: list[dict[str, Any]] = []
+    for entry in series:
+        ts_entry: dict[str, Any] = {"bucket": entry["bucket"]}
+        bucket_counts = template_pivot.get(entry["bucket"], {})
+        for slug in sorted_slugs:
+            ts_entry[slug] = bucket_counts.get(slug, 0)
+        templates_series.append(ts_entry)
+
+    return {
+        "bucket": bucket,
+        "departments": [{"slug": s, "name": n_} for s, n_ in sorted(departments.items(), key=lambda x: x[1])],
+        "series": series,
+        "templates": templates_out,
+        "templates_series": templates_series,
+    }

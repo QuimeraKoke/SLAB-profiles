@@ -34,6 +34,10 @@ class MigrationContext:
     date_to: date                  # scope end (inclusive)
     club: Club                     # destination SLAB club
     limit: int | None = None       # per-phase row cap (None = no cap)
+    # Skip the per-player photo download + storage copy. When True the
+    # Player row is still created, just without `photo_url`. Useful for
+    # local / fast re-runs where the Drive fetch is the slowest step.
+    skip_photos: bool = False
     departments: dict[str, Department] = field(default_factory=dict)
     # Per-phase lookup caches: legacy_id → SLAB UUID. Populated as the
     # phases run; later phases (events, results) consume what earlier

@@ -19,6 +19,7 @@
 #     DATE_FROM="2025-01-01"         Scope start (inclusive)
 #     DATE_TO="2026-12-31"           Scope end   (inclusive)
 #     LIMIT=N                        Per-phase row cap (smoke mode default 5)
+#     SKIP_PHOTOS=1                  Skip per-player photo copy in phase 1
 #     LEGACY_HOST="192.168.1.24"
 #     LEGACY_PORT=5432
 #     LEGACY_DB="uchile"
@@ -91,6 +92,10 @@ COMMON_ARGS=(
     --legacy-db "$LEGACY_DB"
     --legacy-user "$LEGACY_USER"
 )
+# Pass-through optional flags.
+if [[ "${SKIP_PHOTOS:-0}" == "1" ]]; then
+    COMMON_ARGS+=(--skip-photos)
+fi
 
 print_header() {
     echo ""

@@ -11,6 +11,7 @@ import {
   ChevronRight,
   LogOut,
   Settings,
+  TrendingUp,
   X,
 } from "lucide-react";
 
@@ -112,9 +113,16 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
         }
       : null;
 
+  // Admin-only "Uso" link — adoption / engagement chart. Superusers see it
+  // regardless of membership; non-admins don't even get the nav entry.
+  const usoItem: NavGroup | null = user?.is_superuser
+    ? { label: "Uso", icon: TrendingUp, href: "/uso" }
+    : null;
+
   const navItems: NavGroup[] = [
     ...STATIC_NAV,
     ...(reportsGroup ? [reportsGroup] : []),
+    ...(usoItem ? [usoItem] : []),
     SETTINGS_NAV,
   ];
 

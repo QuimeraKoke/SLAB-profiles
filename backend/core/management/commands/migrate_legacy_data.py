@@ -89,6 +89,12 @@ class Command(BaseCommand):
             help="Per-phase row cap. Useful for a first small real run "
                  "before committing to the full ~25k-row import.",
         )
+        parser.add_argument(
+            "--skip-photos", action="store_true",
+            help="Skip the per-player photo download/copy in phase 1. "
+                 "Photo fetch is the slowest step; skipping makes a full "
+                 "re-run minutes faster when photos aren't needed.",
+        )
         # Source-DB overrides — useful in CI/local-testing setups.
         parser.add_argument("--legacy-host", default=DEFAULT_HOST)
         parser.add_argument("--legacy-port", type=int, default=DEFAULT_PORT)
@@ -159,6 +165,7 @@ class Command(BaseCommand):
                     date_to=date_to,
                     club=club,
                     limit=opts["limit"],
+                    skip_photos=opts["skip_photos"],
                 )
 
                 for name, fn in ALL_PHASES:

@@ -39,6 +39,45 @@
   white-space: nowrap;
 }
 
+.windowCaption {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.72rem;
+  color: #9ca3af;
+  font-weight: 500;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.aggSelectLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.aggSelectHint {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.aggSelect {
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  font-size: 0.8rem;
+  color: #111827;
+  cursor: pointer;
+}
+
 .list {
   list-style: none;
   margin: 0;
@@ -279,6 +318,45 @@
 
 .vBar:hover {
   filter: brightness(0.92);
+}
+
+/* Mouse-following tooltip rendered into document.body via React Portal.
+ * Lives at the top of the stacking context so it isn't clipped by the
+ * chart's overflow box, and updates position on every mousemove. */
+.floatingTooltip {
+  position: fixed;
+  z-index: 9999;
+  background: #111827;
+  color: #ffffff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+  white-space: nowrap;
+  /* Fade in instantly without re-triggering on every mousemove. */
+  animation: floatingTooltipIn 80ms ease-out;
+}
+
+.floatingTooltipName {
+  font-weight: 600;
+}
+
+.floatingTooltipValue {
+  margin-top: 2px;
+  color: #d1d5db;
+}
+
+.floatingTooltipDate {
+  margin-top: 2px;
+  font-size: 0.7rem;
+  color: #9ca3af;
+}
+
+@keyframes floatingTooltipIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .vBarLabel {

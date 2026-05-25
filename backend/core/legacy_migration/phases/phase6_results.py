@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 
 from django.db import transaction
 
+from exams.calculations import compute_result_data
 from exams.models import ExamResult, ExamTemplate
 
 from ..mapping import GPS_PERIOD_MAP, MEDICACION_TIPO_NORMALIZE, fix_mojibake, jsonable
@@ -101,6 +102,17 @@ def _upsert_result(
     legacy_raw = jsonable(legacy_raw)
     result_data = jsonable(result_data)
 
+    # Run the formula engine so calculated fields (IMC, masa_muscular, etc.)
+    # are stored alongside the raw measurements — same as the API save path.
+    # We need the Player object; tolerate missing gracefully.
+    _player_obj = None
+    try:
+        from core.models import Player  # local import avoids circular deps
+        _player_obj = Player.objects.get(id=player_uuid)
+    except Exception:  # noqa: BLE001
+        pass
+    result_data, inputs_snapshot = compute_result_data(template, result_data, player=_player_obj)
+
     if ctx.dry_run:
         ctx.audit.record(
             phase="phase6", action="created",
@@ -119,6 +131,7 @@ def _upsert_result(
         template=template,
         recorded_at=recorded_at,
         result_data=result_data,
+        inputs_snapshot=inputs_snapshot,
         event_id=event_uuid,
         legacy_raw=legacy_raw,
     )
@@ -382,7 +395,10 @@ _BLOOD_TEST_KEY_MAP: dict[str, str] = {
     "TSH":                            "tsh",
     "T3":                             "t3",
     "T4 LIBRE":                       "t4_libre",
-    "Densidad Urinaria":              "densidad_urinaria",
+    # Densidad Urinaria intentionally not mapped — it lives on the
+    # "Densidad urinaria" (ex-"Hidratación") template and inside
+    # fase_densidad. Importing it here would just stuff it on the
+    # wrong template.
     # Índice Testosterona/Cortisol is calculated by SLAB — skip importing.
 }
 
