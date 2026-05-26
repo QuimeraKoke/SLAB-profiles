@@ -26,6 +26,7 @@ from .scoping import (
     scope_departments,
     scope_events,
     scope_players,
+    scope_players_for_roster,
     scope_positions,
     scope_results,
     scope_templates,
@@ -60,6 +61,8 @@ from .schemas import (
     ResultIn,
     ResultOut,
     ResultPatchIn,
+    RosterEntryOut,
+    RosterReplaceIn,
     TeamReportResponseOut,
     TeamResultsIn,
     TeamResultsOut,
@@ -294,18 +297,57 @@ def list_players(
     request,
     category_id: str | None = None,
     include_inactive: bool = False,
+    search: str | None = None,
+    limit: int | None = None,
+    cross_category: bool = False,
 ):
     """Default behavior excludes inactive players (consumers like Equipo and
     team reports want roster-only). The configuraciones page passes
-    `include_inactive=true` so admins can manage availability."""
+    `include_inactive=true` so admins can manage availability.
+
+    `search` does a case-insensitive contains-match on `first_name` /
+    `last_name` / `"first last"` — used by the roster picker on the
+    match-edit page to find a player across every category. `limit`
+    caps the result count (typeahead UX); omit for the full list.
+
+    `cross_category=true` widens visibility to every player in the
+    user's club, ignoring the user's category memberships. Used by
+    the convocatoria picker on /partidos/[id]/editar so a Primer
+    Equipo coach can promote a SUB-20 player even when their
+    StaffMembership grants them Primer Equipo only.
+    """
+    from django.db.models import Q
+
     membership = get_membership(request.user)
     qs = Player.objects.select_related("category", "position")
     if not include_inactive:
         qs = qs.filter(is_active=True)
-    qs = scope_players(qs, membership)
+    if cross_category:
+        qs = scope_players_for_roster(qs, membership)
+    else:
+        qs = scope_players(qs, membership)
     if category_id:
         qs = qs.filter(category_id=category_id)
-    return qs.order_by("last_name", "first_name")
+    if search:
+        # Single-string search hits first_name OR last_name; multi-token
+        # query (e.g. "lucas a") matches across both via Concat.
+        from django.db.models.functions import Concat
+        from django.db.models import Value, CharField
+        qs = qs.annotate(
+            _full=Concat("first_name", Value(" "), "last_name",
+                         output_field=CharField()),
+        )
+        terms = [t for t in search.strip().split() if t]
+        for term in terms:
+            qs = qs.filter(
+                Q(first_name__icontains=term)
+                | Q(last_name__icontains=term)
+                | Q(_full__icontains=term)
+            )
+    qs = qs.order_by("last_name", "first_name")
+    if limit is not None:
+        qs = qs[: max(1, min(limit, 100))]
+    return qs
 
 
 @api.get("/players/{player_id}", response=PlayerDetailOut)
@@ -853,6 +895,39 @@ def delete_result(request, result_id: UUID):
     return {"deleted": True}
 
 
+@api.get("/results", response=list[ResultOut])
+def list_results(
+    request,
+    template_id: str | None = None,
+    event_id: str | None = None,
+):
+    """Filter ExamResults by `(template_id, event_id)`.
+
+    Today only the team-table prefill consumes this — fetches every
+    result for the chosen (template family, match) so the form opens
+    with the existing values populated. We fan out across the
+    template's `family_id` so reads survive template versioning.
+    """
+    membership = get_membership(request.user)
+    qs = scope_results(ExamResult.objects.select_related("template", "event"), membership)
+    if template_id:
+        try:
+            template = scope_templates(
+                ExamTemplate.objects.all(), membership,
+            ).filter(id=template_id).first()
+        except (TypeError, ValueError):
+            template = None
+        if template is None:
+            raise HttpError(404, "Template not found")
+        qs = qs.filter(template__family_id=template.family_id)
+    if event_id:
+        try:
+            qs = qs.filter(event_id=event_id)
+        except (TypeError, ValueError):
+            raise HttpError(400, "Invalid event_id")
+    return [_serialize_result(r) for r in qs.order_by("recorded_at")]
+
+
 @api.post("/results/team", response=TeamResultsOut)
 @require_perm("exams.add_examresult")
 def create_team_results(request, payload: TeamResultsIn):
@@ -934,9 +1009,24 @@ def create_team_results(request, payload: TeamResultsIn):
         return True
 
     created: list[ExamResult] = []
+    updated: list[ExamResult] = []
     skipped = 0
 
     with db_transaction.atomic():
+        # When the submission is event-scoped, look up existing
+        # ExamResults across the template family so we update rather
+        # than duplicate. The unique conceptual key is
+        # (player, template family, event) — a player has at most one
+        # rendimiento_de_partido per match.
+        existing_by_player: dict[UUID, ExamResult] = {}
+        if event is not None:
+            for er in ExamResult.objects.filter(
+                template__family_id=template.family_id,
+                event_id=event.id,
+                player_id__in=submitted_player_ids,
+            ).select_related("template"):
+                existing_by_player[er.player_id] = er
+
         for row in payload.rows:
             if is_blank(row.result_data):
                 skipped += 1
@@ -946,24 +1036,41 @@ def create_team_results(request, payload: TeamResultsIn):
             result_data, inputs_snapshot = compute_result_data(
                 template, merged, player=target_player,
             )
-            result = ExamResult.objects.create(
-                player=target_player,
-                template=template,
-                recorded_at=effective_recorded_at,
-                result_data=result_data,
-                inputs_snapshot=inputs_snapshot,
-                event=event,
-            )
-            created.append(result)
+            existing = existing_by_player.get(target_player.id)
+            if existing is not None:
+                existing.result_data = result_data
+                existing.inputs_snapshot = inputs_snapshot
+                # Keep the original recorded_at unless the event
+                # itself moved — `effective_recorded_at` mirrors
+                # event.starts_at when an event is bound.
+                existing.recorded_at = effective_recorded_at
+                # Template version may have evolved between original
+                # write and this edit — point at the current active
+                # version so dashboards using the active schema
+                # see the new shape.
+                existing.template = template
+                existing.save()
+                updated.append(existing)
+            else:
+                result = ExamResult.objects.create(
+                    player=target_player,
+                    template=template,
+                    recorded_at=effective_recorded_at,
+                    result_data=result_data,
+                    inputs_snapshot=inputs_snapshot,
+                    event=event,
+                )
+                created.append(result)
 
-        if created and not template.is_locked:
+        if (created or updated) and not template.is_locked:
             template.is_locked = True
             template.save(update_fields=["is_locked"])
 
     return {
         "created": len(created),
+        "updated": len(updated),
         "skipped": skipped,
-        "results": [_serialize_result(r) for r in created],
+        "results": [_serialize_result(r) for r in (created + updated)],
     }
 
 
@@ -1341,6 +1448,7 @@ def get_team_report(
     date_to: str | None = None,
     player_ids: str | None = None,
     match_id: str | None = None,
+    match_ids: str | None = None,
 ):
     """Return the active TeamReportLayout for `(department, category)`.
 
@@ -1426,6 +1534,9 @@ def get_team_report(
     raw_cfg = layout.match_selector_config or {}
     selector_enabled = bool(raw_cfg.get("enabled"))
     selector_required = bool(raw_cfg.get("required"))
+    selector_mode = (raw_cfg.get("mode") or "single").lower()
+    if selector_mode not in {"single", "multi"}:
+        selector_mode = "single"
     selector_event_type = (
         raw_cfg.get("event_type") or Event.TYPE_MATCH
     )
@@ -1444,6 +1555,7 @@ def get_team_report(
 
     selector_options: list[Event] = []
     parsed_match_id: _UUID | None = None
+    parsed_match_ids: list[_UUID] = []
     if selector_enabled:
         # Recent matches in scope: matches tied to this category, of the
         # configured event_type, newest first. Soft cap via show_recent.
@@ -1460,16 +1572,48 @@ def get_team_report(
         selector_options = list(
             options_qs.order_by("-starts_at")[:selector_show_recent]
         )
-        if match_id:
-            try:
-                candidate = _UUID(match_id)
-            except (TypeError, ValueError):
-                candidate = None
-            if candidate is not None and any(e.id == candidate for e in selector_options):
-                parsed_match_id = candidate
-        # Required + nothing valid passed → auto-select the most recent.
-        if parsed_match_id is None and selector_required and selector_options:
-            parsed_match_id = selector_options[0].id
+        option_ids = {e.id for e in selector_options}
+
+        if selector_mode == "multi":
+            # Multi-mode: parse comma-separated match_ids, intersect with
+            # the visible options. Stale / out-of-scope IDs are dropped
+            # silently — same defensive posture as position_id / player_ids.
+            if match_ids:
+                for raw in match_ids.split(","):
+                    raw = raw.strip()
+                    if not raw:
+                        continue
+                    try:
+                        candidate = _UUID(raw)
+                    except (TypeError, ValueError):
+                        continue
+                    if candidate in option_ids and candidate not in parsed_match_ids:
+                        parsed_match_ids.append(candidate)
+            # Required + nothing valid passed → default to ALL options
+            # so the page renders the full season aggregate on first load.
+            # `match_ids is None` means the URL didn't carry the param at
+            # all (first load); `match_ids == ""` means the user explicitly
+            # cleared their selection (Limpiar button) — respect that and
+            # don't second-guess them with an auto-fill.
+            param_absent = match_ids is None
+            if (
+                selector_required
+                and not parsed_match_ids
+                and selector_options
+                and param_absent
+            ):
+                parsed_match_ids = [e.id for e in selector_options]
+        else:
+            # Single-mode: existing behavior.
+            if match_id:
+                try:
+                    candidate = _UUID(match_id)
+                except (TypeError, ValueError):
+                    candidate = None
+                if candidate is not None and candidate in option_ids:
+                    parsed_match_id = candidate
+            if parsed_match_id is None and selector_required and selector_options:
+                parsed_match_id = selector_options[0].id
 
     sections_payload = []
     for section in layout.sections.all():
@@ -1491,6 +1635,7 @@ def get_team_report(
                         date_from=parsed_from,
                         date_to=parsed_to,
                         event_id=parsed_match_id,
+                        event_ids=parsed_match_ids or None,
                     ),
                 }
             )
@@ -1514,6 +1659,7 @@ def get_team_report(
             "sections": sections_payload,
             "match_selector": {
                 "enabled": selector_enabled,
+                "mode": selector_mode,
                 "event_type": selector_event_type,
                 "required": selector_required,
                 "label": selector_label,
@@ -1528,6 +1674,7 @@ def get_team_report(
                     for e in selector_options
                 ],
                 "selected_id": parsed_match_id,
+                "selected_ids": parsed_match_ids,
             },
         }
     }
@@ -1881,6 +2028,214 @@ def delete_event(request, event_id: UUID):
         raise HttpError(404, "Event not found")
     event.delete()
     return {"deleted": True}
+
+
+# ---------- Match roster (convocatoria) ----------
+#
+# A match's roster is the full set of EventParticipant rows attached to
+# the Event. The roster panel on /partidos/[id]/editar talks to this
+# trio of endpoints: read, replace, and copy-from-last-match.
+
+@api.get("/events/{event_id}/roster", response=list[RosterEntryOut])
+def get_event_roster(request, event_id: UUID):
+    """Full per-player roster for a match — includes match_role + reason."""
+    from events.models import EventParticipant
+
+    membership = get_membership(request.user)
+    event = scope_events(Event.objects.all(), membership).filter(pk=event_id).first()
+    if event is None:
+        raise HttpError(404, "Event not found")
+
+    rows = (
+        EventParticipant.objects
+        .filter(event_id=event_id)
+        .select_related("player__category", "position_played")
+        .order_by("player__last_name", "player__first_name")
+    )
+    return [
+        {
+            "player_id": r.player_id,
+            "first_name": r.player.first_name,
+            "last_name": r.player.last_name,
+            "category_id": r.player.category_id,
+            "category_name": r.player.category.name if r.player.category else "",
+            "match_role": r.match_role or "",
+            "absence_reason": r.absence_reason or "",
+            "position_played_id": r.position_played_id,
+        }
+        for r in rows
+    ]
+
+
+@api.put("/events/{event_id}/roster", response=list[RosterEntryOut])
+@require_perm("events.change_event")
+def replace_event_roster(request, event_id: UUID, payload: RosterReplaceIn):
+    """Replace the entire roster atomically.
+
+    Every payload entry is upserted to an EventParticipant; any
+    pre-existing rows whose `player_id` isn't in the payload are
+    DELETED. Use this for the bulk save on the convocatoria panel —
+    the panel always sends the desired complete state.
+
+    Players come from any category visible to the user (cross-category
+    promotions are first-class — they just land with `match_role =
+    "promovido"`).
+    """
+    from django.db import transaction
+    from events.models import EventParticipant
+
+    membership = get_membership(request.user)
+    event = scope_events(Event.objects.all(), membership).filter(pk=event_id).first()
+    if event is None:
+        raise HttpError(404, "Event not found")
+
+    # Validate player IDs are visible to the user. We use the wider
+    # roster scope (club-level) instead of `scope_players` so coaches
+    # can convocate cross-category — promoting a SUB-20 to a Primer
+    # Equipo match is a normal operation that shouldn't be blocked by
+    # the user's data-reading category memberships.
+    requested_ids = {e.player_id for e in payload.entries}
+    visible_players = {
+        p.id: p
+        for p in scope_players_for_roster(
+            Player.objects.select_related("category"), membership,
+        ).filter(id__in=requested_ids)
+    }
+    missing = requested_ids - set(visible_players.keys())
+    if missing:
+        raise HttpError(
+            400,
+            f"Some players are not in this club: {sorted(str(x) for x in missing)}",
+        )
+
+    # Validate match_role values.
+    valid_roles = {choice[0] for choice in EventParticipant.MatchRole.choices}
+    for entry in payload.entries:
+        if entry.match_role and entry.match_role not in valid_roles:
+            raise HttpError(
+                400, f"Invalid match_role '{entry.match_role}'. "
+                     f"Valid roles: {sorted(valid_roles)}"
+            )
+
+    with transaction.atomic():
+        # Delete rows for players not in the new roster. Stats already
+        # captured on those rows (minutes/goals/cards) are lost on
+        # purpose — coaches drop a player from the convocatoria when
+        # they want to revoke the participation.
+        EventParticipant.objects.filter(event_id=event_id).exclude(
+            player_id__in=requested_ids,
+        ).delete()
+
+        # Upsert each entry. Existing rows preserve their match stats —
+        # we only overwrite the participation-status fields.
+        for entry in payload.entries:
+            EventParticipant.objects.update_or_create(
+                event_id=event_id,
+                player_id=entry.player_id,
+                defaults={
+                    "match_role": entry.match_role or None,
+                    "absence_reason": entry.absence_reason or "",
+                    "position_played_id": entry.position_played_id,
+                    "attendance": "scheduled",
+                },
+            )
+
+        # Keep the Event.participants M2M consistent with the new set.
+        # (Other consumers — calendar widgets, badges — still query the
+        # M2M directly rather than EventParticipant.)
+        event.participants.set([visible_players[pid] for pid in requested_ids])
+
+    # Return the new roster so the frontend can sync state without
+    # a follow-up GET.
+    rows = (
+        EventParticipant.objects
+        .filter(event_id=event_id)
+        .select_related("player__category", "position_played")
+        .order_by("player__last_name", "player__first_name")
+    )
+    return [
+        {
+            "player_id": r.player_id,
+            "first_name": r.player.first_name,
+            "last_name": r.player.last_name,
+            "category_id": r.player.category_id,
+            "category_name": r.player.category.name if r.player.category else "",
+            "match_role": r.match_role or "",
+            "absence_reason": r.absence_reason or "",
+            "position_played_id": r.position_played_id,
+        }
+        for r in rows
+    ]
+
+
+@api.get("/events/{event_id}/suggested-roster", response=list[RosterEntryOut])
+def suggested_roster(request, event_id: UUID):
+    """Pre-fill source for the convocatoria panel.
+
+    Returns the EventParticipant rows from the **most recent past
+    match** in the same category as this one. The frontend uses this
+    behind a "Copiar del último partido" button so a coach doesn't
+    have to rebuild the roster from scratch every weekend.
+
+    Returns `[]` when no prior match exists for the category — caller
+    is expected to gracefully no-op the button in that case.
+    """
+    from django.utils import timezone as _tz
+    from events.models import EventParticipant
+
+    membership = get_membership(request.user)
+    event = scope_events(
+        Event.objects.select_related("category"), membership,
+    ).filter(pk=event_id).first()
+    if event is None:
+        raise HttpError(404, "Event not found")
+
+    if event.category_id is None:
+        return []
+
+    # The "previous" match is the latest match (excluding this one) in
+    # the same category that ALREADY HAS A ROSTER. A bare "starts_at <
+    # now()" filter would otherwise pick up an empty scheduled fixture
+    # whose date just passed — which defeats the point of "copy from
+    # last match". Annotating + filtering by participant count gives us
+    # the last match the coach actually built a roster for.
+    from django.db.models import Count
+    prev_match = (
+        Event.objects
+        .filter(
+            club_id=event.club_id,
+            event_type=Event.TYPE_MATCH,
+            category_id=event.category_id,
+            starts_at__lt=event.starts_at,
+        )
+        .exclude(pk=event_id)
+        .annotate(_p_count=Count("event_participants"))
+        .filter(_p_count__gt=0)
+        .order_by("-starts_at")
+        .first()
+    )
+    if prev_match is None:
+        return []
+
+    rows = (
+        EventParticipant.objects
+        .filter(event_id=prev_match.id)
+        .select_related("player__category", "position_played")
+        .order_by("player__last_name", "player__first_name")
+    )
+    return [
+        {
+            "player_id": r.player_id,
+            "first_name": r.player.first_name,
+            "last_name": r.player.last_name,
+            "category_id": r.player.category_id,
+            "category_name": r.player.category.name if r.player.category else "",
+            "match_role": r.match_role or "",
+            "absence_reason": r.absence_reason or "",
+            "position_played_id": r.position_played_id,
+        }
+        for r in rows
+    ]
 
 
 # =============================================================================

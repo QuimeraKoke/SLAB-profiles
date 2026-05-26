@@ -72,6 +72,25 @@ def scope_players(qs: QuerySet, membership: StaffMembership | None) -> QuerySet:
     return qs
 
 
+def scope_players_for_roster(qs: QuerySet, membership: StaffMembership | None) -> QuerySet:
+    """Wider visibility for match-roster operations.
+
+    Unlike `scope_players` (which restricts to the user's category
+    memberships for data-reading), the convocatoria has to surface
+    EVERY player in the club — promotions from SUB-20 to Primer
+    Equipo are a normal football operation, and a coach managing
+    Primer Equipo matches needs access to the youth-division roster
+    without having to also read their per-player medical history.
+
+    Membership-less users (platform admins) see everything;
+    everyone else sees their club's full roster regardless of which
+    categories they're assigned to.
+    """
+    if has_full_access(membership):
+        return qs
+    return qs.filter(category__club=membership.club)
+
+
 def scope_templates(qs: QuerySet, membership: StaffMembership | None) -> QuerySet:
     if has_full_access(membership):
         return qs

@@ -22,9 +22,23 @@ export default function TeamRosterMatrix({ widget }: Props) {
   // Default sort: player name asc. Click any header to sort by that column.
   // Repeated clicks toggle direction; clicking a different column resets to asc.
   const [sort, setSort] = useState<SortState>({ key: "__player", dir: "asc" });
+  // Hide players whose every cell is missing for the current window.
+  // Off by default — the squad list is cleaner without the silent rows;
+  // toggling shows them in case a coach needs to spot "who has no data".
+  const [showNoData, setShowNoData] = useState(false);
+
+  const visibleRows = useMemo(() => {
+    const rows = data.rows ?? [];
+    if (showNoData) return rows;
+    return rows.filter((r) => {
+      // A cell exists in the map only when it has a value; missing cells
+      // are simply absent. So "has any data" = at least one key.
+      return Object.keys(r.cells ?? {}).length > 0;
+    });
+  }, [data.rows, showNoData]);
 
   const sortedRows = useMemo(() => {
-    const rows = [...(data.rows ?? [])];
+    const rows = [...visibleRows];
     if (sort.key === "__player") {
       rows.sort((a, b) => a.player_name.localeCompare(b.player_name));
     } else {
@@ -42,7 +56,7 @@ export default function TeamRosterMatrix({ widget }: Props) {
     }
     if (sort.dir === "desc") rows.reverse();
     return rows;
-  }, [data.rows, sort]);
+  }, [visibleRows, sort]);
 
   const handleSortClick = (key: string) => {
     setSort((prev) =>
@@ -52,14 +66,39 @@ export default function TeamRosterMatrix({ widget }: Props) {
     );
   };
 
-  if (data.empty || (data.rows ?? []).length === 0) {
+  const totalRows = data.rows?.length ?? 0;
+  const hiddenByFilter = !showNoData && totalRows > 0 && sortedRows.length === 0;
+  if (data.empty || totalRows === 0) {
     return (
       <div className={styles.widget}>
-        <Header widget={widget} />
+        <Header
+          widget={widget}
+          showNoData={showNoData}
+          onToggleShowNoData={setShowNoData}
+          totalRows={totalRows}
+          visibleRows={sortedRows.length}
+        />
         <div className={styles.empty}>
           {data.error
             ? `Configuración inválida: ${data.error}`
             : "Sin datos suficientes para este reporte."}
+        </div>
+      </div>
+    );
+  }
+  if (hiddenByFilter) {
+    return (
+      <div className={styles.widget}>
+        <Header
+          widget={widget}
+          showNoData={showNoData}
+          onToggleShowNoData={setShowNoData}
+          totalRows={totalRows}
+          visibleRows={sortedRows.length}
+        />
+        <div className={styles.empty}>
+          Ningún jugador tiene datos en este período. Activá
+          &quot;Mostrar jugadores sin datos&quot; para ver el plantel completo.
         </div>
       </div>
     );
@@ -69,7 +108,13 @@ export default function TeamRosterMatrix({ widget }: Props) {
 
   return (
     <div className={styles.widget}>
-      <Header widget={widget} />
+      <Header
+        widget={widget}
+        showNoData={showNoData}
+        onToggleShowNoData={setShowNoData}
+        totalRows={totalRows}
+        visibleRows={sortedRows.length}
+      />
 
       <div className={styles.tableWrapper}>
         <table className={styles.table}>
@@ -170,7 +215,20 @@ export default function TeamRosterMatrix({ widget }: Props) {
   );
 }
 
-function Header({ widget }: { widget: TeamReportWidget }) {
+function Header({
+  widget,
+  showNoData,
+  onToggleShowNoData,
+  totalRows,
+  visibleRows,
+}: {
+  widget: TeamReportWidget;
+  showNoData: boolean;
+  onToggleShowNoData: (next: boolean) => void;
+  totalRows: number;
+  visibleRows: number;
+}) {
+  const hiddenCount = totalRows - visibleRows;
   return (
     <header className={styles.header}>
       <div>
@@ -179,6 +237,19 @@ function Header({ widget }: { widget: TeamReportWidget }) {
           <p className={styles.description}>{widget.description}</p>
         )}
       </div>
+      <label className={styles.toggle}>
+        <input
+          type="checkbox"
+          checked={showNoData}
+          onChange={(e) => onToggleShowNoData(e.target.checked)}
+        />
+        <span>
+          Mostrar jugadores sin datos
+          {!showNoData && hiddenCount > 0 && (
+            <span className={styles.toggleHint}> ({hiddenCount})</span>
+          )}
+        </span>
+      </label>
     </header>
   );
 }

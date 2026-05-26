@@ -33,8 +33,42 @@ from .context import MigrationContext
 _TZ = ZoneInfo("America/Santiago")
 
 
+def _bootstrap_lookups_from_db(ctx: MigrationContext) -> None:
+    """Rebuild player_by_legacy_id + event_by_legacy_id from existing
+    `legacy_raw._source_pk` columns when those maps are empty.
+
+    Earlier phases populate these maps in-memory, so a full migration run
+    has them. But re-running phase 6 alone (via `--entities=phase6`)
+    starts with empty maps and would skip every row. This helper makes
+    phase 6 self-sufficient for surgical re-runs.
+    """
+    from core.models import Player
+    from events.models import Event
+
+    if not ctx.player_by_legacy_id:
+        rebuilt = 0
+        for p in Player.objects.filter(legacy_raw__has_key="_source_pk"):
+            pk = (p.legacy_raw or {}).get("_source_pk")
+            if pk is not None:
+                ctx.player_by_legacy_id[int(pk)] = str(p.id)
+                rebuilt += 1
+        ctx.audit.info(f"phase6_results: bootstrapped player lookup ({rebuilt} entries)")
+
+    if not ctx.event_by_legacy_id:
+        rebuilt = 0
+        for ev in Event.objects.filter(
+            event_type=Event.TYPE_MATCH, legacy_raw__has_key="_source_pk",
+        ):
+            pk = (ev.legacy_raw or {}).get("_source_pk")
+            if pk is not None:
+                ctx.event_by_legacy_id[int(pk)] = str(ev.id)
+                rebuilt += 1
+        ctx.audit.info(f"phase6_results: bootstrapped event lookup ({rebuilt} entries)")
+
+
 def run(ctx: MigrationContext) -> None:
     ctx.audit.info("phase6_results: start")
+    _bootstrap_lookups_from_db(ctx)
 
     # Pre-resolve every template once. Skip a sub-phase when its
     # template isn't seeded (e.g. someone forgot to run the seed cmd).
@@ -62,6 +96,10 @@ def run(ctx: MigrationContext) -> None:
     _import_fase_densidad(ctx, templates["fase_densidad"])
     _import_medicamentos(ctx, templates["medicacion"])
     _import_evaluacion_partido(ctx, templates["rendimiento_de_partido"])
+    # Stats importer runs LAST so it can merge minutes/goals/cards into
+    # the rendimiento_de_partido rows that the evaluacion importer just
+    # created (or upserted).
+    _import_estadistica_interna(ctx, templates["rendimiento_de_partido"])
 
     ctx.audit.info("phase6_results: done")
 
@@ -201,6 +239,26 @@ def _import_antropometria(ctx: MigrationContext, template: ExamTemplate | None):
     )
     for row in rows:
         try:
+            # The legacy column `perimetro_muslo_medial` stores
+            # implausibly small values across 94% of rows (avg 12.5 cm,
+            # likely a skinfold value accidentally written into the
+            # perimeter column). The Kerr Phantom-Stratagem muscle-mass
+            # formula expects mid-thigh perimeter — without this
+            # fallback we end up computing % muscle ~20% (vs the
+            # clinically expected ~50%) and IMO ~1.8 (vs ~4).
+            #
+            # Heuristic: trust `perimetro_muslo_medial` when it looks
+            # like a real perimeter (>= 30 cm); otherwise fall back to
+            # `perimetro_muslo_maximo` which is correctly populated on
+            # every row. Difference between mid- and max-thigh is small
+            # in practice (~2 cm) and far less damaging than the bug.
+            medial = row.get("perimetro_muslo_medial")
+            maximo = row.get("perimetro_muslo_maximo")
+            muslo_medio_value = (
+                medial if (medial is not None and float(medial) >= 30)
+                else maximo
+            )
+
             # Map legacy columns to SLAB template keys.
             data: dict[str, Any] = {
                 "peso": row.get("peso_bruto_kg"),
@@ -223,7 +281,7 @@ def _import_antropometria(ctx: MigrationContext, template: ExamTemplate | None):
                 "cintura": row.get("perimetro_cintura_minima"),
                 "caderas": row.get("perimetro_cadera_maximo"),
                 "muslo_gluteo": row.get("perimetro_muslo_maximo"),
-                "muslo_medio": row.get("perimetro_muslo_medial"),
+                "muslo_medio": muslo_medio_value,
                 "pierna_perim": row.get("perimetro_pantorrilla_maxima"),
                 # skinfolds
                 "pliegue_triceps": row.get("pliegues_triceps"),
@@ -582,4 +640,169 @@ def _import_evaluacion_partido(ctx: MigrationContext, template: ExamTemplate | N
         except Exception as exc:   # noqa: BLE001
             ctx.audit.record(phase="phase6", action="failed",
                              source_table="evaluacion_partido", source_pk=row.get("id_evaluacion"),
+                             reason=f"{type(exc).__name__}: {exc}")
+
+
+def _import_estadistica_interna(ctx: MigrationContext, template: ExamTemplate | None):
+    """Enrich rendimiento_de_partido results with match stats from
+    legacy `estadistica_interna` (minutos, goles, amarillas, rojas).
+
+    Legacy carries one row per citation (so bench players with 0 minutes
+    appear too — kept because "did NOT play" is a meaningful signal).
+    The 2025+ rows have NULL jugador_id / partido_id and resolve via
+    `citaciones_id` → citaciones table → (jugador_id, partido_id),
+    same pattern as evaluacion_partido.
+
+    Merge strategy:
+      - If a rendimiento_de_partido result already exists for
+        (player, match) → patch the stats fields into its result_data,
+        record `estadistica_interna_pk` in legacy_raw, save.
+      - If no existing result → create a stats-only ExamResult so the
+        Táctico dashboards still see the player's match line.
+    """
+    if not template:
+        return
+
+    # Pre-load the legacy `posicion` table so we can map posicion_id →
+    # one of the four broad buckets the SLAB schema declares
+    # (`Portero` / `Defensa` / `Mediocampista` / `Delantero`). We
+    # bucket directly off the legacy name to stay independent of
+    # the phase-0 position lookup — the lookup may be empty when
+    # this importer runs as part of a `--entities=phase6` re-run.
+
+    def _bucket_position(name: str) -> str | None:
+        n = (name or "").lower()
+        if "arquero" in n or "portero" in n:
+            return "Portero"
+        # "Lateral volante" → mediocampista (volante wins over lateral).
+        if "volante" in n or "mediocamp" in n:
+            return "Mediocampista"
+        if "delantero" in n or "extremo" in n:
+            return "Delantero"
+        if "lateral" in n or "defensa" in n or "defensor" in n:
+            return "Defensa"
+        return None
+
+    position_bucket_by_legacy_id: dict[int, str] = {}
+    for r in ctx.legacy_db.iter_rows(
+        "SELECT id_posicion, nombre FROM posicion"
+    ):
+        bucket = _bucket_position(r.get("nombre") or "")
+        if bucket:
+            position_bucket_by_legacy_id[r["id_posicion"]] = bucket
+
+    sql = """
+        SELECT ei.id_estadistica,
+               ei.minutos, ei.goles, ei.amarillas, ei.rojas,
+               COALESCE(ei.jugador_id, c.jugador_id) AS jugador_id,
+               COALESCE(ei.partido_id, c.partido_id) AS partido_id,
+               p.fecha_partido,
+               c.estado, c.posicion_id
+          FROM estadistica_interna ei
+          LEFT JOIN citaciones c ON c.id_citaciones = ei.citaciones_id
+          LEFT JOIN partido p ON p.id_partido = COALESCE(ei.partido_id, c.partido_id)
+         WHERE p.fecha_partido BETWEEN %s AND %s
+    """
+    rows = ctx.legacy_db.fetch_all(sql, (ctx.date_from, ctx.date_to))
+
+    for row in rows:
+        try:
+            legacy_id = row["id_estadistica"]
+            jugador_id = row.get("jugador_id")
+            partido_id = row.get("partido_id")
+            if jugador_id is None or partido_id is None:
+                ctx.audit.record(phase="phase6", action="skipped",
+                                 source_table="estadistica_interna", source_pk=legacy_id,
+                                 reason="unresolvable jugador/partido")
+                continue
+
+            player_uuid = ctx.player_by_legacy_id.get(jugador_id)
+            event_uuid = ctx.event_by_legacy_id.get(partido_id)
+            if not player_uuid:
+                ctx.audit.record(phase="phase6", action="skipped",
+                                 source_table="estadistica_interna", source_pk=legacy_id,
+                                 reason=f"player {jugador_id} not in active set")
+                continue
+
+            # Build the stats payload. red_card is boolean on SLAB but
+            # an integer count on legacy — coerce. `started_eleven` and
+            # `position_played` are derived from the citacion (estado +
+            # posicion_id) so the team-table form opens pre-filled
+            # with every field legacy can supply, not just the four
+            # numeric ones.
+            estado = (row.get("estado") or "").strip()
+            posicion_id = row.get("posicion_id")
+            position_role: str | None = (
+                position_bucket_by_legacy_id.get(posicion_id)
+                if posicion_id is not None else None
+            )
+
+            stats: dict[str, Any] = {
+                "minutes_played": row.get("minutos"),
+                "goals": row.get("goles"),
+                "yellow_cards": row.get("amarillas"),
+                "red_card": bool(row.get("rojas") and row["rojas"] > 0),
+                "started_eleven": estado == "Titular",
+                "position_played": position_role,
+            }
+            # Drop nulls so we don't overwrite existing values with blanks.
+            stats = {k: v for k, v in stats.items() if v is not None}
+
+            if ctx.dry_run:
+                ctx.audit.record(phase="phase6", action="merged",
+                                 source_table="estadistica_interna", source_pk=legacy_id,
+                                 target_model="exams.ExamResult",
+                                 reason="dry-run")
+                continue
+
+            # Find existing rendimiento_de_partido result for (player, event).
+            existing_qs = ExamResult.objects.filter(
+                template__family_id=template.family_id,
+                player_id=player_uuid,
+            )
+            if event_uuid:
+                existing_qs = existing_qs.filter(event_id=event_uuid)
+            existing = existing_qs.first()
+
+            if existing:
+                # Merge stats into existing result_data (preserves rating
+                # + notes from evaluacion_partido). Stamp legacy_raw with
+                # the estadistica_interna provenance.
+                merged_data = jsonable({**(existing.result_data or {}), **stats})
+                merged_raw = jsonable({
+                    **(existing.legacy_raw or {}),
+                    "estadistica_interna_pk": legacy_id,
+                    "estadistica_interna_row": row,
+                })
+                # Re-run the formula engine so any calculated fields
+                # that depend on the new stats (none today, but cheap
+                # insurance for future) get recomputed.
+                from core.models import Player
+                player_obj = Player.objects.filter(id=player_uuid).first()
+                merged_data, inputs_snapshot = compute_result_data(
+                    template, merged_data, player=player_obj,
+                )
+                existing.result_data = merged_data
+                existing.inputs_snapshot = inputs_snapshot
+                existing.legacy_raw = merged_raw
+                with transaction.atomic():
+                    existing.save()
+                ctx.audit.record(phase="phase6", action="merged",
+                                 source_table="estadistica_interna", source_pk=legacy_id,
+                                 target_model="exams.ExamResult",
+                                 target_pk=str(existing.id))
+            else:
+                # No coach rating for this (player, match) — create a
+                # stats-only ExamResult so the player still shows up on
+                # Táctico dashboards with their minutes / goals / cards.
+                _upsert_result(
+                    ctx, "estadistica_interna", legacy_id, template,
+                    jugador_id, _ts(row["fecha_partido"]), stats,
+                    event_legacy_id=partido_id,
+                    extra_legacy={"_source_row": row},
+                )
+        except Exception as exc:   # noqa: BLE001
+            ctx.audit.record(phase="phase6", action="failed",
+                             source_table="estadistica_interna",
+                             source_pk=row.get("id_estadistica"),
                              reason=f"{type(exc).__name__}: {exc}")

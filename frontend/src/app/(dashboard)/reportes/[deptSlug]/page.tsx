@@ -11,6 +11,7 @@ import ProfileDepartment from "@/components/perfil/ProfileDepartment/ProfileDepa
 import DownloadExcelButton from "@/components/reports/DownloadExcelButton";
 import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
 import MatchSelector from "@/components/reports/MatchSelector";
+import MatchMultiSelector from "@/components/reports/MatchMultiSelector";
 import ReportFilters, { defaultFilters } from "@/components/reports/ReportFilters";
 import type { ReportFiltersValue } from "@/components/reports/ReportFilters";
 import TeamReportDashboard from "@/components/reports/TeamReportDashboard";
@@ -43,6 +44,11 @@ export default function ReportePage({ params }: PageProps) {
   const tabFromUrl = (searchParams.get("tab") as TabKey) || "plantel";
   const playerFromUrl = searchParams.get("player") ?? "";
   const matchFromUrl = searchParams.get("match_id") ?? "";
+  // Preserve null vs "" so we can tell "first load (param absent)" apart
+  // from "user explicitly cleared (param present, empty)". The required-
+  // mode auto-pick only fires on the former.
+  const matchIdsParam = searchParams.get("match_ids");
+  const matchIdsFromUrl = matchIdsParam ?? "";
 
   const [department, setDepartment] = useState<Department | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -68,6 +74,7 @@ export default function ReportePage({ params }: PageProps) {
     tab?: TabKey;
     player?: string | null;
     match?: string | null;
+    matchIds?: string[] | null;
   }) => {
     const sp = new URLSearchParams(searchParams.toString());
     if (next.tab !== undefined) sp.set("tab", next.tab);
@@ -78,6 +85,20 @@ export default function ReportePage({ params }: PageProps) {
     if (next.match !== undefined) {
       if (next.match) sp.set("match_id", next.match);
       else sp.delete("match_id");
+    }
+    if (next.matchIds !== undefined) {
+      if (next.matchIds === null) {
+        // Programmatic reset (e.g. switching layouts). Remove the param
+        // so the next load triggers the required-mode auto-pick.
+        sp.delete("match_ids");
+      } else if (next.matchIds.length > 0) {
+        sp.set("match_ids", next.matchIds.join(","));
+      } else {
+        // Empty array = user clicked Limpiar. Keep the param present
+        // (as `match_ids=`) so the backend can tell "explicit empty"
+        // apart from "first load, no selection yet".
+        sp.set("match_ids", "");
+      }
     }
     router.replace(`/reportes/${deptSlug}?${sp.toString()}`);
   };
@@ -151,22 +172,33 @@ export default function ReportePage({ params }: PageProps) {
     if (!skipDates && filters.date.from) params.set("date_from", filters.date.from);
     if (!skipDates && filters.date.to) params.set("date_to", filters.date.to);
     if (matchFromUrl) params.set("match_id", matchFromUrl);
+    // matchIdsParam preserves null vs "" — only suppress the param when
+    // it's null (URL doesn't carry it). An explicit empty value means
+    // "user clicked Limpiar"; the backend needs to see that to skip the
+    // required-mode auto-fill, so we still send it.
+    if (matchIdsParam !== null) params.set("match_ids", matchIdsParam);
     api<TeamReportResponse>(`/reports/${department.slug}?${params}`)
       .then((data) => {
         if (cancelled) return;
         setLayout(data.layout);
         setLayoutFetched(true);
         setError(null);
-        // Required-mode auto-pick: if the backend selected a match for
+        // Required-mode auto-pick: if the backend selected match(es) for
         // us (URL was empty), reflect it in the URL so deep-linking +
-        // the dropdown's `value=` stay coherent.
+        // the picker's value stay coherent.
         const sel = data.layout?.match_selector;
-        if (
-          sel?.enabled
-          && sel.selected_id
-          && sel.selected_id !== matchFromUrl
-        ) {
-          updateUrl({ match: sel.selected_id });
+        const mode = sel?.mode ?? "single";
+        if (sel?.enabled) {
+          if (mode === "single" && sel.selected_id && sel.selected_id !== matchFromUrl) {
+            updateUrl({ match: sel.selected_id });
+          } else if (
+            mode === "multi"
+            && Array.isArray(sel.selected_ids)
+            && sel.selected_ids.length > 0
+            && matchIdsParam === null  // only on first load (param absent)
+          ) {
+            updateUrl({ matchIds: sel.selected_ids });
+          }
         }
       })
       .catch((err) => {
@@ -180,7 +212,7 @@ export default function ReportePage({ params }: PageProps) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [department, categoryId, categoryLoading, filters, matchFromUrl]);
+  }, [department, categoryId, categoryLoading, filters, matchFromUrl, matchIdsParam]);
 
   const selectedPlayer = useMemo(
     () => players.find((p) => p.id === selectedPlayerId) ?? null,
@@ -287,10 +319,17 @@ export default function ReportePage({ params }: PageProps) {
             <div className={styles.muted}>Cargando reporte…</div>
           )}
           {layout?.match_selector?.enabled && (
-            <MatchSelector
-              config={layout.match_selector}
-              onChange={(id) => updateUrl({ match: id || null })}
-            />
+            layout.match_selector.mode === "multi" ? (
+              <MatchMultiSelector
+                config={layout.match_selector}
+                onChange={(ids) => updateUrl({ matchIds: ids })}
+              />
+            ) : (
+              <MatchSelector
+                config={layout.match_selector}
+                onChange={(id) => updateUrl({ match: id || null })}
+              />
+            )
           )}
           {layout ? (
             <TeamReportDashboard sections={layout.sections} />

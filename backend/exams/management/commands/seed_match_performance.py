@@ -22,22 +22,22 @@ from exams.models import ExamTemplate
 CONFIG_SCHEMA: dict = {
     "fields": [
         {"key": "started_eleven", "label": "Titular",                "type": "boolean", "group": "Convocatoria"},
-        {"key": "minutes_played", "label": "Minutos jugados",        "type": "number", "unit": "min", "group": "Tiempo en cancha", "chart_type": "line"},
+        {"key": "minutes_played", "label": "Minutos jugados",        "type": "number", "unit": "min", "group": "Tiempo en cancha", "chart_type": "line", "min": 0, "max": 120},
         {"key": "position_played","label": "Posición jugada",        "type": "categorical",
          "options": ["Portero", "Defensa", "Mediocampista", "Delantero"],
          "group": "Tiempo en cancha"},
 
-        {"key": "goals",          "label": "Goles",                  "type": "number", "unit": "n", "group": "Producción ofensiva", "chart_type": "line"},
-        {"key": "assists",        "label": "Asistencias",            "type": "number", "unit": "n", "group": "Producción ofensiva", "chart_type": "line"},
-        {"key": "shots",          "label": "Remates",                "type": "number", "unit": "n", "group": "Producción ofensiva"},
-        {"key": "shots_on_target","label": "Remates al arco",        "type": "number", "unit": "n", "group": "Producción ofensiva"},
+        {"key": "goals",          "label": "Goles",                  "type": "number", "unit": "n", "group": "Producción ofensiva", "chart_type": "line", "min": 0, "max": 20},
+        {"key": "assists",        "label": "Asistencias",            "type": "number", "unit": "n", "group": "Producción ofensiva", "chart_type": "line", "min": 0, "max": 20},
+        {"key": "shots",          "label": "Remates",                "type": "number", "unit": "n", "group": "Producción ofensiva", "min": 0, "max": 50},
+        {"key": "shots_on_target","label": "Remates al arco",        "type": "number", "unit": "n", "group": "Producción ofensiva", "min": 0, "max": 50},
 
-        {"key": "yellow_cards",   "label": "Tarjetas amarillas",     "type": "number", "unit": "n", "group": "Disciplina"},
+        {"key": "yellow_cards",   "label": "Tarjetas amarillas",     "type": "number", "unit": "n", "group": "Disciplina", "min": 0, "max": 2},
         {"key": "red_card",       "label": "Tarjeta roja",           "type": "boolean",             "group": "Disciplina"},
-        {"key": "fouls_committed","label": "Faltas cometidas",       "type": "number", "unit": "n", "group": "Disciplina"},
-        {"key": "fouls_received", "label": "Faltas recibidas",       "type": "number", "unit": "n", "group": "Disciplina"},
+        {"key": "fouls_committed","label": "Faltas cometidas",       "type": "number", "unit": "n", "group": "Disciplina", "min": 0, "max": 30},
+        {"key": "fouls_received", "label": "Faltas recibidas",       "type": "number", "unit": "n", "group": "Disciplina", "min": 0, "max": 30},
 
-        {"key": "rating",         "label": "Calificación (1-10)",    "type": "number", "unit": "/10", "group": "Evaluación", "chart_type": "line"},
+        {"key": "rating",         "label": "Calificación (1-10)",    "type": "number", "unit": "/10", "group": "Evaluación", "chart_type": "line", "min": 1, "max": 10},
         {"key": "notes",          "label": "Notas tácticas",         "type": "text", "multiline": True, "rows": 4, "group": "Evaluación"},
     ],
 }
@@ -101,6 +101,7 @@ class Command(BaseCommand):
                 template = ExamTemplate.objects.create(
                     name=name, department=department,
                     config_schema=CONFIG_SCHEMA, input_config=INPUT_CONFIG,
+                    link_to_match=True,
                 )
                 if opts["all_applicable_categories"]:
                     cats = Category.objects.filter(club=club, departments=department)
@@ -119,9 +120,10 @@ class Command(BaseCommand):
                 continue
             template.config_schema = CONFIG_SCHEMA
             template.input_config = INPUT_CONFIG
+            template.link_to_match = True
             if opts["unlock"]:
                 template.is_locked = False
-            template.save(update_fields=["config_schema", "input_config", "is_locked", "updated_at"])
+            template.save(update_fields=["config_schema", "input_config", "link_to_match", "is_locked", "updated_at"])
             self.stdout.write(self.style.SUCCESS(
                 f"[{club.name}] updated template '{name}' "
                 f"({len(CONFIG_SCHEMA['fields'])} fields)."

@@ -1,0 +1,10 @@
+{"level": "info", "message": "migration: start", "club": "Universidad de Chile", "dry_run": false, "date_from": "2025-01-01", "date_to": "2026-12-31", "legacy_dsn": "192.168.1.24:5432/uchile", "phases": ["phase4"], "ts": "2026-05-26T04:15:09"}
+{"level": "info", "message": "phase0: skipped (not in --entities filter)", "ts": "2026-05-26T04:15:09", "dry_run": false}
+{"level": "info", "message": "phase1: skipped (not in --entities filter)", "ts": "2026-05-26T04:15:09", "dry_run": false}
+{"level": "info", "message": "phase2: skipped (not in --entities filter)", "ts": "2026-05-26T04:15:09", "dry_run": false}
+{"level": "info", "message": "phase3: skipped (not in --entities filter)", "ts": "2026-05-26T04:15:09", "dry_run": false}
+{"level": "info", "message": "phase4_callups: start", "ts": "2026-05-26T04:15:09", "dry_run": false}
+{"level": "warn", "message": "phase4_callups: no events were imported in phase 3 — skipping", "ts": "2026-05-26T04:15:09", "dry_run": false}
+{"level": "info", "message": "phase5: skipped (not in --entities filter)", "ts": "2026-05-26T04:15:09", "dry_run": false}
+{"level": "info", "message": "phase6: skipped (not in --entities filter)", "ts": "2026-05-26T04:15:09", "dry_run": false}
+{"level": "info", "message": "migration: done", "summary": {}, "ts": "2026-05-26T04:15:09", "dry_run": false}

@@ -1,10 +1,11 @@
 "use client";
 
-import React, { use, useEffect, useState } from "react";
+import React, { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import MatchForm from "@/components/partidos/MatchForm";
+import RosterPanel from "@/components/partidos/RosterPanel";
 import TeamTableForm from "@/components/forms/TeamTableForm";
 import { api, ApiError } from "@/lib/api";
 import type { CalendarEvent, ExamTemplate } from "@/lib/types";
@@ -22,6 +23,24 @@ export default function EditarPartidoPage({ params }: PageProps) {
   const [perfTemplate, setPerfTemplate] = useState<ExamTemplate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Roster entries surfaced by RosterPanel. Used to derive which
+  // players are "dressed" (titular / suplente ingresa / citado sin
+  // vestir) so the stats table below only asks for entries from them.
+  const [rosterEntries, setRosterEntries] = useState<
+    Array<{ player_id: string; match_role: string }>
+  >([]);
+  const [showAllInStats, setShowAllInStats] = useState(false);
+
+  const DRESSED_ROLES = useMemo(
+    () => new Set(["titular", "suplente_ingresa", "citado_no_vestir"]),
+    [],
+  );
+  const dressedPlayerIds = useMemo(
+    () => rosterEntries
+      .filter((r) => DRESSED_ROLES.has(r.match_role))
+      .map((r) => r.player_id),
+    [rosterEntries, DRESSED_ROLES],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -130,6 +149,28 @@ export default function EditarPartidoPage({ params }: PageProps) {
         onDelete={handleDelete}
       />
 
+      <RosterPanel
+        eventId={event.id}
+        refreshKey={refreshKey}
+        onEntriesChange={(entries) =>
+          setRosterEntries(
+            entries.map((e) => ({
+              player_id: e.player_id,
+              match_role: e.match_role,
+            })),
+          )
+        }
+        onSaved={() => {
+          // Refetch the event so participants are up-to-date in the
+          // surrounding banner counts + the TeamTableForm's participant
+          // list (it scopes its roster off the event payload).
+          api<CalendarEvent>(`/events/${event.id}`)
+            .then((data) => setEvent(data))
+            .catch(() => {});
+          setRefreshKey((k) => k + 1);
+        }}
+      />
+
       {/* Bulk per-roster performance entry. Only renders when:
        *  - The match has participants (otherwise nobody to record)
        *  - The match has a category (team_table needs one for player scoping)
@@ -140,18 +181,34 @@ export default function EditarPartidoPage({ params }: PageProps) {
         && (perfTemplate.input_config?.input_modes ?? []).includes("team_table") && (
           <section className={styles.perfSection}>
             <header className={styles.perfHeader}>
-              <h2 className={styles.perfTitle}>Rendimiento por jugador</h2>
-              <span className={styles.perfHint}>
-                {event.result_count} {event.result_count === 1 ? "registro guardado" : "registros guardados"}{" "}
-                · una fila por convocado. Los valores se vinculan automáticamente al partido.
-              </span>
+              <div>
+                <h2 className={styles.perfTitle}>Rendimiento por jugador</h2>
+                <span className={styles.perfHint}>
+                  {event.result_count} {event.result_count === 1 ? "registro guardado" : "registros guardados"}{" "}
+                  {showAllInStats
+                    ? "· mostrando todos los convocados."
+                    : "· filtrado a los jugadores que vistieron (titular / suplente · ingresa / citado sin vestir)."}
+                </span>
+              </div>
+              <label className={styles.perfToggle}>
+                <input
+                  type="checkbox"
+                  checked={showAllInStats}
+                  onChange={(e) => setShowAllInStats(e.target.checked)}
+                />
+                <span>Mostrar todos los convocados</span>
+              </label>
             </header>
             <TeamTableForm
-              key={refreshKey}
+              key={`${refreshKey}-${showAllInStats}`}
               template={perfTemplate}
               categoryId={event.category.id}
               eventId={event.id}
-              participantIds={event.participants.map((p) => p.id)}
+              participantIds={
+                showAllInStats
+                  ? event.participants.map((p) => p.id)
+                  : dressedPlayerIds
+              }
               onCommitted={() => setRefreshKey((k) => k + 1)}
             />
           </section>

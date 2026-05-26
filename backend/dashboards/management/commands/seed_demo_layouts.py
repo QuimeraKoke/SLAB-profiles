@@ -892,25 +892,47 @@ def _spec_tactico(department: Department) -> dict:
         })
 
     team: list[dict] = []
+    team_match_selector_config: dict | None = None
     if rendimiento is not None:
+        # Táctico team view scopes everything by a MULTI-match selector —
+        # the season-stats table lives or dies by which matches the user
+        # ticks. show_recent=0 means "no cap" (all past matches), and
+        # past_only=True trims out scheduled fixtures.
+        team_match_selector_config = {
+            "enabled": True,
+            "mode": "multi",
+            "event_type": "match",
+            "required": True,
+            "label": "Partidos",
+            "show_recent": 0,
+            "past_only": True,
+        }
+        team.append({
+            "title": "Resumen por jugador",
+            "is_collapsible": False,
+            "widgets": [
+                {
+                    # Season aggregate driven by the multi-match selector.
+                    "chart_type": ChartType.TEAM_SEASON_STATS,
+                    "title": "Resumen de temporada por jugador",
+                    "description": (
+                        "Citaciones, minutos, goles y tarjetas para los "
+                        "partidos seleccionados. % minutos jugados usa 90 "
+                        "min por partido como referencia."
+                    ),
+                    "column_span": 12,
+                    "display_config": {
+                        "default_match_duration_min": 90,
+                        "order_by": "minutes",
+                    },
+                    "sources": [],
+                },
+            ],
+        })
         team.append({
             "title": "Rendimiento del plantel",
             "is_collapsible": False,
             "widgets": [
-                {
-                    "chart_type": ChartType.TEAM_ROSTER_MATRIX,
-                    "title": "Estadísticas por jugador (último partido)",
-                    "column_span": 12,
-                    "display_config": {"coloring": "vs_team_range"},
-                    "sources": [{
-                        "template": rendimiento,
-                        "field_keys": _filter_keys(rendimiento, [
-                            "minutes_played", "rating", "goals", "assists",
-                            "yellow_cards",
-                        ]),
-                        "aggregation": Aggregation.LATEST,
-                    }],
-                },
                 {
                     "chart_type": ChartType.TEAM_DISTRIBUTION,
                     "title": "Distribución de ratings (último partido)",
@@ -941,7 +963,11 @@ def _spec_tactico(department: Department) -> dict:
     # opening a profile or a department report.
     player.insert(0, _player_alerts_section())
     team.insert(0, _team_alerts_section())
-    return {"player": player, "team": team}
+    return {
+        "player": player,
+        "team": team,
+        "team_match_selector_config": team_match_selector_config,
+    }
 
 
 def _spec_nutricional(department: Department) -> dict:

@@ -223,6 +223,16 @@ class ChartType(models.TextChoices):
         "Team — match-aggregate statistics strip",
     )
 
+    # Per-player season-stats table aggregated over a selectable set of
+    # matches. Reads from EventParticipant (not ExamResult) so we can
+    # surface citaciones / titular / minutes / goals / cards as a single
+    # roster-wide view. Driven by the layout's match_selector_config
+    # when mode="multi"; otherwise falls back to all in-window matches.
+    TEAM_SEASON_STATS = (
+        "team_season_stats",
+        "Team — season stats per player (multi-match aggregate)",
+    )
+
 
 class Aggregation(models.TextChoices):
     LATEST = "latest", "Latest result only"
@@ -596,6 +606,7 @@ class TeamReportWidget(models.Model):
             (ChartType.TEAM_MATCH_SUMMARY.value, ChartType.TEAM_MATCH_SUMMARY.label),
             (ChartType.TEAM_ACTIVITY_LOG.value, ChartType.TEAM_ACTIVITY_LOG.label),
             (ChartType.TEAM_DAILY_GROUPED_BARS.value, ChartType.TEAM_DAILY_GROUPED_BARS.label),
+            (ChartType.TEAM_SEASON_STATS.value, ChartType.TEAM_SEASON_STATS.label),
         ],
     )
     title = models.CharField(max_length=160)

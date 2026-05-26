@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type {
   ExamField,
+  ExamResult,
   ExamTemplate,
   PlayerSummary,
   TeamResultsIn,
@@ -92,8 +93,18 @@ export default function TeamTableForm({
 
   useEffect(() => {
     let cancelled = false;
-    api<PlayerSummary[]>(`/players?category_id=${categoryId}`)
-      .then((data) => {
+    // Two parallel fetches: the roster (always needed) and the
+    // existing-results-for-this-(template,event) (only when an event
+    // is bound — that's the only context where prefill makes sense).
+    const rosterPromise = api<PlayerSummary[]>(`/players?category_id=${categoryId}`);
+    const resultsPromise: Promise<ExamResult[]> = eventId
+      ? api<ExamResult[]>(
+          `/results?template_id=${template.id}&event_id=${eventId}`,
+        ).catch(() => [])  // missing/empty is non-fatal; we just start blank.
+      : Promise.resolve([]);
+
+    Promise.all([rosterPromise, resultsPromise])
+      .then(([data, existing]) => {
         if (cancelled) return;
         const includeInactive = teamCfg.include_inactive === true;
         // Optionally narrow to a participant subset (e.g. only players who
@@ -108,15 +119,67 @@ export default function TeamTableForm({
             (a.last_name + a.first_name).localeCompare(b.last_name + b.first_name),
           );
         setPlayers(roster);
-        // Initialize empty cells per row.
+
+        // Build a player_id → existing result_data map. Most-recent
+        // wins when a player has multiple (shouldn't happen for an
+        // upsert-keyed template + event, but defensive).
+        const dataByPlayer = new Map<string, Record<string, unknown>>();
+        for (const er of existing) {
+          dataByPlayer.set(er.player_id, er.result_data ?? {});
+        }
+
+        // Initialize cells. Pre-fill from existing result_data when
+        // available; fall back to defaults. Boolean / date fields get
+        // their defaults applied even when there's a partial result —
+        // we never want a saved blank to come back as an "edited" today.
         setCells(
           Object.fromEntries(
-            roster.map((p) => [
-              p.id,
-              Object.fromEntries(rowFields.map((f) => [f.key, defaultValueFor(f)])),
-            ]),
+            roster.map((p) => {
+              const existingData = dataByPlayer.get(p.id);
+              const row: Record<string, CellValue> = {};
+              for (const f of rowFields) {
+                const raw = existingData?.[f.key];
+                if (raw !== undefined && raw !== null) {
+                  if (f.type === "number") {
+                    row[f.key] = typeof raw === "number" ? raw : Number(raw);
+                  } else if (f.type === "boolean") {
+                    row[f.key] = Boolean(raw);
+                  } else {
+                    row[f.key] = String(raw);
+                  }
+                } else {
+                  row[f.key] = defaultValueFor(f);
+                }
+              }
+              return [p.id, row];
+            }),
           ),
         );
+
+        // Hydrate shared values too — every existing row should carry
+        // the same shared values (e.g. fecha), so we pick the first
+        // non-empty value across all results.
+        if (sharedFields.length > 0 && existing.length > 0) {
+          setSharedValues((prev) => {
+            const next = { ...prev };
+            for (const f of sharedFields) {
+              for (const er of existing) {
+                const v = (er.result_data ?? {})[f.key];
+                if (v !== undefined && v !== null && v !== "") {
+                  next[f.key] = (
+                    f.type === "number"
+                      ? Number(v)
+                      : f.type === "boolean"
+                        ? Boolean(v)
+                        : String(v)
+                  ) as CellValue;
+                  break;
+                }
+              }
+            }
+            return next;
+          });
+        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -129,7 +192,7 @@ export default function TeamTableForm({
     // participantIds reference identity is unstable from the parent — we
     // de-duplicate by stringifying so prop array re-renders don't refetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryId, teamCfg.include_inactive, (participantIds ?? []).join(",")]);
+  }, [categoryId, teamCfg.include_inactive, eventId, template.id, (participantIds ?? []).join(",")]);
 
   const setSharedValue = (key: string, value: CellValue) => {
     setSharedValues((prev) => ({ ...prev, [key]: value }));
@@ -194,6 +257,18 @@ export default function TeamTableForm({
           const n = Number(v);
           if (Number.isNaN(n)) {
             setError(`"${f.label}" debe ser un número (${player.last_name})`);
+            return;
+          }
+          if (typeof f.min === "number" && n < f.min) {
+            setError(
+              `"${f.label}" debe ser ≥ ${f.min} (${player.last_name})`,
+            );
+            return;
+          }
+          if (typeof f.max === "number" && n > f.max) {
+            setError(
+              `"${f.label}" debe ser ≤ ${f.max} (${player.last_name})`,
+            );
             return;
           }
           row[f.key] = n;
@@ -417,6 +492,9 @@ function SharedFieldInput({ field, value, onChange }: SharedFieldInputProps) {
       <input
         id={id}
         type={inputType}
+        min={field.type === "number" ? field.min : undefined}
+        max={field.type === "number" ? field.max : undefined}
+        step={field.type === "number" ? "any" : undefined}
         value={value === null ? "" : String(value)}
         placeholder={field.placeholder ?? ""}
         onChange={(e) =>
@@ -471,6 +549,9 @@ function CellInput({ field, value, onChange }: CellInputProps) {
     <input
       className={styles.cellInput}
       type={inputType}
+      min={field.type === "number" ? field.min : undefined}
+      max={field.type === "number" ? field.max : undefined}
+      step={field.type === "number" ? "any" : undefined}
       value={value === null ? "" : String(value)}
       placeholder={field.placeholder ?? ""}
       onChange={(e) => onChange(e.target.value)}

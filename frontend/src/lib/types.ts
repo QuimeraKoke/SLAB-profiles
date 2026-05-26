@@ -238,6 +238,11 @@ export interface ExamField {
   reference_ranges?: ReferenceBand[];
   /** Coloring opinion for variation deltas on widgets. */
   direction_of_good?: "up" | "down" | "neutral";
+  /** Hard lower / upper bound for `number` inputs. When set:
+   *  - rendered as the input's `min` / `max` HTML attributes
+   *  - validated at submit time (rejects out-of-range with a message). */
+  min?: number;
+  max?: number;
 }
 
 export interface ExamConfigSchema {
@@ -348,6 +353,10 @@ export interface TeamResultsIn {
 
 export interface TeamResultsOut {
   created: number;
+  /** Number of pre-existing results that were overwritten in-place.
+   *  Always 0 when the submission has no `event_id` (we only upsert
+   *  match-scoped templates today). */
+  updated?: number;
   skipped: number;
   results: ExamResult[];
 }
@@ -1279,6 +1288,7 @@ export type TeamWidgetData =
   | TeamMatchSummaryPayload
   | TeamActivityLogPayload
   | TeamDailyGroupedBarsPayload
+  | TeamSeasonStatsPayload
   | UnsupportedPayload
   | EmptyPayload;
 
@@ -1311,6 +1321,8 @@ export interface TeamMatchOption {
 
 export interface TeamMatchSelectorConfig {
   enabled: boolean;
+  /** "single" → MatchSelector dropdown; "multi" → MatchMultiSelector. */
+  mode?: "single" | "multi";
   event_type: string;
   required: boolean;
   label: string;
@@ -1321,6 +1333,37 @@ export interface TeamMatchSelectorConfig {
    *  the most recent match. The frontend should sync its URL to this
    *  value on first load. */
   selected_id: string | null;
+  /** Multi-mode counterpart: list of resolved match IDs. Empty in
+   *  single-mode (frontend should ignore in that branch). */
+  selected_ids?: string[];
+}
+
+/** Payload returned by the backend `team_season_stats` resolver.
+ *  One row per player; columns are season-level aggregates over the
+ *  selected matches (or all in-window matches when nothing selected). */
+export interface TeamSeasonStatsPayload {
+  chart_type: "team_season_stats";
+  title: string;
+  /** Number of matches actually rolled up. Becomes the denominator for
+   *  the `%min jugados` column and the "Partidos equipo" cell. */
+  matches_count: number;
+  default_match_duration_min: number;
+  order_by?: string;
+  rows: {
+    player_id: string;
+    player_name: string;
+    partidos_equipo: number;
+    citaciones: number;
+    partidos_jugados: number;
+    partidos_titular: number;
+    minutos: number;
+    pct_minutos_jugados: number;
+    goles: number;
+    amarillas: number;
+    rojas: number;
+  }[];
+  empty?: boolean;
+  error?: string;
 }
 
 export interface TeamReportResponse {

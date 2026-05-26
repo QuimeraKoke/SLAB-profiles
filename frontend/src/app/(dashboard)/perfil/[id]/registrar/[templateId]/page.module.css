@@ -7,6 +7,17 @@
   gap: 20px;
 }
 
+/* Team-table + bulk-ingest modes render a wide grid (one row per
+ * player, N stat columns) — 960px crushes them. Apply this modifier
+ * on the same .container element to let the registrar use most of the
+ * viewport. Single-player single-record mode keeps the narrower width
+ * for readability. */
+.containerWide {
+  max-width: 100%;
+  padding-left: 24px;
+  padding-right: 24px;
+}
+
 .header {
   display: flex;
   flex-direction: column;

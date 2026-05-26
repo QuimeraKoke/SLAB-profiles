@@ -39,6 +39,7 @@ def resolve_team_widget(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,
 ) -> dict[str, Any]:
     """Resolve a team-scoped widget against a category roster.
 
@@ -68,6 +69,7 @@ def resolve_team_widget(
         "date_from": date_from,
         "date_to": date_to,
         "event_id": event_id,
+        "event_ids": event_ids,
     }
     if chart_type == ChartType.TEAM_HORIZONTAL_COMPARISON.value:
         return _resolve_team_horizontal_comparison(widget, category, **common)
@@ -97,6 +99,8 @@ def resolve_team_widget(
         return _resolve_team_activity_log(widget, category, **common)
     if chart_type == ChartType.TEAM_DAILY_GROUPED_BARS.value:
         return _resolve_team_daily_grouped_bars(widget, category, **common)
+    if chart_type == ChartType.TEAM_SEASON_STATS.value:
+        return _resolve_team_season_stats(widget, category, **common)
     return _empty(widget, chart_type, error=f"Unsupported chart type: {chart_type}")
 
 
@@ -126,22 +130,28 @@ def _apply_date_window(
     date_from: datetime | None,
     date_to: datetime | None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,
 ):
     """Bound an ExamResult / Episode queryset by `recorded_at` (or
     `started_at` for Episode). Each resolver passes the right field via
     its own query construction — this helper handles ExamResult only.
     Callers that need Episode filtering apply it inline.
 
-    When `event_id` is set, also narrows the queryset to results linked
-    to that single Event (per-match report layouts). Folded into this
-    helper because every ExamResult-based resolver already calls it —
-    keeps the call-site noise to one extra kwarg.
+    When `event_id` is set, narrows the queryset to results linked to
+    that single Event (single-match selector). When `event_ids` is set,
+    narrows to results linked to any Event in that list (multi-match
+    selector). Both are folded into this helper because every
+    ExamResult-based resolver already calls it — keeps the call-site
+    noise to a single helper signature. If both are set, `event_ids`
+    wins (the more recent / more specific signal).
     """
     if date_from is not None:
         qs = qs.filter(recorded_at__gte=date_from)
     if date_to is not None:
         qs = qs.filter(recorded_at__lte=date_to)
-    if event_id is not None:
+    if event_ids:
+        qs = qs.filter(event_id__in=list(event_ids))
+    elif event_id is not None:
         qs = qs.filter(event_id=event_id)
     return qs
 
@@ -284,6 +294,7 @@ def _resolve_team_horizontal_comparison(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Per-player horizontal bar groups, one bar per recent reading.
 
@@ -402,7 +413,7 @@ def _resolve_team_horizontal_comparison(
     if group_by == "position":
         return _resolve_team_horizontal_comparison_by_position(
             widget, fields_meta, players, sources, _make_key,
-            source_limits, overall_limit, date_from, date_to, event_id,
+            source_limits, overall_limit, date_from, date_to, event_id, event_ids=event_ids,
         )
 
     # Initialize buckets keyed by every synthetic key.
@@ -420,7 +431,7 @@ def _resolve_team_horizontal_comparison(
                 template__family_id=source.template.family_id,
                 player_id__in=player_index.keys(),
             ),
-            date_from, date_to, event_id,
+            date_from, date_to, event_id, event_ids=event_ids,
         ).order_by("player_id", "-recorded_at").values(
             "player_id", "recorded_at", "result_data",
         )
@@ -491,6 +502,7 @@ def _resolve_team_roster_matrix(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Roster × metrics matrix — rows = players, columns = field keys.
 
@@ -643,7 +655,7 @@ def _resolve_team_roster_matrix(
                 template__family_id=source.template.family_id,
                 player_id__in=player_index.keys(),
             ),
-            date_from, date_to, event_id,
+            date_from, date_to, event_id, event_ids=event_ids,
         ).order_by("player_id", "-recorded_at").values(
             "player_id", "recorded_at", "result_data",
         )
@@ -733,6 +745,7 @@ def _resolve_team_status_counts(
     date_from: datetime | None = None,  # accepted for signature parity; see docstring
     date_to: datetime | None = None,    # accepted for signature parity; see docstring
     event_id: UUID | None = None,       # ignored — episodic, not per-match
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Squad availability snapshot — answers "who's ready to play?"
 
@@ -944,6 +957,7 @@ def _resolve_team_trend_line(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Multi-series line chart: team average per metric over time.
 
@@ -1066,7 +1080,7 @@ def _resolve_team_trend_line(
     if group_by == "position":
         return _resolve_team_trend_line_by_position(
             widget, fields_meta, players, sources, bucket_size, _make_key,
-            date_from, date_to, event_id,
+            date_from, date_to, event_id, event_ids=event_ids,
         )
 
     # ---- group_by == "none" (legacy team-wide path) ----
@@ -1087,7 +1101,7 @@ def _resolve_team_trend_line(
                 template__family_id=source.template.family_id,
                 player_id__in=player_index.keys(),
             ),
-            date_from, date_to, event_id,
+            date_from, date_to, event_id, event_ids=event_ids,
         ).order_by("recorded_at").values("recorded_at", "result_data")
         for row in results:
             start = _bucket_start(row["recorded_at"], bucket_size)
@@ -1171,6 +1185,7 @@ def _resolve_team_trend_line_by_position(
     date_from: datetime | None,
     date_to: datetime | None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Variant of `_resolve_team_trend_line` that emits one series per
     position. The team-wide path stays untouched; this one only runs
@@ -1235,7 +1250,7 @@ def _resolve_team_trend_line_by_position(
                 template__family_id=source.template.family_id,
                 player_id__in=player_group.keys(),
             ),
-            date_from, date_to, event_id,
+            date_from, date_to, event_id, event_ids=event_ids,
         ).order_by("recorded_at").values("player_id", "recorded_at", "result_data")
         for row in results:
             group_key = player_group.get(row["player_id"])
@@ -1300,6 +1315,7 @@ def _resolve_team_horizontal_comparison_by_position(
     date_from: datetime | None,
     date_to: datetime | None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Position-grouped variant of `_resolve_team_horizontal_comparison`.
 
@@ -1362,7 +1378,7 @@ def _resolve_team_horizontal_comparison_by_position(
                 template__family_id=source.template.family_id,
                 player_id__in=player_group.keys(),
             ),
-            date_from, date_to, event_id,
+            date_from, date_to, event_id, event_ids=event_ids,
         ).order_by("recorded_at").values("player_id", "recorded_at", "result_data")
         for row in results:
             gkey = player_group.get(row["player_id"])
@@ -1442,6 +1458,7 @@ def _resolve_team_distribution(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Histogram of latest values across the roster for a single metric.
 
@@ -1541,7 +1558,7 @@ def _resolve_team_distribution(
             template__family_id=template.family_id,
             player_id__in=player_index.keys(),
         ),
-        date_from, date_to, event_id,
+        date_from, date_to, event_id, event_ids=event_ids,
     ).order_by("player_id", "-recorded_at").values("player_id", "result_data")
     latest_by_player: dict[UUID, float] = {}
     for row in results:
@@ -1707,6 +1724,7 @@ def _resolve_team_active_records(
     date_from: datetime | None = None,  # accepted but unused; see docstring
     date_to: datetime | None = None,    # accepted but unused; see docstring
     event_id: UUID | None = None,       # ignored — current-state, not per-match
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """List of records currently "active" based on date-range fields.
 
@@ -1868,6 +1886,7 @@ def _resolve_team_activity_coverage(
     date_from: datetime | None = None,  # accepted but unused; see docstring
     date_to: datetime | None = None,    # accepted but unused; see docstring
     event_id: UUID | None = None,       # ignored — current-state, not per-match
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Operational "who's overdue for evaluation?" matrix.
 
@@ -2044,6 +2063,7 @@ def _resolve_team_leaderboard(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Top-N ranking by a single numeric metric.
 
@@ -2240,6 +2260,7 @@ def _resolve_team_leaderboard(
         payload = _resolve_team_leaderboard_multi_field(
             widget, template, field_keys, player_index,
             date_from, date_to, event_id, aggregator, order, limit,
+            event_ids=event_ids,
         )
         # Pass-through for multi_field too; frontend can opt to render
         # a per-field reference line later.
@@ -2258,7 +2279,7 @@ def _resolve_team_leaderboard(
             template__family_id=template.family_id,
             player_id__in=player_index.keys(),
         ),
-        date_from, date_to, event_id,
+        date_from, date_to, event_id, event_ids=event_ids,
     ).order_by("player_id", "-recorded_at").values(
         "player_id", "recorded_at", "result_data",
     )
@@ -2414,6 +2435,7 @@ def _resolve_team_leaderboard_multi_field(
     aggregator: str,
     order: str,
     limit: int,
+    event_ids: Sequence[UUID] | None = None,
 ) -> dict[str, Any]:
     """Multi-field leaderboard variant: every player gets a value per
     field. The frontend renders grouped vertical bars, one group per
@@ -2424,7 +2446,7 @@ def _resolve_team_leaderboard_multi_field(
             template__family_id=template.family_id,
             player_id__in=player_index.keys(),
         ),
-        date_from, date_to, event_id,
+        date_from, date_to, event_id, event_ids=event_ids,
     ).order_by("player_id", "-recorded_at").values(
         "player_id", "recorded_at", "result_data",
     )
@@ -2528,6 +2550,7 @@ def _resolve_team_goal_progress(
     date_from: datetime | None = None,  # accepted but unused; see docstring
     date_to: datetime | None = None,    # accepted but unused; see docstring
     event_id: UUID | None = None,       # ignored — current-state, not per-match
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Roster × active-goals matrix.
 
@@ -2717,6 +2740,7 @@ def _resolve_team_alerts(
     date_from: datetime | None = None,  # accepted; alerts are point-in-time
     date_to: datetime | None = None,
     event_id: UUID | None = None,       # ignored — alerts aren't per-match
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Players ranked by active-alert count, scoped to the layout's department.
 
@@ -2908,6 +2932,7 @@ def _resolve_team_stacked_bars(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """One horizontal stacked bar per player composed of N field
     segments. Reads its data binding from the widget's first
@@ -2984,7 +3009,7 @@ def _resolve_team_stacked_bars(
             template__family_id=template.family_id,
             player_id__in=player_index.keys(),
         ),
-        date_from, date_to, event_id,
+        date_from, date_to, event_id, event_ids=event_ids,
     ).order_by("player_id", "-recorded_at").values(
         "player_id", "recorded_at", "result_data",
     )
@@ -3064,6 +3089,7 @@ def _resolve_team_match_summary(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Compact aggregate-stats strip for a match. One mini-card per
     field showing SUM / AVG / STD across all roster players (after
@@ -3121,7 +3147,7 @@ def _resolve_team_match_summary(
             template__family_id=template.family_id,
             player_id__in=player_index.keys(),
         ),
-        date_from, date_to, event_id,
+        date_from, date_to, event_id, event_ids=event_ids,
     ).order_by("player_id", "-recorded_at").values(
         "player_id", "recorded_at", "result_data",
     )
@@ -3210,6 +3236,7 @@ def _resolve_team_activity_log(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Team-wide timeline of the most recent ExamResults across the
     roster. Each entry surfaces the player name + the configured
@@ -3253,7 +3280,7 @@ def _resolve_team_activity_log(
                 template__family_id=template.family_id,
                 player_id__in=player_by_id.keys(),
             ),
-            date_from, date_to, event_id,
+            date_from, date_to, event_id, event_ids=event_ids,
         ).order_by("-recorded_at")[:limit]
 
         for result in qs:
@@ -3319,6 +3346,7 @@ def _resolve_team_daily_grouped_bars(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,  # multi-match selector
 ) -> dict[str, Any]:
     """Team mean per (field × day) buckets. One X-axis tick per day,
     N bars per tick (one per configured field_key), optionally an
@@ -3414,7 +3442,7 @@ def _resolve_team_daily_grouped_bars(
             template__family_id=template.family_id,
             player_id__in=player_ids_set,
         ),
-        date_from, date_to, event_id,
+        date_from, date_to, event_id, event_ids=event_ids,
     ).values("recorded_at", "result_data")
 
     # bucket_iso → field_key → [values]
@@ -3472,3 +3500,171 @@ def _resolve_team_daily_grouped_bars(
         "decimals": decimals,
         "empty": len(buckets_payload) == 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# team_season_stats
+# ---------------------------------------------------------------------------
+
+
+def _resolve_team_season_stats(
+    widget: TeamReportWidget,
+    category: Category,
+    *,
+    position_id: UUID | None = None,
+    player_ids: Sequence[UUID] | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    event_id: UUID | None = None,
+    event_ids: Sequence[UUID] | None = None,
+) -> dict[str, Any]:
+    """Season-stats table aggregated over a selectable set of matches.
+
+    Reads from `EventParticipant` (one row per player per match) rather
+    than `ExamResult`, because citaciones / titular / minutes / goals /
+    cards already live there after phase 4 + the estadistica_interna
+    importer. The widget surfaces a per-player roll-up: how many matches
+    the team played, how many the player was called up to, how many
+    played, how many started, total minutes (+ % of possible), and
+    goals / yellow / red cards.
+
+    Scope:
+      - `event_ids` (multi-match selector) → use exactly those matches.
+      - Otherwise → every match for this category within
+        [date_from, date_to].
+
+    `display_config` knobs (all optional):
+      - `default_match_duration_min` (int, default 90) — denominator for
+        `pct_minutos_jugados`. Legacy `partido` doesn't store an
+        explicit duration; this is a uniform proxy for "regulation time".
+      - `order_by` (str, default "minutes") — one of `minutes`, `goals`,
+        `partidos_jugados`, `pct_minutes`, `name`. Tie-break alphabetical.
+
+    Returns a flat-table payload — see the keys at the end of the body.
+    """
+    from events.models import Event, EventParticipant
+
+    display_config = widget.display_config or {}
+    default_duration = int(display_config.get("default_match_duration_min") or 90)
+    order_by = display_config.get("order_by") or "minutes"
+    if order_by not in {"minutes", "goals", "partidos_jugados", "pct_minutes", "name"}:
+        order_by = "minutes"
+
+    # 1) Resolve the match list.
+    matches_qs = Event.objects.filter(
+        club_id=category.club_id,
+        event_type=Event.TYPE_MATCH,
+        category_id=category.id,
+    )
+    if event_ids:
+        matches_qs = matches_qs.filter(id__in=list(event_ids))
+    else:
+        # Fallback to the date window when the user hasn't picked
+        # specific matches yet (or when the widget is rendered outside a
+        # selector context, e.g. PDF export).
+        if date_from is not None:
+            matches_qs = matches_qs.filter(starts_at__gte=date_from)
+        if date_to is not None:
+            matches_qs = matches_qs.filter(starts_at__lte=date_to)
+    matches = list(matches_qs.values_list("id", flat=True))
+    partidos_equipo = len(matches)
+
+    # 2) Roster.
+    roster = list(_roster_query(category, position_id, player_ids))
+    if not roster:
+        return {
+            "chart_type": ChartType.TEAM_SEASON_STATS.value,
+            "title": widget.title,
+            "matches_count": partidos_equipo,
+            "default_match_duration_min": default_duration,
+            "rows": [],
+            "empty": True,
+        }
+
+    # 3) Pull every participation row in one query, then aggregate
+    # in-process. The roster is bounded (typically <40 players) and the
+    # match list is bounded (a season is ~50 matches max), so the cross
+    # product is tiny — no DB-side aggregation needed.
+    parts = EventParticipant.objects.filter(
+        event_id__in=matches,
+        player_id__in=[p.id for p in roster],
+    ).values(
+        "player_id", "match_role", "minutes_played",
+        "goals", "yellow_cards", "red_cards",
+    )
+
+    # Empty buckets per player so the roster appears whole even when no
+    # one was called up to the selected matches.
+    by_player: dict[UUID, dict[str, int]] = {
+        p.id: {
+            "citaciones": 0,
+            "partidos_jugados": 0,
+            "partidos_titular": 0,
+            "minutos": 0,
+            "goles": 0,
+            "amarillas": 0,
+            "rojas": 0,
+        }
+        for p in roster
+    }
+    for row in parts:
+        pid = row["player_id"]
+        agg = by_player.get(pid)
+        if agg is None:
+            continue
+        role = row.get("match_role") or ""
+        if role and role != "no_citado":
+            agg["citaciones"] += 1
+        if role == "titular":
+            agg["partidos_titular"] += 1
+        minutes = row.get("minutes_played") or 0
+        if minutes > 0:
+            agg["partidos_jugados"] += 1
+        agg["minutos"] += minutes
+        agg["goles"] += row.get("goals") or 0
+        agg["amarillas"] += row.get("yellow_cards") or 0
+        agg["rojas"] += row.get("red_cards") or 0
+
+    # 4) Build rows. % minutes uses the configured default duration.
+    rows: list[dict[str, Any]] = []
+    denom = partidos_equipo * default_duration
+    for p in roster:
+        a = by_player[p.id]
+        pct = round(a["minutos"] / denom * 100, 2) if denom > 0 else 0.0
+        rows.append({
+            "player_id": str(p.id),
+            "player_name": f"{p.first_name} {p.last_name}".strip(),
+            "partidos_equipo": partidos_equipo,
+            "citaciones": a["citaciones"],
+            "partidos_jugados": a["partidos_jugados"],
+            "partidos_titular": a["partidos_titular"],
+            "minutos": a["minutos"],
+            "pct_minutos_jugados": pct,
+            "goles": a["goles"],
+            "amarillas": a["amarillas"],
+            "rojas": a["rojas"],
+        })
+
+    # 5) Sort.
+    if order_by == "name":
+        rows.sort(key=lambda r: r["player_name"].lower())
+    elif order_by == "goals":
+        rows.sort(key=lambda r: (-r["goles"], r["player_name"].lower()))
+    elif order_by == "partidos_jugados":
+        rows.sort(key=lambda r: (-r["partidos_jugados"], r["player_name"].lower()))
+    elif order_by == "pct_minutes":
+        rows.sort(key=lambda r: (-r["pct_minutos_jugados"], r["player_name"].lower()))
+    else:
+        # Default: minutes desc, then name asc.
+        rows.sort(key=lambda r: (-r["minutos"], r["player_name"].lower()))
+
+    return {
+        "chart_type": ChartType.TEAM_SEASON_STATS.value,
+        "title": widget.title,
+        "matches_count": partidos_equipo,
+        "default_match_duration_min": default_duration,
+        "order_by": order_by,
+        "rows": rows,
+        "empty": partidos_equipo == 0,
+    }
+

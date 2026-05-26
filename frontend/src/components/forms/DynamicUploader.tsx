@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import AttachmentList from "@/components/ui/AttachmentList/AttachmentList";
 import DeferredFilePicker from "@/components/forms/DeferredFilePicker";
+import MatchPicker from "@/components/forms/MatchPicker";
 import { api, ApiError, getToken } from "@/lib/api";
 import {
   bandColor,
@@ -244,6 +245,14 @@ export default function DynamicUploader({
           setError(`"${f.label}" debe ser un número`);
           return;
         }
+        if (typeof f.min === "number" && n < f.min) {
+          setError(`"${f.label}" debe ser ≥ ${f.min}`);
+          return;
+        }
+        if (typeof f.max === "number" && n > f.max) {
+          setError(`"${f.label}" debe ser ≤ ${f.max}`);
+          return;
+        }
         raw[f.key] = n;
       } else {
         raw[f.key] = v;
@@ -321,35 +330,13 @@ export default function DynamicUploader({
         <fieldset className={styles.group}>
           <legend className={styles.legend}>Asociar partido</legend>
           <div className={styles.grid}>
-            <label className={styles.field}>
-              <span className={styles.label}>
-                Partido
-                {selectedMatch && (
-                  <span className={styles.matchHint}>
-                    · fecha: {selectedMatch.starts_at.slice(0, 10)}
-                  </span>
-                )}
-              </span>
-              <select
-                value={eventId}
-                onChange={(e) => setEventId(e.target.value)}
-              >
-                <option value="">— Sin partido —</option>
-                {matches.map((m) => {
-                  const score = (m.metadata as { score?: { home?: number; away?: number } })?.score;
-                  const scoreLabel =
-                    score && (score.home != null || score.away != null)
-                      ? ` (${score.home ?? "-"}-${score.away ?? "-"})`
-                      : "";
-                  return (
-                    <option key={m.id} value={m.id}>
-                      {m.starts_at.slice(0, 10)} · {m.title}
-                      {scoreLabel}
-                    </option>
-                  );
-                })}
-              </select>
-            </label>
+            <MatchPicker
+              matches={matches}
+              value={eventId || null}
+              onChange={(id) => setEventId(id ?? "")}
+              required={template.link_to_match}
+              placeholder="Elegí un partido…"
+            />
           </div>
         </fieldset>
       )}
@@ -510,6 +497,8 @@ function FieldInput({ field, value, onChange }: FieldInputProps) {
         id={id}
         type={inputType}
         step={field.type === "number" ? "any" : undefined}
+        min={field.type === "number" ? field.min : undefined}
+        max={field.type === "number" ? field.max : undefined}
         placeholder={field.placeholder}
         value={typeof value === "string" || typeof value === "number" ? value : ""}
         onChange={(e) => onChange(e.target.value)}

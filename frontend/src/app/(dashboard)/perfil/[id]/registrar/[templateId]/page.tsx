@@ -1,17 +1,19 @@
 "use client";
 
-import React, { use, useEffect, useState } from "react";
+import React, { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import BulkIngestForm from "@/components/forms/BulkIngestForm";
 import BulkIngestPlaceholder from "@/components/forms/BulkIngestPlaceholder";
 import DynamicUploader from "@/components/forms/DynamicUploader";
+import MatchPicker from "@/components/forms/MatchPicker";
 import TeamTableForm from "@/components/forms/TeamTableForm";
 import InjuryPanel from "@/components/perfil/InjuryPanel/InjuryPanel";
 import ResultsHistoryPanel from "@/components/perfil/ResultsHistoryPanel/ResultsHistoryPanel";
 import { api, ApiError } from "@/lib/api";
 import type {
+  CalendarEvent,
   Episode,
   ExamInputMode,
   ExamTemplate,
@@ -190,8 +192,15 @@ export default function RegistrarExamPage({ params }: PageProps) {
     && openEpisodes !== null
     && openEpisodes.length > 0;
 
+  // Team-table and bulk-ingest render wide grids; let the registrar
+  // claim most of the viewport instead of the 960px default.
+  const wideMode = mode === "team_table" || mode === "bulk_ingest";
+  const containerClass = wideMode
+    ? `${styles.container} ${styles.containerWide}`
+    : styles.container;
+
   return (
-    <div className={styles.container}>
+    <div className={containerClass}>
       <header className={styles.header}>
         <Link href={backHref} className={styles.backLink}>
           ← Volver al perfil
@@ -256,12 +265,21 @@ export default function RegistrarExamPage({ params }: PageProps) {
             <BulkIngestPlaceholder template={template} />
           )
         ) : mode === "team_table" ? (
-          <TeamTableForm
-            template={template}
-            categoryId={player.category.id}
-            onCommitted={goBack}
-            onCancel={goBack}
-          />
+          template.link_to_match ? (
+            <MatchScopedTeamTable
+              template={template}
+              categoryId={player.category.id}
+              onCommitted={goBack}
+              onCancel={goBack}
+            />
+          ) : (
+            <TeamTableForm
+              template={template}
+              categoryId={player.category.id}
+              onCommitted={goBack}
+              onCancel={goBack}
+            />
+          )
         ) : shouldFetchContinue && continueInitial === null ? (
           // Continuing an existing episode — wait until we've fetched the
           // latest result so DynamicUploader's useState initializer reads
@@ -296,6 +314,159 @@ export default function RegistrarExamPage({ params }: PageProps) {
        *  panel doesn't apply. */}
       {!showEpisodePicker && mode === "single" && (
         <ResultsHistoryPanel template={template} playerId={player.id} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Inline team-table for `link_to_match=True` templates. Shows a
+ * single-match picker grouped by month-year above; once a match is
+ * picked we fetch its roster and render TeamTableForm scoped to that
+ * match (eventId set, participantIds filtered to "dressed" players —
+ * titular / suplente_ingresa / citado_no_vestir). The dressed filter
+ * matches the convocatoria semantics on /partidos/[id]/editar.
+ */
+function MatchScopedTeamTable({
+  template, categoryId, onCommitted, onCancel,
+}: {
+  template: ExamTemplate;
+  categoryId: string;
+  onCommitted?: () => void;
+  onCancel?: () => void;
+}) {
+  const [matches, setMatches] = useState<CalendarEvent[]>([]);
+  const [loadingMatches, setLoadingMatches] = useState(true);
+  const [pickedMatchId, setPickedMatchId] = useState<string | null>(null);
+  const [roster, setRoster] = useState<Array<{ player_id: string; match_role: string }> | null>(null);
+  const [loadingRoster, setLoadingRoster] = useState(false);
+
+  // Fetch the category's matches once. Past first (newest), then
+  // upcoming — same order MatchPicker preserves when grouping.
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({
+      event_type: "match",
+      category_id: categoryId,
+    });
+    api<CalendarEvent[]>(`/events?${params}`)
+      .then((data) => {
+        if (cancelled) return;
+        const now = Date.now();
+        const sorted = [...data].sort((a, b) => {
+          const at = new Date(a.starts_at).getTime();
+          const bt = new Date(b.starts_at).getTime();
+          const aPast = at <= now;
+          const bPast = bt <= now;
+          if (aPast !== bPast) return aPast ? -1 : 1;
+          return bt - at;
+        });
+        setMatches(sorted);
+      })
+      .catch(() => {
+        if (!cancelled) setMatches([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingMatches(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [categoryId]);
+
+  // Fetch the roster every time the user picks (or switches) a match.
+  // The dressed-players filter happens below from this data.
+  useEffect(() => {
+    if (!pickedMatchId) {
+      setRoster(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingRoster(true);
+    api<Array<{ player_id: string; match_role: string }>>(
+      `/events/${pickedMatchId}/roster`,
+    )
+      .then((data) => {
+        if (!cancelled) setRoster(data);
+      })
+      .catch(() => {
+        if (!cancelled) setRoster([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRoster(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pickedMatchId]);
+
+  const dressedIds = useMemo(() => {
+    if (!roster) return [];
+    const DRESSED = new Set(["titular", "suplente_ingresa", "citado_no_vestir"]);
+    return roster
+      .filter((r) => DRESSED.has(r.match_role))
+      .map((r) => r.player_id);
+  }, [roster]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{
+        padding: "16px 20px", background: "#ffffff",
+        border: "1px solid #e5e7eb", borderRadius: 8,
+      }}>
+        {loadingMatches ? (
+          <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>Cargando partidos…</div>
+        ) : matches.length === 0 ? (
+          <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>
+            No hay partidos cargados para esta categoría. Creá uno desde{" "}
+            <Link href="/partidos/nuevo" style={{ color: "#6d28d9", fontWeight: 600 }}>
+              Partidos → Nuevo
+            </Link>.
+          </div>
+        ) : (
+          <MatchPicker
+            matches={matches}
+            value={pickedMatchId}
+            onChange={setPickedMatchId}
+            label="Partido"
+            required
+            placeholder="Elegí un partido para cargar el rendimiento…"
+          />
+        )}
+      </div>
+
+      {pickedMatchId && (
+        loadingRoster ? (
+          <div style={{
+            padding: "16px 20px", color: "#6b7280", fontSize: "0.9rem",
+            background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 8,
+          }}>
+            Cargando convocatoria…
+          </div>
+        ) : dressedIds.length === 0 ? (
+          <div style={{
+            padding: "16px 20px", color: "#6b7280", fontSize: "0.9rem",
+            background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8,
+          }}>
+            Este partido no tiene jugadores marcados como titular /
+            suplente ingresa / citado sin vestir. Configurá la
+            convocatoria desde{" "}
+            <Link href={`/partidos/${pickedMatchId}/editar`} style={{ color: "#6d28d9", fontWeight: 600 }}>
+              el editor del partido
+            </Link>{" "}
+            antes de cargar el rendimiento.
+          </div>
+        ) : (
+          <TeamTableForm
+            key={pickedMatchId}
+            template={template}
+            categoryId={categoryId}
+            eventId={pickedMatchId}
+            participantIds={dressedIds}
+            onCommitted={onCommitted}
+            onCancel={onCancel}
+          />
+        )
       )}
     </div>
   );

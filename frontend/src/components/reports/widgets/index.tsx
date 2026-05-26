@@ -14,6 +14,7 @@ import TeamHorizontalComparison from "./TeamHorizontalComparison";
 import TeamLeaderboard from "./TeamLeaderboard";
 import TeamMatchSummary from "./TeamMatchSummary";
 import TeamRosterMatrix from "./TeamRosterMatrix";
+import TeamSeasonStats from "./TeamSeasonStats";
 import TeamStackedBars from "./TeamStackedBars";
 import TeamStatusCounts from "./TeamStatusCounts";
 import TeamTrendLine from "./TeamTrendLine";
@@ -37,6 +38,7 @@ const teamWidgetRegistry: Record<
   team_match_summary: TeamMatchSummary,
   team_activity_log: TeamActivityLog,
   team_daily_grouped_bars: TeamDailyGroupedBars,
+  team_season_stats: TeamSeasonStats,
 };
 
 export function renderTeamWidget(widget: TeamReportWidget): React.ReactNode {

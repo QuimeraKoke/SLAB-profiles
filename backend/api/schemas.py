@@ -303,6 +303,7 @@ class TeamResultsIn(Schema):
 
 class TeamResultsOut(Schema):
     created: int
+    updated: int = 0
     skipped: int
     results: list[ResultOut]
 
@@ -527,14 +528,23 @@ class MatchSelectorOptionOut(Schema):
 class MatchSelectorConfigOut(Schema):
     """Effective config for the match selector on this layout. When
     `enabled=False` the frontend must NOT render the selector even if
-    the layout's stored config has stale keys."""
+    the layout's stored config has stale keys.
+
+    `mode` discriminates the selector UX:
+      * "single" (default) — one match picked at a time. `selected_id`
+        carries the resolved UUID; `selected_ids` is empty.
+      * "multi" — checkbox / multi-select picker. `selected_ids` carries
+        the UUID list; `selected_id` is null.
+    """
     enabled: bool = False
+    mode: str = "single"
     event_type: str = "match"
     required: bool = False
     label: str = "Partido"
     show_recent: int = 10
     options: list[MatchSelectorOptionOut] = []
     selected_id: UUID | None = None
+    selected_ids: list[UUID] = []
 
 
 class TeamReportLayoutOut(Schema):
@@ -560,6 +570,35 @@ class EventParticipantOut(Schema):
     id: UUID
     first_name: str
     last_name: str
+
+
+class RosterEntryOut(Schema):
+    """One row in the match-roster panel. Mirrors EventParticipant +
+    enough player metadata to render the row without a second lookup."""
+
+    player_id: UUID
+    first_name: str
+    last_name: str
+    category_id: UUID | None = None
+    category_name: str = ""
+    match_role: str = ""
+    absence_reason: str = ""
+    position_played_id: UUID | None = None
+
+
+class RosterEntryIn(Schema):
+    player_id: UUID
+    match_role: str
+    absence_reason: str = ""
+    position_played_id: UUID | None = None
+
+
+class RosterReplaceIn(Schema):
+    """Bulk roster save. Replaces every EventParticipant on the match
+    with the provided list — any pre-existing rows not in `entries`
+    are deleted."""
+
+    entries: list[RosterEntryIn] = []
 
 
 class EventOut(Schema):
