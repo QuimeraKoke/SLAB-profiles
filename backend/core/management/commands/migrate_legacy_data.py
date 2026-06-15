@@ -56,6 +56,10 @@ ALL_PHASES: list[tuple[str, callable]] = [
     ("phase5", phase5_episodes.run),     # lesion → Episode + ExamResult
     ("phase6", phase6_results.run),      # antropometria / wellness / etc.
 ]
+# phase7 is not a phase function — it runs in handle() after the writes are
+# complete (see below). Listed here so --entities=phase7 is recognized as a
+# valid filter token and can be used to re-run just the alert finalize.
+PHASE7_NAME = "phase7"
 
 
 class Command(BaseCommand):
@@ -127,11 +131,12 @@ class Command(BaseCommand):
             {p.strip() for p in entities.split(",")} if entities else None
         )
         if phase_filter:
-            unknown = phase_filter - {name for name, _ in ALL_PHASES}
+            valid = {name for name, _ in ALL_PHASES} | {PHASE7_NAME}
+            unknown = phase_filter - valid
             if unknown:
                 raise CommandError(
                     f"Unknown phase(s): {sorted(unknown)}. "
-                    f"Known: {[n for n, _ in ALL_PHASES]}"
+                    f"Known: {sorted(valid)}"
                 )
 
         # ---- Open audit log + legacy DB -----------------------------
@@ -149,6 +154,11 @@ class Command(BaseCommand):
             legacy_dsn=f"{opts['legacy_host']}:{opts['legacy_port']}/{opts['legacy_db']}",
             phases=[n for n, _ in ALL_PHASES if not phase_filter or n in phase_filter],
         )
+
+        # Lazy imports — these touch Django app config and aren't safe to
+        # import at module load on every `manage.py` invocation.
+        from goals.signals import suppress_alert_evaluation
+        from goals.evaluator import finalize_threshold_alerts_all
 
         try:
             with LegacyDB(
@@ -168,12 +178,38 @@ class Command(BaseCommand):
                     skip_photos=opts["skip_photos"],
                 )
 
-                for name, fn in ALL_PHASES:
-                    if phase_filter and name not in phase_filter:
-                        audit.info(f"{name}: skipped (not in --entities filter)")
-                        continue
-                    self.stdout.write(self.style.NOTICE(f"→ Running {name}…"))
-                    fn(ctx)
+                # Suppress per-result alert evaluation across ALL phases.
+                # Phases 5 and 6 create thousands of ExamResults; without
+                # this we'd fire the alarms engine on every historical row
+                # and end up with alert messages reflecting some arbitrary
+                # intermediate reading. After the bulk write, the finalize
+                # step below evaluates each player's LATEST reading once.
+                with suppress_alert_evaluation():
+                    for name, fn in ALL_PHASES:
+                        if phase_filter and name not in phase_filter:
+                            audit.info(f"{name}: skipped (not in --entities filter)")
+                            continue
+                        self.stdout.write(self.style.NOTICE(f"→ Running {name}…"))
+                        fn(ctx)
+
+                # Phase 7 — alert finalize. Always runs unless the user
+                # explicitly filtered it out via --entities. Skipped in dry
+                # runs (no rows were actually written).
+                if (
+                    not opts["dry_run"]
+                    and (not phase_filter or "phase7" in phase_filter)
+                ):
+                    self.stdout.write(self.style.NOTICE(
+                        "→ Running phase7 (alert finalize)…"
+                    ))
+                    stats = finalize_threshold_alerts_all()
+                    audit.info("phase7: alert finalize", per_template=stats)
+                    for s in stats:
+                        self.stdout.write(
+                            f"  {s['template']}: rules={s['rules']} "
+                            f"players={s.get('players_evaluated', 0)} "
+                            f"fired={s['fired']} resolved={s['resolved']}"
+                        )
 
             # ---- Summary ---------------------------------------------
             audit.info("migration: done", summary=audit.summary())

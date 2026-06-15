@@ -526,9 +526,17 @@ permitida.
 
 Cada `ExamTemplate` tiene:
 
-- `name`, `slug` (auto-derivado), `department`, `is_episodic`,
-  `is_locked`.
+- `name`, `slug` (auto-derivado), `department`.
+- **Flags de comportamiento** (booleanos, todos editables desde Django
+  Admin):
+  - `is_episodic` — agrupa resultados en `Episode` con stages (ver §7.4).
+  - `is_locked` — fija el `config_schema` (ver §7.5).
+  - `link_to_match` — obliga a vincular cada resultado a un partido
+    (ver §7.3).
+  - `show_injuries` — embebe el panel de lesiones en el form.
 - `config_schema` (JSON): la lista de campos del formulario.
+- `input_config` (JSON): comportamiento del registrar (modos de
+  entrada, valores compartidos en tabla, etc.). Detalle en §7.3 / §7.6.
 - `applicable_categories` (M2M): qué categorías la usan.
 
 ### 7.2 Tipos de campo
@@ -599,14 +607,91 @@ Reglas (validadas en `TemplateField._validate_reference_ranges()`):
 opinaba sobre **cambios** (Δ); `reference_ranges` sobre **valores
 absolutos**. Los dos sistemas conviven sin solaparse.
 
-### 7.3 Plantillas episódicas
+**Atributos comunes a cualquier campo** (válidos en todos los tipos
+salvo `calculated`):
+
+| Atributo      | Tipo    | Para qué |
+|---------------|---------|----------|
+| `required`    | bool    | El form bloquea el guardado si el campo está vacío. Mensaje: "Falta el campo «<label>»". |
+| `placeholder` | string  | Hint dentro del input vacío. |
+| `group`       | string  | Agrupa campos en secciones visuales del form. |
+| `help_text`   | string  | Texto auxiliar debajo del input. |
+
+**Atributos solo para `type: "number"`** (además de `unit`,
+`reference_ranges`, `direction_of_good`):
+
+| Atributo | Tipo  | Para qué |
+|----------|-------|----------|
+| `min`    | number | Cota inferior. Aplicada como `min` HTML + validación en submit. |
+| `max`    | number | Cota superior. Mismo doble enforcement. |
+
+Ejemplo (en `rendimiento_de_partido` la calificación va 1-10):
+
+```json
+{
+  "key": "rating",
+  "label": "Calificación (1-10)",
+  "type": "number",
+  "unit": "/10",
+  "min": 1,
+  "max": 10
+}
+```
+
+El form muestra el highlight rojo nativo del browser al teclear
+fuera de rango y refusa guardar con mensaje claro
+(`"Calificación (1-10)" debe ser ≤ 10`).
+
+### 7.3 Plantillas atadas a un partido (`link_to_match`)
+
+Cuando un examen sólo tiene sentido en el contexto de un partido
+concreto (rendimiento, GPS de partido, etc.), encender
+`link_to_match=True` lo convierte en una plantilla **match-attached**:
+
+- El form de carga muestra un selector **"Asociar partido"
+  obligatorio**. El partido elegido provee el `recorded_at`
+  (sobrescribe lo que diga el form).
+- `ExamResult.clean()` rechaza cualquier resultado sin `event_id` —
+  protege contra cargas huérfanas vía API o admin directo.
+- El payload ya guardado en `result_data` se mantiene, pero ahora
+  todo nuevo registro **tiene que** vincularse.
+
+#### Cuándo encenderlo
+
+| Plantilla                           | `link_to_match` | Por qué |
+|-------------------------------------|-----------------|---------|
+| `rendimiento_de_partido`            | **True**        | El rating, minutos y goles solo tienen sentido por partido. |
+| `gps_rendimiento_fisico_de_partido` | **True**        | Cada lectura corresponde a un partido específico. |
+| `gps_entrenamiento`                 | False           | Las cargas de entrenamiento no son por partido. |
+| `analisis_sangre`, `medicacion`     | False           | Mediciones clínicas independientes de cualquier evento. |
+
+#### Activarlo en Django Admin
+
+`/admin/exams/examtemplate/` → abrir la plantilla → marcar **"Link to
+match"** → guardar.
+
+#### Roster + valores por rol (futuro inmediato)
+
+Las plantillas `link_to_match=True` permiten habilitar dos features
+adicionales en el modo `team_table`:
+
+- **Filtro a jugadores que vistieron** (`row_filter_to_dressed`):
+  esconde del formulario a los jugadores con `match_role` `no_citado`,
+  `lesionado`, etc.
+- **Valores por defecto por rol** (`defaults_by_role`): pre-llena la
+  fila según el rol del jugador en la convocatoria (titular →
+  `minutes_played=90`, citado sin vestir → `minutes_played=0`, etc.).
+
+Detalle en §7.6.
+
+### 7.4 Plantillas episódicas
 
 Una plantilla con `is_episodic=True` agrupa sus resultados en
 **Episodes**. El frontend muestra el "selector de episodio" antes del
 formulario. **Lesiones** es la única plantilla episódica del demo —
 **Medicación** no lo es (es prescripción flat, ver §5.2).
 
-### 7.4 Bloqueo (`is_locked`)
+### 7.5 Bloqueo (`is_locked`)
 
 Una plantilla queda **locked** automáticamente cuando se le carga el
 primer resultado. El bloqueo evita que se modifique el `config_schema`
@@ -627,7 +712,56 @@ python manage.py seed_lesiones \
     --unlock
 ```
 
-### 7.5 Versionado de plantillas (`family_id` + fork)
+### 7.6 Configuración del registrar (`input_config`)
+
+El JSON `ExamTemplate.input_config` controla cómo se ve el formulario
+de carga. Es opcional — sin él, la plantilla se muestra solo en modo
+single-player con defaults sensatos.
+
+```jsonc
+{
+  "input_modes": ["team_table", "single"],     // qué modos ofrece el registrar
+  "default_input_mode": "team_table",          // cuál se abre primero
+  "allow_event_link": true,                    // espejado desde link_to_match (no editar a mano)
+  "modifiers": {
+    "prefill_from_last": false                 // copiar valores del último resultado al editar
+  },
+  "team_table": {
+    "shared_fields": ["fecha"],                // campos entrados una sola vez (van en cada fila)
+    "row_fields": ["minutes_played", "rating"], // override del orden / subset por fila
+    "row_filter_to_dressed": true,             // (planificado) esconder bench / no_citado
+    "row_group_by": "match_role",              // (planificado) sección por rol
+    "defaults_by_role": {                      // (planificado) pre-fill por rol
+      "titular":         {"minutes_played": 90, "started_eleven": true},
+      "suplente_ingresa":{"started_eleven": false},
+      "citado_no_vestir":{"minutes_played": 0,  "started_eleven": false}
+    }
+  }
+}
+```
+
+**Claves clave**:
+
+- `input_modes` — lista de modos disponibles. Hoy: `single`,
+  `team_table`, `bulk_ingest`, `quick_list`.
+- `default_input_mode` — qué tab se abre primero al entrar al
+  registrar.
+- `team_table.shared_fields` — campos cuyo valor es **igual para todo
+  el equipo** en una carga (típicamente `fecha`). Aparecen una vez
+  arriba de la grilla.
+- `team_table.row_fields` — sobrescribe el orden / subset de columnas
+  por fila. Omitir = "todos los campos no compartidos y no
+  calculados".
+- `team_table.row_filter_to_dressed` (planificado) — esconde a
+  jugadores convocados con rol distinto de `titular`,
+  `suplente_ingresa` o `citado_no_vestir`. Solo aplica si
+  `link_to_match=True`.
+- `team_table.defaults_by_role` (planificado) — pre-llena la fila
+  según el rol del jugador en la convocatoria. Las celdas pre-llenas
+  se marcan visualmente (italic / atenuadas) hasta que el coach las
+  edite.
+
+### 7.7 Versionado de plantillas (`family_id` + fork)
 
 Cuando una plantilla locked necesita un cambio de schema, **forkear**
 crea una nueva versión sin tocar la vieja. Los datos viejos siguen
@@ -731,20 +865,25 @@ templates.
 - No hay diff visual de schemas entre versiones — abrir dos pestañas
   para comparar `config_schema_preview`.
 
-### 7.6 Plantillas estándar del demo
+### 7.8 Plantillas estándar del demo
 
-| Slug                                  | Departamento  | Episódica | Notas                            |
-|---------------------------------------|---------------|-----------|----------------------------------|
-| `pentacompartimental`                 | nutricional   | No        | 5 masas + IMC + suma pliegues    |
-| `lesiones`                            | medico        | **Sí**    | Episodios con stages             |
-| `medicacion`                          | medico        | No        | Alertas WADA por medicamento     |
-| `ck`                                  | medico        | No        | Marcador bioquímico              |
-| `hidratacion`                         | medico        | No        | Densidad urinaria                |
-| `cmj`                                 | medico        | No        | Test contramovimiento            |
-| `gps_rendimiento_fisico_de_partido`   | fisico        | No        | GPS partido                      |
-| `gps_entrenamiento`                   | fisico        | No        | GPS entrenamiento                |
-| `rendimiento_de_partido`              | tactico       | No        | Rating + estadísticas            |
-| `notas_diarias_<dept>`                | (cada uno)    | No        | Bitácora textual                 |
+| Slug                                  | Departamento  | Episódica | `link_to_match` | Notas                                       |
+|---------------------------------------|---------------|-----------|-----------------|---------------------------------------------|
+| `pentacompartimental`                 | nutricional   | No        | No              | 5 masas + IMC + suma pliegues               |
+| `lesiones`                            | medico        | **Sí**    | No              | Episodios con stages                        |
+| `medicacion`                          | medico        | No        | No              | Alertas WADA por medicamento                |
+| `ck`                                  | medico        | No        | No              | Marcador bioquímico — entrada por equipo    |
+| `densidad_urinaria`                   | medico        | No        | No              | (ex-`hidratacion`) — control de hidratación |
+| `cmj`                                 | medico        | No        | No              | Test contramovimiento                       |
+| `check_in`                            | medico        | No        | No              | Wellness diario (5 dimensiones)             |
+| `molestias`                           | medico        | No        | No              | Bitácora de dolores / molestias diarias     |
+| `hoja_diaria_medico`                  | medico        | No        | No              | Intervenciones diarias del cuerpo médico    |
+| `analisis_sangre`                     | medico        | No        | No              | Panel anual de marcadores bioquímicos       |
+| `fase_densidad`                       | medico        | No        | No              | Fase de ciclo + densidad urinaria + MAD     |
+| `gps_rendimiento_fisico_de_partido`   | fisico        | No        | **Sí**          | GPS por partido — vinculado al evento       |
+| `gps_entrenamiento`                   | fisico        | No        | No              | GPS entrenamiento                           |
+| `rendimiento_de_partido`              | tactico       | No        | **Sí**          | Rating + estadísticas por partido           |
+| `notas_diarias_<dept>`                | (cada uno)    | No        | No              | Bitácora textual diaria por departamento    |
 
 ---
 

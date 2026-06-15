@@ -637,3 +637,96 @@ def _resolve_band_alert(*, rule_id, player_id) -> None:
     ).update(status=AlertStatus.RESOLVED, dismissed_at=now)
 
 
+# ---------------------------------------------------------------------------
+# Bulk finalize — used by the legacy migration & any one-shot recompute.
+# ---------------------------------------------------------------------------
+
+
+def finalize_threshold_alerts_for_template(template) -> dict:
+    """Evaluate threshold rules on the LATEST result per (player, template).
+
+    Designed to be called after a bulk load (legacy migration, fixtures)
+    where the post_save signal was suppressed via
+    ``goals.signals.suppress_alert_evaluation``. Two effects:
+
+      1. Each player's latest reading is run through every active rule on
+         the template. Triggered rules upsert an alert (creating or
+         refreshing the message in place).
+      2. Any active THRESHOLD alert on this template whose latest reading
+         no longer triggers the rule is RESOLVED — so old "Elevado" alerts
+         from January don't linger when November's reading is back in
+         range.
+
+    Returns a stats dict for logging.
+    """
+    rules = list(
+        AlertRule.objects
+        .filter(template=template, is_active=True)
+        .select_related("template", "category")
+    )
+    if not rules:
+        return {"template": template.slug, "rules": 0, "fired": 0, "resolved": 0}
+
+    # Latest result per player for this template.
+    latest_per_player: dict = {}
+    for r in (
+        ExamResult.objects
+        .filter(template=template)
+        .select_related("player")
+        .order_by("player_id", "-recorded_at")
+    ):
+        latest_per_player.setdefault(r.player_id, r)
+
+    # Evaluate the latest reading; collect (rule_id, player_id) pairs that
+    # still fire so we know which active alerts to KEEP.
+    still_triggered: set[tuple] = set()
+    fired_count = 0
+    for r in latest_per_player.values():
+        for alert in evaluate_threshold_rules_for_result(r):
+            still_triggered.add((alert.source_id, alert.player_id))
+            fired_count += 1
+
+    # Resolve any active threshold alert on this template's rules whose
+    # latest (player, rule) reading is no longer triggering.
+    rule_ids = [r.id for r in rules]
+    active_now = Alert.objects.filter(
+        source_type=AlertSource.THRESHOLD,
+        source_id__in=rule_ids,
+        status=AlertStatus.ACTIVE,
+    ).values_list("id", "source_id", "player_id")
+
+    stale_ids = [
+        aid for (aid, src, pid) in active_now
+        if (src, pid) not in still_triggered
+    ]
+    resolved = 0
+    if stale_ids:
+        resolved = Alert.objects.filter(id__in=stale_ids).update(
+            status=AlertStatus.RESOLVED,
+            dismissed_at=timezone.now(),
+        )
+
+    return {
+        "template": template.slug,
+        "rules": len(rules),
+        "players_evaluated": len(latest_per_player),
+        "fired": fired_count,
+        "resolved": resolved,
+    }
+
+
+def finalize_threshold_alerts_all() -> list[dict]:
+    """Run finalize for every template that has at least one active rule.
+
+    Convenience wrapper for the migration phase + a future
+    ``refresh_threshold_alerts`` management command.
+    """
+    from exams.models import ExamTemplate
+    templates = (
+        ExamTemplate.objects
+        .filter(alert_rules__is_active=True)
+        .distinct()
+    )
+    return [finalize_threshold_alerts_for_template(t) for t in templates]
+
+

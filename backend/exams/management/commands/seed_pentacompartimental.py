@@ -1,14 +1,25 @@
 """Overwrite the Pentacompartimental template's config_schema with the
-Kerr / De Rose / Drinkwater-Ross **Phantom-Stratagem 5-mass fractionation**.
+Drinkwater **proportional** 5-mass fractionation method.
 
-Reference: "Fraccionamiento de la masa corporal — un nuevo método para
-utilizar en nutrición clínica y medicina deportiva" (g-se.com).
+This is the implementation the U. de Chile medical team actually uses
+(per `calculo_variables.py` shared by the client). Every mass is
+computed as ``mass_i = peso × parte_i / Σ(parte_1..5)`` where each
+``parte_i`` is a Phantom-Stratagem (Drinkwater / Kerr / De Rose)
+estimate used only as a proportion. As a result, the 5 masses sum
+exactly to body weight — unlike the prior Kerr direct-z-score variant
+where they did not.
 
-This is the protocol the U. de Chile medical team uses. The earlier
-SLAB seed used Carter-simple skinfold fat + Drinkwater-Ross bone +
-Würch residual, which gave values 50–70% different from what their
-practitioners report. Switching to the Phantom-Stratagem aligns SLAB
-with the reference output (e.g. RT Nutricionista report).
+Key data semantics (verified against the client's reference values):
+  - ``muslo_gluteo`` (legacy ``perimetro_muslo_maximo``) is the
+    mid-thigh PERIMETER used in the muscle perimeter sum.
+  - ``pliegue_muslo`` (legacy ``pliegues_muslo_medial``) is the
+    mid-thigh SKINFOLD used in the π/10 perimeter correction.
+  - ``muslo_medio`` (legacy ``perimetro_muslo_medial``) is NOT used by
+    any formula — it's a misnamed legacy column kept only for
+    backward-compatible storage.
+
+Skin thickness is sex-dependent (M 0.65 mm / F 0.5 mm) via the
+``player.sex`` namespace.
 
 Run with:
 
@@ -38,28 +49,24 @@ from core.models import Category, Club, Department
 from exams.models import ExamTemplate
 
 
-# --- Phantom-Stratagem constants (Drinkwater-Ross / Kerr / De Rose) -----
-# Kept here as readable names rather than inlined magic numbers, but
-# they're embedded as literals in the formula strings below because
-# SLAB's formula engine doesn't support named constants.
+# --- Phantom-Stratagem constants (Drinkwater proportional, per client) ----
+# Embedded as literals in the formula strings below because SLAB's
+# formula engine doesn't support named constants. Listed here so the
+# formulas can be read against the canonical reference.
 #
-# PHANTOM_HEIGHT_CM        = 170.18  (standing reference)
-# PHANTOM_SIT_HEIGHT_CM    = 89.92   (sitting reference)
-# PHANTOM_SUM6_MEAN        = 116.41  PHANTOM_SUM6_SD          = 34.79
-# PHANTOM_AT_MEAN          = 25.6    PHANTOM_AT_SD            = 5.85
-# PHANTOM_HEAD_CIRC        = 56.0    PHANTOM_HEAD_CIRC_SD     = 1.44
-# PHANTOM_HEAD_BONE_MEAN   = 1.20    PHANTOM_HEAD_BONE_SD     = 0.18
-# PHANTOM_BONE_DIAM_SUM    = 98.88   PHANTOM_BONE_DIAM_SD     = 5.33
-# PHANTOM_BODY_BONE_MEAN   = 6.70    PHANTOM_BODY_BONE_SD     = 1.34
-# PHANTOM_MUSCLE_PERIM_SUM = 207.21  PHANTOM_MUSCLE_PERIM_SD  = 13.74
-# PHANTOM_MUSCLE_MEAN      = 24.5    PHANTOM_MUSCLE_SD        = 5.4
-# PHANTOM_RESIDUAL_SUM     = 109.35  PHANTOM_RESIDUAL_SUM_SD  = 7.08
-# PHANTOM_RESIDUAL_MEAN    = 6.10    PHANTOM_RESIDUAL_SD      = 1.24
+# Skin (Kerr/De Rose, sexo-dependiente):
+#   skin_kg = CSA · W^0.425 · H^0.725 / 10000 · TSK · density
+#   CSA: M 68.308 / F 73.704 ; TSK: M 2.07 mm / F 1.96 mm ; density 1.05 g/cm³
 #
-# Skin: sex-specific Du Bois constants
-#   CSA: men 68.308 / women 73.704 / kids <12 70.691
-#   TSK: men 2.07 mm / women 1.96 mm
-#   density: 1.05 g/cm³ (constant)
+# Phantom height       = 170.18 cm   (standing reference)
+# Phantom sit-height   = 89.92 cm    (sitting reference, residual)
+#
+# Adipose:   Σ6 mean 116.41 / SD 34.79 ; mass mean 25.6  / SD 5.85
+# Muscle:    Σperim corr. mean 207.21 / SD 13.74 ; mass mean 24.5 / SD 5.4
+# Residual:  Σ mean 109.35   / SD 7.08  ; mass mean 6.10 / SD 1.24
+# Bone head: linear ((cabeza − 56) / 1.44) × 0.18 + 1.2  (no stature scale)
+# Bone body: Σ4-diám mean 98.88 / SD 5.33 ; mass mean 6.7  / SD 1.34
+# Perimeter correction factor: π/10 (≈ 0.31416) subtracted × pliegue.
 
 
 PENTACOMPARTIMENTAL_SCHEMA: dict = {
@@ -142,105 +149,162 @@ PENTACOMPARTIMENTAL_SCHEMA: dict = {
             "chart_type": "line",
         },
 
-        # ─── Calculados — Fraccionamiento 5 masas (Kerr/De Rose) ─────
-        # Each mass formula is inlined as a single expression. They share
-        # the Phantom reference height 170.18 cm (or 89.92 cm sitting for
-        # residual). Stature-cube scaling preserves correct units for the
-        # mass compartments (per Phantom-Stratagem convention).
+        # ─── Calculados — Fraccionamiento 5 masas (Drinkwater proporcional) ──
+        # Método proporcional Drinkwater: cada masa = peso * parte_i /
+        # Σ(parte_1..5). Las 5 partes son estimaciones Phantom-Stratagem
+        # que se usan SÓLO como proporciones — la suma de las 5 masas
+        # resultantes coincide exactamente con el peso corporal (identidad
+        # algebraica). Esta es la implementación que usa el equipo médico
+        # de U. de Chile (archivo calculo_variables.py del cliente).
+        #
+        # Diferencias clave vs. Kerr directo (versión anterior):
+        #   1. muslo_gluteo (perim_muslo_maximo legado) es el perímetro
+        #      del muslo, NO muslo_medio. La columna muslo_medial del
+        #      legado contiene en realidad un PLIEGUE (mm), no perímetro.
+        #   2. Grosor de piel depende del sexo (M 0.65 / F 0.5) vía
+        #      player.sex en lugar de un literal sexo=1.
+        #   3. Las masas son proporciones del peso, no estimaciones
+        #      Phantom directas con re-escalado talla³.
+
+        # ─── Partes (estimaciones Phantom usadas como proporciones) ──
         {
-            # Masa de la piel — Du Bois SA × thickness × density,
-            # sex-specific CSA + TSK constants. SA in m² because
-            # CSA/10000 scales it correctly when peso (kg) and talla (cm)
-            # are plugged in; multiplying by TSK in mm × density in g/mL
-            # yields kg directly (1 mm × 1 m² × 1 g/mL = 1 kg).
-            "key": "masa_piel", "label": "Masa Piel", "type": "calculated", "unit": "kg",
+            # Parte 1 — piel. Kerr/De Rose con constantes sexo-dependientes
+            # (lo que efectivamente carga la tabla Constante del cliente):
+            #   CSA: M 68.308 / F 73.704
+            #   TSK: M 2.07 mm / F 1.96 mm
+            #   densidad: 1.05 g/cm³
+            #
+            # piel_kg = CSA · W^0.425 · H^0.725 / 10000 · TSK · 1.05.
+            "key": "parte_piel", "label": "Parte piel (proporción)",
+            "type": "calculated", "unit": "kg",
             "formula": (
-                "((68.308 if [sexo] == 1 else 73.704) * [peso]**0.425 * [talla]**0.725 / 10000) "
-                "* (2.07 if [sexo] == 1 else 1.96) * 1.05"
+                '(73.704 if player.sex == "F" else 68.308) '
+                "* [peso] ** 0.425 * [talla] ** 0.725 / 10000 "
+                '* (1.96 if player.sex == "F" else 2.07) '
+                "* 1.05"
             ),
-            "chart_type": "line",
         },
         {
-            # Masa ósea de la cabeza — Z-score of head circumference vs
-            # Phantom mean 56.0 cm / SD 1.44, scaled around Phantom head
-            # bone mean 1.20 kg / SD 0.18 kg. No stature scaling — the
-            # head is roughly invariant across body sizes.
-            "key": "masa_osea_cabeza", "label": "Masa Ósea — Cabeza", "type": "calculated", "unit": "kg",
-            "formula": "(([perim_cabeza] - 56.0) / 1.44) * 0.18 + 1.20",
-            "chart_type": "line",
-        },
-        {
-            # Masa ósea del cuerpo — Z-score of sum of 4 weighted bone
-            # diameters: biacromial + bi-iliocrestídeo + 2·húmero + 2·fémur.
-            # Sum is stature-corrected to Phantom (170.18 / talla), then
-            # standardised against Phantom mean 98.88 cm / SD 5.33.
-            "key": "masa_osea_cuerpo", "label": "Masa Ósea — Cuerpo", "type": "calculated", "unit": "kg",
-            "formula": (
-                "(((([biacromial] + [bi_iliocrestideo] + 2*[humero] + 2*[femur]) "
-                "* (170.18 / [talla])) - 98.88) / 5.33) * 1.34 + 6.70"
-            ),
-            "chart_type": "line",
-        },
-        {
-            # Masa ósea total — cabeza + cuerpo.
-            "key": "masa_osea", "label": "Masa Ósea", "type": "calculated", "unit": "kg",
-            "formula": "[masa_osea_cabeza] + [masa_osea_cuerpo]",
-            "chart_type": "line",
-        },
-        {
-            # Masa adiposa (tejido adiposo, no sólo lípido) — Phantom-
-            # Stratagem on Σ6 pliegues. The (talla/170.18)**3 scaling
-            # converts the Phantom-relative mass back to absolute kg.
-            "key": "masa_adiposa", "label": "Masa Adiposa", "type": "calculated", "unit": "kg",
+            # Parte 2 — adiposa. Z-score Σ6 pliegues escalado a Phantom
+            # (170.18 / talla), de-escalado / (170.18/talla)^3.
+            "key": "parte_adiposa", "label": "Parte adiposa (proporción)",
+            "type": "calculated", "unit": "kg",
             "formula": (
                 "((([suma_pliegues] * (170.18 / [talla]) - 116.41) / 34.79) * 5.85 + 25.6) "
-                "* ([talla] / 170.18)**3"
+                "/ ((170.18 / [talla]) ** 3)"
             ),
-            "chart_type": "line",
         },
-        # Intermediate: sum of 5 muscle perimeters (4 corrected for the
-        # corresponding skinfold via P − π·skinfold/10; antebrazo is
-        # used uncorrected per the paper). Surfaced as its own field so
-        # the masa_muscular formula stays readable and verifiable.
         {
+            # Σ perímetros musculares corregidos por pliegue
+            # (P − π · pliegue / 10). Usa muslo_gluteo como perímetro
+            # (legado: perimetro_muslo_maximo) y pliegue_muslo como
+            # corrección del muslo medial.
             "key": "sum_perim_muscle", "label": "Σ perímetros muscular (corr.)",
             "type": "calculated", "unit": "cm",
             "formula": (
                 "[perim_brazo_relajado] - 3.14159 * [pliegue_triceps] / 10 "
                 "+ [perim_antebrazo] "
-                "+ [muslo_medio] - 3.14159 * [pliegue_muslo] / 10 "
+                "+ [muslo_gluteo] - 3.14159 * [pliegue_muslo] / 10 "
                 "+ [pierna_perim] - 3.14159 * [pliegue_pierna] / 10 "
                 "+ [perim_torax] - 3.14159 * [pliegue_subescapular] / 10"
             ),
         },
         {
-            # Masa muscular — DIRECT formula (not by subtraction).
-            # Phantom-Stratagem: mean 24.5 kg / SD 5.4 kg @ 170.18 cm;
-            # stature-cube scaling converts back to absolute kg.
-            "key": "masa_muscular", "label": "Masa Muscular", "type": "calculated", "unit": "kg",
+            # Parte 3 — muscular. Z-score sobre Σ perímetros corregidos.
+            "key": "parte_muscular", "label": "Parte muscular (proporción)",
+            "type": "calculated", "unit": "kg",
             "formula": (
-                "(([sum_perim_muscle] * (170.18 / [talla]) - 207.21) / 13.74 * 5.4 + 24.5) "
-                "* ([talla] / 170.18) ** 3"
+                "((([sum_perim_muscle] * (170.18 / [talla]) - 207.21) / 13.74) * 5.4 + 24.5) "
+                "/ ((170.18 / [talla]) ** 3)"
             ),
-            "chart_type": "line",
         },
-        # Intermediate: sum for residual = APCH + TRCH + (waist − π·abdomen/10).
         {
+            # Σ residual = APCH + TRCH + cintura − π · abdominal / 10.
             "key": "sum_residual", "label": "Σ residual",
             "type": "calculated", "unit": "cm",
             "formula": (
-                "[diam_torax_ap] + [diam_torax_transverso] "
+                "[diam_torax_transverso] + [diam_torax_ap] "
                 "+ [cintura] - 3.14159 * [pliegue_abdomen] / 10"
             ),
         },
         {
-            # Masa residual — uses sitting height (Phantom 89.92 cm).
-            # Phantom residual: mean 6.10 kg / SD 1.24 kg.
-            "key": "masa_residual", "label": "Masa Residual", "type": "calculated", "unit": "kg",
+            # Parte 4 — residual. Escalado por talla SENTADO (Phantom 89.92).
+            "key": "parte_residual", "label": "Parte residual (proporción)",
+            "type": "calculated", "unit": "kg",
             "formula": (
-                "(([sum_residual] * (89.92 / [talla_sentado]) - 109.35) / 7.08 * 1.24 + 6.10) "
-                "* ([talla_sentado] / 89.92) ** 3"
+                "((([sum_residual] * (89.92 / [talla_sentado]) - 109.35) / 7.08) * 1.24 + 6.10) "
+                "/ ((89.92 / [talla_sentado]) ** 3)"
             ),
+        },
+        {
+            # Parte 5a — ósea cabeza. Lineal sobre perim_cabeza (sin
+            # escalado de talla — cabeza es relativamente invariante).
+            "key": "parte_osea_cabeza", "label": "Parte ósea cabeza (proporción)",
+            "type": "calculated", "unit": "kg",
+            "formula": "(([perim_cabeza] - 56) / 1.44) * 0.18 + 1.2",
+        },
+        {
+            # Parte 5b — ósea cuerpo. Z-score de la suma ponderada de
+            # 4 diámetros: biacromial + bi-iliocrestídeo + 2·húmero + 2·fémur.
+            "key": "parte_osea_cuerpo", "label": "Parte ósea cuerpo (proporción)",
+            "type": "calculated", "unit": "kg",
+            "formula": (
+                "(((([biacromial] + [bi_iliocrestideo] + 2 * [humero] + 2 * [femur]) "
+                "* (170.18 / [talla]) - 98.88) / 5.33) * 1.34 + 6.7) "
+                "/ ((170.18 / [talla]) ** 3)"
+            ),
+        },
+        {
+            "key": "parte_osea", "label": "Parte ósea (proporción)",
+            "type": "calculated", "unit": "kg",
+            "formula": "[parte_osea_cabeza] + [parte_osea_cuerpo]",
+        },
+        {
+            # Σ de las 5 partes — denominador del método proporcional.
+            "key": "sum_partes", "label": "Σ partes",
+            "type": "calculated", "unit": "kg",
+            "formula": (
+                "[parte_piel] + [parte_adiposa] + [parte_muscular] "
+                "+ [parte_residual] + [parte_osea]"
+            ),
+        },
+
+        # ─── Masas absolutas (kg) — proporcionales al peso ──────────
+        {
+            "key": "masa_piel", "label": "Masa Piel", "type": "calculated", "unit": "kg",
+            "formula": "[peso] * [parte_piel] / [sum_partes]",
+            "chart_type": "line",
+        },
+        {
+            "key": "masa_osea_cabeza", "label": "Masa Ósea — Cabeza",
+            "type": "calculated", "unit": "kg",
+            "formula": "[peso] * [parte_osea_cabeza] / [sum_partes]",
+            "chart_type": "line",
+        },
+        {
+            "key": "masa_osea_cuerpo", "label": "Masa Ósea — Cuerpo",
+            "type": "calculated", "unit": "kg",
+            "formula": "[peso] * [parte_osea_cuerpo] / [sum_partes]",
+            "chart_type": "line",
+        },
+        {
+            "key": "masa_osea", "label": "Masa Ósea", "type": "calculated", "unit": "kg",
+            "formula": "[peso] * [parte_osea] / [sum_partes]",
+            "chart_type": "line",
+        },
+        {
+            "key": "masa_adiposa", "label": "Masa Adiposa", "type": "calculated", "unit": "kg",
+            "formula": "[peso] * [parte_adiposa] / [sum_partes]",
+            "chart_type": "line",
+        },
+        {
+            "key": "masa_muscular", "label": "Masa Muscular", "type": "calculated", "unit": "kg",
+            "formula": "[peso] * [parte_muscular] / [sum_partes]",
+            "chart_type": "line",
+        },
+        {
+            "key": "masa_residual", "label": "Masa Residual", "type": "calculated", "unit": "kg",
+            "formula": "[peso] * [parte_residual] / [sum_partes]",
             "chart_type": "line",
         },
 

@@ -239,27 +239,18 @@ def _import_antropometria(ctx: MigrationContext, template: ExamTemplate | None):
     )
     for row in rows:
         try:
-            # The legacy column `perimetro_muslo_medial` stores
-            # implausibly small values across 94% of rows (avg 12.5 cm,
-            # likely a skinfold value accidentally written into the
-            # perimeter column). The Kerr Phantom-Stratagem muscle-mass
-            # formula expects mid-thigh perimeter — without this
-            # fallback we end up computing % muscle ~20% (vs the
-            # clinically expected ~50%) and IMO ~1.8 (vs ~4).
-            #
-            # Heuristic: trust `perimetro_muslo_medial` when it looks
-            # like a real perimeter (>= 30 cm); otherwise fall back to
-            # `perimetro_muslo_maximo` which is correctly populated on
-            # every row. Difference between mid- and max-thigh is small
-            # in practice (~2 cm) and far less damaging than the bug.
-            medial = row.get("perimetro_muslo_medial")
-            maximo = row.get("perimetro_muslo_maximo")
-            muslo_medio_value = (
-                medial if (medial is not None and float(medial) >= 30)
-                else maximo
-            )
-
             # Map legacy columns to SLAB template keys.
+            #
+            # Note on muslo_medial/muslo_maximo:
+            # The legacy `perimetro_muslo_medial` column actually stores
+            # the mid-thigh SKINFOLD value (mm, avg ~12 mm) — confirmed by
+            # the client's calculo_variables.py where `datos['muslo_medial']`
+            # is consumed as a skinfold in the π/10 perimeter correction.
+            # The real mid-thigh perimeter (~56 cm) lives in
+            # `perimetro_muslo_maximo`. Pentacompartimental formulas use
+            # `muslo_gluteo` as the perimeter and `pliegue_muslo` as the
+            # skinfold; `muslo_medio` is preserved verbatim for legacy
+            # data fidelity but no formula references it.
             data: dict[str, Any] = {
                 "peso": row.get("peso_bruto_kg"),
                 "talla": row.get("talla_corporal_cm"),
@@ -281,7 +272,7 @@ def _import_antropometria(ctx: MigrationContext, template: ExamTemplate | None):
                 "cintura": row.get("perimetro_cintura_minima"),
                 "caderas": row.get("perimetro_cadera_maximo"),
                 "muslo_gluteo": row.get("perimetro_muslo_maximo"),
-                "muslo_medio": muslo_medio_value,
+                "muslo_medio": row.get("perimetro_muslo_medial"),
                 "pierna_perim": row.get("perimetro_pantorrilla_maxima"),
                 # skinfolds
                 "pliegue_triceps": row.get("pliegues_triceps"),
