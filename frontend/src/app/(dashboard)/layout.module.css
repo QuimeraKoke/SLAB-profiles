@@ -6,6 +6,26 @@
   background-color: #f4f6f8; /* Light gray background for content area */
 }
 
+/* Skip-to-main: visually hidden until focused via Tab. Lets keyboard users
+ * jump past the navbar + sidebar (~30 tab stops) on every route change. */
+.skipLink {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 9999;
+  padding: 10px 16px;
+  background: #ffffff;
+  color: #6d28d9;
+  font-weight: 600;
+  border-radius: 0 0 6px 0;
+  text-decoration: none;
+}
+.skipLink:focus {
+  left: 0;
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
 .mainContainer {
   display: flex;
   flex: 1;
@@ -29,7 +49,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(13, 22, 42, 0.5);
+  background: rgba(11, 21, 37, 0.5);
   z-index: 30;
   animation: fadeIn 160ms ease-out;
 }

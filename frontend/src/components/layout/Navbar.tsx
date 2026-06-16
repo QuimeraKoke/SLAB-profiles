@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Search, Bell, Menu } from "lucide-react";
+import { Bell, Menu } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -47,6 +47,7 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
   const [open, setOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLButtonElement>(null);
   const { categories, categoryId, setCategoryId } = useCategoryContext();
   const { membership } = useAuth();
   const club = membership?.club ?? null;
@@ -80,7 +81,9 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
     };
   }, []);
 
-  // Click-outside-to-close.
+  // ME-7: click-outside, Escape, and focus-leaves all close the dropdown.
+  // Previously Escape did nothing and focus could leak into the page
+  // behind. Closing also restores focus to the bell trigger.
   useEffect(() => {
     if (!open) return;
     const onDocClick = (e: MouseEvent) => {
@@ -89,8 +92,19 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
         setOpen(false);
       }
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        // Restore focus to the trigger so the user lands back on the bell.
+        bellRef.current?.focus();
+      }
+    };
     document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
   }, [open]);
 
   const dismiss = async (alert: AlertWithPlayer) => {
@@ -129,34 +143,47 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
             <Menu size={20} />
           </button>
         )}
-        <div className={styles.slabLogo}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2L17 7L12 12L7 7L12 2Z" stroke="white" strokeWidth="1.5" />
-            <path d="M12 12L17 17L12 22L7 17L12 12Z" stroke="white" strokeWidth="1.5" />
-            <path d="M7 7L12 12L7 17L2 12L7 7Z" stroke="white" strokeWidth="1.5" />
-            <path d="M17 7L22 12L17 17L12 12L17 7Z" stroke="white" strokeWidth="1.5" />
-          </svg>
-          SLAB
-        </div>
-        <div className={styles.teamDivider}></div>
-        <div className={styles.teamSection}>
-          {club?.logo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={club.logo_url}
-              alt={`Logo ${club.name}`}
-              className={styles.teamLogoImg}
-            />
-          ) : (
-            <div className={styles.teamLogo} aria-hidden="true">{clubInitial}</div>
-          )}
-          <div className={styles.teamText}>
-            <h1 className={styles.teamTitle}>
-              Perfil Jugadores{club ? ` — ${club.name}` : ""}
-            </h1>
-            <p className={styles.teamSubtitle}>Información integral de los jugadores del club</p>
-          </div>
-        </div>
+        {/* L1: logo + club section is a single home link (universal
+         * convention). L7: decorative SVG is hidden from AT — the "SLAB"
+         * text after it carries the accessible name. L5: demoted from
+         * <h1> to <p> so each page's own H1 can own the document outline. */}
+        <Link href="/equipo" className={styles.brandLink} aria-label="Ir al inicio (Equipo)">
+          <span className={styles.slabLogo}>
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-hidden="true"
+            >
+              <path d="M12 2L17 7L12 12L7 7L12 2Z" stroke="white" strokeWidth="1.5" />
+              <path d="M12 12L17 17L12 22L7 17L12 12Z" stroke="white" strokeWidth="1.5" />
+              <path d="M7 7L12 12L7 17L2 12L7 7Z" stroke="white" strokeWidth="1.5" />
+              <path d="M17 7L22 12L17 17L12 12L17 7Z" stroke="white" strokeWidth="1.5" />
+            </svg>
+            SLAB
+          </span>
+          <span className={styles.teamDivider} aria-hidden="true"></span>
+          <span className={styles.teamSection}>
+            {club?.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={club.logo_url}
+                alt=""
+                className={styles.teamLogoImg}
+              />
+            ) : (
+              <span className={styles.teamLogo} aria-hidden="true">{clubInitial}</span>
+            )}
+            <span className={styles.teamText}>
+              <span className={styles.teamTitle}>
+                Perfil Jugadores{club ? ` — ${club.name}` : ""}
+              </span>
+              <span className={styles.teamSubtitle}>Información integral de los jugadores del club</span>
+            </span>
+          </span>
+        </Link>
       </div>
       <div className={styles.rightSection}>
         {categories.length > 0 && (
@@ -174,15 +201,15 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
             </select>
           </label>
         )}
-        <button className={styles.iconButton} aria-label="Search">
-          <Search size={18} />
-        </button>
+        {/* Search button removed — was a focusable no-op button.
+         * Reinstate when a global-search route exists, with onClick wired. */}
         <div className={styles.bellWrapper} ref={dropdownRef}>
           <button
+            ref={bellRef}
             type="button"
             className={styles.iconButton}
             aria-label={`Notificaciones${count > 0 ? ` (${count} activas)` : ""}`}
-            aria-haspopup="true"
+            aria-haspopup="dialog"
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
           >
@@ -192,7 +219,14 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
             )}
           </button>
           {open && (
-            <div className={styles.dropdown} role="menu">
+            // ME-7: was role="menu" but children are links + buttons,
+            // not menuitems. Treating as a generic popover dialog matches
+            // the actual content and behavior.
+            <div
+              className={styles.dropdown}
+              role="dialog"
+              aria-label="Alertas activas"
+            >
               <div className={styles.dropdownHeader}>
                 <span className={styles.dropdownTitle}>Alertas activas</span>
                 <span className={styles.dropdownCount}>{count}</span>

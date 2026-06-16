@@ -634,3 +634,80 @@ class EventIn(Schema):
     category_id: UUID | None = None
     participant_ids: list[UUID] = []
     metadata: dict[str, Any] = {}
+
+
+# ─── Player triage (Resumen tab) ─────────────────────────────────────
+
+
+class TriagePlayerOut(Schema):
+    id: UUID
+    first_name: str
+    last_name: str
+    category_name: str | None
+    position_label: str | None
+    photo_url: str | None
+
+
+class TriageAlertOut(Schema):
+    id: UUID
+    severity: str
+    message: str
+    fired_at: datetime
+    last_fired_at: datetime
+    source_type: str
+    source_template_slug: str | None
+
+
+class TriageMetricBase(Schema):
+    field_key: str
+    field_label: str
+    template_slug: str
+    template_label: str
+    unit: str | None
+    direction_of_good: str | None
+    current_value: float | None
+    current_at: datetime | None
+    previous_value: float | None
+    previous_at: datetime | None
+    delta: float | None
+    delta_pct: float | None
+
+
+class TriageAlertedMetricOut(TriageMetricBase):
+    alert_id: UUID
+
+
+class TriageHistoryPointOut(Schema):
+    value: float
+    recorded_at: datetime
+
+
+class TriageOtherMetricOut(TriageMetricBase):
+    history_30d: list[TriageHistoryPointOut] = []
+
+
+class TriagePerformanceBlockOut(Schema):
+    template_slug: str
+    template_label: str
+    result_data: dict[str, Any]
+
+
+class TriageLastMatchOut(Schema):
+    event_id: UUID
+    event_title: str
+    event_starts_at: datetime
+    is_past: bool
+    match_role: str | None
+    match_role_label: str | None
+    minutes_played: int | None
+    goals: int | None
+    performance: list[TriagePerformanceBlockOut] = []
+
+
+class TriageOut(Schema):
+    player: TriagePlayerOut
+    generated_at: datetime
+    alerts: list[TriageAlertOut]
+    alerted_metrics: list[TriageAlertedMetricOut]
+    other_metrics: list[TriageOtherMetricOut]
+    last_match: TriageLastMatchOut | None

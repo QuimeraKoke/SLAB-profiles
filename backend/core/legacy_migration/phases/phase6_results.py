@@ -328,13 +328,27 @@ def _import_gps_partido(ctx: MigrationContext, template: ExamTemplate | None):
         key = (r.get("jugador_id"), r.get("partido_id"))
         groups.setdefault(key, []).append(r)
 
+    # Order matters: process half-period rows BEFORE the full-match
+    # ('Partido Completo') row so the half values are in place when we
+    # need to compute the honest max_vel_total. The legacy data ships
+    # rows in arbitrary order; sort defensively.
+    _PERIOD_ORDER = {"Primer Tiempo": 0, "Segundo Tiempo": 1, "Partido Completo": 2}
+
     for (jugador_id, partido_id), period_rows in groups.items():
         try:
+            sorted_rows = sorted(
+                period_rows,
+                key=lambda r: _PERIOD_ORDER.get(r.get("tipo_evaluacion"), 9),
+            )
             data: dict[str, Any] = {}
-            for r in period_rows:
+            for r in sorted_rows:
                 suffix = GPS_PERIOD_MAP.get(r.get("tipo_evaluacion"), "p1")
                 # Map each numeric column to the appropriate _p{suffix} field.
-                data.update({
+                # NOTE: max_vel is INTENTIONALLY excluded from the Partido
+                # Completo write — the legacy stores the SUM of the two
+                # halves there (~60 km/h, physically impossible). We fix
+                # max_vel_total below from the half values.
+                payload = {
                     f"tot_dur_{suffix}":      r.get("tot_dur_m"),
                     f"tot_dist_{suffix}":     r.get("tot_dist_m"),
                     f"mpm_{suffix}":          r.get("meterage_per_minute"),
@@ -345,13 +359,28 @@ def _import_gps_partido(ctx: MigrationContext, template: ExamTemplate | None):
                     f"dist_70_85_{suffix}":   r.get("vmax_70_85"),
                     f"dist_85_95_{suffix}":   r.get("vmax_85_95"),
                     f"acc_dec_{suffix}":      r.get("acc_dec_gt_3"),
-                    f"max_vel_{suffix}":      r.get("max_vel_kmh"),
                     f"hiaa_{suffix}":         r.get("hiaa"),
                     f"hmld_{suffix}":         r.get("load_hmld_m"),
                     f"acc_{suffix}":          r.get("acc_mayor_3_ms2"),
                     f"dec_{suffix}":          r.get("dec_mayor_3_ms2"),
                     f"player_load_{suffix}":  r.get("player_load_au"),
-                })
+                }
+                # Half periods carry valid max_vel directly; Partido
+                # Completo's value is the bogus sum so we ignore it.
+                if r.get("tipo_evaluacion") != "Partido Completo":
+                    payload[f"max_vel_{suffix}"] = r.get("max_vel_kmh")
+                data.update(payload)
+
+            # Honest max-velocity-for-the-full-match = max of the two halves.
+            p1v = data.get("max_vel_p1")
+            p2v = data.get("max_vel_p2")
+            if p1v is not None and p2v is not None:
+                data["max_vel_total"] = max(p1v, p2v)
+            elif p1v is not None:
+                data["max_vel_total"] = p1v
+            elif p2v is not None:
+                data["max_vel_total"] = p2v
+
             data = {k: v for k, v in data.items() if v is not None}
             recorded_at = _ts(period_rows[0]["fecha"], default_hour=15)
             _upsert_result(

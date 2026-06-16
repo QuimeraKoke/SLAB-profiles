@@ -290,26 +290,52 @@ export default function ReportePage({ params }: PageProps) {
         </div>
       </header>
 
-      <nav className={styles.tabs} role="tablist" aria-label="Vistas del reporte">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "plantel"}
-          className={`${styles.tab} ${activeTab === "plantel" ? styles.tabActive : ""}`}
-          onClick={() => updateUrl({ tab: "plantel" })}
-        >
-          Plantel
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "por_jugador"}
-          className={`${styles.tab} ${activeTab === "por_jugador" ? styles.tabActive : ""}`}
-          onClick={() => updateUrl({ tab: "por_jugador" })}
-        >
-          Por jugador
-        </button>
-      </nav>
+      {(() => {
+        // ME-3 follow-up: complete the half-implemented APG pattern.
+        // `role="tablist"` was already here but with no arrow-key nav
+        // and no roving tabIndex — screen readers told users to use
+        // arrow keys that did nothing. Phase 3 IA-3 will likely retire
+        // the "Por jugador" tab entirely (replaced by a link out to
+        // the player profile); until then, finish the keyboard story.
+        const tabs: Array<{ id: "plantel" | "por_jugador"; label: string }> = [
+          { id: "plantel", label: "Plantel" },
+          { id: "por_jugador", label: "Por jugador" },
+        ];
+        const onTabKey = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+          const idx = tabs.findIndex((t) => t.id === activeTab);
+          if (idx < 0) return;
+          let next: number | null = null;
+          if (e.key === "ArrowRight") next = (idx + 1) % tabs.length;
+          else if (e.key === "ArrowLeft") next = (idx - 1 + tabs.length) % tabs.length;
+          else if (e.key === "Home") next = 0;
+          else if (e.key === "End") next = tabs.length - 1;
+          if (next !== null) {
+            e.preventDefault();
+            updateUrl({ tab: tabs[next].id });
+          }
+        };
+        return (
+          <nav className={styles.tabs} role="tablist" aria-label="Vistas del reporte">
+            {tabs.map((t) => {
+              const isActive = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  tabIndex={isActive ? 0 : -1}
+                  className={`${styles.tab} ${isActive ? styles.tabActive : ""}`}
+                  onClick={() => updateUrl({ tab: t.id })}
+                  onKeyDown={onTabKey}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </nav>
+        );
+      })()}
 
       {error && <div className={styles.error}>{error}</div>}
 
@@ -351,20 +377,62 @@ export default function ReportePage({ params }: PageProps) {
               </p>
             </div>
           ) : (
-            <ProfileDepartment
-              playerId={selectedPlayer.id}
-              playerName={`${selectedPlayer.first_name} ${selectedPlayer.last_name}`}
-              department={department}
-              dateFrom={playerDateRange.date.from}
-              dateTo={playerDateRange.date.to}
-              dateRangeControl={
-                <DateRangeControl
-                  value={playerDateRange}
-                  onChange={setPlayerDateRange}
-                  variant="compact"
-                />
-              }
-            />
+            <>
+              {/* IA-3: canonical per-player department view lives at
+                  `/perfil/[id]?tab=<dept>`. We render the same data here
+                  but invite users to the profile for the extra context
+                  (timeline, eventos, objetivos, lesiones) — positive
+                  framing instead of "wrong place". */}
+              <div
+                role="note"
+                aria-label="Acceso al perfil del jugador"
+                style={{
+                  margin: "0 0 12px",
+                  padding: "10px 14px",
+                  background: "#eef2ff",
+                  border: "1px solid #c7d2fe",
+                  borderRadius: 6,
+                  fontSize: "0.85rem",
+                  color: "#3730a3",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 12,
+                }}
+              >
+                <span>
+                  Vista de <strong>{selectedPlayer.first_name} {selectedPlayer.last_name}</strong>{" "}
+                  · Abre su perfil para línea de tiempo, eventos y objetivos.
+                </span>
+                <a
+                  href={`/perfil/${selectedPlayer.id}?tab=${department.slug}`}
+                  style={{
+                    color: "#4f46e5",
+                    fontWeight: 500,
+                    textDecoration: "underline",
+                    textDecorationColor: "#c7d2fe",
+                    textUnderlineOffset: 2,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Abrir perfil →
+                </a>
+              </div>
+              <ProfileDepartment
+                playerId={selectedPlayer.id}
+                playerName={`${selectedPlayer.first_name} ${selectedPlayer.last_name}`}
+                department={department}
+                dateFrom={playerDateRange.date.from}
+                dateTo={playerDateRange.date.to}
+                dateRangeControl={
+                  <DateRangeControl
+                    value={playerDateRange}
+                    onChange={setPlayerDateRange}
+                    variant="compact"
+                  />
+                }
+              />
+            </>
           )}
         </>
       )}

@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import Modal from "@/components/ui/Modal/Modal";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useCategoryContext } from "@/context/CategoryContext";
@@ -62,6 +63,7 @@ function fromPlayer(p: PlayerSummary): FormState {
 
 export default function PlayersAdminPage() {
   const { membership } = useAuth();
+  const { confirm } = useConfirm();
   // Configuraciones is a roster-management surface, not a viewer — show
   // ALL categories the user can manage, not just the navbar's pick. The
   // global picker still drives the default form's category for "+ Nuevo".
@@ -166,11 +168,14 @@ export default function PlayersAdminPage() {
   };
 
   const handleDelete = async (player: PlayerSummary) => {
-    const ok = confirm(
-      `¿Borrar a ${player.first_name} ${player.last_name}? ` +
-        `Si tiene historial (resultados, episodios, contratos) la operación va a fallar — ` +
-        `usa el toggle para desactivarlo en su lugar.`,
-    );
+    const ok = await confirm({
+      title: `Borrar a ${player.first_name} ${player.last_name}`,
+      message:
+        "Si tiene historial (resultados, episodios, contratos) la operación " +
+        "va a fallar — usa el toggle para desactivarlo en su lugar.",
+      confirmLabel: "Borrar",
+      variant: "danger",
+    });
     if (!ok) return;
     setActionError(null);
     try {

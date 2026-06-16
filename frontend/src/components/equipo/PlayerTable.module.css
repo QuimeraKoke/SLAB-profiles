@@ -29,6 +29,7 @@
 .row {
   border-bottom: 1px solid #f3f4f6;
   transition: all 0.2s ease;
+  cursor: pointer;
 }
 
 .row:last-child {
@@ -39,9 +40,29 @@
   background: #f9fafb;
 }
 
-.rowHighlight {
-  background: #eff6ff !important;
-  box-shadow: inset 3px 0 0 #3b82f6;
+/* QW-9: stretched-link pattern. The Link is the only focusable element in
+ * the row; its ::after fills the row so the entire <tr> is clickable. */
+.row td {
+  position: relative;
+}
+
+.stretchedLink {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.stretchedLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.row:focus-within {
+  background: #f3f4f6;
+  outline: 2px solid #6366f1;
+  outline-offset: -2px;
 }
 
 .table td {
@@ -109,18 +130,3 @@
   color: #991b1b;
 }
 
-.warningText {
-  background-color: #fee2e2;
-  color: #991b1b;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  display: inline-block;
-  text-transform: uppercase;
-}
-
-.noWarning {
-  color: #9ca3af;
-  font-size: 0.875rem;
-}

@@ -1,6 +1,6 @@
 .navbar {
   height: 64px;
-  background-color: #0d162a;
+  background-color: #0b1525;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -40,6 +40,24 @@
   .menuToggle {
     display: inline-flex;
   }
+}
+
+/* L1: brand link wraps the SLAB logo + club section as a single home link. */
+.brandLink {
+  display: flex;
+  align-items: center;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 6px;
+  padding: 4px 6px;
+  margin: -4px -6px;
+}
+.brandLink:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.brandLink:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
 }
 
 .slabLogo {
@@ -91,6 +109,11 @@
 .teamText {
   display: flex;
   flex-direction: column;
+}
+
+.teamTitle,
+.teamSubtitle {
+  display: block;
 }
 
 .teamTitle {
@@ -232,7 +255,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 0 0 2px #0d162a;
+  box-shadow: 0 0 0 2px #0b1525;
   line-height: 1;
 }
 
@@ -318,7 +341,7 @@
 }
 
 .severityBar.info {
-  background-color: #3b82f6;
+  background-color: #6366f1;
 }
 
 .severityBar.warning {

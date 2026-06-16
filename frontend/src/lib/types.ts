@@ -1376,3 +1376,78 @@ export interface TeamReportResponse {
     match_selector: TeamMatchSelectorConfig;
   } | null;
 }
+
+
+// ─── Player triage (Resumen tab) ──────────────────────────────────────
+
+export interface TriageAlert {
+  id: string;
+  severity: "info" | "warning" | "critical";
+  message: string;
+  fired_at: string;
+  last_fired_at: string;
+  source_type: string;
+  source_template_slug: string | null;
+}
+
+interface TriageMetricBase {
+  field_key: string;
+  field_label: string;
+  template_slug: string;
+  template_label: string;
+  unit: string | null;
+  direction_of_good: "up" | "down" | null;
+  current_value: number | null;
+  current_at: string | null;
+  previous_value: number | null;
+  previous_at: string | null;
+  delta: number | null;
+  delta_pct: number | null;
+}
+
+export interface TriageAlertedMetric extends TriageMetricBase {
+  alert_id: string;
+}
+
+export interface TriageHistoryPoint {
+  value: number;
+  recorded_at: string;
+}
+
+export interface TriageOtherMetric extends TriageMetricBase {
+  history_30d: TriageHistoryPoint[];
+}
+
+export interface TriagePerformanceBlock {
+  template_slug: string;
+  template_label: string;
+  result_data: Record<string, unknown>;
+}
+
+export interface TriageLastMatch {
+  event_id: string;
+  event_title: string;
+  event_starts_at: string;
+  is_past: boolean;
+  match_role: string | null;
+  match_role_label: string | null;
+  minutes_played: number | null;
+  goals: number | null;
+  performance: TriagePerformanceBlock[];
+}
+
+export interface TriageResponse {
+  player: {
+    id: string;
+    first_name: string;
+    last_name: string;
+    category_name: string | null;
+    position_label: string | null;
+    photo_url: string | null;
+  };
+  generated_at: string;
+  alerts: TriageAlert[];
+  alerted_metrics: TriageAlertedMetric[];
+  other_metrics: TriageOtherMetric[];
+  last_match: TriageLastMatch | null;
+}

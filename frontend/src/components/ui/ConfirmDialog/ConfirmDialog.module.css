@@ -1,0 +1,64 @@
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 320px;
+}
+
+.message {
+  color: #374151;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cancel,
+.confirm,
+.confirmDanger {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+  border: 1px solid transparent;
+  transition: background-color 120ms ease;
+}
+
+.cancel {
+  background: #ffffff;
+  color: #374151;
+  border-color: #d1d5db;
+}
+.cancel:hover {
+  background: #f3f4f6;
+}
+
+.confirm {
+  background: #6d28d9;
+  color: #ffffff;
+}
+.confirm:hover {
+  background: #5b21b6;
+}
+
+.confirmDanger {
+  background: #dc2626;
+  color: #ffffff;
+}
+.confirmDanger:hover {
+  background: #b91c1c;
+}
+
+.cancel:focus-visible,
+.confirm:focus-visible,
+.confirmDanger:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}

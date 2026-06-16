@@ -11,6 +11,7 @@ import {
 
 import DynamicUploader from "@/components/forms/DynamicUploader";
 import Modal from "@/components/ui/Modal/Modal";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import { api, ApiError } from "@/lib/api";
 import { usePermission } from "@/lib/permissions";
 import type { ExamField, ExamResult, ExamTemplate } from "@/lib/types";
@@ -38,6 +39,7 @@ export default function DepartmentCard({
   const [editing, setEditing] = useState<ExamResult | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const { confirm } = useConfirm();
 
   const fields = template.config_schema?.fields ?? [];
   const sortedResults = useMemo(
@@ -73,9 +75,13 @@ export default function DepartmentCard({
   };
 
   const handleDelete = async (result: ExamResult) => {
-    if (!confirm("¿Borrar este registro? Esta acción no se puede deshacer.")) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Borrar registro",
+      message: "¿Borrar este registro? Esta acción no se puede deshacer.",
+      confirmLabel: "Borrar",
+      variant: "danger",
+    });
+    if (!ok) return;
     setDeletingId(result.id);
     setActionError(null);
     try {

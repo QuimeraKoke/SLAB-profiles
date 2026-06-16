@@ -1,0 +1,53 @@
+.breadcrumbs {
+  padding: 8px 24px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  font-size: 0.82rem;
+  /* Margin keeps the strip from butting up against the page header's
+   * own border-bottom (which read as a stacked double-rule before). */
+  margin-bottom: 12px;
+}
+
+.breadcrumbs ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sep {
+  color: #9ca3af;
+  margin: 0 2px;
+}
+
+.link {
+  color: #6b7280;
+  text-decoration: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+
+.link:hover {
+  color: #6366f1;
+  background: #eef2ff;
+}
+
+.link:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 1px;
+}
+
+.current {
+  color: #111827;
+  font-weight: 600;
+  padding: 2px 4px;
+}

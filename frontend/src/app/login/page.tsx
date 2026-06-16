@@ -33,7 +33,9 @@ export default function LoginPage() {
       await login(email, password);
     } catch (err) {
       const message =
-        err instanceof ApiError ? err.message : "Login failed. Please try again.";
+        err instanceof ApiError
+          ? err.message
+          : "Error de inicio de sesión. Inténtalo de nuevo.";
       setError(message);
     } finally {
       setSubmitting(false);
@@ -72,7 +74,7 @@ export default function LoginPage() {
 
         <form className={styles.form} onSubmit={handleSubmit}>
           <div className={styles.inputGroup}>
-            <label htmlFor="email" className={styles.label}>Email</label>
+            <label htmlFor="email" className={styles.label}>Correo</label>
             <input
               id="email"
               type="email"
@@ -80,12 +82,13 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="ronal@dinho.com"
+              autoComplete="email"
               required
             />
           </div>
 
           <div className={styles.inputGroup}>
-            <label htmlFor="password" className={styles.label}>Password</label>
+            <label htmlFor="password" className={styles.label}>Contraseña</label>
             <input
               id="password"
               type="password"
@@ -93,6 +96,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder={"•".repeat(15)}
+              autoComplete="current-password"
               required
             />
           </div>
@@ -106,11 +110,11 @@ export default function LoginPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <label className={styles.checkboxGroup}>
               <input type="checkbox" className={styles.checkbox} defaultChecked />
-              Keep me logged in
+              Mantener sesión iniciada
             </label>
 
             <button type="submit" className={styles.submitButton} disabled={submitting}>
-              {submitting ? "Signing in…" : "Login"}
+              {submitting ? "Ingresando…" : "Ingresar"}
             </button>
           </div>
         </form>

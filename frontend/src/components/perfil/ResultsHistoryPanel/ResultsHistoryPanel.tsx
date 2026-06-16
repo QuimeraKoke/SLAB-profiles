@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import DynamicUploader from "@/components/forms/DynamicUploader";
 import Modal from "@/components/ui/Modal/Modal";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import { api, ApiError } from "@/lib/api";
 import type { ExamField, ExamResult, ExamTemplate } from "@/lib/types";
 import styles from "./ResultsHistoryPanel.module.css";
@@ -35,6 +36,7 @@ export default function ResultsHistoryPanel({
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
+  const { confirm } = useConfirm();
 
   useEffect(() => {
     let cancelled = false;
@@ -77,9 +79,13 @@ export default function ResultsHistoryPanel({
   };
 
   const handleDelete = async (result: ExamResult) => {
-    if (!confirm("¿Borrar este registro? Esta acción no se puede deshacer.")) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Borrar registro",
+      message: "¿Borrar este registro? Esta acción no se puede deshacer.",
+      confirmLabel: "Borrar",
+      variant: "danger",
+    });
+    if (!ok) return;
     setDeletingId(result.id);
     setError(null);
     try {

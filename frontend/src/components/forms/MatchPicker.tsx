@@ -110,7 +110,7 @@ export default function MatchPicker({
           </span>
         ) : (
           <span className={styles.triggerPlaceholder}>
-            {placeholder ?? "Elegí un partido…"}
+            {placeholder ?? "Elige un partido…"}
           </span>
         )}
         <ChevronDown size={16} aria-hidden="true" className={styles.chevron} />

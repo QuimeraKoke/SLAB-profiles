@@ -21,11 +21,17 @@ function toRow(p: PlayerSummary): EquipoPlayerRow {
   };
 }
 
+// Accent-insensitive normalization so "Aranguiz" matches "Aránguiz".
+function normalize(s: string): string {
+  return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
+}
+
 export default function EquipoPage() {
   const [activeTab, setActiveTab] = useState<TabType>("list");
   const [players, setPlayers] = useState<PlayerSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | PlayerSummary["status"]>("all");
+  const [query, setQuery] = useState("");
   const { categoryId, loading: categoryLoading } = useCategoryContext();
 
   useEffect(() => {
@@ -48,10 +54,20 @@ export default function EquipoPage() {
   }, [categoryId, categoryLoading]);
 
   const filteredPlayers = useMemo(() => {
-    const all = players ?? [];
-    if (statusFilter === "all") return all;
-    return all.filter((p) => p.status === statusFilter);
-  }, [players, statusFilter]);
+    let all = players ?? [];
+    if (statusFilter !== "all") {
+      all = all.filter((p) => p.status === statusFilter);
+    }
+    // QW-2: wired the search box. Accent-insensitive match on
+    // "first last" so a tilde-less query still finds Aránguiz, etc.
+    const q = normalize(query.trim());
+    if (q) {
+      all = all.filter((p) =>
+        normalize(`${p.first_name} ${p.last_name}`).includes(q),
+      );
+    }
+    return all;
+  }, [players, statusFilter, query]);
 
   const rows = useMemo(() => filteredPlayers.map(toRow), [filteredPlayers]);
 
@@ -94,7 +110,7 @@ export default function EquipoPage() {
           <div style={{ padding: 24, color: "#6b7280" }}>Cargando jugadores…</div>
         ) : activeTab === "list" ? (
           <>
-            <PlayerListToolbar />
+            <PlayerListToolbar query={query} onQueryChange={setQuery} />
             <div
               style={{
                 display: "flex", gap: 8, padding: "8px 16px",
@@ -132,7 +148,21 @@ export default function EquipoPage() {
                 tone="red"
               />
             </div>
-            <PlayerTable players={rows} />
+            {/* QW-2 follow-up: equipo owns all empty-state copy now —
+                three cases, three messages, no false negatives. */}
+            {players.length === 0 ? (
+              <div style={{ padding: 24, color: "#6b7280" }}>
+                No hay jugadores registrados todavía.
+              </div>
+            ) : filteredPlayers.length === 0 ? (
+              <div style={{ padding: 24, color: "#6b7280" }}>
+                {query.trim()
+                  ? `Sin coincidencias para «${query}».`
+                  : "No hay jugadores con ese estado."}
+              </div>
+            ) : (
+              <PlayerTable players={rows} />
+            )}
           </>
         ) : (
           <FieldView players={rows} />

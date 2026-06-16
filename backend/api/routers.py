@@ -67,6 +67,7 @@ from .schemas import (
     TeamResultsIn,
     TeamResultsOut,
     TemplateOut,
+    TriageOut,
     UserOut,
 )
 
@@ -401,6 +402,23 @@ def get_player(request, player_id: str):
         "age": player.age,
         "open_episode_count": open_eps,
     }
+
+
+@api.get("/players/{player_id}/triage", response=TriageOut)
+def get_player_triage(request, player_id: str):
+    """Player snapshot for the Resumen tab — see `api/triage.py` for the
+    4-section structure and selection rules. Returns a single payload
+    the frontend tab and the PDF generator both consume."""
+    from .triage import build_triage_payload
+
+    membership = get_membership(request.user)
+    player = scope_players(
+        Player.objects.select_related("category", "position"),
+        membership,
+    ).filter(pk=player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+    return build_triage_payload(player)
 
 
 def _check_category_in_scope(category_id, membership):
@@ -1766,6 +1784,31 @@ def download_team_report_pdf(
     )
 
     filename = f"reporte-{department_slug}-{category.name}.pdf".replace(" ", "_")
+    response = HttpResponse(pdf_bytes, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api.get("/players/{player_id}/triage.pdf")
+def download_player_triage_pdf(request, player_id: str):
+    """Printable Resumen — one-page snapshot of alerts, alerted metrics
+    with previous reading, other tracked metrics with 30d trail, and the
+    last match's citation status. Shares its data layer with the JSON
+    endpoint so screen and print never diverge."""
+    from django.http import HttpResponse
+    from dashboards.pdf.player_triage import render_triage_pdf
+
+    membership = get_membership(request.user)
+    player = scope_players(
+        Player.objects.select_related("category__club", "position"),
+        membership,
+    ).filter(pk=player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+
+    pdf_bytes = render_triage_pdf(player)
+    name = f"{player.first_name}-{player.last_name}".replace(" ", "_")
+    filename = f"resumen-{name}.pdf"
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response

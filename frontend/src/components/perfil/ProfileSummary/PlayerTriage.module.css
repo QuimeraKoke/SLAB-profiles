@@ -1,0 +1,377 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 16px 20px 32px;
+  /* Globals.css sets a near-white body color (`--text-color: #f1f3f9`)
+   * for the original dark-theme variant. The content area is now a
+   * light background, so we have to set our own ink color or every
+   * value lands invisible on white. */
+  color: #111827;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 8px;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.pdfButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #ffffff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pdfButton:hover {
+  background: #f9fafb;
+}
+.pdfButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.pdfButton:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 1px;
+}
+
+.muted {
+  padding: 24px;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.error {
+  padding: 12px 14px;
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+/* ─── Section shell ────────────────────────────────────────────────── */
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #374151;
+}
+
+.sectionHint {
+  margin-left: 6px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #6b7280;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.count {
+  margin-left: 4px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.empty {
+  margin: 0;
+  padding: 8px 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.fineprint {
+  margin: 0 0 4px;
+  font-size: 0.72rem;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+/* ─── Alerts ───────────────────────────────────────────────────────── */
+
+.alertList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.alertRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  border-left: 3px solid transparent;
+}
+
+.sev_critical {
+  background: #fef2f2;
+  border-left-color: #dc2626;
+  color: #991b1b;
+}
+.sev_warning {
+  background: #fffbeb;
+  border-left-color: #f59e0b;
+  color: #92400e;
+}
+.sev_info {
+  background: #eef2ff;
+  border-left-color: #6366f1;
+  color: #3730a3;
+}
+
+.iconCritical { color: #dc2626; }
+.iconWarning  { color: #f59e0b; }
+.iconInfo     { color: #6366f1; }
+
+.alertMessage {
+  flex: 1;
+  font-weight: 500;
+}
+
+.alertTime {
+  font-size: 0.72rem;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+/* ─── Tables (sections 2 + 3) ──────────────────────────────────────── */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  /* Auto layout overshoots — first column eats all the slack, numeric
+   * columns shrink, headers and data end up far apart. Fixed layout
+   * with explicit colgroup widths (set inline on each <colgroup>) keeps
+   * everything aligned. */
+  table-layout: fixed;
+}
+
+.table thead th {
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  padding: 6px 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* Right-align the numeric header cells so each header sits over its data. */
+.table thead th.numCell {
+  text-align: right;
+}
+
+.table tbody td {
+  padding: 8px;
+  border-bottom: 1px solid #f3f4f6;
+  vertical-align: middle;
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.numCell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.metricLabel {
+  font-weight: 600;
+  color: #111827;
+}
+
+.metricTpl {
+  font-size: 0.72rem;
+  color: #6b7280;
+  margin-top: 1px;
+}
+
+/* ─── Sparkline ────────────────────────────────────────────────────── */
+
+.sparkCell {
+  width: 100px;
+  padding: 4px 8px !important;
+}
+
+.sparkDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d1d5db;
+  vertical-align: middle;
+}
+
+/* ─── Delta badges ─────────────────────────────────────────────────── */
+
+.deltaBetter,
+.deltaWorse,
+.deltaNeutral {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.deltaBetter {
+  background: #dcfce7;
+  color: #166534;
+}
+.deltaWorse {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.deltaNeutral {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* ─── Section 4 — match card ───────────────────────────────────────── */
+
+.matchCard {
+  padding: 12px 14px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.matchHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.matchTitle {
+  font-weight: 600;
+  color: #111827;
+}
+
+.roleBadge {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rolePlayed {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.roleCited {
+  /* Citado pero no jugó — coach should NOT see green here, but red
+   * (absent) is too strong. Amber sits between. */
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.roleAbsent {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.matchStats {
+  display: flex;
+  gap: 16px;
+}
+
+.stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.2;
+}
+
+.statValue {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #111827;
+  font-variant-numeric: tabular-nums;
+}
+
+.statLabel {
+  font-size: 0.7rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-top: 2px;
+}
+
+.perfBlocks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.perfBlock {
+  padding-top: 8px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.perfTitle {
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.perfRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}

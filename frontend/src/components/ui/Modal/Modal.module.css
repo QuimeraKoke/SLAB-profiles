@@ -34,6 +34,15 @@
   }
 }
 
+/* L6: honor prefers-reduced-motion. Skip the pop-in animation for users
+ * who have requested reduced motion; the dialog still appears, just
+ * without the transform/opacity transition. */
+@media (prefers-reduced-motion: reduce) {
+  .dialog {
+    animation: none;
+  }
+}
+
 .header {
   display: flex;
   align-items: center;

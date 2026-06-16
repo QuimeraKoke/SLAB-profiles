@@ -418,7 +418,7 @@ function MatchScopedTeamTable({
           <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>Cargando partidos…</div>
         ) : matches.length === 0 ? (
           <div style={{ color: "#6b7280", fontSize: "0.9rem" }}>
-            No hay partidos cargados para esta categoría. Creá uno desde{" "}
+            No hay partidos cargados para esta categoría. Crea uno desde{" "}
             <Link href="/partidos/nuevo" style={{ color: "#6d28d9", fontWeight: 600 }}>
               Partidos → Nuevo
             </Link>.
@@ -430,7 +430,7 @@ function MatchScopedTeamTable({
             onChange={setPickedMatchId}
             label="Partido"
             required
-            placeholder="Elegí un partido para cargar el rendimiento…"
+            placeholder="Elige un partido para cargar el rendimiento…"
           />
         )}
       </div>

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import AttachmentList from "@/components/ui/AttachmentList/AttachmentList";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import { api, ApiError } from "@/lib/api";
 import { usePermission } from "@/lib/permissions";
 import type { Contract, ContractCreateIn, ContractType } from "@/lib/types";
@@ -47,6 +48,7 @@ export default function ContractsPanel({ playerId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Contract | "new" | null>(null);
   const [expandedAttachmentsId, setExpandedAttachmentsId] = useState<string | null>(null);
+  const { confirm } = useConfirm();
   // Action gates: the section is only mounted when view_contract is
   // granted (see ProfileHeader), but add/change/delete are independent
   // perms — assigned granularly per-user from the admin.
@@ -74,7 +76,13 @@ export default function ContractsPanel({ playerId }: Props) {
   };
 
   const handleDelete = async (contract: Contract) => {
-    if (!confirm(`¿Borrar el contrato ${contract.start_date} → ${contract.season_label}?`)) return;
+    const ok = await confirm({
+      title: "Borrar contrato",
+      message: `¿Borrar el contrato ${contract.start_date} → ${contract.season_label}? Esta acción no se puede deshacer.`,
+      confirmLabel: "Borrar",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await api(`/contracts/${contract.id}`, { method: "DELETE" });
       refresh();

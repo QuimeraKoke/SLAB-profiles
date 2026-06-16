@@ -1,19 +1,9 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import React from "react";
-import Link from "next/link";
-import styles from "./page.module.css";
-
-export default function PerfilIndexPage() {
-  return (
-    <div className={styles.container}>
-      <div className={styles.placeholder}>
-        Selecciona un jugador desde{" "}
-        <Link href="/equipo" style={{ marginLeft: 6 }}>
-          el plantel
-        </Link>
-        .
-      </div>
-    </div>
-  );
+// QW-1 sibling: `/perfil` standalone was a dead-end placeholder ("Selecciona
+// un jugador desde el plantel"). Removed from the sidebar in QW-10; this
+// route now redirects to the roster for anyone who reaches it via a stale
+// bookmark or typed URL.
+export default function PerfilIndex() {
+  redirect("/equipo");
 }

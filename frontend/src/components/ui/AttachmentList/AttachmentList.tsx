@@ -3,6 +3,8 @@
 import React, { useEffect, useRef, useState } from "react";
 
 import { api, ApiError, getToken } from "@/lib/api";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast/Toast";
 import type { Attachment, AttachmentSourceType } from "@/lib/types";
 import styles from "./AttachmentList.module.css";
 import { ACCEPTED_FILE_TYPES, formatSize, iconFor } from "./utils";
@@ -42,6 +44,8 @@ export default function AttachmentList({
   const [dragOver, setDragOver] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { confirm } = useConfirm();
+  const { toast } = useToast();
 
   useEffect(() => {
     let cancelled = false;
@@ -130,10 +134,17 @@ export default function AttachmentList({
   };
 
   const handleDelete = async (att: Attachment) => {
-    if (!confirm(`¿Borrar "${att.filename}"?`)) return;
+    const ok = await confirm({
+      title: "Borrar adjunto",
+      message: `¿Borrar «${att.filename}»? Esta acción no se puede deshacer.`,
+      confirmLabel: "Borrar",
+      variant: "danger",
+    });
+    if (!ok) return;
     try {
       await api(`/attachments/${att.id}`, { method: "DELETE" });
       setAttachments((prev) => prev.filter((a) => a.id !== att.id));
+      toast.success("Adjunto eliminado");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al borrar");
     }
@@ -199,7 +210,9 @@ export default function AttachmentList({
                     // <a href> can't carry headers. Fetch the redirect URL
                     // ourselves with the token and follow it client-side.
                     e.preventDefault();
-                    openSignedUrl(att.id);
+                    openSignedUrl(att.id).catch((err: Error) => {
+                      toast.error(err.message || "Error al descargar");
+                    });
                   }}
                 >
                   Ver
@@ -260,5 +273,7 @@ async function openSignedUrl(attachmentId: string) {
     window.open(res.url, "_blank", "noopener,noreferrer");
     return;
   }
-  alert(`Error al descargar (${res.status})`);
+  // Caller toasts this. Don't fall through to a native alert — it breaks
+  // the in-app focus context and is unstyled.
+  throw new Error(`No se pudo descargar el archivo (código ${res.status}).`);
 }

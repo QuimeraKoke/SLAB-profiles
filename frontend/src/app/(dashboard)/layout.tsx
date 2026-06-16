@@ -4,7 +4,10 @@ import React, { useState } from "react";
 
 import Navbar from "@/components/layout/Navbar";
 import Sidebar from "@/components/layout/Sidebar";
+import Breadcrumbs, { BreadcrumbProvider } from "@/components/layout/Breadcrumbs";
 import { CategoryProvider } from "@/context/CategoryContext";
+import { ConfirmProvider } from "@/components/ui/ConfirmDialog/ConfirmDialog";
+import { ToastProvider } from "@/components/ui/Toast/Toast";
 import styles from "./layout.module.css";
 
 export default function DashboardLayout({
@@ -20,23 +23,38 @@ export default function DashboardLayout({
 
   return (
     <CategoryProvider>
-      <div className={styles.layoutWrapper}>
-        <Navbar onMenuClick={() => setSidebarOpen((v) => !v)} />
-        <div className={styles.mainContainer}>
-          <Sidebar
-            open={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-          />
-          {sidebarOpen && (
-            <div
-              className={styles.backdrop}
-              onClick={() => setSidebarOpen(false)}
-              aria-hidden="true"
-            />
-          )}
-          <main className={styles.content}>{children}</main>
-        </div>
-      </div>
+      <ToastProvider>
+        <ConfirmProvider>
+          <BreadcrumbProvider>
+            <div className={styles.layoutWrapper}>
+              {/* QW-6: keyboard skip-link must be the first focusable element so
+               * Tab from page load lands on it before any navbar/sidebar control. */}
+              <a href="#main-content" className={styles.skipLink}>
+                Saltar al contenido
+              </a>
+              <Navbar onMenuClick={() => setSidebarOpen((v) => !v)} />
+              <div className={styles.mainContainer}>
+                <Sidebar
+                  open={sidebarOpen}
+                  onClose={() => setSidebarOpen(false)}
+                />
+                {sidebarOpen && (
+                  <div
+                    className={styles.backdrop}
+                    onClick={() => setSidebarOpen(false)}
+                    aria-hidden="true"
+                  />
+                )}
+                <main id="main-content" className={styles.content} tabIndex={-1}>
+                  {/* ME-1: route trail across all dashboard pages. */}
+                  <Breadcrumbs />
+                  {children}
+                </main>
+              </div>
+            </div>
+          </BreadcrumbProvider>
+        </ConfirmProvider>
+      </ToastProvider>
     </CategoryProvider>
   );
 }

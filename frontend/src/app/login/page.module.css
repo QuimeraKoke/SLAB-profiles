@@ -18,6 +18,19 @@
   z-index: 0;
 }
 
+/* L6: users with reduced-motion preference get a static dark background
+ * instead of an autoplaying soccer video. The video element still renders
+ * (server-rendered) but its visibility is suppressed; the overlay still
+ * darkens for legibility. */
+@media (prefers-reduced-motion: reduce) {
+  .videoBg {
+    display: none;
+  }
+  .container {
+    background: #0b1525;
+  }
+}
+
 .videoOverlay {
   position: absolute;
   top: 0;
@@ -120,7 +133,7 @@
 
 .submitButton {
   align-self: flex-end;
-  background: #3b82f6;
+  background: #6d28d9;
   color: #fff;
   border: none;
   border-radius: 6px;
@@ -132,7 +145,7 @@
 }
 
 .submitButton:hover {
-  background: #2563eb;
+  background: #5b21b6;
 }
 
 .submitButton:active {

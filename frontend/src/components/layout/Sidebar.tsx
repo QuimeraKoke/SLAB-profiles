@@ -7,6 +7,7 @@ import {
   Users,
   User,
   BarChart3,
+  Calendar,
   ChevronDown,
   ChevronRight,
   LogOut,
@@ -46,19 +47,29 @@ interface NavGroup {
   /** When set, renders an expandable group; href is unused. */
   subItems?: NavLeaf[];
   href?: string;
+  /** Optional list of additional pathname prefixes that should mark this
+   *  item as the active nav entry (e.g. /perfil/* → highlight Equipo). */
+  activePrefixes?: string[];
 }
 
+// QW-10: Partidos promoted to a top-level entry — it's a daily flow for
+// técnico/físico, not a setting. Roster CRUD lives under Administración
+// (formerly "Configuraciones"; see IA-1 below).
 const STATIC_NAV: NavGroup[] = [
-  { label: "Equipo", icon: Users, href: "/equipo" },
-  { label: "Perfil", icon: User, href: "/perfil" },
+  { label: "Equipo", icon: Users, href: "/equipo", activePrefixes: ["/perfil"] },
+  { label: "Partidos", icon: Calendar, href: "/partidos" },
 ];
 
+// IA-1: "Configuraciones" carried both daily ops (Jugadores) and admin
+// surfaces. Renamed to "Administración" to match its actual contents —
+// roster management, exam templates, alert rules. Daily ops belong
+// elsewhere; the Jugadores entry here remains as the dedicated CRUD
+// surface (roster *editing*, not just viewing).
 const SETTINGS_NAV: NavGroup = {
-  label: "Configuraciones",
+  label: "Administración",
   icon: Settings,
   subItems: [
-    { label: "Jugadores", href: "/configuraciones/jugadores" },
-    { label: "Partidos", href: "/partidos" },
+    { label: "Gestionar plantel", href: "/configuraciones/jugadores" },
   ],
 };
 
@@ -72,10 +83,14 @@ interface SidebarProps {
 export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   const pathname = usePathname();
   const { membership, user, logout } = useAuth();
-  const [expandedItems, setExpandedItems] = useState<string[]>([
-    "Reportes",
-    "Configuraciones",
-  ]);
+  // L3: only the group containing the current route is expanded by default.
+  // Falls back to "Reportes" so first-time users on /equipo see the
+  // department list at a glance. Manual toggles still work via toggleExpand.
+  const [expandedItems, setExpandedItems] = useState<string[]>(() => {
+    if (pathname.startsWith("/configuraciones")) return ["Administración"];
+    if (pathname.startsWith("/reportes")) return ["Reportes"];
+    return ["Reportes"];
+  });
   const [departments, setDepartments] = useState<Department[]>([]);
 
   // Fetch the departments visible to this user. `/clubs/{id}/departments`
@@ -119,15 +134,35 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     ? { label: "Uso", icon: TrendingUp, href: "/uso" }
     : null;
 
-  const navItems: NavGroup[] = [
-    ...STATIC_NAV,
-    ...(reportsGroup ? [reportsGroup] : []),
-    ...(usoItem ? [usoItem] : []),
-    SETTINGS_NAV,
+  // IA-2: visually group navigation by frequency-of-use (audit principle
+   // #4). Operativa = daily; Análisis = read-only insight; Administración
+   // = lower-traffic admin. A full role-aware nav (audit IA-2 long-term)
+   // would also hide irrelevant groups per role; for now everyone sees
+   // every group they have access to, just spatially grouped.
+  const navSections: Array<{ label: string | null; items: NavGroup[] }> = [
+    {
+      label: "Operativa",
+      items: STATIC_NAV,
+    },
+    ...(reportsGroup
+      ? [{ label: "Análisis", items: [reportsGroup, ...(usoItem ? [usoItem] : [])] }]
+      : usoItem
+        ? [{ label: "Análisis", items: [usoItem] }]
+        : []),
+    {
+      label: "Administración",
+      items: [SETTINGS_NAV],
+    },
   ];
 
-  const toggleExpand = (label: string, e: React.MouseEvent) => {
-    e.preventDefault();
+  // Flat list still used by the iteration below (preserve existing
+  // expansion logic + active-state matching). Sections only add visual
+  // grouping headers, not behavior changes.
+  const navItems: NavGroup[] = navSections.flatMap((s) => s.items);
+
+  // QW-7: was an inline onClick with preventDefault on a <div>. Now invoked
+  // from a real <button>, so no preventDefault is needed.
+  const toggleExpand = (label: string) => {
     setExpandedItems((prev) =>
       prev.includes(label) ? prev.filter((item) => item !== label) : [...prev, label],
     );
@@ -167,22 +202,38 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
         )}
       </div>
 
-      <nav className={styles.navMenu}>
-        {navItems.map((item) => {
+      <nav className={styles.navMenu} aria-label="Navegación principal">
+        {navSections.map((section) => (
+          <div key={section.label ?? "default"} className={styles.navSection}>
+            {section.label && (
+              <div className={styles.navSectionLabel}>{section.label}</div>
+            )}
+            {section.items.map((item) => {
           const Icon = item.icon;
           const isExpanded = expandedItems.includes(item.label);
-          const isActive =
-            (item.href && pathname === item.href) ||
-            (item.subItems &&
-              item.subItems.some((s) => pathname === s.href || pathname.startsWith(`${s.href}/`)));
+          const matchesHref = item.href && pathname === item.href;
+          const matchesPrefix =
+            item.activePrefixes?.some((p) => pathname.startsWith(p)) ?? false;
+          const matchesSubItem =
+            item.subItems?.some(
+              (s) => pathname === s.href || pathname.startsWith(`${s.href}/`),
+            ) ?? false;
+          const isActive = matchesHref || matchesPrefix || matchesSubItem;
+
+          const groupPanelId = `nav-group-${item.label.toLowerCase().replace(/\s+/g, "-")}`;
 
           return (
             <div key={item.label}>
               {item.subItems ? (
-                <div
+                // QW-7: real <button> with aria-expanded so keyboard /
+                // screen-reader users can operate the toggle. Previous
+                // <div onClick> was unreachable by keyboard.
+                <button
+                  type="button"
                   className={`${styles.navItem} ${isActive ? styles.navItemActive : ""}`}
-                  onClick={(e) => toggleExpand(item.label, e)}
-                  style={{ cursor: "pointer" }}
+                  onClick={() => toggleExpand(item.label)}
+                  aria-expanded={isExpanded}
+                  aria-controls={groupPanelId}
                 >
                   <div className={styles.navItemLeft}>
                     <Icon size={18} className={styles.icon} />
@@ -193,12 +244,15 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
                   ) : (
                     <ChevronRight size={16} className={styles.icon} />
                   )}
-                </div>
+                </button>
               ) : (
+                // QW-8: aria-current="page" communicates the active route
+                // programmatically (visual highlight alone wasn't enough).
                 <Link
                   href={item.href!}
                   className={`${styles.navItem} ${isActive ? styles.navItemActive : ""}`}
                   onClick={onClose}
+                  aria-current={isActive ? "page" : undefined}
                 >
                   <div className={styles.navItemLeft}>
                     <Icon size={18} className={styles.icon} />
@@ -207,16 +261,23 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
                 </Link>
               )}
 
-              {item.subItems && isExpanded && (
-                <div className={styles.subItemsList}>
+              {item.subItems && (
+                <div
+                  id={groupPanelId}
+                  className={styles.subItemsList}
+                  hidden={!isExpanded}
+                >
                   {item.subItems.map((subItem) => {
-                    const isSubActive = pathname === subItem.href;
+                    const isSubActive =
+                      pathname === subItem.href ||
+                      pathname.startsWith(`${subItem.href}/`);
                     return (
                       <Link
                         key={subItem.href}
                         href={subItem.href}
                         className={`${styles.subItem} ${isSubActive ? styles.subItemActive : ""}`}
                         onClick={onClose}
+                        aria-current={isSubActive ? "page" : undefined}
                       >
                         {subItem.label}
                       </Link>
@@ -226,7 +287,9 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
               )}
             </div>
           );
-        })}
+            })}
+          </div>
+        ))}
       </nav>
 
       <div className={styles.bottomSection}>

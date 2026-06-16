@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { api, ApiError } from "@/lib/api";
 import { usePermission } from "@/lib/permissions";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import type { CalendarEvent, EventType } from "@/lib/types";
 import styles from "./ProfileEvents.module.css";
 
@@ -175,6 +176,7 @@ function EventCard({
   const canChangeMatch = usePermission("events.change_event");
   const [deleting, setDeleting] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const { confirm } = useConfirm();
   const tone = EVENT_TYPE_TONE[event.event_type as EventType] ?? "other";
   const typeLabel = EVENT_TYPE_LABEL[event.event_type as EventType] ?? event.event_type;
   const dateLabel = formatDate(event.starts_at, event.ends_at);
@@ -187,13 +189,13 @@ function EventCard({
     event.event_type === "match" ? `/partidos/${event.id}/editar` : null;
 
   const handleDelete = async () => {
-    if (
-      !confirm(
-        `¿Borrar el evento "${event.title}"? Los datos vinculados quedarán sin evento asociado.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Borrar evento",
+      message: `¿Borrar el evento «${event.title}»? Los datos vinculados quedarán sin evento asociado.`,
+      confirmLabel: "Borrar",
+      variant: "danger",
+    });
+    if (!ok) return;
     setDeleting(true);
     setActionError(null);
     try {

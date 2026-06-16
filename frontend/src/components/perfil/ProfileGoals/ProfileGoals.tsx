@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from "react";
 
 import { api, ApiError } from "@/lib/api";
 import { usePermission } from "@/lib/permissions";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import type {
   Alert as AlertModel,
   ExamField,
@@ -40,6 +41,7 @@ export default function ProfileGoals({ player }: Props) {
   const [alerts, setAlerts] = useState<AlertModel[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const { confirm } = useConfirm();
   const canAdd = usePermission("goals.add_goal");
   const canChange = usePermission("goals.change_goal");
 
@@ -67,7 +69,12 @@ export default function ProfileGoals({ player }: Props) {
   };
 
   const handleCancel = async (goal: Goal) => {
-    if (!confirm("¿Cancelar este objetivo?")) return;
+    const ok = await confirm({
+      title: "Cancelar objetivo",
+      message: "¿Cancelar este objetivo? Quedará marcado como cancelado en el historial.",
+      confirmLabel: "Sí, cancelar",
+    });
+    if (!ok) return;
     try {
       const updated = await api<Goal>(`/goals/${goal.id}`, {
         method: "PATCH",

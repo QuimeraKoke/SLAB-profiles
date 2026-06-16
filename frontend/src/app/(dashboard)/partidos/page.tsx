@@ -7,6 +7,7 @@ import MatchesCalendar from "@/components/partidos/MatchesCalendar";
 import { api, ApiError } from "@/lib/api";
 import { useCategoryContext } from "@/context/CategoryContext";
 import { usePermission } from "@/lib/permissions";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import type { CalendarEvent } from "@/lib/types";
 import styles from "./page.module.css";
 
@@ -210,6 +211,7 @@ function MatchRow({
 }) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { confirm } = useConfirm();
 
   // Same lint rationale as the parent page: snapshot "now" on mount so
   // `isPast` is deterministic across re-renders. Adequate for showing
@@ -219,9 +221,13 @@ function MatchRow({
   const dateLabel = formatDate(match.starts_at);
 
   const handleDelete = async () => {
-    if (!confirm(`¿Eliminar el partido "${match.title}"? Los datos vinculados quedarán sin partido asociado.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: "Eliminar partido",
+      message: `¿Eliminar el partido «${match.title}»? Los datos vinculados quedarán sin partido asociado.`,
+      confirmLabel: "Eliminar",
+      variant: "danger",
+    });
+    if (!ok) return;
     setError(null);
     setDeleting(true);
     try {

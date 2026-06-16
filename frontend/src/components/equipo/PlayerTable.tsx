@@ -42,15 +42,11 @@ export default function PlayerTable({ players }: PlayerTableProps) {
     return (parts[0].charAt(0) + parts[1].charAt(0)).toUpperCase();
   };
 
-  if (players.length === 0) {
-    return (
-      <div className={styles.tableContainer}>
-        <p style={{ padding: 24, color: "#6b7280" }}>
-          No hay jugadores registrados todavía.
-        </p>
-      </div>
-    );
-  }
+  // The caller (equipo/page.tsx) handles all empty states — distinguishes
+  // "roster is empty" from "search returned nothing" from "status filter
+  // matched nothing". Returning null here avoids a misleading "roster
+  // empty" message when there are actually 30 players, just none matching.
+  if (players.length === 0) return null;
 
   return (
     <div className={styles.tableContainer}>
@@ -60,15 +56,24 @@ export default function PlayerTable({ players }: PlayerTableProps) {
             <th>Jugador</th>
             <th>Posición</th>
             <th>Estado</th>
-            <th>Advertencia</th>
           </tr>
         </thead>
         <tbody>
+          {/* QW-9: stretched-link pattern. The Link spans the row via
+              ::after { inset: 0 }, so clicking anywhere on the row
+              navigates. The name cell stays the screen-reader-visible
+              affordance, the rest of the cells become decorative content
+              inside the same click target. */}
           {players.map((player) => (
             <tr key={player.id} className={styles.row}>
               <td className={styles.nameCell}>
-                <div className={styles.avatarPlaceholder}>{getInitials(player.name)}</div>
-                <Link href={`/perfil/${player.id}`} style={{ color: "inherit", textDecoration: "none" }}>
+                <div className={styles.avatarPlaceholder} aria-hidden="true">
+                  {getInitials(player.name)}
+                </div>
+                <Link
+                  href={`/perfil/${player.id}`}
+                  className={styles.stretchedLink}
+                >
                   {player.name}
                 </Link>
               </td>
@@ -79,13 +84,6 @@ export default function PlayerTable({ players }: PlayerTableProps) {
                 <div className={`${styles.statusBadge} ${styles[player.status]}`}>
                   <span>{getStatusLabel(player.status)}</span>
                 </div>
-              </td>
-              <td className={styles.warningCell}>
-                {player.warning ? (
-                  <span className={styles.warningText}>{player.warning}</span>
-                ) : (
-                  <span className={styles.noWarning}>-</span>
-                )}
               </td>
             </tr>
           ))}

@@ -5,6 +5,7 @@ import AttachmentList from "@/components/ui/AttachmentList/AttachmentList";
 import DeferredFilePicker from "@/components/forms/DeferredFilePicker";
 import MatchPicker from "@/components/forms/MatchPicker";
 import { api, ApiError, getToken } from "@/lib/api";
+import { useToast } from "@/components/ui/Toast/Toast";
 import {
   bandColor,
   findBandForValue,
@@ -134,6 +135,7 @@ export default function DynamicUploader({
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
+  const { toast } = useToast();
 
   // Optional match-event association — only rendered when the template
   // opts in AND we're creating (event_id is immutable on edit).
@@ -280,6 +282,9 @@ export default function DynamicUploader({
           method: "PATCH",
           body: JSON.stringify({ raw_data: raw }),
         });
+        // ME-5: positive confirmation so the user knows the save landed.
+        // Previously they only saw a silent redirect.
+        toast.success("Registro actualizado");
         onSaved?.(result);
       } else {
         const payload: Record<string, unknown> = {
@@ -308,11 +313,16 @@ export default function DynamicUploader({
           );
           // Brief pause so the user can read the warning before the parent navigates away.
           await new Promise((r) => setTimeout(r, 1500));
+        } else {
+          // No upload failures → straight success toast.
+          toast.success("Registro guardado");
         }
         onSaved?.(result);
       }
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Error al guardar el examen");
+      const msg = err instanceof ApiError ? err.message : "Error al guardar el examen";
+      setError(msg);
+      toast.error(msg);
     } finally {
       setSubmitting(false);
       setUploadProgress(null);
@@ -335,7 +345,7 @@ export default function DynamicUploader({
               value={eventId || null}
               onChange={(id) => setEventId(id ?? "")}
               required={template.link_to_match}
-              placeholder="Elegí un partido…"
+              placeholder="Elige un partido…"
             />
           </div>
         </fieldset>
@@ -391,8 +401,20 @@ export default function DynamicUploader({
         </p>
       )}
 
-      {error && <div className={styles.error}>{error}</div>}
-      {warning && <div className={styles.warning}>{warning}</div>}
+      {/* ME-6: role="alert" + aria-live so screen-reader users are
+       * notified when submit fails. Without this, a failed save looked
+       * silent to assistive tech (the visual error text rendered but
+       * was never announced). */}
+      {error && (
+        <div className={styles.error} role="alert" aria-live="polite">
+          {error}
+        </div>
+      )}
+      {warning && (
+        <div className={styles.warning} role="status" aria-live="polite">
+          {warning}
+        </div>
+      )}
 
       <div className={styles.actions}>
         {onCancel && (
