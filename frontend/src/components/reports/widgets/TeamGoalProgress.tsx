@@ -8,6 +8,7 @@ import type {
   TeamReportWidget,
 } from "@/lib/types";
 
+import ShowNoDataToggle from "./ShowNoDataToggle";
 import styles from "./TeamGoalProgress.module.css";
 
 interface Props {
@@ -16,6 +17,12 @@ interface Props {
 
 type SortDir = "asc" | "desc";
 type SortState = { key: string; dir: SortDir };
+
+/** A player "has data" here when they're assigned at least one of the
+ *  active goals (i.e. at least one cell exists). Players with no goal
+ *  cells are the "sin datos" rows hidden by default. */
+const hasGoalData = (row: TeamGoalProgressPayload["rows"][number]): boolean =>
+  Object.keys(row.cells ?? {}).length > 0;
 
 const OPERATOR_LABELS: Record<GoalOperator, string> = {
   "<=": "≤", "<": "<", "==": "=", ">=": "≥", ">": ">",
@@ -27,6 +34,9 @@ const OPERATOR_LABELS: Record<GoalOperator, string> = {
 export default function TeamGoalProgress({ widget }: Props) {
   const data = widget.data as TeamGoalProgressPayload;
   const [sort, setSort] = useState<SortState>({ key: "__player", dir: "asc" });
+  // Hide players with no goal assigned (every cell absent). Off by
+  // default so the matrix stays focused on players with active goals.
+  const [showNoData, setShowNoData] = useState(false);
 
   const sortedRows = useMemo(() => {
     const rows = [...(data.rows ?? [])];
@@ -49,14 +59,41 @@ export default function TeamGoalProgress({ widget }: Props) {
     return rows;
   }, [data.rows, sort]);
 
+  const visibleRows = useMemo(
+    () => (showNoData ? sortedRows : sortedRows.filter(hasGoalData)),
+    [sortedRows, showNoData],
+  );
+  const totalRows = data.rows?.length ?? 0;
+  const hiddenCount = totalRows - visibleRows.length;
+
   if (data.empty || data.columns.length === 0) {
     return (
       <div className={styles.widget}>
-        <Header widget={widget} data={data} />
+        <Header widget={widget} showToggle={false} />
         <div className={styles.empty}>
           {data.error
             ? `Configuración inválida: ${data.error}`
             : "No hay objetivos activos en este alcance."}
+        </div>
+      </div>
+    );
+  }
+
+  const hiddenByFilter = !showNoData && totalRows > 0 && visibleRows.length === 0;
+  if (hiddenByFilter) {
+    return (
+      <div className={styles.widget}>
+        <Header
+          widget={widget}
+          showToggle
+          showNoData={showNoData}
+          onToggleShowNoData={setShowNoData}
+          hiddenCount={hiddenCount}
+        />
+        <SummaryBar summary={data.summary} />
+        <div className={styles.empty}>
+          Ningún jugador tiene un objetivo asignado en este alcance. Activá
+          &quot;Mostrar jugadores sin datos&quot; para ver el plantel completo.
         </div>
       </div>
     );
@@ -71,7 +108,13 @@ export default function TeamGoalProgress({ widget }: Props) {
 
   return (
     <div className={styles.widget}>
-      <Header widget={widget} data={data} />
+      <Header
+        widget={widget}
+        showToggle
+        showNoData={showNoData}
+        onToggleShowNoData={setShowNoData}
+        hiddenCount={hiddenCount}
+      />
 
       <SummaryBar summary={data.summary} />
 
@@ -101,7 +144,7 @@ export default function TeamGoalProgress({ widget }: Props) {
             </tr>
           </thead>
           <tbody>
-            {sortedRows.map((row) => (
+            {visibleRows.map((row) => (
               <tr key={row.player_id}>
                 <td className={styles.playerCell} title={row.player_name}>
                   {row.player_name}
@@ -206,7 +249,17 @@ function SummaryItem({
 
 function Header({
   widget,
-}: { widget: TeamReportWidget; data: TeamGoalProgressPayload }) {
+  showToggle,
+  showNoData,
+  onToggleShowNoData,
+  hiddenCount,
+}: {
+  widget: TeamReportWidget;
+  showToggle: boolean;
+  showNoData?: boolean;
+  onToggleShowNoData?: (next: boolean) => void;
+  hiddenCount?: number;
+}) {
   return (
     <header className={styles.header}>
       <div>
@@ -215,6 +268,13 @@ function Header({
           <p className={styles.description}>{widget.description}</p>
         )}
       </div>
+      {showToggle && onToggleShowNoData && (
+        <ShowNoDataToggle
+          checked={showNoData ?? false}
+          onChange={onToggleShowNoData}
+          hiddenCount={hiddenCount ?? 0}
+        />
+      )}
     </header>
   );
 }

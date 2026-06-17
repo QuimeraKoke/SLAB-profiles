@@ -8,6 +8,7 @@ import type {
   TeamReportWidget,
 } from "@/lib/types";
 
+import ShowNoDataToggle from "./ShowNoDataToggle";
 import styles from "./TeamLeaderboard.module.css";
 
 interface HoverTip {
@@ -51,6 +52,11 @@ type SingleRow = Extract<LeaderboardRow, { value: number }>;
 type MultiRow = Extract<LeaderboardRow, { values: Record<string, number | null> }>;
 const isMultiRow = (row: LeaderboardRow): row is MultiRow => "values" in row;
 
+/** A player "has data" in single-field mode when they recorded at least
+ *  one reading in the window. Zero-sample players (rendered as "—" /
+ *  "Sin datos") are the "sin datos" rows hidden by default. */
+const singleRowHasData = (row: SingleRow): boolean => (row.samples ?? 0) > 0;
+
 /** Top-N podium ranking (mode="single") or grouped bars per field
  *  (mode="multi_field"). The mode flips both the row shape and the
  *  rendering — see the discriminated row type above. */
@@ -63,6 +69,10 @@ export default function TeamLeaderboard({ widget }: Props) {
   // per-aggregate breakdowns, so the selector is single-mode only.
   const [pickedAgg, setPickedAgg] = useState<Aggregator | null>(null);
   const effectiveAgg: Aggregator = pickedAgg ?? data.aggregator;
+  // Hide zero-sample players from single-field views. Off by default so
+  // the podium / bars stay focused on players with readings. Multi-field
+  // mode shows "—" per field and isn't filtered.
+  const [showNoData, setShowNoData] = useState(false);
 
   // When the user picks a different aggregator, derive a new view of
   // `data` with rebuilt rows, ranking, and team-avg reference line.
@@ -131,6 +141,7 @@ export default function TeamLeaderboard({ widget }: Props) {
           pickedAgg={pickedAgg}
           onPickAgg={setPickedAgg}
           showAggSelector={!isMultiField && hasAggregateBreakdown(data)}
+          showToggle={false}
         />
         <div className={styles.empty}>
           {data.error
@@ -160,11 +171,23 @@ export default function TeamLeaderboard({ widget }: Props) {
         pickedAgg={pickedAgg}
         onPickAgg={setPickedAgg}
         showAggSelector={hasAggregateBreakdown(data)}
+        showNoData={showNoData}
+        onToggleShowNoData={setShowNoData}
       />
     );
   }
 
   const unit = effectiveData.field?.unit ? ` ${effectiveData.field.unit}` : "";
+
+  const singleRows = effectiveData.rows.filter(
+    (r): r is SingleRow => !isMultiRow(r),
+  );
+  const visibleSingles = showNoData
+    ? singleRows
+    : singleRows.filter(singleRowHasData);
+  const hiddenCount = singleRows.length - visibleSingles.length;
+  const hiddenByFilter =
+    !showNoData && singleRows.length > 0 && visibleSingles.length === 0;
 
   return (
     <div className={styles.widget}>
@@ -174,27 +197,38 @@ export default function TeamLeaderboard({ widget }: Props) {
         pickedAgg={pickedAgg}
         onPickAgg={setPickedAgg}
         showAggSelector={hasAggregateBreakdown(data)}
+        showToggle
+        showNoData={showNoData}
+        onToggleShowNoData={setShowNoData}
+        hiddenCount={hiddenCount}
       />
 
-      <ol className={styles.list}>
-        {effectiveData.rows.filter((r): r is SingleRow => !isMultiRow(r)).map((row) => (
-          <li
-            key={row.player_id}
-            className={`${styles.row} ${podiumClass(row.rank, styles)}`}
-          >
-            <span className={styles.rank}>#{row.rank}</span>
-            <span className={styles.name} title={row.player_name}>
-              {row.player_name}
-            </span>
-            <span className={styles.value}>
-              {formatNumber(row.value)}{unit}
-            </span>
-            <span className={styles.samples}>
-              {row.samples} {row.samples === 1 ? "toma" : "tomas"}
-            </span>
-          </li>
-        ))}
-      </ol>
+      {hiddenByFilter ? (
+        <div className={styles.empty}>
+          Ningún jugador tiene datos en este período. Activá &quot;Mostrar
+          jugadores sin datos&quot; para ver el plantel completo.
+        </div>
+      ) : (
+        <ol className={styles.list}>
+          {visibleSingles.map((row) => (
+            <li
+              key={row.player_id}
+              className={`${styles.row} ${podiumClass(row.rank, styles)}`}
+            >
+              <span className={styles.rank}>#{row.rank}</span>
+              <span className={styles.name} title={row.player_name}>
+                {row.player_name}
+              </span>
+              <span className={styles.value}>
+                {formatNumber(row.value)}{unit}
+              </span>
+              <span className={styles.samples}>
+                {row.samples} {row.samples === 1 ? "toma" : "tomas"}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
@@ -212,12 +246,15 @@ function hasAggregateBreakdown(data: TeamLeaderboardPayload): boolean {
 
 function VerticalBarsView({
   widget, data, pickedAgg, onPickAgg, showAggSelector,
+  showNoData, onToggleShowNoData,
 }: {
   widget: TeamReportWidget;
   data: TeamLeaderboardPayload;
   pickedAgg: Aggregator | null;
   onPickAgg: (next: Aggregator | null) => void;
   showAggSelector: boolean;
+  showNoData: boolean;
+  onToggleShowNoData: (next: boolean) => void;
 }) {
   const unit = data.field?.unit ? ` ${data.field.unit}` : "";
   const decimals = typeof data.decimals === "number" ? data.decimals : null;
@@ -271,6 +308,14 @@ function VerticalBarsView({
     [yMin, yMax],
   );
 
+  const singleRows = data.rows.filter((r): r is SingleRow => !isMultiRow(r));
+  const visibleSingles = showNoData
+    ? singleRows
+    : singleRows.filter(singleRowHasData);
+  const hiddenCount = singleRows.length - visibleSingles.length;
+  const hiddenByFilter =
+    !showNoData && singleRows.length > 0 && visibleSingles.length === 0;
+
   return (
     <div className={styles.widget}>
       <Header
@@ -279,7 +324,17 @@ function VerticalBarsView({
         pickedAgg={pickedAgg}
         onPickAgg={onPickAgg}
         showAggSelector={showAggSelector}
+        showToggle
+        showNoData={showNoData}
+        onToggleShowNoData={onToggleShowNoData}
+        hiddenCount={hiddenCount}
       />
+      {hiddenByFilter ? (
+        <div className={styles.empty}>
+          Ningún jugador tiene datos en este período. Activá &quot;Mostrar
+          jugadores sin datos&quot; para ver el plantel completo.
+        </div>
+      ) : (
       <div className={styles.vBarsChart}>
         <div className={styles.vBarsArea}>
           {refBands.map((band, i) => {
@@ -325,7 +380,7 @@ function VerticalBarsView({
               </div>
             );
           })}
-          {data.rows.filter((r): r is SingleRow => !isMultiRow(r)).map((row) => {
+          {visibleSingles.map((row) => {
             // Bar starts at yMin (the chart's baseline when zoomed). When
             // a value falls BELOW yMin the bar becomes 0 — clamp via the
             // helper. min-height = 1% so a non-zero value is always visible.
@@ -375,6 +430,7 @@ function VerticalBarsView({
           })}
         </div>
       </div>
+      )}
       <FloatingTooltip hover={hover} />
     </div>
   );
@@ -450,6 +506,7 @@ function MultiFieldView({
         pickedAgg={pickedAgg}
         onPickAgg={onPickAgg}
         showAggSelector={false}
+        showToggle={false}
       />
 
       <div className={styles.legend} aria-hidden="true">
@@ -517,12 +574,17 @@ function podiumClass(rank: number, styles: Record<string, string>): string {
 
 function Header({
   widget, data, pickedAgg, onPickAgg, showAggSelector,
+  showToggle, showNoData, onToggleShowNoData, hiddenCount,
 }: {
   widget: TeamReportWidget;
   data: TeamLeaderboardPayload;
   pickedAgg: Aggregator | null;
   onPickAgg: (next: Aggregator | null) => void;
   showAggSelector: boolean;
+  showToggle: boolean;
+  showNoData?: boolean;
+  onToggleShowNoData?: (next: boolean) => void;
+  hiddenCount?: number;
 }) {
   const aggLabel = AGGREGATOR_LABELS[data.aggregator] ?? data.aggregator;
   const fieldLabel = data.field
@@ -572,6 +634,13 @@ function Header({
         )}
         {showAggSelector && fieldLabel && (
           <span className={styles.subtitleTag}>{fieldLabel}</span>
+        )}
+        {showToggle && onToggleShowNoData && (
+          <ShowNoDataToggle
+            checked={showNoData ?? false}
+            onChange={onToggleShowNoData}
+            hiddenCount={hiddenCount ?? 0}
+          />
         )}
       </div>
     </header>

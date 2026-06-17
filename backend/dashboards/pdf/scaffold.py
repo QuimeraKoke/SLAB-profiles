@@ -50,6 +50,12 @@ COLOR_OK = colors.HexColor("#16a34a")
 COLOR_WARN = colors.HexColor("#f59e0b")
 COLOR_CRIT = colors.HexColor("#dc2626")
 
+# Club "ficha" identity (Universidad de Chile): deep navy + red accent.
+# Used by the per-player Resumen (player_triage) to match the printed
+# ficha aesthetic. Kept as named constants so the look stays themeable.
+COLOR_FICHA_NAVY = colors.HexColor("#0a2240")
+COLOR_FICHA_RED = colors.HexColor("#c8102e")
+
 PAGE_MARGIN = 14 * mm
 
 
@@ -105,32 +111,44 @@ class _PaginatedDoc(BaseDocTemplate):
 def build_pdf(
     *,
     orientation: str,
-    cover: dict[str, Any],
-    sections: list[dict[str, Any]],
+    cover: dict[str, Any] | None = None,
+    sections: list[dict[str, Any]] | None = None,
+    flowables: list | None = None,
 ) -> bytes:
     """Render a PDF and return its bytes.
 
     `orientation` — "portrait" (player reports) or "landscape" (team).
-    `cover` — see `cover_page()` for the dict shape.
-    `sections` — list of {title, flowables} dicts; each section gets a
-                 header bar + the supplied flowables (paragraphs,
-                 tables, images) + a page break after.
+
+    Two rendering modes:
+    - **cover + sections** (team / department reports): pass `cover`
+      (see `cover_page()`) and `sections` — a list of {title, flowables}
+      dicts; a cover page is emitted, then each section gets a header bar
+      and a page break after.
+    - **flat flowables** (per-player Resumen ficha): pass `flowables` — a
+      pre-assembled Story rendered as one continuous flow, with no cover
+      page and no per-section page breaks. The caller owns its own
+      headers/spacing. `cover` is still honored for the PDF's document
+      metadata (title/author) when supplied.
     """
+    meta = cover or {}
     pagesize = A4 if orientation == "portrait" else landscape(A4)
     buf = io.BytesIO()
     doc = _PaginatedDoc(
         buf, pagesize=pagesize,
         leftMargin=PAGE_MARGIN, rightMargin=PAGE_MARGIN,
         topMargin=PAGE_MARGIN, bottomMargin=PAGE_MARGIN,
-        title=cover.get("title", "Reporte SLAB"),
-        author=cover.get("club_name", "SLAB"),
+        title=meta.get("title", "Reporte SLAB"),
+        author=meta.get("club_name", "SLAB"),
     )
 
     story: list = []
-    story.extend(cover_page(cover, pagesize))
-    story.append(PageBreak())
-    for section in sections:
-        story.extend(section_block(section))
+    if flowables is not None:
+        story.extend(flowables)
+    else:
+        story.extend(cover_page(meta, pagesize))
+        story.append(PageBreak())
+        for section in sections or []:
+            story.extend(section_block(section))
     doc.build(story)
     return buf.getvalue()
 

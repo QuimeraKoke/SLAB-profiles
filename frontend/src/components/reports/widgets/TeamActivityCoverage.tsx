@@ -7,6 +7,7 @@ import type {
   TeamReportWidget,
 } from "@/lib/types";
 
+import ShowNoDataToggle from "./ShowNoDataToggle";
 import styles from "./TeamActivityCoverage.module.css";
 
 interface Props {
@@ -16,6 +17,15 @@ interface Props {
 type SortDir = "asc" | "desc";
 type SortState = { key: string; dir: SortDir };
 
+/** A player "has data" here when at least one template has ever been
+ *  recorded for them (any cell whose status isn't "never"). Players who
+ *  were never evaluated on any template are the "sin datos" rows hidden
+ *  by default. */
+const hasCoverageData = (
+  row: TeamActivityCoveragePayload["rows"][number],
+): boolean =>
+  Object.values(row.cells ?? {}).some((c) => c != null && c.status !== "never");
+
 /** Roster × templates matrix coloring each cell by how stale the player's
  *  last result on that template is. Green = on schedule, yellow = due
  *  soon, red = overdue, gray = never evaluated. Thresholds are configured
@@ -23,6 +33,9 @@ type SortState = { key: string; dir: SortDir };
 export default function TeamActivityCoverage({ widget }: Props) {
   const data = widget.data as TeamActivityCoveragePayload;
   const [sort, setSort] = useState<SortState>({ key: "__player", dir: "asc" });
+  // Hide players never evaluated on any template. Off by default so the
+  // coverage matrix focuses on players with at least one reading.
+  const [showNoData, setShowNoData] = useState(false);
 
   const sortedRows = useMemo(() => {
     const rows = [...(data.rows ?? [])];
@@ -43,14 +56,41 @@ export default function TeamActivityCoverage({ widget }: Props) {
     return rows;
   }, [data.rows, sort]);
 
+  const visibleRows = useMemo(
+    () => (showNoData ? sortedRows : sortedRows.filter(hasCoverageData)),
+    [sortedRows, showNoData],
+  );
+  const totalRows = data.rows?.length ?? 0;
+  const hiddenCount = totalRows - visibleRows.length;
+
   if (data.empty || (data.rows ?? []).length === 0) {
     return (
       <div className={styles.widget}>
-        <Header widget={widget} data={data} />
+        <Header widget={widget} data={data} showToggle={false} />
         <div className={styles.empty}>
           {data.error
             ? `Configuración inválida: ${data.error}`
             : "Sin datos suficientes para este reporte."}
+        </div>
+      </div>
+    );
+  }
+
+  const hiddenByFilter = !showNoData && totalRows > 0 && visibleRows.length === 0;
+  if (hiddenByFilter) {
+    return (
+      <div className={styles.widget}>
+        <Header
+          widget={widget}
+          data={data}
+          showToggle
+          showNoData={showNoData}
+          onToggleShowNoData={setShowNoData}
+          hiddenCount={hiddenCount}
+        />
+        <div className={styles.empty}>
+          Ningún jugador tiene registros en este alcance. Activá
+          &quot;Mostrar jugadores sin datos&quot; para ver el plantel completo.
         </div>
       </div>
     );
@@ -66,7 +106,14 @@ export default function TeamActivityCoverage({ widget }: Props) {
 
   return (
     <div className={styles.widget}>
-      <Header widget={widget} data={data} />
+      <Header
+        widget={widget}
+        data={data}
+        showToggle
+        showNoData={showNoData}
+        onToggleShowNoData={setShowNoData}
+        hiddenCount={hiddenCount}
+      />
 
       <div className={styles.legend}>
         <span className={`${styles.legendDot} ${styles.statusOk}`} />
@@ -103,7 +150,7 @@ export default function TeamActivityCoverage({ widget }: Props) {
             </tr>
           </thead>
           <tbody>
-            {sortedRows.map((row) => (
+            {visibleRows.map((row) => (
               <tr key={row.player_id}>
                 <td className={styles.playerCell} title={row.player_name}>
                   {row.player_name}
@@ -153,8 +200,20 @@ function statusClass(
 }
 
 function Header({
-  widget, data,
-}: { widget: TeamReportWidget; data: TeamActivityCoveragePayload }) {
+  widget,
+  data,
+  showToggle,
+  showNoData,
+  onToggleShowNoData,
+  hiddenCount,
+}: {
+  widget: TeamReportWidget;
+  data: TeamActivityCoveragePayload;
+  showToggle: boolean;
+  showNoData?: boolean;
+  onToggleShowNoData?: (next: boolean) => void;
+  hiddenCount?: number;
+}) {
   return (
     <header className={styles.header}>
       <div>
@@ -163,7 +222,16 @@ function Header({
           <p className={styles.description}>{widget.description}</p>
         )}
       </div>
-      <span className={styles.asOf}>al {data.as_of}</span>
+      <div className={styles.headerControls}>
+        <span className={styles.asOf}>al {data.as_of}</span>
+        {showToggle && onToggleShowNoData && (
+          <ShowNoDataToggle
+            checked={showNoData ?? false}
+            onChange={onToggleShowNoData}
+            hiddenCount={hiddenCount ?? 0}
+          />
+        )}
+      </div>
     </header>
   );
 }

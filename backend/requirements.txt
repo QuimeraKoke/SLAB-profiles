@@ -19,3 +19,7 @@ httpx==0.27.2
 Pillow==10.4.0
 reportlab==4.2.5
 matplotlib==3.9.2
+# LLM narrative for the player Resumen PDF (player_triage). Optional at
+# runtime — the PDF degrades gracefully to tables-only when no API key is
+# configured. `>=` so pip pulls a version new enough for adaptive thinking.
+anthropic>=0.70.0

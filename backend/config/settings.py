@@ -14,6 +14,17 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="dev-insecure-change-me")
 DEBUG = env("DEBUG", default=True)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["*"])
 
+# --- Anthropic / LLM narrative (player Resumen PDF) ----------------------
+# Used by dashboards.pdf.narrative to synthesize the "telling a story"
+# sections (resumen, hallazgos, objetivos) of the per-player Resumen PDF.
+# Optional: when the key is blank the PDF renders tables-only (no narrative).
+# Player metric/clinical data is sent to the Anthropic API when enabled.
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+ANTHROPIC_MODEL = env("ANTHROPIC_MODEL", default="claude-opus-4-7")
+# Cache TTL (seconds) for a generated narrative, keyed on a hash of the
+# triage payload — re-downloads of an unchanged Resumen are instant + free.
+ANTHROPIC_NARRATIVE_TTL = env.int("ANTHROPIC_NARRATIVE_TTL", default=7 * 24 * 3600)
+
 # Origins (scheme + host) that POSTing to /admin/ etc. are allowed to come
 # from. Required when DEBUG=False and the browser hits a non-localhost
 # domain — otherwise Django rejects the form with "CSRF verification failed".

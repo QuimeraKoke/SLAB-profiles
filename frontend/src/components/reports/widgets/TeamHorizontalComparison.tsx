@@ -6,6 +6,7 @@ import type {
   TeamHorizontalComparisonPayload,
   TeamReportWidget,
 } from "@/lib/types";
+import ShowNoDataToggle from "./ShowNoDataToggle";
 import styles from "./TeamHorizontalComparison.module.css";
 
 interface Props {
@@ -58,6 +59,11 @@ export default function TeamHorizontalComparison({ widget }: Props) {
   // or the widget remounted with a fresh config). Computing the
   // effective key at render time avoids set-state-in-effect anti-patterns.
   const [pickedKey, setPickedKey] = useState<string | null>(null);
+  // Hide players with no reading for the active field(s). Off by default
+  // so a roster that's mostly "—" for the current window reads cleanly;
+  // toggling on shows the full plantel. Position-grouped rows are
+  // aggregates (never "no data"), so the toggle is suppressed there.
+  const [showNoData, setShowNoData] = useState(false);
   const selectedKey = useMemo(() => {
     const fields = data.fields ?? [];
     if (pickedKey && fields.some((f) => f.key === pickedKey)) {
@@ -101,6 +107,29 @@ export default function TeamHorizontalComparison({ widget }: Props) {
     return out;
   }, [isMultiField, data.fields, data.rows]);
 
+  // Player rows with no reading for the active field(s) are the "sin
+  // datos" rows. Group rows (position mode) are aggregates and always
+  // kept. `max`/`maxByField` stay computed over ALL rows above so the
+  // bar scale doesn't shift when the filter hides rows.
+  const allRows = useMemo(() => data.rows ?? [], [data.rows]);
+  const visibleRows = useMemo(() => {
+    if (showNoData || isByPosition) return allRows;
+    return allRows.filter((row) => {
+      if (isGroupRow(row)) return true;
+      if (isMultiField) {
+        return (data.fields ?? []).some(
+          (f) => (row.values?.[f.key] ?? []).length > 0,
+        );
+      }
+      return (row.values?.[selectedKey] ?? []).length > 0;
+    });
+  }, [allRows, showNoData, isByPosition, isMultiField, data.fields, selectedKey]);
+  const hiddenCount = allRows.length - visibleRows.length;
+  // Groups (position mode) have no "no data" concept → no toggle there.
+  const showToggle = !isByPosition;
+  const hiddenByFilter =
+    !showNoData && showToggle && allRows.length > 0 && visibleRows.length === 0;
+
   if (data.empty || (data.rows ?? []).length === 0) {
     return (
       <div className={styles.widget}>
@@ -112,6 +141,7 @@ export default function TeamHorizontalComparison({ widget }: Props) {
           onSelect={setPickedKey}
           isByPosition={isByPosition}
           isMultiField={isMultiField}
+          showToggle={false}
         />
         <div className={styles.empty}>
           {data.error
@@ -142,6 +172,10 @@ export default function TeamHorizontalComparison({ widget }: Props) {
         onSelect={setPickedKey}
         isByPosition={isByPosition}
         isMultiField={isMultiField}
+        showToggle={showToggle}
+        showNoData={showNoData}
+        onToggleShowNoData={setShowNoData}
+        hiddenCount={hiddenCount}
       />
 
       {isMultiField ? (
@@ -187,7 +221,13 @@ export default function TeamHorizontalComparison({ widget }: Props) {
       )}
 
       <div className={styles.body}>
-        {data.rows.map((row) => {
+        {hiddenByFilter && (
+          <div className={styles.empty}>
+            Ningún jugador tiene datos en este período. Activá &quot;Mostrar
+            jugadores sin datos&quot; para ver el plantel completo.
+          </div>
+        )}
+        {visibleRows.map((row) => {
           const isGroup = isGroupRow(row);
           const rowKey = isGroup ? row.group_id : (row as PlayerRow).player_id;
           const rowName = isGroup ? row.group_name : (row as PlayerRow).player_name;
@@ -308,9 +348,25 @@ interface HeaderProps {
   onSelect: (key: string) => void;
   isByPosition: boolean;
   isMultiField: boolean;
+  showToggle: boolean;
+  showNoData?: boolean;
+  onToggleShowNoData?: (next: boolean) => void;
+  hiddenCount?: number;
 }
 
-function Header({ widget, field, fields, selectedKey, onSelect, isByPosition, isMultiField }: HeaderProps) {
+function Header({
+  widget,
+  field,
+  fields,
+  selectedKey,
+  onSelect,
+  isByPosition,
+  isMultiField,
+  showToggle,
+  showNoData,
+  onToggleShowNoData,
+  hiddenCount,
+}: HeaderProps) {
   // Multi-field mode shows every metric as a bar, so no single-field
   // picker is meaningful. Position mode also fixes the metric.
   const showSelector = fields.length > 1 && !isMultiField;
@@ -327,30 +383,39 @@ function Header({ widget, field, fields, selectedKey, onSelect, isByPosition, is
           </span>
         )}
       </div>
-      {showSelector ? (
-        <label className={styles.fieldSelectLabel}>
-          <span className={styles.fieldSelectHint}>Indicador</span>
-          <select
-            className={styles.fieldSelect}
-            value={selectedKey}
-            onChange={(e) => onSelect(e.target.value)}
-          >
-            {fields.map((f) => (
-              <option key={f.key} value={f.key}>
-                {f.label}
-                {f.unit ? ` (${f.unit})` : ""}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        field && (
-          <span className={styles.fieldTag}>
-            {field.label}
-            {field.unit ? ` · ${field.unit}` : ""}
-          </span>
-        )
-      )}
+      <div className={styles.headerControls}>
+        {showSelector ? (
+          <label className={styles.fieldSelectLabel}>
+            <span className={styles.fieldSelectHint}>Indicador</span>
+            <select
+              className={styles.fieldSelect}
+              value={selectedKey}
+              onChange={(e) => onSelect(e.target.value)}
+            >
+              {fields.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label}
+                  {f.unit ? ` (${f.unit})` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          field && (
+            <span className={styles.fieldTag}>
+              {field.label}
+              {field.unit ? ` · ${field.unit}` : ""}
+            </span>
+          )
+        )}
+        {showToggle && onToggleShowNoData && (
+          <ShowNoDataToggle
+            checked={showNoData ?? false}
+            onChange={onToggleShowNoData}
+            hiddenCount={hiddenCount ?? 0}
+          />
+        )}
+      </div>
     </header>
   );
 }

@@ -1,0 +1,22 @@
+/* Matches the original inline toggle in TeamRosterMatrix.module.css so
+ * the control reads identically across every team widget that uses it. */
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: #4b5563;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.toggle input[type="checkbox"] {
+  cursor: pointer;
+  margin: 0;
+}
+
+.toggleHint {
+  color: #9ca3af;
+  font-weight: 500;
+}

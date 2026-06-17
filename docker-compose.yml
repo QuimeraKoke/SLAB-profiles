@@ -79,6 +79,9 @@ services:
       AWS_S3_URL_PROTOCOL: ${AWS_S3_URL_PROTOCOL:-http:}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-slabminio}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-slabminio-secret}
+      # LLM narrative for the player Resumen PDF. Blank ⇒ tables-only fallback.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-4-7}
     volumes:
       - ./backend:/app
     ports:
