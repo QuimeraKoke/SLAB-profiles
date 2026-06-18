@@ -1796,7 +1796,7 @@ def download_player_triage_pdf(request, player_id: str):
     last match's citation status. Shares its data layer with the JSON
     endpoint so screen and print never diverge."""
     from django.http import HttpResponse
-    from dashboards.pdf.player_triage import render_triage_pdf
+    from dashboards.pdf.player_triage import render_or_get_triage_pdf
 
     membership = get_membership(request.user)
     player = scope_players(
@@ -1806,7 +1806,9 @@ def download_player_triage_pdf(request, player_id: str):
     if player is None:
         raise HttpError(404, "Player not found")
 
-    pdf_bytes = render_triage_pdf(player)
+    # Content-addressed: returns the saved PDF for this data signature if it
+    # exists, else generates once and persists it (see report_cache).
+    pdf_bytes = render_or_get_triage_pdf(player)
     name = f"{player.first_name}-{player.last_name}".replace(" ", "_")
     filename = f"resumen-{name}.pdf"
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
@@ -1825,7 +1827,7 @@ def download_player_department_pdf(
     """Per-player department report as a PDF (portrait A4)."""
     from django.http import HttpResponse
 
-    from dashboards.pdf.player_report import render_player_pdf
+    from dashboards.pdf.player_report import render_or_get_player_pdf
 
     membership = get_membership(request.user)
 
@@ -1843,7 +1845,9 @@ def download_player_department_pdf(
 
     parsed_from, parsed_to = _parse_date_window(date_from, date_to)
 
-    pdf_bytes = render_player_pdf(
+    # Content-addressed: uses the department's InsightAgent + saved snapshot
+    # (same data + agent config ⇒ same report, generated once).
+    pdf_bytes = render_or_get_player_pdf(
         player=player, department=dept,
         date_from=parsed_from, date_to=parsed_to,
     )

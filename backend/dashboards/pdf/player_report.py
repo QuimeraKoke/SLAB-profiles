@@ -22,6 +22,8 @@ from reportlab.lib.units import cm, mm
 from core.models import Department, Player
 from dashboards.models import DepartmentLayout
 from dashboards.aggregation import resolve_widget
+from dashboards.references import build_metric_references
+from exams.models import ExamResult, ExamTemplate
 
 from .charts import render_widget_for_pdf
 from .chart_data_tables import (
@@ -30,6 +32,8 @@ from .chart_data_tables import (
     expected_column_count,
 )
 from .injury_summary import player_injury_summary
+from .narrative import generate_player_narrative, resolve_insight_agent
+from .report_cache import get_saved_pdf, report_signature, save_pdf
 from .scaffold import (
     build_pdf,
     logo_image_for_club,
@@ -40,6 +44,10 @@ from .scaffold import (
 # Portrait A4 content frame width (after page margins in scaffold.py).
 _PORTRAIT_CONTENT_WIDTH_CM = 17.5
 _CELL_HORIZONTAL_PADDING_CM = 0.4
+
+# Bump when the department report's rendered layout changes, to supersede
+# previously saved snapshots without a data change.
+_DEPT_RENDER_VERSION = 1
 
 # Display timezone for cover-page "Generado" timestamp.
 # Mirrors team_report._DISPLAY_TZ.
@@ -58,12 +66,285 @@ _SPLITTABLE_CHART_TYPES = {
 }
 
 
+def render_or_get_player_pdf(
+    *,
+    player: Player,
+    department: Department,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> bytes:
+    """Download entry point for the per-department report. Resolves the
+    department's InsightAgent, builds the department data payload, and
+    returns the saved PDF for that data+agent signature if one exists —
+    otherwise generates the narrative once, renders, persists, and returns.
+    Mirrors the Resumen's `render_or_get_triage_pdf`."""
+    from django.conf import settings
+
+    agent = resolve_insight_agent(department.slug)
+    model = (
+        (agent.model or "").strip() if agent else ""
+    ) or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+    fingerprint = agent.config_fingerprint() if agent else "builtin"
+
+    payload = build_department_payload(player, department, date_from, date_to)
+    kind = f"dept:{department.slug}"
+    signature = report_signature(
+        payload, model=model, kind=kind,
+        render_version=_DEPT_RENDER_VERSION, agent_fingerprint=fingerprint,
+    )
+
+    saved = get_saved_pdf(player, kind, signature)
+    if saved is not None:
+        return saved
+
+    narrative = generate_player_narrative(payload, agent=agent)
+    pdf_bytes = render_player_pdf(
+        player=player, department=department,
+        date_from=date_from, date_to=date_to, narrative=narrative,
+        weekly_evolution=payload.get("weekly_load_evolution"),
+    )
+    try:
+        save_pdf(player, kind, signature, pdf_bytes, model=model, narrative=narrative)
+    except Exception:  # noqa: BLE001 — persistence is best-effort, never block the download
+        import logging
+        logging.getLogger(__name__).exception("Failed to persist department report snapshot.")
+    return pdf_bytes
+
+
+def build_department_payload(
+    player: Player,
+    department: Department,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict:
+    """Agent-facing summary of the department's data: each configured
+    widget's resolved payload (the same data the report renders), so the
+    narrative is grounded in exactly what's shown. Empty widgets are
+    dropped. No volatile fields — the signature is stable for unchanged
+    data (period is reflected in the resolved values themselves)."""
+    category = player.category
+    layout = (
+        DepartmentLayout.objects
+        .filter(department=department, category=category, is_active=True)
+        .prefetch_related("sections__widgets__data_sources")
+        .first()
+    )
+    items: list[dict[str, Any]] = []
+    if layout is not None:
+        for section in layout.sections.all():
+            for w in section.widgets.all():
+                payload = resolve_widget(
+                    w, player.id, date_from=date_from, date_to=date_to,
+                )
+                if payload.get("empty"):
+                    continue
+                items.append({
+                    "title": w.title,
+                    "chart_type": w.chart_type,
+                    "data": payload,
+                })
+    payload = {
+        "department": department.name,
+        "category": category.name if category else None,
+        "items": items,
+        # Source-labeled references per metric (internal bands + external
+        # norms + squad percentile) so the agent compares against trustworthy,
+        # computed numbers rather than guessing.
+        "references": _department_metric_references(player, department, category),
+    }
+
+    # Físico: surface the weekly chronic-load monitor (current) + its
+    # evolution across state snapshots, from the player's materialized state.
+    if department.slug == "fisico":
+        from dashboards.models import PlayerMetricState
+        from dashboards.player_state import weekly_load_evolution
+        st = PlayerMetricState.objects.filter(player=player).only("state").first()
+        weekly = (st.state or {}).get("weekly_load") if st else None
+        if weekly:
+            payload["weekly_load"] = weekly
+        evo = weekly_load_evolution(player)
+        if evo:
+            payload["weekly_load_evolution"] = evo
+
+    return payload
+
+
+def _department_metric_references(player: Player, department: Department, category) -> list[dict]:
+    """For each banded field of the department's templates, the player's
+    latest value plus its reference block (internal band + external norms +
+    squad percentile). Only fields with `reference_ranges` are included, to
+    keep this focused and bound the per-field squad query."""
+    if category is None:
+        return []
+    sex = player.sex or None
+    position = player.position.name if player.position else None
+    out: list[dict] = []
+    templates = list(
+        ExamTemplate.objects
+        .filter(department=department, applicable_categories=category, is_active_version=True)
+        .distinct()
+    )
+    # Fields with an external MetricReference but no internal band must still
+    # surface (e.g. per-match GPS fields with Premier League norms).
+    from dashboards.models import MetricReference
+    ext_keys = set(
+        MetricReference.objects
+        .filter(template__in=templates, is_active=True)
+        .values_list("template_id", "field_key")
+    )
+    for t in templates:
+        fields = (t.config_schema or {}).get("fields") or []
+        specs = {
+            f["key"]: f for f in fields
+            if isinstance(f, dict) and f.get("key")
+            and (f.get("reference_ranges") or (t.id, f["key"]) in ext_keys)
+        }
+        if not specs:
+            continue
+        results = list(
+            ExamResult.objects.filter(player=player, template=t).order_by("-recorded_at")
+        )
+        for field_key, spec in specs.items():
+            latest = _latest_value(results, field_key)
+            if latest is None:
+                continue
+            block = build_metric_references(
+                t, field_key, spec, latest,
+                sex=sex, position=position, category=category,
+            )
+            if block:
+                out.append({
+                    "template": t.name,
+                    "field": spec.get("label") or field_key,
+                    "value": latest,
+                    "unit": spec.get("unit"),
+                    "references": block,
+                })
+    return out
+
+
+def _latest_value(results: list, field_key: str) -> float | None:
+    for r in results:
+        raw = (r.result_data or {}).get(field_key)
+        if raw is None or isinstance(raw, bool):
+            continue
+        try:
+            return float(raw)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _analysis_section(narrative: dict, body_styles) -> list:
+    """Render the agent narrative (resumen / hallazgos / objetivos) as a
+    section block, using the report's scaffold body styles."""
+    out: list = []
+    resumen = (narrative.get("resumen") or "").strip()
+    if resumen:
+        out.append(Paragraph(_esc(resumen), body_styles["body"]))
+
+    hallazgos = narrative.get("hallazgos") or []
+    if hallazgos:
+        out.append(Spacer(1, 3 * mm))
+        out.append(Paragraph("<b>Hallazgos destacados</b>", body_styles["body"]))
+        for h in hallazgos:
+            out.append(Paragraph(f"•  {_esc(str(h))}", body_styles["body"]))
+
+    objetivos = narrative.get("objetivos") or []
+    if objetivos:
+        out.append(Spacer(1, 3 * mm))
+        out.append(Paragraph("<b>Objetivos de trabajo</b>", body_styles["body"]))
+        for o in objetivos:
+            if not isinstance(o, dict):
+                continue
+            foco = _esc(str(o.get("foco") or ""))
+            estado = _esc(str(o.get("estado_actual") or ""))
+            estrategia = _esc(str(o.get("estrategia") or ""))
+            line = f"<b>{foco}</b>" if foco else ""
+            if estado:
+                line += f": <font color='#6b7280'>{estado}</font>"
+            if estrategia:
+                line += f" → <b>{estrategia}</b>"
+            if line:
+                out.append(Paragraph(line, body_styles["body"]))
+    return out
+
+
+def _esc(text: str) -> str:
+    return (
+        str(text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+
+
+def _weekly_load_evolution_section(evolution: list, body_styles) -> list:
+    """One compact line chart per weekly-load concept — value over weekly
+    snapshots, target band shaded, points red when out of range."""
+    out: list = []
+    for concept in evolution:
+        chart = _weekly_load_chart(concept)
+        if chart is None:
+            continue
+        unit = concept.get("unit") or ""
+        label = (
+            f"<b>{_esc(concept.get('label') or concept.get('key'))}</b>"
+            f"  <font size='7' color='#6b7280'>objetivo {concept.get('min')}–"
+            f"{concept.get('max')} {unit}</font>"
+        )
+        out.append(KeepTogether([Paragraph(label, body_styles["body"]), chart]))
+        out.append(Spacer(1, 4 * mm))
+    return out or [Paragraph("<i>Sin histórico suficiente.</i>", body_styles["body_muted"])]
+
+
+def _weekly_load_chart(concept: dict, width_cm: float = 17.5):
+    pts = concept.get("points") or []
+    if len(pts) < 2:
+        return None
+
+    import matplotlib.pyplot as plt
+
+    from .charts._mpl import figure_to_flowable, setup_axes
+
+    xs = list(range(len(pts)))
+    ys = [p.get("value") for p in pts]
+    labels = [_short_iso(p.get("date")) for p in pts]
+    lo, hi = concept.get("min"), concept.get("max")
+
+    fig, ax = plt.subplots(figsize=(7.0, 1.9))
+    setup_axes(ax)
+    if lo is not None and hi is not None:
+        ax.axhspan(lo, hi, color="#16a34a", alpha=0.10, zorder=0)
+    ax.plot(xs, ys, color="#0a2240", linewidth=1.6, zorder=2)
+    for x, p in zip(xs, pts):
+        color = "#0a2240" if p.get("status") == "within" else "#c8102e"
+        ax.plot([x], [p.get("value")], marker="o", markersize=5, color=color, zorder=3)
+    if lo is not None and hi is not None:
+        ymin, ymax = ax.get_ylim()
+        pad = (hi - lo) * 0.3 or 1.0
+        ax.set_ylim(min(ymin, lo - pad), max(ymax, hi + pad))
+    ax.set_xticks(xs)
+    ax.set_xticklabels(labels, fontsize=7)
+    ax.margins(x=0.06, y=0.25)
+    return figure_to_flowable(fig, width_cm=width_cm)
+
+
+def _short_iso(iso_date: str | None) -> str:
+    if not iso_date:
+        return ""
+    parts = str(iso_date).split("-")
+    return f"{parts[2]}/{parts[1]}" if len(parts) == 3 else str(iso_date)
+
+
 def render_player_pdf(
     *,
     player: Player,
     department: Department,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    narrative: dict | None = None,
+    weekly_evolution: list | None = None,
 ) -> bytes:
     category = player.category
     layout = (
@@ -85,6 +366,23 @@ def render_player_pdf(
 
     body_styles = styles()
     sections: list[dict[str, Any]] = []
+
+    # The department agent's narrative ("telling a story") goes first, as the
+    # executive read of the period; the injury block + widget layout follow.
+    # Skipped silently when no narrative was produced (no key / API error).
+    if narrative:
+        sections.append({
+            "title": "Análisis del período",
+            "flowables": _analysis_section(narrative, body_styles),
+        })
+
+    # Weekly chronic-load evolution (from state snapshots) — value over weeks
+    # with the target band shaded. Only present once ≥2 snapshots exist.
+    if weekly_evolution:
+        sections.append({
+            "title": "Evolución de carga semanal",
+            "flowables": _weekly_load_evolution_section(weekly_evolution, body_styles),
+        })
 
     # NOTE: the player-level executive summary was intentionally removed
     # per client feedback — on a per-player portrait report the team-wide

@@ -16,12 +16,16 @@ app.config_from_object("django.conf:settings", namespace="CELERY")
 app.autodiscover_tasks()
 
 
-# Beat schedule: a single daily tick that evaluates due goals.
-# 05:00 server-time gives the doctor a fresh batch of overnight checks
-# before a typical morning briefing.
+# Beat schedule. 05:00 server-time gives the doctor a fresh batch of
+# overnight goal checks before a typical morning briefing.
 app.conf.beat_schedule = {
     "evaluate-due-goals-daily": {
         "task": "goals.tasks.evaluate_due_goals",
         "schedule": crontab(hour=5, minute=0),
+    },
+    # Weekly player-state history capture (Mondays 04:00) → evolution charts.
+    "snapshot-player-states-weekly": {
+        "task": "dashboards.tasks.snapshot_player_states",
+        "schedule": crontab(hour=4, minute=0, day_of_week=1),
     },
 }

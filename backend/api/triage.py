@@ -45,6 +45,7 @@ from django.db.models import Case, IntegerField, Value, When
 from django.utils import timezone
 
 from core.models import Player
+from dashboards.references import build_metric_references
 from events.models import Event, EventParticipant
 from exams.models import ExamResult, ExamTemplate
 from goals.models import Alert, AlertRule, AlertSource, AlertStatus
@@ -269,11 +270,19 @@ def build_triage_payload(player: Player) -> dict:
 
         results = _results_for(rule.template_id)
         current, previous = _two_most_recent(results, rule.field_key)
-        ref = _build_field_ref(templates_by_id[rule.template_id], spec)
+        template = templates_by_id[rule.template_id]
+        ref = _build_field_ref(template, spec)
         alerted_metrics.append({
             "alert_id": alert.id,
             **_serialize_field(ref),
             **_delta_payload(current, previous),
+            "references": build_metric_references(
+                template, rule.field_key, spec,
+                current[0] if current else None,
+                sex=player.sex or None,
+                position=player.position.name if player.position else None,
+                category=player.category,
+            ),
         })
 
     # ─── 3) Other tracked metrics with 30d history ───────────────────
@@ -315,6 +324,14 @@ def build_triage_payload(player: Player) -> dict:
                 **_serialize_field(ref),
                 **_delta_payload(current, previous),
                 "history_30d": history,
+                "references": build_metric_references(
+                    template, field_key, spec,
+                    current[0] if current else None,
+                    sex=player.sex or None,
+                    position=player.position.name if player.position else None,
+                    category=player.category,
+                    history=history,
+                ),
             })
 
     # Stable ordering: by template label, then field label.

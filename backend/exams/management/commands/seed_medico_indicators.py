@@ -71,6 +71,13 @@ CMJ_SCHEMA: dict = {
             "key": "contramovimiento", "label": "Salto contramovimiento",
             "type": "number", "unit": "cm", "group": "Test",
             "chart_type": "line",
+            # Reference bands (G. Tapia / club): 40–45 cm media; alto = mejor.
+            "direction_of_good": "up",
+            "reference_ranges": [
+                {"max": 40, "label": "Bajo", "color": "#dc2626"},
+                {"min": 40, "max": 45, "label": "En rango", "color": "#f59e0b"},
+                {"min": 45, "label": "Óptimo", "color": "#16a34a"},
+            ],
         },
         {
             "key": "vuelta_carnero", "label": "Vuelta de carnero",
@@ -96,10 +103,112 @@ CMJ_INPUT_CONFIG: dict = {
 }
 
 
+# --- Nórdico (eccentric hamstring strength, NordBord) — per-leg force ---
+# Reference bands (G. Tapia / club): 350–400 N por pierna; alto = mejor.
+# Relative N/kg (4.0–4.5) lives as physiological context; absolute N is the
+# tracked value. Asymmetry: lower = better.
+_NORDIC_FORCE_BANDS = [
+    {"max": 350, "label": "Bajo", "color": "#dc2626"},
+    {"min": 350, "max": 400, "label": "En rango", "color": "#f59e0b"},
+    {"min": 400, "label": "Óptimo", "color": "#16a34a"},
+]
+
+NORDICO_SCHEMA: dict = {
+    "fields": [
+        {
+            "key": "fuerza_izq", "label": "Fuerza nórdica – Izquierda",
+            "type": "number", "unit": "N", "group": "Test",
+            "chart_type": "line", "direction_of_good": "up",
+            "reference_ranges": _NORDIC_FORCE_BANDS,
+        },
+        {
+            "key": "fuerza_der", "label": "Fuerza nórdica – Derecha",
+            "type": "number", "unit": "N", "group": "Test",
+            "chart_type": "line", "direction_of_good": "up",
+            "reference_ranges": _NORDIC_FORCE_BANDS,
+        },
+        {
+            "key": "asimetria", "label": "Asimetría",
+            "type": "number", "unit": "%", "group": "Test",
+            "chart_type": "line", "direction_of_good": "down",
+            "reference_ranges": [
+                {"max": 10, "label": "Simétrico", "color": "#16a34a"},
+                {"min": 10, "max": 15, "label": "Leve", "color": "#f59e0b"},
+                {"min": 15, "label": "Marcada", "color": "#dc2626"},
+            ],
+        },
+        {
+            "key": "notas", "label": "Notas",
+            "type": "text", "multiline": True, "rows": 2, "group": "Test",
+        },
+    ],
+}
+
+NORDICO_INPUT_CONFIG: dict = {
+    "input_modes": ["single", "team_table"],
+    "default_input_mode": "single",
+}
+
+
+# --- Fuerza isométrica en prono (rodilla casi extendida) — per-leg force ---
+# Reference bands (G. Tapia / club): 290–320 N por pierna (~3.5 N/kg); alto =
+# mejor. Sensible al ángulo: a 30° de flexión (ISO 30) asciende a ~350–370 N
+# (anotar el protocolo en Notas).
+_ISO_PRONO_BANDS = [
+    {"max": 290, "label": "Bajo", "color": "#dc2626"},
+    {"min": 290, "max": 320, "label": "En rango", "color": "#f59e0b"},
+    {"min": 320, "label": "Óptimo", "color": "#16a34a"},
+]
+
+ISO_PRONO_SCHEMA: dict = {
+    "fields": [
+        {
+            "key": "fuerza_izq", "label": "Fuerza isométrica – Izquierda",
+            "type": "number", "unit": "N", "group": "Test",
+            "chart_type": "line", "direction_of_good": "up",
+            "reference_ranges": _ISO_PRONO_BANDS,
+        },
+        {
+            "key": "fuerza_der", "label": "Fuerza isométrica – Derecha",
+            "type": "number", "unit": "N", "group": "Test",
+            "chart_type": "line", "direction_of_good": "up",
+            "reference_ranges": _ISO_PRONO_BANDS,
+        },
+        {
+            "key": "protocolo", "label": "Protocolo (ángulo)",
+            "type": "categorical", "group": "Test",
+            "options": ["extension", "iso30"],
+            "option_labels": {"extension": "Rodilla casi extendida", "iso30": "ISO 30°"},
+        },
+        {
+            "key": "asimetria", "label": "Asimetría",
+            "type": "number", "unit": "%", "group": "Test",
+            "chart_type": "line", "direction_of_good": "down",
+            "reference_ranges": [
+                {"max": 10, "label": "Simétrico", "color": "#16a34a"},
+                {"min": 10, "max": 15, "label": "Leve", "color": "#f59e0b"},
+                {"min": 15, "label": "Marcada", "color": "#dc2626"},
+            ],
+        },
+        {
+            "key": "notas", "label": "Notas",
+            "type": "text", "multiline": True, "rows": 2, "group": "Test",
+        },
+    ],
+}
+
+ISO_PRONO_INPUT_CONFIG: dict = {
+    "input_modes": ["single", "team_table"],
+    "default_input_mode": "single",
+}
+
+
 TEMPLATES = [
     ("CK", "ck", CK_SCHEMA, CK_INPUT_CONFIG),
     ("Densidad urinaria", "densidad_urinaria", DENSIDAD_URINARIA_SCHEMA, DENSIDAD_URINARIA_INPUT_CONFIG),
     ("CMJ", "cmj", CMJ_SCHEMA, CMJ_INPUT_CONFIG),
+    ("Nórdico", "nordico", NORDICO_SCHEMA, NORDICO_INPUT_CONFIG),
+    ("Fuerza isométrica (prono)", "iso_prono", ISO_PRONO_SCHEMA, ISO_PRONO_INPUT_CONFIG),
 ]
 
 

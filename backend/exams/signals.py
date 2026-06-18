@@ -149,3 +149,24 @@ def medication_wada_alert_on_result_save(sender, instance, created, **kwargs):
         severity=severity,
         message=message,
     )
+
+
+@receiver(post_save, sender=ExamResult)
+def recompute_player_state_on_result_save(sender, instance, created, **kwargs):
+    """Refresh the player's materialized metric state (latest values +
+    weekly chronic load) whenever a reading changes. Enqueued on-commit so
+    the worker sees the committed row; if the broker is unreachable (tests /
+    no worker) it falls back to a synchronous recompute so the state still
+    updates."""
+    from django.db import transaction
+
+    player_id = str(instance.player_id)
+
+    def _enqueue() -> None:
+        from dashboards.tasks import recompute_player_state
+        try:
+            recompute_player_state.delay(player_id)
+        except Exception:  # noqa: BLE001 — broker down: recompute inline rather than skip
+            recompute_player_state(player_id)
+
+    transaction.on_commit(_enqueue)

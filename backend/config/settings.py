@@ -21,9 +21,9 @@ ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["*"])
 # Player metric/clinical data is sent to the Anthropic API when enabled.
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 ANTHROPIC_MODEL = env("ANTHROPIC_MODEL", default="claude-opus-4-7")
-# Cache TTL (seconds) for a generated narrative, keyed on a hash of the
-# triage payload — re-downloads of an unchanged Resumen are instant + free.
-ANTHROPIC_NARRATIVE_TTL = env.int("ANTHROPIC_NARRATIVE_TTL", default=7 * 24 * 3600)
+# (Dedup is handled durably by dashboards.pdf.report_cache — content-addressed
+# PDF snapshots in S3 keyed on a stable data + agent-config hash — so there's
+# no narrative-level TTL cache to configure.)
 
 # Origins (scheme + host) that POSTing to /admin/ etc. are allowed to come
 # from. Required when DEBUG=False and the browser hits a non-localhost

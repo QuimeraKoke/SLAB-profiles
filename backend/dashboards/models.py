@@ -12,6 +12,7 @@ aggregation server-side, and returns ready-to-render payloads keyed by
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from typing import Iterable
 
@@ -744,3 +745,229 @@ class TeamReportWidgetDataSource(models.Model):
         keys = ", ".join(self.field_keys[:3]) or "(no fields)"
         more = f" + {len(self.field_keys) - 3} more" if len(self.field_keys) > 3 else ""
         return f"{self.template.name} → [{keys}{more}]"
+
+
+def _report_pdf_path(instance: "PlayerReportSnapshot", filename: str) -> str:
+    return f"reports/{instance.kind}/{instance.player_id}/{filename}"
+
+
+class PlayerReportSnapshot(models.Model):
+    """Content-addressed cache of a generated player report PDF.
+
+    Keyed on a hash of the report's *input data* (the triage payload minus
+    volatile fields like generated_at) plus the LLM model and a render
+    version. Same data ⇒ same `data_hash` ⇒ the stored PDF is returned
+    verbatim, so an LLM-backed report is never regenerated (and never
+    differs) for unchanged data. A data change yields a new hash → a new
+    snapshot is generated once. See `dashboards/pdf/report_cache.py`.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.ForeignKey(
+        "core.Player", on_delete=models.CASCADE, related_name="report_snapshots",
+    )
+    # Which report this is — lets the same machinery serve triage / department
+    # / future report kinds without colliding hashes.
+    kind = models.CharField(max_length=40, default="triage", db_index=True)
+    # SHA-256 hex of the stable input data + model + render version.
+    data_hash = models.CharField(max_length=64, db_index=True)
+    # LLM model that produced the narrative (part of the hash basis too, so
+    # switching models regenerates rather than serving a stale narrative).
+    model = models.CharField(max_length=64, blank=True)
+    # The LLM narrative, kept for audit / reuse / debugging. Null when the
+    # narrative was unavailable (tables-only fallback).
+    narrative = models.JSONField(null=True, blank=True)
+    pdf = models.FileField(upload_to=_report_pdf_path)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["player", "kind", "data_hash"],
+                name="uniq_report_snapshot_player_kind_hash",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["player", "kind", "data_hash"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind} report · {self.player_id} · {self.data_hash[:12]}"
+
+
+class InsightAgent(models.Model):
+    """Editable, stage-specialized 'insight agent': a role/system prompt plus
+    a knowledge base the staff can modify, used to generate the LLM narrative
+    for a report stage (triage, médico, físico, …).
+
+    This is configuration, not code — edit the prompt and knowledge in the
+    admin to change how insights read, no deploy needed. The machine-readable
+    output contract (the JSON shape the renderer parses) is owned by the
+    renderer, NOT this prompt, so edits here can't break parsing.
+    `config_fingerprint()` feeds the report signature, so editing the prompt
+    or knowledge regenerates saved reports instead of serving a stale one.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    key = models.CharField(
+        max_length=60, unique=True,
+        help_text="Stable selector matching the report stage, e.g. 'triage'.",
+    )
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=300, blank=True)
+    model = models.CharField(
+        max_length=64, blank=True,
+        help_text="Override the LLM model id; blank = settings.ANTHROPIC_MODEL.",
+    )
+    system_prompt = models.TextField(
+        help_text=(
+            "Role, tone and interpretation rules. Do NOT put the JSON output "
+            "contract here — the renderer owns it."
+        ),
+    )
+    knowledge = models.TextField(
+        blank=True,
+        help_text=(
+            "Editable knowledge base (markdown): club methodology, reference "
+            "norms, terminology. Used as interpretation context — must NOT "
+            "introduce facts about a specific player."
+        ),
+    )
+    is_active = models.BooleanField(default=True)
+    # Human-facing audit counter; auto-bumped when output-affecting fields change.
+    revision = models.PositiveIntegerField(default=1, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def config_fingerprint(self) -> str:
+        """Short hash of the output-affecting config. Folded into the report
+        signature so any prompt/knowledge/model edit invalidates saved PDFs."""
+        basis = f"{self.model}\n{self.system_prompt}\n{self.knowledge}"
+        return hashlib.sha256(basis.encode("utf-8")).hexdigest()[:16]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            prev = (
+                type(self).objects
+                .filter(pk=self.pk)
+                .only("model", "system_prompt", "knowledge")
+                .first()
+            )
+            if prev and (
+                prev.model != self.model
+                or prev.system_prompt != self.system_prompt
+                or prev.knowledge != self.knowledge
+            ):
+                self.revision = (self.revision or 0) + 1
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.key}) r{self.revision}"
+
+
+class MetricReference(models.Model):
+    """An EXTERNAL reference/benchmark for one exam metric, labeled by source.
+
+    The single source of truth for *external* norms (ISAK, Premier/Champions
+    League, scientific literature) — kept separate from the club's own
+    internal bands (which live in `ExamTemplate.config_schema.reference_ranges`)
+    so the two never duplicate or drift. The reference loader passes both to
+    the agent, each tagged with where it came from. Stats (percentile / Z) are
+    computed deterministically against these — the LLM never does the math.
+
+    Provide whichever of range / mean+sd / percentiles the source gives.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    template = models.ForeignKey(
+        "exams.ExamTemplate", on_delete=models.CASCADE,
+        related_name="metric_references",
+    )
+    field_key = models.CharField(max_length=80, db_index=True)
+    source = models.CharField(
+        max_length=120,
+        help_text="Where the norm comes from, e.g. 'ISAK (fútbol prof.)', "
+                  "'Premier League in-season', 'Holway 2010'.",
+    )
+    # Optional scope — leave blank to apply to everyone.
+    sex = models.CharField(max_length=1, blank=True, help_text="'M'/'F' or blank (any).")
+    position = models.CharField(max_length=80, blank=True, help_text="Position name or blank (any).")
+    # Provide whichever the source gives:
+    range_min = models.FloatField(null=True, blank=True)
+    range_max = models.FloatField(null=True, blank=True)
+    mean = models.FloatField(null=True, blank=True)
+    sd = models.FloatField(null=True, blank=True)
+    percentiles = models.JSONField(
+        null=True, blank=True,
+        help_text='Optional percentile map, e.g. {"p5": 33.6, "p50": 65.6, "p95": 115.9}.',
+    )
+    unit = models.CharField(max_length=24, blank=True)
+    note = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["template", "field_key", "is_active"])]
+
+    def __str__(self) -> str:
+        return f"{self.template_id}·{self.field_key} — {self.source}"
+
+
+class PlayerMetricState(models.Model):
+    """Materialized 'current state' of a player — the latest + derived values
+    (weekly chronic load, latest tracked metrics, status) kept in one JSON
+    blob for fast reads and easy evolution tracking.
+
+    A **read model**: `ExamResult` remains the source of truth, and this is
+    always rebuildable from it (`manage.py rebuild_player_state`). Maintained
+    by a `post_save(ExamResult)` trigger that enqueues a Celery recompute, so
+    it stays fresh without recomputing aggregations on every report request.
+    Player-INTRINSIC values only — squad-relative metrics (percentile vs the
+    team) are computed lazily at read time to avoid cross-player cascades.
+    """
+
+    # Bump when the recompute logic changes, so a rebuild can target stale rows.
+    STATE_VERSION = 1
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.OneToOneField(
+        "core.Player", on_delete=models.CASCADE, related_name="metric_state",
+    )
+    state = models.JSONField(default=dict)
+    version = models.PositiveIntegerField(default=0)
+    computed_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"state · {self.player_id} (v{self.version} @ {self.computed_at:%Y-%m-%d %H:%M})"
+
+
+class PlayerStateSnapshot(models.Model):
+    """A point-in-time copy of a player's `PlayerMetricState`, captured on a
+    schedule (weekly) so the evolution of derived metrics — especially the
+    weekly chronic load — is a cheap query instead of a recompute-from-raw.
+
+    One row per (player, day): the weekly job `update_or_create`s today's
+    snapshot, so a re-run is idempotent. Append-only history otherwise.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.ForeignKey(
+        "core.Player", on_delete=models.CASCADE, related_name="state_snapshots",
+    )
+    captured_on = models.DateField(db_index=True, help_text="The day this snapshot represents.")
+    state = models.JSONField(default=dict)
+    version = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["captured_on"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["player", "captured_on"], name="uniq_state_snapshot_player_day",
+            ),
+        ]
+        indexes = [models.Index(fields=["player", "captured_on"])]
+
+    def __str__(self) -> str:
+        return f"snapshot · {self.player_id} @ {self.captured_on}"

@@ -13,8 +13,12 @@ Design constraints:
 - **Never blocks a download.** No API key, an API error, a timeout, a
   malformed response — every failure path returns ``None`` and the PDF
   renders tables-only. The narrative is additive, never load-bearing.
-- **Cached by content.** Keyed on a hash of the payload + model, so
-  re-downloading an unchanged Resumen is instant and costs nothing.
+- **Deduplicated upstream.** The whole PDF is content-addressed at the
+  report level (`report_cache`), so this runs only when the data or the
+  agent's config changed — never twice for the same report.
+- **Stage-configurable.** The role prompt + knowledge base come from an
+  editable `InsightAgent` (per stage); the JSON output contract stays
+  code-owned so admin edits can't break parsing.
 
 Single `messages.create` call (Claude API summarization tier): adaptive
 thinking, no streaming (one-page output), no sampling params / no prefill
@@ -25,16 +29,13 @@ works unchanged across model versions.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
-from datetime import date, datetime
-from decimal import Decimal
 from typing import Any
-from uuid import UUID
 
 from django.conf import settings
-from django.core.cache import cache
+
+from .report_cache import stable_json
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,12 @@ logger = logging.getLogger(__name__)
 # so medium-effort thinking can't truncate the JSON (cap, not actual spend).
 _MAX_TOKENS = 6000
 
-_SYSTEM_PROMPT = (
+# Built-in DEFAULT role prompt — used as the fallback when no InsightAgent
+# row is configured for the stage. Once an InsightAgent exists, its
+# (editable) `system_prompt` + `knowledge` replace this. NOTE: the JSON
+# output contract is intentionally NOT here — it's `_OUTPUT_CONTRACT`,
+# appended by code, so an admin editing a prompt can't break parsing.
+_DEFAULT_ROLE_PROMPT = (
     "Eres un analista de ciencias del deporte y del área médica de un club "
     "de fútbol profesional. Redactas fichas individuales para el cuerpo "
     "técnico y médico, en español (Chile), con un tono clínico, claro y "
@@ -58,7 +64,12 @@ _SYSTEM_PROMPT = (
     "lugar de rellenar.\n"
     "- Interpreta las variaciones según 'direction_of_good' cuando esté "
     "presente (qué dirección es buena para cada métrica).\n"
-    "- Sé conciso: el cuerpo técnico lee esto de un vistazo.\n\n"
+    "- Sé conciso: el cuerpo técnico lee esto de un vistazo."
+)
+
+# Code-owned output contract. Always appended last, never editable, so the
+# parsed JSON shape stays stable no matter how the role/knowledge is edited.
+_OUTPUT_CONTRACT = (
     "Responde EXCLUSIVAMENTE con un objeto JSON válido (sin texto antes ni "
     "después, sin ```), con esta forma exacta:\n"
     "{\n"
@@ -73,40 +84,61 @@ _SYSTEM_PROMPT = (
 )
 
 
-def generate_player_narrative(payload: dict) -> dict | None:
+def resolve_insight_agent(key: str):
+    """Return the active `InsightAgent` for a stage key, or None to fall back
+    to the built-in default prompt (so the system works before any agent is
+    seeded). Never raises."""
+    try:
+        from dashboards.models import InsightAgent
+
+        return InsightAgent.objects.filter(key=key, is_active=True).first()
+    except Exception:  # noqa: BLE001 — DB hiccup must not break report generation
+        logger.exception("Failed to resolve InsightAgent '%s'.", key)
+        return None
+
+
+def _build_system(role_prompt: str, knowledge: str) -> str:
+    """Assemble the effective system prompt: role + (editable knowledge base)
+    + the code-owned output contract."""
+    parts = [role_prompt.strip()]
+    if knowledge and knowledge.strip():
+        parts.append("# Base de conocimiento del club\n" + knowledge.strip())
+    parts.append(_OUTPUT_CONTRACT)
+    return "\n\n".join(parts)
+
+
+def generate_player_narrative(payload: dict, *, agent=None) -> dict | None:
     """Return ``{"resumen", "hallazgos", "objetivos"}`` for the triage
     ``payload``, or ``None`` if the narrative can't be produced (no key,
     API/parse failure). Callers must treat ``None`` as "render without a
-    narrative" — this function never raises."""
+    narrative" — this function never raises.
+
+    `agent` is an optional `InsightAgent` supplying the editable role prompt,
+    knowledge base, and model override; when omitted, the built-in default
+    role prompt is used. No caching here — dedup happens one layer up at the
+    report level (`report_cache`), so this is only called when the data (or
+    the agent's config) actually changed. The prompt uses `stable_json`
+    (volatile fields like generated_at stripped) for reproducibility."""
     api_key = getattr(settings, "ANTHROPIC_API_KEY", "") or ""
     if not api_key.strip():
         return None
 
-    model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
-    prompt_json = _serialize_payload(payload)
-
-    cache_key = _cache_key(prompt_json, model)
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return cached or None  # cached "" sentinel == known failure, don't retry hot
-
-    narrative = _call_model(api_key, model, prompt_json)
-
-    # Cache successes for the configured TTL; cache failures briefly with a
-    # falsy sentinel so a broken key / outage doesn't hammer the API on every
-    # download, while still recovering within a few minutes.
-    if narrative is not None:
-        ttl = getattr(settings, "ANTHROPIC_NARRATIVE_TTL", 7 * 24 * 3600)
-        cache.set(cache_key, narrative, ttl)
+    if agent is not None:
+        model = (agent.model or "").strip() or getattr(
+            settings, "ANTHROPIC_MODEL", "claude-opus-4-7"
+        )
+        system = _build_system(agent.system_prompt, agent.knowledge)
     else:
-        cache.set(cache_key, "", 300)
-    return narrative
+        model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+        system = _build_system(_DEFAULT_ROLE_PROMPT, "")
+
+    return _call_model(api_key, model, system, stable_json(payload))
 
 
 # ─── Model call ──────────────────────────────────────────────────────
 
 
-def _call_model(api_key: str, model: str, prompt_json: str) -> dict | None:
+def _call_model(api_key: str, model: str, system: str, prompt_json: str) -> dict | None:
     try:
         import anthropic
     except ImportError:
@@ -120,7 +152,15 @@ def _call_model(api_key: str, model: str, prompt_json: str) -> dict | None:
             max_tokens=_MAX_TOKENS,
             thinking={"type": "adaptive"},
             output_config={"effort": "medium"},
-            system=_SYSTEM_PROMPT,
+            # System (role + knowledge base) is stable across players, so cache
+            # the prefix — cheap when generating many reports in a window.
+            system=[
+                {
+                    "type": "text",
+                    "text": system,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
             messages=[
                 {
                     "role": "user",
@@ -225,32 +265,3 @@ def _extract_json_object(text: str) -> str | None:
             if depth == 0:
                 return text[start : i + 1]
     return None
-
-
-# ─── Serialization ───────────────────────────────────────────────────
-
-
-def _serialize_payload(payload: dict) -> str:
-    """Stable JSON for both the prompt and the cache key. Sorted keys so an
-    unchanged payload always hashes identically."""
-    return json.dumps(
-        payload,
-        default=_json_default,
-        ensure_ascii=False,  # keep Spanish accents (fewer tokens, readable)
-        sort_keys=True,
-    )
-
-
-def _json_default(value: Any) -> Any:
-    if isinstance(value, (datetime, date)):
-        return value.isoformat()
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, UUID):
-        return str(value)
-    return str(value)
-
-
-def _cache_key(prompt_json: str, model: str) -> str:
-    digest = hashlib.sha256(f"{model}\n{prompt_json}".encode("utf-8")).hexdigest()
-    return f"triage_narrative:{digest}"
