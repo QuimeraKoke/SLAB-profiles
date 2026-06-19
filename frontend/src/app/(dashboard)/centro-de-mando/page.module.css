@@ -1,0 +1,190 @@
+.page {
+  padding: 16px 28px 56px;
+  max-width: 1640px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0a2240;
+  margin: 0;
+}
+
+.sub {
+  font-size: 13px;
+  color: #667085;
+  margin: 2px 0 0;
+}
+
+.fresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #98a2b3;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+  align-items: start;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ── Rail cards ── */
+.railCard {
+  background: #fff;
+  border: 1px solid #e8eaf0;
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.railHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0a2240;
+  margin-bottom: 12px;
+}
+
+.railHead :global(svg) {
+  color: #4f46e5;
+}
+
+.dqRow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 0;
+  border-bottom: 1px solid #f4f5f8;
+}
+
+.dqRow:last-child {
+  border-bottom: none;
+}
+
+.dqSource {
+  font-size: 13px;
+  font-weight: 600;
+  color: #344054;
+  width: 92px;
+}
+
+.dqDetail {
+  font-size: 12px;
+  color: #98a2b3;
+  flex: 1;
+  text-align: right;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot_ok { background: #16a34a; }
+.dot_warn { background: #f59e0b; }
+.dot_crit { background: #dc2626; }
+.dot_info { background: #4f46e5; }
+.dot_muted { background: #cbd2dc; }
+
+.action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid #e8eaf0;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #344054;
+  text-decoration: none;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.action:last-child { margin-bottom: 0; }
+
+.action:hover {
+  background: #f7f8fb;
+  border-color: #d7dbe6;
+}
+
+.action :global(svg) {
+  color: #4f46e5;
+}
+
+.recentRow {
+  display: flex;
+  gap: 9px;
+  padding: 9px 0;
+  border-bottom: 1px solid #f4f5f8;
+}
+.recentRow:last-child { border-bottom: none; }
+
+.recentRow .dot {
+  margin-top: 5px;
+}
+
+.recentText {
+  font-size: 12.5px;
+  color: #344054;
+  line-height: 1.4;
+}
+
+.recentAt {
+  font-size: 11px;
+  color: #98a2b3;
+  margin-top: 2px;
+}
+
+.muted {
+  font-size: 13px;
+  color: #98a2b3;
+  padding: 4px 0;
+}
+
+.error {
+  font-size: 14px;
+  color: #b42318;
+  background: #fde8e8;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+@media (max-width: 1100px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

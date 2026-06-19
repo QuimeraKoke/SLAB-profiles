@@ -31,11 +31,11 @@ interface ProfileDepartmentProps {
   dateRangeControl: React.ReactNode;
 }
 
-// Mirror of `buildPlayerPdfEndpoint` in
+// Mirror of the team-report endpoint builder in
 // `app/(dashboard)/reportes/[deptSlug]/page.tsx`. Kept inline (rather
 // than extracted to a shared util) so the two call sites stay easy to
 // reason about — the endpoint is a single line and changes rarely.
-function buildPlayerPdfEndpoint(
+function buildPlayerReportEndpoint(
   playerId: string,
   deptSlug: string,
   dateFrom: string,
@@ -45,7 +45,7 @@ function buildPlayerPdfEndpoint(
   if (dateFrom) params.set("date_from", dateFrom);
   if (dateTo) params.set("date_to", dateTo);
   const qs = params.toString();
-  return `/players/${playerId}/departments/${deptSlug}/report.pdf${qs ? "?" + qs : ""}`;
+  return `/players/${playerId}/departments/${deptSlug}/report.docx${qs ? "?" + qs : ""}`;
 }
 
 
@@ -215,10 +215,10 @@ export default function ProfileDepartment({
                 dateTo={dateTo}
               />
               <DownloadPdfButton
-                endpoint={buildPlayerPdfEndpoint(
+                endpoint={buildPlayerReportEndpoint(
                   playerId, department.slug, dateFrom, dateTo,
                 )}
-                filename={`reporte-${playerName.replace(/\s+/g, "_")}-${department.slug}.pdf`}
+                filename={`reporte-${playerName.replace(/\s+/g, "_")}-${department.slug}.docx`}
               />
             </>
           )}

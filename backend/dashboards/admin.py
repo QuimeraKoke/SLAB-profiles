@@ -32,6 +32,7 @@ from .models import (
     PlayerReportSnapshot,
     PlayerStateSnapshot,
     TeamReportLayout,
+    TeamReportSnapshot,
     TeamReportSection,
     TeamReportWidget,
     TeamReportWidgetDataSource,
@@ -370,7 +371,7 @@ class PlayerReportSnapshotAdmin(admin.ModelAdmin):
     list_filter = ("kind", "model")
     search_fields = ("player__first_name", "player__last_name", "data_hash")
     readonly_fields = (
-        "player", "kind", "data_hash", "model", "narrative", "pdf", "created_at",
+        "player", "kind", "data_hash", "model", "narrative", "docx", "pdf", "created_at",
     )
 
     def has_add_permission(self, request) -> bool:  # cache entries are machine-written
@@ -378,6 +379,25 @@ class PlayerReportSnapshotAdmin(admin.ModelAdmin):
 
     @admin.display(description="Hash")
     def short_hash(self, obj: PlayerReportSnapshot) -> str:
+        return obj.data_hash[:12]
+
+
+@admin.register(TeamReportSnapshot)
+class TeamReportSnapshotAdmin(admin.ModelAdmin):
+    """Read-only inspection of the content-addressed team-report cache."""
+
+    list_display = ("department", "category", "short_hash", "model", "created_at")
+    list_filter = ("model", "department", "category")
+    search_fields = ("department__name", "category__name", "data_hash")
+    readonly_fields = (
+        "department", "category", "data_hash", "model", "narrative", "docx", "created_at",
+    )
+
+    def has_add_permission(self, request) -> bool:  # cache entries are machine-written
+        return False
+
+    @admin.display(description="Hash")
+    def short_hash(self, obj: TeamReportSnapshot) -> str:
         return obj.data_hash[:12]
 
 

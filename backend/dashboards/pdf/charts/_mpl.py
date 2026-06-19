@@ -55,6 +55,29 @@ def widget_content_width(width_cm: float | None):
         _WIDGET_CONTENT_WIDTH_CM.reset(token)
 
 
+# When set (inside `capture_docx_figures()`), every `figure_to_flowable()`
+# call deposits its rendered PNG here instead of returning a reportlab
+# Image — so the Word builders reuse every existing chart renderer verbatim.
+_DOCX_FIG_SINK: contextvars.ContextVar[list | None] = (
+    contextvars.ContextVar("docx_fig_sink", default=None)
+)
+
+
+@contextlib.contextmanager
+def capture_docx_figures():
+    """Within this context, `figure_to_flowable()` renders each matplotlib
+    figure to PNG bytes and appends `(png_bytes, width_cm, height_cm)` to
+    the yielded list (returning a zero-size Spacer in place of the reportlab
+    Image). This lets the Word builders drive the unchanged PDF chart
+    renderers and harvest the resulting chart images in order."""
+    sink: list = []
+    token = _DOCX_FIG_SINK.set(sink)
+    try:
+        yield sink
+    finally:
+        _DOCX_FIG_SINK.reset(token)
+
+
 def current_widget_width_cm(default: float | None = None) -> float | None:
     """Returns the currently-active per-widget content width in cm, or
     `default` when no orchestrator has set one (full-width path)."""
@@ -123,6 +146,14 @@ def figure_to_flowable(
     fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
     plt.close(fig)
     buf.seek(0)
+
+    # Word-capture mode: hand the PNG to the active sink and return a no-op
+    # flowable. The reportlab Image path below is skipped entirely.
+    sink = _DOCX_FIG_SINK.get()
+    if sink is not None:
+        sink.append((buf.getvalue(), final_width, final_height))
+        return Spacer(0, 0)
+
     img = Image(buf, width=final_width * cm, height=final_height * cm)
     img._restrictSize(final_width * cm, final_height * cm)
     return img

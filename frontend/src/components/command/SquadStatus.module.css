@@ -1,0 +1,178 @@
+.card {
+  background: #fff;
+  border: 1px solid #e8eaf0;
+  border-radius: 14px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0a2240;
+  margin-bottom: 14px;
+}
+
+.head :global(svg) {
+  color: #4f46e5;
+}
+
+.counts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+
+.countRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.countLabel {
+  font-size: 12.5px;
+  color: #475467;
+  flex: 1;
+}
+
+.countN {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0a2240;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dotOk { background: #16a34a; }
+.dotWarn { background: #f59e0b; }
+.dotCrit { background: #dc2626; }
+.dotInfo { background: #4f46e5; }
+.dotMuted { background: #9ca3af; }
+
+.subhead {
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #98a2b3;
+  margin-bottom: 8px;
+}
+
+.lines {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 16px;
+}
+
+.lineRow {
+  display: grid;
+  grid-template-columns: 90px 1fr 36px;
+  align-items: center;
+  gap: 8px;
+}
+
+.lineLabel {
+  font-size: 12px;
+  color: #475467;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar {
+  height: 7px;
+  background: #eef0f4;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.barFill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+.barOk { background: #16a34a; }
+.barWarn { background: #f59e0b; }
+.barCrit { background: #dc2626; }
+
+.linePct {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0a2240;
+  text-align: right;
+}
+
+.players {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid #f0f1f5;
+}
+
+.player {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid #f0f1f5;
+  text-decoration: none;
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #eef0fb;
+  color: #4338ca;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.playerName {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1f2937;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.playerStatus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #667085;
+}
+
+.riskFlag {
+  background: #fde8e8;
+  color: #b42318;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+}
+
+.footerLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4f46e5;
+  text-decoration: none;
+}

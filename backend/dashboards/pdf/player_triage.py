@@ -72,7 +72,7 @@ def render_or_get_triage_pdf(player: Player) -> bytes:
     from django.conf import settings
 
     from .narrative import resolve_insight_agent
-    from .report_cache import get_saved_pdf, report_signature, save_pdf
+    from .report_cache import get_saved_file, report_signature, save_file
 
     # The stage's editable agent (prompt + knowledge base). None ⇒ built-in
     # default prompt. Its config fingerprint goes into the signature, so
@@ -89,16 +89,16 @@ def render_or_get_triage_pdf(player: Player) -> bytes:
         render_version=RENDER_VERSION, agent_fingerprint=fingerprint,
     )
 
-    saved = get_saved_pdf(player, _REPORT_KIND, signature)
+    saved = get_saved_file(player, _REPORT_KIND, signature, fmt="pdf")
     if saved is not None:
         return saved
 
     narrative = generate_player_narrative(payload, agent=agent)
     pdf_bytes = _render_from_payload(payload, player, narrative)
     try:
-        save_pdf(
+        save_file(
             player, _REPORT_KIND, signature, pdf_bytes,
-            model=model, narrative=narrative,
+            fmt="pdf", model=model, narrative=narrative,
         )
     except Exception:  # noqa: BLE001 — persistence is best-effort, never block the download
         import logging

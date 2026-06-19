@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import MatchForm from "@/components/partidos/MatchForm";
+import MatchDataPanel from "@/components/partidos/MatchDataPanel";
 import RosterPanel from "@/components/partidos/RosterPanel";
 import TeamTableForm from "@/components/forms/TeamTableForm";
 import { api, ApiError } from "@/lib/api";
@@ -148,6 +149,10 @@ export default function EditarPartidoPage({ params }: PageProps) {
         onCancel={goBack}
         onDelete={handleDelete}
       />
+
+      {/* Imported results + tactical data (API-Football). Renders only when
+       *  a match has synced data; invisible otherwise. */}
+      <MatchDataPanel eventId={event.id} />
 
       <RosterPanel
         eventId={event.id}

@@ -28,4 +28,10 @@ app.conf.beat_schedule = {
         "task": "dashboards.tasks.snapshot_player_states",
         "schedule": crontab(hour=4, minute=0, day_of_week=1),
     },
+    # Match calendar + results sync from API-Football (every 6h). No-op
+    # unless API_FOOTBALL_KEY is set and categories are bound.
+    "sync-api-football-fixtures": {
+        "task": "events.tasks.sync_all_bound_category_fixtures",
+        "schedule": crontab(minute=0, hour="*/6"),
+    },
 }

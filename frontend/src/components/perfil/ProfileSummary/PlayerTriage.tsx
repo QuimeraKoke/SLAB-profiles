@@ -61,7 +61,7 @@ export default function PlayerTriage({ playerId }: Props) {
     setDownloading(true);
     try {
       const token = getToken();
-      const res = await fetch(`${API_URL}/players/${playerId}/triage.pdf`, {
+      const res = await fetch(`${API_URL}/players/${playerId}/triage.docx`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -69,7 +69,7 @@ export default function PlayerTriage({ playerId }: Props) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `triage-${playerId}.pdf`;
+      a.download = `resumen-${playerId}.docx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -105,10 +105,10 @@ export default function PlayerTriage({ playerId }: Props) {
           onClick={handleDownload}
           disabled={downloading}
           className={styles.pdfButton}
-          aria-label="Descargar resumen en PDF"
+          aria-label="Descargar resumen en Word"
         >
           <Download size={14} aria-hidden="true" />
-          {downloading ? "Generando…" : "Descargar PDF"}
+          {downloading ? "Generando…" : "Descargar Word"}
         </button>
       </header>
 

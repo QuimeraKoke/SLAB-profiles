@@ -55,9 +55,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!user && pathname !== "/login") {
       router.push("/login");
     } else if (user && pathname === "/login") {
-      // Land authenticated users on the team roster — useful starting
-      // surface and where the navbar category picker drives the data.
-      router.push("/equipo");
+      // Land authenticated users on the Centro de mando — the daily
+      // command-center view; the navbar category picker drives its data.
+      router.push("/centro-de-mando");
     }
   }, [user, loading, pathname, router]);
 
@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(res.access_token);
       setUser(res.user);
       setMembership(res.membership);
-      router.push("/equipo");
+      router.push("/centro-de-mando");
     },
     [router],
   );

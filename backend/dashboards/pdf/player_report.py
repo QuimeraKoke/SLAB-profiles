@@ -33,7 +33,7 @@ from .chart_data_tables import (
 )
 from .injury_summary import player_injury_summary
 from .narrative import generate_player_narrative, resolve_insight_agent
-from .report_cache import get_saved_pdf, report_signature, save_pdf
+from .report_cache import get_saved_file, report_signature, save_file
 from .scaffold import (
     build_pdf,
     logo_image_for_club,
@@ -93,7 +93,7 @@ def render_or_get_player_pdf(
         render_version=_DEPT_RENDER_VERSION, agent_fingerprint=fingerprint,
     )
 
-    saved = get_saved_pdf(player, kind, signature)
+    saved = get_saved_file(player, kind, signature, fmt="pdf")
     if saved is not None:
         return saved
 
@@ -104,7 +104,7 @@ def render_or_get_player_pdf(
         weekly_evolution=payload.get("weekly_load_evolution"),
     )
     try:
-        save_pdf(player, kind, signature, pdf_bytes, model=model, narrative=narrative)
+        save_file(player, kind, signature, pdf_bytes, fmt="pdf", model=model, narrative=narrative)
     except Exception:  # noqa: BLE001 — persistence is best-effort, never block the download
         import logging
         logging.getLogger(__name__).exception("Failed to persist department report snapshot.")

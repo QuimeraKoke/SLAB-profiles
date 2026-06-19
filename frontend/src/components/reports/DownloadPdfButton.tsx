@@ -7,22 +7,23 @@ import { getToken } from "@/lib/api";
 import styles from "./DownloadPdfButton.module.css";
 
 interface Props {
-  /** Path relative to /api (e.g. `/reports/medico/team.pdf?...`). */
+  /** Path relative to /api (e.g. `/reports/medico/team.docx?...`). */
   endpoint: string;
   /** Suggested filename — browser uses Content-Disposition if present,
    *  but this gives us a sensible fallback when the header is missing. */
   filename: string;
-  /** Optional label override; defaults to "Descargar PDF". */
+  /** Optional label override; defaults to "Descargar Word". */
   label?: string;
   disabled?: boolean;
 }
 
 /**
- * Triggers a PDF download by fetching the endpoint with the JWT bearer
- * token (so we honor scoping) and feeding the response to a temporary
- * `<a download>`. The fetch happens client-side because the API
- * lives at a different origin and a plain `<a href>` wouldn't carry
- * the auth header.
+ * Triggers an editable Word (.docx) report download by fetching the
+ * endpoint with the JWT bearer token (so we honor scoping) and feeding
+ * the response to a temporary `<a download>`. The fetch happens
+ * client-side because the API lives at a different origin and a plain
+ * `<a href>` wouldn't carry the auth header. (Reports export as Word so
+ * staff can edit and annotate them; the symbol name is kept for now.)
  */
 export default function DownloadPdfButton({
   endpoint, filename, label, disabled,
@@ -40,7 +41,10 @@ export default function DownloadPdfButton({
         ?? "http://localhost:8000/api";
       const token = getToken();
       const headers = new Headers();
-      headers.set("Accept", "application/pdf");
+      headers.set(
+        "Accept",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      );
       if (token) headers.set("Authorization", `Bearer ${token}`);
       const res = await fetch(`${apiUrl}${endpoint}`, { headers });
       if (!res.ok) {
@@ -59,8 +63,8 @@ export default function DownloadPdfButton({
       a.remove();
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("PDF download failed:", err);
-      setError("No se pudo generar el PDF. Intentá nuevamente.");
+      console.error("Word download failed:", err);
+      setError("No se pudo generar el documento. Intentá nuevamente.");
     } finally {
       setBusy(false);
     }
@@ -73,10 +77,10 @@ export default function DownloadPdfButton({
         className={styles.button}
         onClick={onClick}
         disabled={busy || disabled}
-        title="Descargar el reporte como PDF"
+        title="Descargar el reporte como documento Word editable"
       >
-        <span className={styles.icon}>📄</span>
-        {busy ? "Generando…" : (label ?? "Descargar PDF")}
+        <span className={styles.icon}>📝</span>
+        {busy ? "Generando…" : (label ?? "Descargar Word")}
       </button>
       {error && <span className={styles.error}>{error}</span>}
     </span>

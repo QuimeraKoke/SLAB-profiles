@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import Navbar from "@/components/layout/Navbar";
 import Sidebar from "@/components/layout/Sidebar";
 import Breadcrumbs, { BreadcrumbProvider } from "@/components/layout/Breadcrumbs";
+import TeamChat from "@/components/assistant/TeamChat";
 import { CategoryProvider } from "@/context/CategoryContext";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import { ToastProvider } from "@/components/ui/Toast/Toast";
@@ -51,6 +52,9 @@ export default function DashboardLayout({
                   {children}
                 </main>
               </div>
+              {/* Floating, team-grounded AI assistant — available on every
+               *  dashboard page, scoped to the navbar's selected category. */}
+              <TeamChat />
             </div>
           </BreadcrumbProvider>
         </ConfirmProvider>

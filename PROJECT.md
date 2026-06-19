@@ -345,3 +345,80 @@ post-seed-command rebuilds.
 The runtime canonical source is still `template.config_schema` JSONB. The
 formula engine, frontend rendering, bulk ingest pipeline, and dashboard
 layouts didn't change. `TemplateField` is purely an authoring layer.
+
+### 5. LLM-assisted reporting (narrative over computed data)
+
+The platform generates per-player and team report **documents** whose data and
+charts are computed deterministically in Python, with a **narrative layer**
+written by an LLM on top. Reports export as **editable Word (.docx)** so staff
+can edit the text and add comments; every report type — Resumen, per-department
+player report, and team report — leads with the narrative analysis, charts, and
+data tables (not just numbers). The division of labor is strict and deliberate:
+
+* **Deterministic Python owns every number and every chart.** Band
+  classification, squad percentiles, z-scores vs published norms, trend
+  slopes, weekly-load rollups — all computed in code (`dashboards/references.py`,
+  `dashboards/player_state.py`). The LLM is never asked to do arithmetic.
+* **The LLM interprets, it does not calculate.** `generate_player_narrative()`
+  receives the already-computed, source-labeled payload and returns a
+  `{resumen, hallazgos, objetivos}` narrative. Parsing is defensive and the
+  call never raises — a failure degrades to "charts + tables, no prose".
+
+Two configuration-over-code properties carry through from the original thesis:
+
+* **Editable insight agents (`InsightAgent`).** Each report stage / department
+  has an admin-editable agent row: a role `system_prompt`, a markdown
+  `knowledge` base, and an optional model override. Staff retune how a report
+  reads — its voice, what it emphasizes, the methodology it cites — with **zero
+  deploys**. The machine-readable output contract is owned by code, not the
+  admin, so prompt edits can never break parsing.
+* **Content-addressed report persistence.** A report is keyed by a hash of
+  *everything that determines it* — the computed payload, the model, the
+  render version, and the agent's config fingerprint. Identical inputs return
+  the identical stored document (no second LLM call, deterministic output);
+  changing a reference value, an agent's KB, or the layout version
+  regenerates. The narrative is cached once per signature and reused across
+  output formats. This makes a non-deterministic model safe to put behind a
+  "download report" button.
+
+Enabling narratives sends the player's metric payload to the Anthropic API and
+is gated on an `ANTHROPIC_API_KEY`; with no key the system runs fully locally
+and renders data/charts only.
+
+### 6. Reference & analytics layer (single source of truth per tier)
+
+Reference values are modeled in exactly one place each, so they can never
+drift between a report, a chart, and an agent's knowledge base:
+
+* **Internal club bands** live on the exam template
+  (`config_schema.reference_ranges`) — the same bands that already color
+  cells and form hints.
+* **External published norms** (ISAK, Holway, Champions/Premier League GPS,
+  etc.) live in a dedicated `MetricReference` model — per template + field +
+  source, as a range / mean+sd / percentile map, optionally scoped by sex and
+  position. Admin-editable.
+* **Methodology** (how to read a metric) lives in the agent KB as prose — with
+  **no raw numbers**, because the numbers belong to the two tiers above.
+
+A deterministic analytics function attaches a computed, source-labeled
+`references` block to each metric in a report payload (internal band, squad
+percentile, comparison vs the external norm, trend). The agent then narrates
+those numbers rather than inventing them.
+
+### 7. Materialized player state + scheduled history
+
+To avoid recomputing a player's "current picture" on every read, the platform
+keeps a materialized read model:
+
+* **`PlayerMetricState`** (one row per player) holds the latest derived
+  state — latest value + band per tracked metric, and a weekly chronic-load
+  monitor (rolling 7-day GPS sums classified against load thresholds).
+  `ExamResult` remains the source of truth; the state is fully rebuildable.
+* **Event-driven recompute.** Saving an `ExamResult` enqueues a recompute via
+  the existing Celery/Redis worker (`transaction.on_commit`), with a
+  synchronous fallback if the broker is down — the same decoupling principle
+  the alarm engine uses (§II.4 above). Player-intrinsic metrics are
+  materialized; squad-relative ones stay lazy to avoid cross-player cascades.
+* **`PlayerStateSnapshot`** captures the state weekly (scheduled via Celery
+  beat), giving a longitudinal history that drives evolution charts without
+  re-deriving anything at render time.

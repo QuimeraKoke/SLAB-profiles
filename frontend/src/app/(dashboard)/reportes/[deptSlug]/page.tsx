@@ -266,10 +266,10 @@ export default function ReportePage({ params }: PageProps) {
                     }}
                   />
                   <DownloadPdfButton
-                    endpoint={buildTeamPdfEndpoint(
+                    endpoint={buildTeamReportEndpoint(
                       department.slug, categoryId, filters, matchFromUrl,
                     )}
-                    filename={`reporte-${department.slug}-${layout.category.name}.pdf`.replace(/\s+/g, "_")}
+                    filename={`reporte-${department.slug}-${layout.category.name}.docx`.replace(/\s+/g, "_")}
                   />
                 </>
               )}
@@ -469,7 +469,7 @@ function PlayerPicker({ players, selectedId, onChange }: PlayerPickerProps) {
   );
 }
 
-function buildTeamPdfEndpoint(
+function buildTeamReportEndpoint(
   deptSlug: string,
   categoryId: string,
   filters: ReportFiltersValue,
@@ -483,7 +483,7 @@ function buildTeamPdfEndpoint(
   if (filters.date.from) params.set("date_from", filters.date.from);
   if (filters.date.to) params.set("date_to", filters.date.to);
   if (matchId) params.set("match_id", matchId);
-  return `/reports/${deptSlug}/team.pdf?${params.toString()}`;
+  return `/reports/${deptSlug}/team.docx?${params.toString()}`;
 }
 
 function filterPositionLabel(positionId: string, positions: Position[]): string {

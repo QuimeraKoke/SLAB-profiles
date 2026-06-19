@@ -244,3 +244,71 @@ class EventParticipant(models.Model):
 
     def __str__(self) -> str:
         return f"{self.player} @ {self.event} ({self.attendance})"
+
+
+class MatchData(models.Model):
+    """Imported results + tactical data for a match `Event`, from an external
+    provider (API-Football). Kept off `Event.metadata` because lineups +
+    events + per-player stats are large JSON blobs. One row per match;
+    re-syncing updates it in place.
+
+    NOTE: this is tactical/technical data only (lineups, formations, events,
+    team & per-player match statistics). PHYSICAL / GPS data (distance,
+    sprints) is NOT available from public APIs — the squad's own physical
+    data comes from SLAB's GPS ingest, not from here.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.OneToOneField(
+        Event, on_delete=models.CASCADE, related_name="match_data",
+    )
+    source = models.CharField(max_length=32, default="api_football")
+    fixture_id = models.BigIntegerField(null=True, blank=True, db_index=True)
+    # Raw provider `response[]` arrays, stored as-is so new fields cost no
+    # migration. Both teams' data is included (it's our match).
+    lineups = models.JSONField(default=list, blank=True)
+    events = models.JSONField(default=list, blank=True)
+    team_statistics = models.JSONField(default=list, blank=True)
+    player_statistics = models.JSONField(default=list, blank=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"MatchData · {self.event_id} (fixture {self.fixture_id})"
+
+
+class OpponentScouting(models.Model):
+    """Imported scouting data about an OPPONENT team (API-Football), saved
+    per club + team + season. Deliberately NOT surfaced in the player/team/
+    Centro-de-mando views — it's staff-only prep material, exposed only under
+    a Scouting context / admin. (Per request: "save it in the app, without
+    showing it.")
+
+    Holds the opponent's recent form (results) and most recent lineup/
+    formation — enough to brief against an upcoming rival.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    club = models.ForeignKey(
+        Club, on_delete=models.CASCADE, related_name="opponent_scouting",
+        help_text="The club doing the scouting (data scoping), not the opponent.",
+    )
+    team_id = models.BigIntegerField(help_text="API-Football team id of the opponent.")
+    team_name = models.CharField(max_length=140)
+    season = models.IntegerField()
+    source = models.CharField(max_length=32, default="api_football")
+    # Opponent's recent fixtures (most recent first): date, comp, vs, score, result.
+    recent_form = models.JSONField(default=list, blank=True)
+    # Opponent's most recent lineup + formation (raw provider shape).
+    last_lineup = models.JSONField(default=dict, blank=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["club", "team_id", "season"], name="uniq_opponent_scouting",
+            ),
+        ]
+        indexes = [models.Index(fields=["club", "team_id", "season"])]
+
+    def __str__(self) -> str:
+        return f"Scouting · {self.team_name} ({self.season})"

@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from core.models import Category, Department, Player
 
-from .models import Event, EventParticipant
+from .models import Event, EventParticipant, MatchData, OpponentScouting
 
 
 class EventParticipantInline(admin.TabularInline):
@@ -73,3 +73,37 @@ class EventParticipantAdmin(admin.ModelAdmin):
     )
     autocomplete_fields = ("event", "player", "position_played")
     readonly_fields = ("external_id", "legacy_raw", "created_at", "updated_at")
+
+
+@admin.register(MatchData)
+class MatchDataAdmin(admin.ModelAdmin):
+    """Read-only view of imported match results + tactical data
+    (API-Football). Machine-written by the fixture sync."""
+
+    list_display = ("event", "source", "fixture_id", "synced_at")
+    list_filter = ("source",)
+    search_fields = ("event__title", "fixture_id")
+    readonly_fields = (
+        "event", "source", "fixture_id", "lineups", "events",
+        "team_statistics", "player_statistics", "synced_at",
+    )
+
+    def has_add_permission(self, request) -> bool:  # written by the sync, not by hand
+        return False
+
+
+@admin.register(OpponentScouting)
+class OpponentScoutingAdmin(admin.ModelAdmin):
+    """Hidden opponent scouting store (API-Football). Staff-only prep — not
+    surfaced in the player/team/Centro-de-mando views."""
+
+    list_display = ("team_name", "club", "season", "source", "synced_at")
+    list_filter = ("season", "club", "source")
+    search_fields = ("team_name", "team_id")
+    readonly_fields = (
+        "club", "team_id", "team_name", "season", "source",
+        "recent_form", "last_lineup", "synced_at",
+    )
+
+    def has_add_permission(self, request) -> bool:
+        return False

@@ -2258,6 +2258,282 @@ reference lines (lower 200, upper 500, team avg dynamic).
 
 ---
 
+### 3.41 LLM narrative reports + content-addressed persistence
+
+The per-player **Resumen** PDF and the per-department report PDFs grew an
+LLM-written narrative layer on top of the existing data/charts. The model
+**interprets** numbers; it never computes them.
+
+> **Format note:** as of §3.46 these reports **export as editable Word
+> (.docx), not PDF** — the narrative/cache/agent architecture below is
+> unchanged; only the rendered output format and the chart-embedding path
+> differ. Read §3.46 for the Word layer.
+
+**Narrative generation** — `dashboards/pdf/narrative.py::generate_player_narrative(payload, *, agent=None)`:
+- One `client.messages.create` call (Anthropic SDK). Model **Opus 4.7**
+  (`claude-opus-4-7`, user's explicit choice; overridable per-agent or via
+  `ANTHROPIC_MODEL`), adaptive thinking, prompt-cached system block.
+- Plain-JSON-in-prompt + **defensive parse**; the function **never raises**
+  — on any failure it returns `None` and the PDF renders tables/charts only.
+- Returns `{resumen, hallazgos[], objetivos[]}`. The triage PDF renders it as
+  a "story" header; the department PDF prepends an "Análisis del período"
+  section.
+
+**Editable insight agents** — `dashboards.models.InsightAgent` (admin-editable;
+no deploy needed to retune):
+- `key` (selector, e.g. `triage`, `medico`, `fisico`), `name`, `model`
+  override, `system_prompt`, `knowledge` (markdown KB), `is_active`,
+  auto-bumped `revision`, `config_fingerprint()` = `sha256[:16]` of
+  model+prompt+knowledge.
+- The **JSON output contract is code-owned** (`_OUTPUT_CONTRACT` in
+  `narrative.py`) and appended to the agent's prompt — so admin edits to the
+  prompt/KB can't break parsing.
+- Per-department personas + starter KBs seeded by
+  `manage.py seed_insight_agents` (one per department slug). The built-in
+  `triage` agent ships via migration `0023`. Falls back to a built-in
+  `_DEFAULT_ROLE_PROMPT` when no row exists.
+- **Division of labor (decided):** deterministic Python owns all stats +
+  chart drawing; agents (LLM + KB) own interpretation/narrative only. LLMs are
+  never used for precise numbers.
+
+**Report persistence / dedup** — `dashboards/pdf/report_cache.py` +
+`dashboards.models.PlayerReportSnapshot` (DB index row + PDF stored in
+S3/MinIO via `FileField`):
+- The download path (`render_or_get_triage_pdf` / `render_or_get_player_pdf`)
+  computes a **stable signature** = `sha256` of `(kind, RENDER_VERSION, model,
+  payload-minus-`generated_at`, agent_fingerprint)`. A signature match returns
+  the saved PDF **byte-for-byte** — no LLM call, no re-render; a miss generates
+  once and persists. `unique_together(player, kind, data_hash)`.
+- This fixed a **real bug**: the old narrative cache hashed the whole payload
+  including `generated_at` (= now), so it never hit → the LLM re-ran on every
+  download → a *different* narrative each time for the same data.
+- Editing a `MetricReference`, the agent's prompt/KB (`config_fingerprint`),
+  or bumping `RENDER_VERSION` all change the signature ⇒ the report
+  regenerates. Bump `RENDER_VERSION` on layout changes.
+
+**Config:** requires `ANTHROPIC_API_KEY` (see §8). `anthropic` is in
+`requirements.txt` — rebuild the backend + worker images after pulling.
+Enabling the narrative **sends player metric/clinical data to the Anthropic
+API** (see §7).
+
+**Files:** `dashboards/pdf/narrative.py`, `dashboards/pdf/report_cache.py`,
+`dashboards/pdf/player_triage.py` (ficha restyle + `render_or_get_triage_pdf`
++ `_evolution_chart`), `dashboards/pdf/player_report.py`
+(`render_or_get_player_pdf` + `build_department_payload` + analysis section),
+`dashboards/pdf/scaffold.py` (`COLOR_FICHA_*`, flat `flowables=` mode),
+`dashboards/models.py` (`PlayerReportSnapshot`, `InsightAgent`), migrations
+`0021`–`0023`, `dashboards/management/commands/seed_insight_agents.py`,
+`api/triage.py` + `api/routers.py` (endpoints).
+
+---
+
+### 3.42 Reference + analytics layer
+
+A three-tier reference model with **one source of truth per tier**, plus the
+deterministic stats the agent narrates against.
+
+1. **Internal bands** — `ExamTemplate.config_schema.reference_ranges` (§3.34).
+   Club thresholds (e.g. G. Tapia's strength bands).
+2. **External norms** — `dashboards.models.MetricReference` (admin-editable):
+   per `(template, field_key, source)` — range / mean+sd / `percentiles` JSON,
+   optional `sex`·`position` scope, `unit`, `note`, `is_active`. ISAK / Holway
+   seeded on the `pentacompartimental` template. Champions/EPL GPS norms etc.
+   live here too.
+3. **Methodology only** — the agent KB (prose, *no raw numbers* — the numbers
+   live in tiers 1–2 so they can't drift).
+
+`dashboards/references.py::build_metric_references(template, field_key, spec,
+current_value, *, sex, position, category, history)` computes **deterministically**:
+- `band_for_value` — internal-band classification.
+- `squad_percentile` — percentile vs the rest of the squad's latest values
+  (Postgres distinct-on for each player's latest, `min_n=3`).
+- vs-external-norm — z-score via `math.erf` (`_normal_cdf`), percentile
+  interpolation from the `percentiles` map, range comparison.
+- `trend_slope` — linear slope over the metric's history.
+
+Attached as a `references` block per metric on the triage payload
+(`api/triage.py`) and a `references[]` array on the department payload
+(`player_report._department_metric_references`, which surfaces any field with
+internal bands **or** an external `MetricReference`). The agent interprets
+these source-labeled, pre-computed numbers (verified: nutricional narrative
+cited "banda interna Aceptable vs rango ISAK 35–50" + "percentil 71/84 del
+plantel"). Editing a `MetricReference` flows into the report signature ⇒
+regenerates (§3.41).
+
+**Files:** `dashboards/references.py`, `dashboards/models.py`
+(`MetricReference`), migration `0024`, `dashboards/admin.py`.
+
+---
+
+### 3.43 Materialized player state + triggers
+
+`dashboards.models.PlayerMetricState` (OneToOne Player, JSON `state` blob,
+`version`, `computed_at`) — a **read model** holding each player's latest
+derived state. `ExamResult` stays the source of truth; the state is fully
+rebuildable (`manage.py rebuild_player_state`).
+
+`dashboards/player_state.py::compute_player_state(player)` returns
+`{status, weekly_load, latest}`:
+- **`weekly_load`** — the **weekly chronic-load monitor** (G. Tapia
+  thresholds: DT 28–35 km, HSR 1.8–2.6 km, Sprint 400–700 m, Acc/Dec
+  150–250 per week; config in `WEEKLY_LOAD_METRICS`). Rolling **7-day sum**
+  from the player's latest GPS reading across matches
+  (`gps_rendimiento_fisico_de_partido`) + trainings (`gps_entrenamiento`),
+  each concept classified under / within / over.
+- **`latest`** — latest value + internal band per tracked field.
+- **Player-intrinsic only.** Squad-relative metrics (percentiles) stay lazy
+  at read time to avoid cross-player recompute cascades.
+- Dates are stored as `isoformat()` strings (JSONField can't serialize
+  `datetime`).
+
+**Trigger:** `exams/signals.py::recompute_player_state_on_result_save`
+(`post_save(ExamResult)`) → `transaction.on_commit` →
+`dashboards.tasks.recompute_player_state.delay(player_id)` (Celery; **sync
+fallback** if the broker is down). Verified recompute ≈ 1 s.
+
+The **Físico** department report reads `weekly_load` from the state, so the
+físico agent flags out-of-range load (verified).
+
+> ⚠️ **Operational:** the Celery `worker` does **not** autoreload. After
+> changing task code, `docker compose restart worker`; after changing the
+> beat schedule, `docker compose restart beat`.
+
+**Files:** `dashboards/player_state.py`, `dashboards/tasks.py`,
+`dashboards/models.py` (`PlayerMetricState`), migration `0025`,
+`exams/signals.py`, `dashboards/management/commands/rebuild_player_state.py`.
+
+---
+
+### 3.44 Player-state snapshots + evolution
+
+`dashboards.models.PlayerStateSnapshot` (player FK, `captured_on` date,
+`state` JSON, unique per player/day) — weekly history of the state.
+
+- Task `dashboards.tasks.snapshot_player_states` recomputes-then-snapshots all
+  active players (`update_or_create` per player/day). Scheduled **Mondays
+  04:00** in `config/celery.py` `beat_schedule`; manual run
+  `manage.py snapshot_player_states`.
+- `player_state.weekly_load_evolution(player)` reads snapshots → a per-concept
+  time series (needs ≥ 2 snapshots).
+- The **Físico** report renders an "Evolución de carga semanal" section: one
+  line chart per weekly-load concept (value over weekly snapshots, target band
+  shaded green, out-of-range points red), via
+  `player_report._weekly_load_chart`. The evolution series is in the físico
+  payload (hashed → cache-correct).
+
+> Snapshots accrue weekly going forward — only "today" exists until the first
+> few Mondays pass (or you run the command manually to backfill a point).
+
+**Files:** `dashboards/models.py` (`PlayerStateSnapshot`), migration `0026`,
+`dashboards/tasks.py`, `config/celery.py`,
+`dashboards/management/commands/snapshot_player_states.py`.
+
+---
+
+### 3.45 Médico strength templates — CMJ / Nórdico / Fuerza isométrica
+
+Three NordBord/ForceDecks-style strength templates added to the Médico
+department, with internal reference bands sourced from G. Tapia's club table:
+
+| Template | Slug | Tracked fields | Internal bands |
+| -------- | ---- | -------------- | -------------- |
+| CMJ (countermovement jump) | `cmj` | `contramovimiento` (cm) | <40 Bajo · 40–45 En rango · >45 Óptimo (↑) |
+| Nórdico (eccentric hamstring) | `nordico` | `fuerza_izq` / `fuerza_der` (N), `asimetria` (%) | 350–400 N (↑) · asimetría <10 / 10–15 / >15 (↓) |
+| Fuerza isométrica (prono) | `iso_prono` | `fuerza_izq` / `fuerza_der` (N), `protocolo`, `asimetria` (%) | 290–320 N (↑) · asimetría <10 / 10–15 / >15 (↓) |
+
+- Schemas live in `seed_medico_indicators.py` (alongside CK / Densidad
+  urinaria / CMJ); reproducible.
+- `seed_strength_demo` (deterministic `Random(42)`) bulk-creates readings over
+  N dates per player, then rebuilds player state.
+- Verified end-to-end: the deterministic layer computed bands + squad
+  percentiles and the médico agent narrated them faithfully in the report
+  ("CMJ 37,9 cm banda Bajo p10; nórdico óptimo bilateral Izq 416,6 N p96 /
+  Der 405,2 N p88; isométrico prono en rango/óptimo asimetría 6,8%").
+
+**Files:** `exams/management/commands/seed_medico_indicators.py` (extended),
+`exams/management/commands/seed_strength_demo.py` (new).
+
+---
+
+### 3.46 Reports export as editable Word (.docx) — replaces PDF
+
+Per client request (they need to **edit the text and add comments**), all
+**three** report types now download as editable **Word documents** instead of
+PDF: the per-player **Resumen**, the per-player **department report**, and the
+**team report**. Each one keeps the full §3.41 treatment — an LLM **narrative
+(text analysis), charts, and data tables**, not just numbers.
+
+**New package** `dashboards/docx/` renders native, editable Word from the
+**same payloads + narrative + charts** as the PDF builders (`dashboards/pdf/`):
+- `_docx.py` — shared builder: page setup (portrait/landscape A4), navy/red
+  "ficha" styling, `report_header`, `section_heading`, `add_narrative`
+  (resumen/hallazgos/objetivos as editable text + bullet lists), bordered
+  Word `add_table` with shaded headers, and `render_widget` (the per-widget
+  entry point).
+- `player_triage_docx.py` / `player_report_docx.py` / `team_report_docx.py`
+  — the three builders, mirroring the PDF modules' section order.
+
+**Charts reused verbatim, zero per-chart rewrite.** `charts/_mpl.py` gained
+`capture_docx_figures()` — a ContextVar sink so that inside it,
+`figure_to_flowable()` deposits the rendered **PNG bytes** (instead of a
+reportlab `Image`) and returns a no-op Spacer. The Word builders run the
+**unchanged** PDF chart renderers under this context and embed the harvested
+PNGs via `add_picture`. So every chart type (and the bespoke
+`_evolution_chart` / `_weekly_load_chart`) renders identically in Word.
+
+**Data as native Word tables.** Widget payloads (the same JSON shape the
+frontend consumes) are rendered as editable tables by adapters in
+`_docx._TABLE_BUILDERS` (comparison_table, grouped_bar, donut, multi_line,
+line_with_selector, team_roster_matrix / horizontal_comparison / stacked_bars
+/ leaderboard / match_summary — shapes verified against the live resolvers),
+with a generic list-of-dicts / key-value fallback so nothing renders empty.
+
+**Team report gained an LLM narrative.** Before, the team report had only a
+deterministic executive summary. It now **leads with a squad-level narrative**
+generated by the department's specialized `InsightAgent`
+(`resolve_insight_agent(department.slug)`), grounded in the executive stats +
+every resolved widget's data — the same agents the player reports use.
+
+**Caching (deterministic, no repeat LLM cost):**
+- `report_cache.py` is now **format-aware**: `get_saved_file` / `save_file`
+  take `fmt="docx"|"pdf"`; the narrative is stored **once per signature** on
+  the snapshot row and **shared across formats** (`get_saved_narrative`), so
+  rendering a second format costs no LLM call. `PlayerReportSnapshot` gained a
+  `docx` FileField (migration `0027`).
+- Team reports are content-addressed via a new
+  `dashboards.models.TeamReportSnapshot` (department + category + data_hash →
+  narrative + docx; migration `0028`), with team cache helpers in
+  `report_cache.py`. Verified: team report 27 s first generation → **0.27 s
+  cached, byte-identical**; both player reports identical on re-request.
+- ⚠️ Report `FileField`s are `max_length=255` (migration `0029`): the upload
+  path (kind + UUID(s) + 64-char signature filename) overflows the default
+  100 and would silently truncate / fail to store.
+
+**Endpoints renamed `.pdf` → `.docx`** (content-type
+`application/vnd.openxmlformats-officedocument.wordprocessingml.document`):
+`GET /players/{id}/triage.docx`, `GET /players/{id}/departments/{slug}/report.docx`,
+`GET /reports/{slug}/team.docx`.
+
+**Frontend** download buttons now say **"Descargar Word"** and hit the
+`.docx` endpoints: `ProfileSummary/PlayerTriage.tsx`,
+`ProfileDepartment/ProfileDepartment.tsx`, `reports/DownloadPdfButton.tsx`
+(symbol kept; behavior + copy are now Word), `reportes/[deptSlug]/page.tsx`.
+
+**Dependency:** `python-docx==1.1.2` added to `requirements.txt` — **rebuild
+the backend + worker images** after pulling. The reportlab PDF builders
+(`render_or_get_*_pdf`, `render_team_pdf`) remain in the tree (no longer hit
+by endpoints) because the Word package reuses their chart + helper code, so
+**reportlab stays a dependency**.
+
+**Files:** `dashboards/docx/` (new package), `dashboards/pdf/charts/_mpl.py`
+(capture hook), `dashboards/pdf/report_cache.py` (format-aware + team helpers),
+`dashboards/models.py` (`PlayerReportSnapshot.docx`, `TeamReportSnapshot`,
+`max_length`), `dashboards/admin.py` (TeamReportSnapshot read-only),
+migrations `0027`–`0029`, `api/routers.py` (3 endpoints), `requirements.txt`,
+and the 4 frontend files above.
+
+---
+
 ## 4. Management commands
 
 All under `backend/exams/management/commands/`. Run via
@@ -2279,6 +2555,11 @@ All under `backend/exams/management/commands/`. Run via
 | `seed_nutricional_layout`  | `dashboards/management/commands/`     | Bootstrap the default Nutricional dashboard layout (table + line + donut + bar) per category. **Superseded by `seed_demo_layouts` for the demo flow** — kept for ad-hoc Nutricional-only refreshes. |
 | `seed_demo_layouts`        | `dashboards/management/commands/`     | One-shot: per-player + team-report layouts for all 4 demo departments (Médico / Físico / Táctico / Nutricional) on a single (club, category). Idempotent. Defaults to `Universidad de Chile / Primer Equipo`. |
 | **`seed_demo`**            | `core/management/commands/`           | **Umbrella runner.** Calls every other seed in the right order: roster → templates (penta + lesiones + medicación + GPS partido + GPS entrenamiento + rendimiento + daily notes) → `sync_template_fields --all` → `seed_fake_exams` → `seed_demo_layouts`. Use this on a fresh database to bootstrap the full demo. Pass `--skip-fake-exams` to keep existing results, or `--reset-fake-exams` to wipe + regenerate. |
+| `seed_medico_indicators`   | `exams/management/commands/`          | Create / refresh the Médico clinical-indicator templates: CK, Densidad urinaria, CMJ, **Nórdico**, **Fuerza isométrica (prono)**. Internal reference bands baked in (§3.45). |
+| `seed_strength_demo`       | `exams/management/commands/`          | Seed deterministic CMJ / Nórdico / Iso readings for a category's players so the strength templates flow end-to-end through the médico report, then rebuild player state (§3.45). `--readings N`. |
+| `seed_insight_agents`      | `dashboards/management/commands/`     | Create one `InsightAgent` per department slug (medico / fisico / nutricional / psicosocial / tactico) with a persona prompt + starter KB (§3.41). |
+| `rebuild_player_state`     | `dashboards/management/commands/`     | Recompute `PlayerMetricState` for all active players from `ExamResult` (the read model is rebuildable) (§3.43). |
+| `snapshot_player_states`   | `dashboards/management/commands/`     | Recompute-then-snapshot every active player's state into `PlayerStateSnapshot` for today (also runs weekly via Celery beat) (§3.44). |
 
 Common flags across the seed-template commands:
 
@@ -2467,6 +2748,18 @@ Things that work today but should be tidied before they confuse the next contrib
 - **`TemplateField` rows are not auto-created** when a seed command writes
   `config_schema`. Run `python manage.py sync_template_fields --name "<n>"`
   after a seed to rebuild rows so the template becomes inline-editable.
+- **LLM narratives send data off-platform.** When `ANTHROPIC_API_KEY` is set,
+  generating a report (§3.41) sends the player's metric/clinical payload to the
+  Anthropic API. Leave the key blank to keep everything local — PDFs still
+  render the data + charts, just without the narrative. The key lives in
+  repo-root `.env` only; never hardcode it or commit `.env`.
+- **Celery `worker` / `beat` don't autoreload.** After changing task code
+  (`dashboards/tasks.py`) restart `worker`; after changing `beat_schedule`
+  restart `beat` (§3.43). The web `backend` container does autoreload.
+- **`PlayerStateSnapshot` history starts empty.** The weekly evolution charts
+  (§3.44) need ≥ 2 snapshots; until a couple of Mondays pass (or you run
+  `snapshot_player_states` manually) only "today" exists and the chart falls
+  back to a single point / inline values.
 
 ---
 
@@ -2495,6 +2788,8 @@ Defined in `.env.example`, consumed by `docker-compose.yml` and
 | `EMAIL_USE_TLS`           | `true`                           |                                        |
 | `DEFAULT_FROM_EMAIL`      | `alerts@s-lab.cl`                | `From:` header on alert emails         |
 | `FRONTEND_BASE_URL`       | `http://localhost:3000`          | Used in alert email "Ver" link         |
+| `ANTHROPIC_API_KEY`       | _(empty)_                        | Enables LLM report narratives (§3.41). Blank ⇒ PDFs render data/charts only, no narrative. Forwarded to the `backend` + `worker` services. |
+| `ANTHROPIC_MODEL`         | `claude-opus-4-7`                | Default narrative model; overridable per-`InsightAgent` (§3.41).        |
 
 ---
 
@@ -2711,9 +3006,12 @@ docker compose exec backend python manage.py shell -c \
 
 ---
 
-*Last updated 2026-04-29 — end of session that added: events app + match
-metadata, GPS bulk ingest, PlayerAlias matching, segmented template builders
-+ `coalesce` formula function, the `/partidos` matches manager (calendar +
-table), the per-player Eventos tab, the Táctico `MatchHistoryTable`, and the
-`TemplateField` structured authoring tool. When in doubt, read the file paths
-above — the code is the source of truth.*
+*Last updated 2026-06-18 — end of session that added: LLM narrative reports
+with content-addressed persistence/dedup (§3.41), editable per-department
+insight agents (§3.41), the three-tier reference + analytics layer (§3.42),
+the materialized `PlayerMetricState` + event/scheduled triggers (§3.43),
+weekly `PlayerStateSnapshot` history + físico load-evolution charts (§3.44),
+the Médico CMJ/Nórdico/Iso strength templates (§3.45), and the **Word (.docx)
+report export that replaced PDF** across all three report types — each leading
+with a specialized-agent narrative + charts (§3.46). When in doubt, read the
+file paths above — the code is the source of truth.*

@@ -13,6 +13,7 @@ response`) is identical.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date
 from typing import Any
 
@@ -30,6 +31,11 @@ from .exceptions import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMEOUT = 15.0
+# The free tier enforces a tight PER-MINUTE limit (separate from the daily
+# cap). Pace requests + back off on 429 so a multi-call sync doesn't trip it.
+_MIN_INTERVAL_S = 1.2
+_RETRY_ON_429 = 2
+_RETRY_SLEEP_S = 20.0
 
 
 class ApiFootballClient:
@@ -55,6 +61,7 @@ class ApiFootballClient:
             settings, "API_FOOTBALL_BASE_URL", "https://v3.football.api-sports.io",
         )).rstrip("/")
         self._timeout = timeout
+        self._last_request_at = 0.0
 
     # -- Public endpoints ----------------------------------------------------
 
@@ -103,19 +110,66 @@ class ApiFootballClient:
                 )
         return fixtures
 
+    def list_team_leagues(self, team_id: int, season: int) -> list[dict[str, Any]]:
+        """Competitions the team played in the season (league + cups +
+        continental). Returns the raw `response[]` items — each carries
+        `league`, `country`, and `seasons[].coverage` (which stats are
+        available for that competition/season)."""
+        payload = self._get("/leagues", params={"team": team_id, "season": season})
+        return payload.get("response") or []
+
+    def get_fixture_lineups(self, fixture_id: int) -> list[dict[str, Any]]:
+        """Per-team lineups + formation + starting XI / substitutes for a
+        fixture. Empty until the lineup is published (~40 min pre-match)."""
+        return self._get("/fixtures/lineups", params={"fixture": fixture_id}).get("response") or []
+
+    def get_fixture_events(self, fixture_id: int) -> list[dict[str, Any]]:
+        """Timeline of match events (goals, cards, subs, VAR) for a fixture."""
+        return self._get("/fixtures/events", params={"fixture": fixture_id}).get("response") or []
+
+    def get_fixture_statistics(self, fixture_id: int) -> list[dict[str, Any]]:
+        """Per-team match statistics (possession, shots, passes, corners…)."""
+        return self._get("/fixtures/statistics", params={"fixture": fixture_id}).get("response") or []
+
+    def get_fixture_players(self, fixture_id: int) -> list[dict[str, Any]]:
+        """Per-player match statistics (rating, minutes, passes, tackles,
+        shots…), grouped by team. The closest API-Football gets to
+        'tactical/technical' player data — it does NOT include physical /
+        GPS metrics (distance, sprints), which no public API provides."""
+        return self._get("/fixtures/players", params={"fixture": fixture_id}).get("response") or []
+
     # -- Internals -----------------------------------------------------------
+
+    def _throttle(self) -> None:
+        """Space requests by at least `_MIN_INTERVAL_S` to respect the free
+        tier's per-minute limit."""
+        elapsed = time.monotonic() - self._last_request_at
+        if elapsed < _MIN_INTERVAL_S:
+            time.sleep(_MIN_INTERVAL_S - elapsed)
+        self._last_request_at = time.monotonic()
 
     def _get(self, path: str, params: dict[str, Any]) -> dict[str, Any]:
         url = f"{self._base_url}{path}"
         headers = {"x-apisports-key": self._api_key}
-        try:
-            resp = httpx.get(
-                url, params=params, headers=headers, timeout=self._timeout,
-            )
-        except httpx.HTTPError as exc:
-            raise ApiFootballUpstreamError(
-                f"Transport error calling API-Football: {exc}"
-            ) from exc
+
+        for attempt in range(_RETRY_ON_429 + 1):
+            self._throttle()
+            try:
+                resp = httpx.get(
+                    url, params=params, headers=headers, timeout=self._timeout,
+                )
+            except httpx.HTTPError as exc:
+                raise ApiFootballUpstreamError(
+                    f"Transport error calling API-Football: {exc}"
+                ) from exc
+            # 429 = per-minute (or daily) limit. Back off + retry a couple
+            # of times; the per-minute window clears quickly.
+            if resp.status_code == 429 and attempt < _RETRY_ON_429:
+                logger.info("API-Football 429; backing off %ss (attempt %d).",
+                            _RETRY_SLEEP_S, attempt + 1)
+                time.sleep(_RETRY_SLEEP_S)
+                continue
+            break
 
         if resp.status_code in (401, 403):
             raise ApiFootballAuthError(
@@ -124,8 +178,8 @@ class ApiFootballClient:
             )
         if resp.status_code == 429:
             raise ApiFootballRateLimitError(
-                "API-Football rate limit exceeded (429). Slow down or "
-                "upgrade plan."
+                "API-Football rate limit exceeded (429) after retries. "
+                "Daily quota likely reached; resume later or upgrade plan."
             )
         if resp.status_code >= 500:
             raise ApiFootballUpstreamError(

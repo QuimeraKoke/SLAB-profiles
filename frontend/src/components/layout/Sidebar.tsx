@@ -8,6 +8,7 @@ import {
   User,
   BarChart3,
   Calendar,
+  LayoutDashboard,
   ChevronDown,
   ChevronRight,
   LogOut,
@@ -56,6 +57,7 @@ interface NavGroup {
 // técnico/físico, not a setting. Roster CRUD lives under Administración
 // (formerly "Configuraciones"; see IA-1 below).
 const STATIC_NAV: NavGroup[] = [
+  { label: "Centro de mando", icon: LayoutDashboard, href: "/centro-de-mando" },
   { label: "Equipo", icon: Users, href: "/equipo", activePrefixes: ["/perfil"] },
   { label: "Partidos", icon: Calendar, href: "/partidos" },
 ];

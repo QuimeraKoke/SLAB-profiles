@@ -499,3 +499,79 @@ after a backend reload.
 | Frontend widget registry       | `frontend/src/components/dashboards/widgets/index.tsx`                |
 | Individual widget components   | `frontend/src/components/dashboards/widgets/*.tsx`                    |
 | TypeScript payload types       | `frontend/src/lib/types.ts`                                           |
+
+---
+
+## 12. Reports (Word) — narrative, references & player state
+
+Beyond the on-screen dashboards, SLAB generates **editable Word (.docx)
+reports** ("Descargar Word" buttons): the per-player **Resumen**, the
+per-department player report, and the **team report**. A report is the
+dashboard's data + charts plus an **LLM-written narrative** on top — every
+report leads with that narrative analysis (text + charts, not just numbers).
+The rule of thumb: *Python computes every number; the agent only interprets
+them.* Reports export as Word (replacing the earlier PDF) so staff can edit the
+text and add comments. See `STATUS.md` §3.41–§3.46 for the engineering detail —
+this section is the operator's view.
+
+### 12.1 Editing how a report reads — Insight agents
+
+Django Admin → **Dashboards → Insight agents**. One row per report stage /
+department (selector = `key`, e.g. `triage`, `medico`, `fisico`).
+
+- **System prompt** — the agent's role / voice / what to emphasize.
+- **Knowledge** — a markdown knowledge base (methodology, how to read a
+  metric). **Do not put raw reference numbers here** — those belong on the
+  template band or in a Metric reference (§12.2) so they can't drift.
+- **Model** — optional per-agent model override (blank ⇒ the platform default).
+- **Is active** — untick to fall back to the built-in role prompt.
+
+Edits take effect with **no deploy**. Because an agent's config is folded into
+the report's content hash, editing the prompt or KB **regenerates** affected
+reports on next download (§12.4). The machine-readable output contract is owned
+by code, so prompt edits can't break the document.
+
+### 12.2 Adding an external reference norm — Metric references
+
+Django Admin → **Dashboards → Metric references**. Use this for **published,
+external** norms (ISAK, Holway, Champions/Premier League GPS, …) — distinct
+from the **internal club bands** you set on the template field
+(`reference_ranges`, §3 above / `STATUS.md` §3.34).
+
+Per row: template + `field_key` + `source`, then any of a min/max **range**,
+**mean + sd**, or a **percentiles** map; optionally scope by `sex` /
+`position`; set `unit`, a `note`, and `is_active`. The report's analytics layer
+then computes — deterministically — the player's band, **squad percentile**,
+and comparison vs your norm (z-score / percentile), and the agent narrates
+those source-labeled numbers. Editing a Metric reference **regenerates**
+dependent reports (§12.4).
+
+### 12.3 Player state & weekly load (Físico)
+
+The Físico report reads a **materialized player state** (`PlayerMetricState`):
+latest value + band per metric, plus a **weekly chronic-load monitor** (rolling
+7-day GPS sums classified against load thresholds). It recomputes automatically
+when new results are saved. A weekly **snapshot** (`PlayerStateSnapshot`) builds
+the longitudinal history behind the report's "Evolución de carga semanal" line
+charts. Operators don't configure this — but note the evolution charts need a
+few weeks of snapshots before they populate (run `snapshot_player_states` to
+backfill a point). Rebuild the state any time with `rebuild_player_state`.
+
+### 12.4 Why a report sometimes regenerates (and usually doesn't)
+
+Reports are **content-addressed**: a report is stored keyed by a hash of its
+computed data + model + layout version + the agent's config. Download the same
+report twice with nothing changed → you get the **identical** saved Word file
+instantly (no second LLM call). It regenerates only when something that feeds
+it changes: new/edited results, an edited Insight agent (§12.1), an edited
+Metric reference (§12.2), or a layout-version bump.
+
+### 12.5 Requirements
+
+Narratives require `ANTHROPIC_API_KEY` (see `STATUS.md` §8). With no key the
+reports still render — data + charts, just without the prose. Enabling them
+sends the player's metric payload to the Anthropic API.
+
+> **Deferred:** a **squad-percentile radar** chart (the original ficha
+> centerpiece). All the data it needs — per-metric squad percentiles — already
+> exists; only the chart type + layout remain to be built.
