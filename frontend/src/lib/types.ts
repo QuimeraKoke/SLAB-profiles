@@ -191,6 +191,7 @@ export interface PlayerDetail {
   current_height_cm: number | null;
   age: number | null;
   open_episode_count: number;
+  photo_url: string | null;
 }
 
 export type ExamFieldType =

@@ -401,6 +401,7 @@ def get_player(request, player_id: str):
         ),
         "age": player.age,
         "open_episode_count": open_eps,
+        "photo_url": player.photo_url or None,
     }
 
 

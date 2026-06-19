@@ -219,6 +219,7 @@ class PlayerDetailOut(Schema):
     current_height_cm: float | None = None
     age: int | None = None
     open_episode_count: int = 0
+    photo_url: str | None = None
 
 
 class TemplateOut(Schema):

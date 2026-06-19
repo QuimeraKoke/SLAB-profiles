@@ -62,6 +62,7 @@ export default function ProfileHeader({ player }: ProfileHeaderProps) {
 
   const [activeAlertCount, setActiveAlertCount] = useState(0);
   const [showContracts, setShowContracts] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
   const canViewContract = usePermission("core.view_contract");
   useEffect(() => {
     let cancelled = false;
@@ -83,7 +84,17 @@ export default function ProfileHeader({ player }: ProfileHeaderProps) {
     <div className={styles.container}>
       <div className={styles.leftSection}>
         <div className={styles.avatar}>
-          <User size={40} color="#9ca3af" />
+          {player.photo_url && !photoFailed ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={player.photo_url}
+              alt={fullName}
+              className={styles.avatarImg}
+              onError={() => setPhotoFailed(true)}
+            />
+          ) : (
+            <User size={40} color="#9ca3af" />
+          )}
           {activeAlertCount > 0 && (
             <span
               className={styles.alertBadge}
