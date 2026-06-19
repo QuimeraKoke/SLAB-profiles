@@ -387,12 +387,15 @@ def _alerted_metrics_block(metrics: list[dict], s: dict) -> list:
     rows = [["Métrica", "Actual", "Previo", "Δ"]]
     style_rows: list = []
     for i, m in enumerate(metrics, start=1):
+        metric_cell = (
+            f"<b>{_esc(m['field_label'])}</b><br/>"
+            f"<font size='7' color='#6b7280'>{_esc(m['template_label'])}</font>"
+        )
+        peer_line = _peer_caption(m)
+        if peer_line:
+            metric_cell += f"<br/><font size='6.5' color='#6b7280'>{_esc(peer_line)}</font>"
         rows.append([
-            Paragraph(
-                f"<b>{_esc(m['field_label'])}</b><br/>"
-                f"<font size='7' color='#6b7280'>{_esc(m['template_label'])}</font>",
-                s["body"],
-            ),
+            Paragraph(metric_cell, s["body"]),
             _value_str(m["current_value"], m["unit"]),
             _value_str(m["previous_value"], m["unit"]),
             _delta_str(m["delta"], m["unit"], m["direction_of_good"]),
@@ -440,13 +443,24 @@ def _metrics_evolution_block(metrics: list[dict], s: dict, fs: dict) -> list:
             f"<b>{_esc(m['field_label'])}</b>"
             f"  <font size='7' color='#6b7280'>{_esc(m['template_label'])}</font>"
         )
+        caption = _peer_caption(m)
+        cap_para = (
+            Paragraph(f"<font size='7' color='#6b7280'>{_esc(caption)}</font>", s["body"])
+            if caption else None
+        )
         chart = _evolution_chart(m)
         if chart is None:
-            out.append(Paragraph(f"{label} — {_metric_inline_values(m)}", s["body"]))
+            line = f"{label} — {_metric_inline_values(m)}"
+            if caption:
+                line += f"  <font size='7' color='#6b7280'>· {_esc(caption)}</font>"
+            out.append(Paragraph(line, s["body"]))
             continue
         # Keep the label glued to its chart so a page break can't orphan
         # the title from the plot it describes.
-        out.append(KeepTogether([Paragraph(label, s["body"]), chart]))
+        block = [Paragraph(label, s["body"]), chart]
+        if cap_para is not None:
+            block.append(cap_para)
+        out.append(KeepTogether(block))
         out.append(Spacer(1, 4 * mm))
     return out
 
@@ -464,6 +478,21 @@ def _metric_inline_values(m: dict) -> str:
         if dcolor is not None:
             dstr = f"<font color='{_color_hex(dcolor)}'>{dstr}</font>"
         parts.append(f"Δ {dstr}")
+    return "  ·  ".join(parts)
+
+
+def _peer_caption(m: dict) -> str:
+    """Compact 'vs equipo / vs posición' line from `references.peer`:
+    team & same-position averages plus the player's team percentile."""
+    peer = (m.get("references") or {}).get("peer") or {}
+    unit = m.get("unit") or ""
+    parts: list[str] = []
+    t = peer.get("team")
+    if t:
+        parts.append(f"equipo {_value_str(t['avg'], unit)} · P{t['percentile']}")
+    pos = peer.get("position")
+    if pos:
+        parts.append(f"{pos.get('label', 'posición')} {_value_str(pos['avg'], unit)}")
     return "  ·  ".join(parts)
 
 

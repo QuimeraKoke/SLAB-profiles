@@ -1,208 +1,165 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import styles from "./page.module.css";
-import PlayerTable, { type EquipoPlayerRow } from "@/components/equipo/PlayerTable";
-import PlayerListToolbar from "@/components/equipo/PlayerListToolbar";
-import FieldView from "@/components/equipo/FieldView";
+import Link from "next/link";
+import { Search, Plus } from "lucide-react";
+
+import RosterTable, { type RosterRow } from "@/components/equipo/RosterTable";
+import PlayerEditModal from "@/components/equipo/PlayerEditModal";
 import { api, ApiError } from "@/lib/api";
 import { useCategoryContext } from "@/context/CategoryContext";
-import type { PlayerSummary } from "@/lib/types";
+import { usePermission } from "@/lib/permissions";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast/Toast";
+import styles from "./page.module.css";
 
-export type TabType = "list" | "field";
-
-function toRow(p: PlayerSummary): EquipoPlayerRow {
-  return {
-    id: p.id,
-    name: `${p.first_name} ${p.last_name}`.trim(),
-    position: p.position?.abbreviation ?? "—",
-    status: p.status ?? "available",
-    warning: "",
-  };
+interface RosterPayload {
+  category: string;
+  counts: Record<string, number>;
+  players: RosterRow[];
 }
 
-// Accent-insensitive normalization so "Aranguiz" matches "Aránguiz".
+const TABS: { key: string; label: string }[] = [
+  { key: "all", label: "Todos" },
+  { key: "available", label: "Disponibles" },
+  { key: "reintegration", label: "Reintegración" },
+  { key: "recovery", label: "Recuperación" },
+  { key: "injured", label: "Lesionados" },
+];
+
 function normalize(s: string): string {
   return s.normalize("NFD").replace(/\p{Diacritic}/gu, "").toLowerCase();
 }
 
 export default function EquipoPage() {
-  const [activeTab, setActiveTab] = useState<TabType>("list");
-  const [players, setPlayers] = useState<PlayerSummary[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<"all" | PlayerSummary["status"]>("all");
-  const [query, setQuery] = useState("");
   const { categoryId, loading: categoryLoading } = useCategoryContext();
+  const { confirm } = useConfirm();
+  const { toast } = useToast();
+  // Both edit and deactivate are PATCH /players/{id} — gated on change_player.
+  const canManage = usePermission("core.change_player");
+  const [data, setData] = useState<RosterPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [query, setQuery] = useState("");
+  const [reload, setReload] = useState(0);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (categoryLoading) return;
+    if (categoryLoading || !categoryId) return;
     let cancelled = false;
-    const url = categoryId ? `/players?category_id=${categoryId}` : "/players";
-    api<PlayerSummary[]>(url)
-      .then((data) => {
-        if (!cancelled) setPlayers(data);
-      })
+    Promise.resolve().then(() => {
+      if (!cancelled) { setData(null); setError(null); }
+    });
+    api<RosterPayload>(`/roster?category_id=${categoryId}`)
+      .then((d) => { if (!cancelled) setData(d); })
       .catch((err) => {
-        if (cancelled) return;
-        const message = err instanceof ApiError ? err.message : "Failed to load players";
-        setError(message);
-        setPlayers([]);
+        if (!cancelled) setError(err instanceof ApiError ? err.message : "No se pudo cargar el plantel.");
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [categoryId, categoryLoading]);
+    return () => { cancelled = true; };
+  }, [categoryId, categoryLoading, reload]);
 
-  const filteredPlayers = useMemo(() => {
-    let all = players ?? [];
-    if (statusFilter !== "all") {
-      all = all.filter((p) => p.status === statusFilter);
-    }
-    // QW-2: wired the search box. Accent-insensitive match on
-    // "first last" so a tilde-less query still finds Aránguiz, etc.
+  const rows = useMemo(() => {
+    if (!data) return [];
     const q = normalize(query.trim());
-    if (q) {
-      all = all.filter((p) =>
-        normalize(`${p.first_name} ${p.last_name}`).includes(q),
-      );
-    }
-    return all;
-  }, [players, statusFilter, query]);
+    return data.players.filter((p) => {
+      if (statusFilter !== "all" && p.status !== statusFilter) return false;
+      if (q && !normalize(`${p.name} ${p.position}`).includes(q)) return false;
+      return true;
+    });
+  }, [data, statusFilter, query]);
 
-  const rows = useMemo(() => filteredPlayers.map(toRow), [filteredPlayers]);
-
-  const statusCounts = useMemo(() => {
-    const counts = { available: 0, injured: 0, recovery: 0, reintegration: 0 };
-    for (const p of players ?? []) {
-      const k = p.status as keyof typeof counts;
-      if (k in counts) counts[k] += 1;
+  async function handleDeactivate(row: RosterRow) {
+    const ok = await confirm({
+      title: `Dar de baja a ${row.name}`,
+      message:
+        "Dejará de aparecer en el plantel y en los tableros, pero su historial " +
+        "(resultados, episodios, contratos) se conserva. Podés reactivarlo desde " +
+        "Gestionar plantel.",
+      confirmLabel: "Dar de baja",
+      variant: "danger",
+    });
+    if (!ok) return;
+    try {
+      await api(`/players/${row.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_active: false }),
+      });
+      toast.success(`${row.name} fue dado de baja.`);
+      setReload((k) => k + 1);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "No se pudo dar de baja al jugador.");
     }
-    return counts;
-  }, [players]);
+  }
+
+  if (categoryLoading) return <div className={styles.muted}>Cargando…</div>;
+  if (!categoryId) return <div className={styles.muted}>Seleccioná una categoría.</div>;
+  if (error) return <div className={styles.error} role="alert">{error}</div>;
+
+  const counts = data?.counts ?? {};
 
   return (
-    <div className={styles.container}>
+    <div className={styles.page}>
       <header className={styles.header}>
-        <div className={styles.tabs}>
-          <button
-            className={`${styles.tab} ${activeTab === "list" ? styles.tabActive : ""}`}
-            onClick={() => setActiveTab("list")}
-          >
-            Plantel Profesional
-          </button>
-          <button
-            className={`${styles.tab} ${activeTab === "field" ? styles.tabActive : ""}`}
-            onClick={() => setActiveTab("field")}
-          >
-            Vista de Campo
-          </button>
+        <div>
+          <h1 className={styles.h1}>Plantel</h1>
+          <p className={styles.sub}>
+            {counts.all ?? 0} jugadores · administra el plantel, edita datos o da de
+            baja — el resumen vive en Centro de mando.
+          </p>
         </div>
+        <Link href="/configuraciones/jugadores" className={styles.addBtn}>
+          <Plus size={16} aria-hidden="true" /> Agregar jugador
+        </Link>
       </header>
 
-      <div className={styles.content}>
-        {error && (
-          <div role="alert" style={{ color: "#dc2626", padding: 12 }}>
-            {error}
-          </div>
-        )}
-
-        {players === null ? (
-          <div style={{ padding: 24, color: "#6b7280" }}>Cargando jugadores…</div>
-        ) : activeTab === "list" ? (
-          <>
-            <PlayerListToolbar query={query} onQueryChange={setQuery} />
-            <div
-              style={{
-                display: "flex", gap: 8, padding: "8px 16px",
-                background: "#f9fafb", borderBottom: "1px solid #e5e7eb",
-                fontSize: "0.82rem",
-              }}
-            >
-              <StatusChip
-                label={`Todos · ${players.length}`}
-                active={statusFilter === "all"}
-                onClick={() => setStatusFilter("all")}
-              />
-              <StatusChip
-                label={`Disponibles · ${statusCounts.available}`}
-                active={statusFilter === "available"}
-                onClick={() => setStatusFilter("available")}
-                tone="green"
-              />
-              <StatusChip
-                label={`Reintegración · ${statusCounts.reintegration}`}
-                active={statusFilter === "reintegration"}
-                onClick={() => setStatusFilter("reintegration")}
-                tone="yellow"
-              />
-              <StatusChip
-                label={`Recuperación · ${statusCounts.recovery}`}
-                active={statusFilter === "recovery"}
-                onClick={() => setStatusFilter("recovery")}
-                tone="orange"
-              />
-              <StatusChip
-                label={`Lesionados · ${statusCounts.injured}`}
-                active={statusFilter === "injured"}
-                onClick={() => setStatusFilter("injured")}
-                tone="red"
-              />
-            </div>
-            {/* QW-2 follow-up: equipo owns all empty-state copy now —
-                three cases, three messages, no false negatives. */}
-            {players.length === 0 ? (
-              <div style={{ padding: 24, color: "#6b7280" }}>
-                No hay jugadores registrados todavía.
-              </div>
-            ) : filteredPlayers.length === 0 ? (
-              <div style={{ padding: 24, color: "#6b7280" }}>
-                {query.trim()
-                  ? `Sin coincidencias para «${query}».`
-                  : "No hay jugadores con ese estado."}
-              </div>
-            ) : (
-              <PlayerTable players={rows} />
-            )}
-          </>
-        ) : (
-          <FieldView players={rows} />
-        )}
+      <div className={styles.searchRow}>
+        <span className={styles.searchWrap}>
+          <Search size={16} aria-hidden="true" className={styles.searchIcon} />
+          <input
+            className={styles.search}
+            placeholder="Buscar por nombre o posición…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </span>
       </div>
+
+      <div className={styles.tabs}>
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            className={`${styles.tab} ${statusFilter === t.key ? styles.tabActive : ""}`}
+            onClick={() => setStatusFilter(t.key)}
+          >
+            {t.label}
+            <span className={styles.tabCount}>{counts[t.key] ?? 0}</span>
+          </button>
+        ))}
+      </div>
+
+      {!data ? (
+        <div className={styles.muted}>Cargando plantel…</div>
+      ) : (
+        <RosterTable
+          rows={rows}
+          canEdit={canManage}
+          canDeactivate={canManage}
+          onEdit={(r) => setEditingId(r.id)}
+          onDeactivate={handleDeactivate}
+        />
+      )}
+
+      {editingId && (
+        <PlayerEditModal
+          playerId={editingId}
+          onClose={() => setEditingId(null)}
+          onSaved={() => {
+            setEditingId(null);
+            setReload((k) => k + 1);
+          }}
+        />
+      )}
     </div>
-  );
-}
-
-interface StatusChipProps {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  tone?: "green" | "yellow" | "orange" | "red";
-}
-
-function StatusChip({ label, active, onClick, tone }: StatusChipProps) {
-  const palettes: Record<string, { bg: string; color: string; border: string }> = {
-    green: { bg: "#dcfce7", color: "#166534", border: "#86efac" },
-    yellow: { bg: "#fef3c7", color: "#854d0e", border: "#fde68a" },
-    orange: { bg: "#fed7aa", color: "#9a3412", border: "#fdba74" },
-    red: { bg: "#fee2e2", color: "#991b1b", border: "#fca5a5" },
-  };
-  const palette = tone ? palettes[tone] : null;
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        background: active ? palette?.bg ?? "#e0e7ff" : "transparent",
-        color: active ? palette?.color ?? "#3730a3" : "#6b7280",
-        border: `1px solid ${active ? palette?.border ?? "#a5b4fc" : "#d1d5db"}`,
-        borderRadius: 999,
-        padding: "4px 10px",
-        fontSize: "0.78rem",
-        fontWeight: active ? 700 : 500,
-        cursor: "pointer",
-      }}
-    >
-      {label}
-    </button>
   );
 }

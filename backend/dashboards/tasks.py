@@ -49,3 +49,21 @@ def snapshot_player_states() -> dict:
         n += 1
     logger.info("snapshot_player_states: captured %s snapshots for %s", n, today)
     return {"snapshotted": n, "date": str(today)}
+
+
+@shared_task(name="dashboards.tasks.recompute_readiness")
+def recompute_readiness(player_id: str) -> dict | None:
+    """Recompute + cache a player's agent-refined readiness (signature-gated,
+    so an unchanged save is a cheap no-op). Triggered on ExamResult save and
+    runnable in bulk via `manage.py rebuild_readiness`."""
+    from core.models import Player
+    from .readiness import compute_readiness
+
+    player = (
+        Player.objects.filter(pk=player_id, is_active=True)
+        .select_related("category", "position").first()
+    )
+    if player is None:
+        return None
+    r = compute_readiness(player)
+    return {"player": str(player_id), "score": r.score, "source": r.source}

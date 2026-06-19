@@ -245,6 +245,9 @@ def _spec_medico(department: Department) -> dict:
     medicacion = _resolve_template(department, "medicacion")
     molestias = _resolve_template(department, "molestias")
     check_in = _resolve_template(department, "check_in")
+    cmj = _resolve_template(department, "cmj")
+    nordico = _resolve_template(department, "nordico")
+    iso_prono = _resolve_template(department, "iso_prono")
 
     player: list[dict] = []
     if lesiones is not None:
@@ -293,6 +296,46 @@ def _spec_medico(department: Department) -> dict:
         player.append({
             "title": "Indicadores clínicos",
             "widgets": measures_widgets,
+        })
+
+    # Salto neuromuscular + asimetrías (agente médico: vista personal =
+    # evolución temporal; vista de equipo = ranking horizontal).
+    neuro_widgets: list[dict] = []
+    if cmj is not None:
+        neuro_widgets.append({
+            "chart_type": ChartType.LINE_WITH_SELECTOR,
+            "title": "CMJ — evolución",
+            "column_span": 6,
+            "sources": [{
+                "template": cmj,
+                "field_keys": _filter_keys(cmj, ["contramovimiento", "salto_mt"]),
+                "aggregation": Aggregation.ALL,
+            }],
+        })
+    asym_sources = []
+    if nordico is not None:
+        asym_sources.append({
+            "template": nordico,
+            "field_keys": _filter_keys(nordico, ["asimetria"]),
+            "aggregation": Aggregation.ALL,
+        })
+    if iso_prono is not None:
+        asym_sources.append({
+            "template": iso_prono,
+            "field_keys": _filter_keys(iso_prono, ["asimetria"]),
+            "aggregation": Aggregation.ALL,
+        })
+    if asym_sources:
+        neuro_widgets.append({
+            "chart_type": ChartType.LINE_WITH_SELECTOR,
+            "title": "Asimetría (Nórdico / Prono) — evolución",
+            "column_span": 6,
+            "sources": asym_sources,
+        })
+    if neuro_widgets:
+        player.append({
+            "title": "Salto y asimetrías",
+            "widgets": neuro_widgets,
         })
 
     if medicacion is not None:
@@ -465,6 +508,59 @@ def _spec_medico(department: Department) -> dict:
             }],
         })
 
+    if cmj is not None:
+        team.append({
+            "title": "CMJ del plantel",
+            "widgets": [{
+                "chart_type": ChartType.TEAM_HORIZONTAL_COMPARISON,
+                "title": "CMJ por jugador",
+                "description": "Última altura de salto contramovimiento por jugador (cm).",
+                "column_span": 12,
+                "chart_height": 520,
+                "display_config": {"mode": "multi_field"},
+                "sources": [{
+                    "template": cmj,
+                    "field_keys": _filter_keys(cmj, ["contramovimiento"]),
+                    "aggregation": Aggregation.LATEST,
+                }],
+            }],
+        })
+
+    asym_team_widgets: list[dict] = []
+    if nordico is not None:
+        asym_team_widgets.append({
+            "chart_type": ChartType.TEAM_HORIZONTAL_COMPARISON,
+            "title": "Asimetría Nórdico por jugador",
+            "description": "Última asimetría I/D (%). Atención >10%, riesgo alto >15%.",
+            "column_span": 6,
+            "chart_height": 520,
+            "display_config": {"mode": "multi_field"},
+            "sources": [{
+                "template": nordico,
+                "field_keys": _filter_keys(nordico, ["asimetria"]),
+                "aggregation": Aggregation.LATEST,
+            }],
+        })
+    if iso_prono is not None:
+        asym_team_widgets.append({
+            "chart_type": ChartType.TEAM_HORIZONTAL_COMPARISON,
+            "title": "Asimetría Prono por jugador",
+            "description": "Última asimetría I/D (%). Atención >10%, riesgo alto >15%.",
+            "column_span": 6,
+            "chart_height": 520,
+            "display_config": {"mode": "multi_field"},
+            "sources": [{
+                "template": iso_prono,
+                "field_keys": _filter_keys(iso_prono, ["asimetria"]),
+                "aggregation": Aggregation.LATEST,
+            }],
+        })
+    if asym_team_widgets:
+        team.append({
+            "title": "Asimetrías del plantel",
+            "widgets": asym_team_widgets,
+        })
+
     if molestias is not None:
         team.append({
             "title": "Molestias del plantel",
@@ -608,6 +704,22 @@ def _spec_fisico(department: Department) -> dict:
                             "hsr", "sprint", "acc", "rpe", "mpm",
                         ]),
                         "aggregation": Aggregation.ALL,
+                    }],
+                },
+                {
+                    # Radar: last training session per GPS variable as a % of
+                    # the player's chronic match load (100% ring).
+                    "chart_type": ChartType.TRAINING_RADAR,
+                    "title": "Entrenamiento vs carga crónica (% partido)",
+                    "column_span": 6,
+                    "chart_height": 360,
+                    "sources": [{
+                        "template": gps_train,
+                        "field_keys": _filter_keys(gps_train, [
+                            "tot_dist", "hsr", "sprint", "hmld", "mpm",
+                            "max_vel", "acc", "dec", "hiaa", "player_load",
+                        ]),
+                        "aggregation": Aggregation.LATEST,
                     }],
                 },
             ],

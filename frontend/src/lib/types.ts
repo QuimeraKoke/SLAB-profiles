@@ -576,9 +576,27 @@ export interface ActivityLogPayload {
   error?: string;
 }
 
+/** Radar: latest training session's GPS variables as % of chronic match load. */
+export interface TrainingRadarAxis {
+  key: string;
+  label: string;
+  unit: string | null;
+  training_value: number;
+  reference_value: number;
+  pct: number;
+}
+export interface TrainingRadarPayload {
+  chart_type: "training_radar";
+  axes: TrainingRadarAxis[];
+  reference_pct: number;
+  session_date?: string;
+  empty?: boolean;
+}
+
 export type WidgetData =
   | ComparisonTablePayload
   | LineWithSelectorPayload
+  | TrainingRadarPayload
   | DonutPerResultPayload
   | GroupedBarPayload
   | MultiLinePayload
@@ -626,10 +644,20 @@ export interface LineWithSelectorOption extends FieldMeta {
   template_label?: string;
 }
 
+/** A horizontal reference line on a line chart (acute/chronic match load, or
+ *  team / same-position averages). `short` is a compact axis label. */
+export interface ChartReferenceLine {
+  kind: "acute" | "chronic" | "team" | "position";
+  label: string;
+  short?: string;
+  value: number;
+}
 export interface LineWithSelectorPayload {
   chart_type: "line_with_selector";
   available_fields: LineWithSelectorOption[];
   series: Record<string, { recorded_at: string; value: number | null }[]>;
+  /** Per-field reference lines, keyed by the same composite field key as `series`. */
+  reference_lines?: Record<string, ChartReferenceLine[]>;
 }
 
 export interface DonutSlice {

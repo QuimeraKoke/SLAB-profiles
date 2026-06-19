@@ -177,6 +177,113 @@ def squad_percentile(
     return {"percentile": round(at_or_below / len(vals) * 100), "n": len(vals)}
 
 
+def peer_comparison(
+    template, field_key: str, category, value: float | None, *,
+    position: str | None = None, min_n: int = 3, min_n_pos: int = 2,
+) -> dict | None:
+    """Team + same-position comparison of `value` against the latest reading
+    per player in `category` for this metric.
+
+    Returns ``{"team": {avg, percentile, n}, "position": {avg, percentile, n,
+    label}}`` — each block omitted below its minimum count, None when there's
+    no team block. Same-position grouping is by Position.name (positional peers).
+    """
+    if value is None or category is None:
+        return None
+    from core.models import Player
+    from exams.models import ExamResult
+
+    rows = (
+        ExamResult.objects
+        .filter(template=template, player__category=category)
+        .order_by("player_id", "-recorded_at")
+        .distinct("player_id")
+        .values_list("player_id", "result_data")
+    )
+    pvals: dict[Any, float] = {}
+    for pid, data in rows:
+        v = _coerce((data or {}).get(field_key))
+        if v is not None:
+            pvals.setdefault(pid, v)
+    if not pvals:
+        return None
+
+    def _stats(vals: list[float]) -> dict:
+        n = len(vals)
+        at_or_below = sum(1 for v in vals if v <= value)
+        return {
+            "avg": round(sum(vals) / n, 2),
+            "percentile": round(at_or_below / n * 100),
+            "n": n,
+        }
+
+    out: dict[str, Any] = {}
+    team_vals = list(pvals.values())
+    if len(team_vals) >= min_n:
+        out["team"] = _stats(team_vals)
+
+    if position:
+        pos_pids = set(
+            Player.objects
+            .filter(category=category, position__name=position)
+            .values_list("id", flat=True)
+        )
+        pos_vals = [v for pid, v in pvals.items() if pid in pos_pids]
+        if len(pos_vals) >= min_n_pos:
+            block = _stats(pos_vals)
+            block["label"] = position
+            out["position"] = block
+
+    return out or None
+
+
+def peer_averages(
+    template, field_key: str, category, *,
+    position: str | None = None, min_n: int = 3, min_n_pos: int = 2,
+) -> dict | None:
+    """Team + same-position AVERAGE of the latest reading per player for a
+    metric — for chart reference lines (no player value needed, so it works
+    for GPS and any other field). Returns ``{"team": float|None,
+    "position": {"avg": float, "label": str}|None}`` or None when no data.
+    """
+    if category is None:
+        return None
+    from core.models import Player
+    from exams.models import ExamResult
+
+    rows = (
+        ExamResult.objects
+        .filter(template=template, player__category=category)
+        .order_by("player_id", "-recorded_at")
+        .distinct("player_id")
+        .values_list("player_id", "result_data")
+    )
+    pvals: dict[Any, float] = {}
+    for pid, data in rows:
+        v = _coerce((data or {}).get(field_key))
+        if v is not None:
+            pvals.setdefault(pid, v)
+    if not pvals:
+        return None
+
+    out: dict[str, Any] = {}
+    team_vals = list(pvals.values())
+    if len(team_vals) >= min_n:
+        out["team"] = round(sum(team_vals) / len(team_vals), 2)
+    if position:
+        pos_pids = set(
+            Player.objects
+            .filter(category=category, position__name=position)
+            .values_list("id", flat=True)
+        )
+        pos_vals = [v for pid, v in pvals.items() if pid in pos_pids]
+        if len(pos_vals) >= min_n_pos:
+            out["position"] = {
+                "avg": round(sum(pos_vals) / len(pos_vals), 2), "label": position,
+            }
+    return out or None
+
+
 # ─── Trend ─────────────────────────────────────────────────────────────
 
 
@@ -229,9 +336,16 @@ def build_metric_references(
     if ext:
         block["external"] = ext
 
-    sq = squad_percentile(template, field_key, category, current_value)
-    if sq:
-        block["squad_percentile"] = sq
+    peer = peer_comparison(
+        template, field_key, category, current_value, position=position,
+    )
+    if peer:
+        block["peer"] = peer
+        # Back-compat: keep squad_percentile (team) for existing consumers.
+        if "team" in peer:
+            block["squad_percentile"] = {
+                "percentile": peer["team"]["percentile"], "n": peer["team"]["n"],
+            }
 
     tr = trend_slope(history) if history else None
     if tr:

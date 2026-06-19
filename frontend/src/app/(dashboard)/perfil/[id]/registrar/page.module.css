@@ -1,0 +1,96 @@
+.container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 8px 0 40px;
+}
+
+.header {
+  margin-bottom: 22px;
+}
+
+.backLink {
+  display: inline-block;
+  font-size: 13px;
+  color: #4f46e5;
+  text-decoration: none;
+  margin-bottom: 14px;
+}
+.backLink:hover { text-decoration: underline; }
+
+.titles { display: flex; flex-direction: column; gap: 2px; }
+.eyebrow {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #98a2b3;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.title { font-size: 22px; font-weight: 700; color: #101828; margin: 2px 0 0; }
+.sub { font-size: 13.5px; color: #667085; margin: 4px 0 0; }
+
+.groups { display: flex; flex-direction: column; gap: 22px; }
+
+.group {
+  background: #fff;
+  border: 1px solid #e8eaf0;
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+.groupTitle {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #98a2b3;
+  margin: 0 0 8px;
+}
+
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 8px;
+  border-radius: 9px;
+  text-decoration: none;
+  color: #101828;
+  border-bottom: 1px solid #f4f5f8;
+}
+.list li:last-child .item { border-bottom: none; }
+.item:hover { background: #f7f8fb; }
+
+.itemIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  background: #eef0fb;
+  color: #4338ca;
+  flex-shrink: 0;
+}
+.itemName { flex: 1; font-size: 14px; font-weight: 600; }
+.itemChevron { color: #cbd2dc; flex-shrink: 0; }
+
+.empty {
+  font-size: 14px;
+  color: #98a2b3;
+  padding: 24px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #e8eaf0;
+  border-radius: 14px;
+}
+
+.loading { font-size: 14px; color: #98a2b3; padding: 24px 0; }
+.error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b42318;
+  font-size: 13px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  margin-bottom: 14px;
+}

@@ -217,3 +217,68 @@ def _coerce(raw: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return None if (v != v or v in (float("inf"), float("-inf"))) else v
+
+
+# ─── Match-load reference (acute / chronic) ─────────────────────────────
+#
+# Acute / chronic load = the MAXIMUM match-day value over the 7-day / 28-day
+# window, counting ONLY matches where the player logged ≥75 GPS-min. Used by
+# (1) the training-load chart reference lines and (2) the training-load alert.
+# Each training field maps to its match "_total" counterpart.
+MIN_MATCH_MINUTES = 75.0
+TRAIN_TO_MATCH_FIELD: dict[str, str] = {
+    "tot_dist": "tot_dist_total", "tot_dur": "tot_dur_total",
+    "player_load": "player_load_total", "max_vel": "max_vel_total",
+    "hsr": "hsr_total", "sprint": "sprint_total", "acc": "acc_total",
+    "dec": "dec_total", "hiaa": "hiaa_total", "hmld": "hmld_total",
+    "mpm": "mpm_total",
+}
+
+# Metrics the training-load alert watches — cumulative external-load/volume
+# only, per the físico InsightAgent's recommendation (2026-06-19): duration,
+# relative intensity (mpm) and peak speed (max_vel) are deliberately excluded.
+TRAINING_LOAD_ALERT_METRICS: list[str] = [
+    "tot_dist", "player_load", "hsr", "sprint", "acc", "dec", "hiaa", "hmld",
+]
+TRAINING_LOAD_ALERT_RATIO = 0.85  # fire when a session ≥85% of match reference
+
+
+def match_load_refs(player_id, anchor, train_fields: list[str]) -> dict[str, dict]:
+    """Per training-field acute/chronic match-load reference at `anchor`.
+
+    Returns ``{train_field: {"acute": float|None, "chronic": float|None}}``;
+    a value is None when no qualifying match (≥75 GPS-min) sits in that window.
+    """
+    from django.utils import timezone
+
+    from exams.models import ExamResult
+
+    if timezone.is_naive(anchor):
+        anchor = timezone.make_aware(anchor, timezone.get_default_timezone())
+    acute_cut = anchor - timedelta(days=7)
+    chronic_cut = anchor - timedelta(days=28)
+
+    rows = ExamResult.objects.filter(
+        player_id=player_id, template__slug=_GPS_MATCH_SLUG,
+        recorded_at__gte=chronic_cut, recorded_at__lte=anchor,
+    ).values_list("recorded_at", "result_data")
+    qualifying = [
+        (rec, data or {}) for rec, data in rows
+        if (_coerce((data or {}).get("tot_dur_total")) or 0.0) >= MIN_MATCH_MINUTES
+    ]
+
+    out: dict[str, dict] = {}
+    for tf in train_fields:
+        match_key = TRAIN_TO_MATCH_FIELD.get(tf)
+        if not match_key:
+            continue
+        chronic_vals = [v for v in (_coerce(d.get(match_key)) for _, d in qualifying) if v is not None]
+        acute_vals = [
+            v for v in (_coerce(d.get(match_key)) for rec, d in qualifying if rec >= acute_cut)
+            if v is not None
+        ]
+        out[tf] = {
+            "acute": max(acute_vals) if acute_vals else None,
+            "chronic": max(chronic_vals) if chronic_vals else None,
+        }
+    return out

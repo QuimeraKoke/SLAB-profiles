@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { Sparkles, Send, X } from "lucide-react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -130,7 +132,13 @@ export default function TeamChat() {
                 key={i}
                 className={`${styles.bubble} ${m.role === "user" ? styles.user : styles.assistant}`}
               >
-                {m.content}
+                {m.role === "assistant" ? (
+                  <div className={styles.md}>
+                    <Markdown remarkPlugins={[remarkGfm]}>{m.content}</Markdown>
+                  </div>
+                ) : (
+                  m.content
+                )}
               </div>
             ))}
 

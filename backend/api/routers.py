@@ -1908,6 +1908,21 @@ def event_match_data(request, event_id: str):
     }
 
 
+@api.get("/roster")
+def roster(request, category_id: str):
+    """Plantel roster with per-player readiness / wellness / ACWR / forma +
+    status counts, for the Equipo view."""
+    from api.roster import build_roster
+
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    return build_roster(category)
+
+
 @api.get("/command-center")
 def command_center(request, category_id: str):
     """Centro de mando dashboard — one aggregated read of the squad's

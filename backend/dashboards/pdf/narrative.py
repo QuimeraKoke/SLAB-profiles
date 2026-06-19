@@ -67,6 +67,18 @@ _DEFAULT_ROLE_PROMPT = (
     "- Sé conciso: el cuerpo técnico lee esto de un vistazo."
 )
 
+# Code-owned guidance on the peer-comparison data, always appended so the
+# narrative contextualizes the player against the squad and his position even
+# when an admin edits the role prompt.
+_COMPARISON_GUIDE = (
+    "Comparación con pares: cada métrica puede traer `references.peer` con el "
+    "promedio y percentil del jugador respecto del EQUIPO (`team`) y de su "
+    "MISMA POSICIÓN (`position`, con `label` y tamaño de muestra `n`). Cuando "
+    "aporte valor, contextualizá los datos del jugador frente a esos promedios "
+    "(p. ej. «por encima del promedio del equipo», «bajo para su posición»), "
+    "citando el número. No compares cuando el bloque falte o `n` sea muy chico."
+)
+
 # Code-owned output contract. Always appended last, never editable, so the
 # parsed JSON shape stays stable no matter how the role/knowledge is edited.
 _OUTPUT_CONTRACT = (
@@ -103,6 +115,7 @@ def _build_system(role_prompt: str, knowledge: str) -> str:
     parts = [role_prompt.strip()]
     if knowledge and knowledge.strip():
         parts.append("# Base de conocimiento del club\n" + knowledge.strip())
+    parts.append(_COMPARISON_GUIDE)
     parts.append(_OUTPUT_CONTRACT)
     return "\n\n".join(parts)
 

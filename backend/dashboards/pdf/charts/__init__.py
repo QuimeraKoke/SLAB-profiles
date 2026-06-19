@@ -144,4 +144,5 @@ from . import (  # noqa: E402, F401
     line_with_selector as _line_with_selector,
     multi_line as _multi_line,
     player_alerts as _player_alerts,
+    training_radar as _training_radar,
 )

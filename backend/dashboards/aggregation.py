@@ -12,6 +12,8 @@ from datetime import datetime
 from typing import Any, Callable
 from uuid import UUID
 
+from django.utils import timezone
+
 from exams.models import ExamResult, ExamTemplate
 
 from .models import (
@@ -22,6 +24,7 @@ from .models import (
     field_lookup,
     iter_template_fields,
 )
+from .player_state import _GPS_TRAIN_SLUG, match_load_refs
 
 
 # ---------- helpers ----------
@@ -176,6 +179,72 @@ def _resolve_comparison_table(
     }
 
 
+def _match_load_reference_lines(
+    player_id: UUID, source: WidgetDataSource, field_keys: list[str], anchor: datetime,
+) -> dict[str, list[dict[str, Any]]]:
+    """Per-field acute/chronic reference lines from match GPS (≥75 min only).
+
+    Delegates the computation to `player_state.match_load_refs` and formats it
+    into chart lines keyed by `<source_id>::<field_key>` (same keys as `series`).
+    """
+    refs = match_load_refs(player_id, anchor, field_keys)
+    out: dict[str, list[dict[str, Any]]] = {}
+    for field_key, ref in refs.items():
+        lines: list[dict[str, Any]] = []
+        if ref.get("chronic") is not None:
+            lines.append({"kind": "chronic", "short": "Crónica",
+                          "label": "Carga crónica (máx. partido 28 d)",
+                          "value": round(ref["chronic"], 1)})
+        if ref.get("acute") is not None:
+            lines.append({"kind": "acute", "short": "Aguda",
+                          "label": "Carga aguda (máx. partido 7 d)",
+                          "value": round(ref["acute"], 1)})
+        if lines:
+            out[f"{source.id}::{field_key}"] = lines
+    return out
+
+
+def _peer_average_lines(
+    player, sources: list[WidgetDataSource],
+) -> dict[str, list[dict[str, Any]]]:
+    """Team + same-position AVERAGE reference lines for every field on a
+    line-with-selector chart (works for GPS and any metric). Lets a player's
+    series be read against the squad and their positional peers."""
+    from .references import peer_averages
+
+    if player is None:
+        return {}
+    category = player.category
+    position = player.position.name if player.position else None
+
+    out: dict[str, list[dict[str, Any]]] = {}
+    for source in sources:
+        # Skip training GPS: it already carries the acute/chronic match-load
+        # lines, and a team average of "latest training session" is noisy
+        # (it mixes players sitting on different microcycle days).
+        if source.template.slug == _GPS_TRAIN_SLUG:
+            continue
+        fkeys = source.field_keys or [
+            f["key"] for f in iter_template_fields(source.template)
+            if f.get("type") in {"number", "calculated"}
+        ]
+        for field_key in fkeys:
+            pa = peer_averages(source.template, field_key, category, position=position)
+            if not pa:
+                continue
+            lines: list[dict[str, Any]] = []
+            if pa.get("team") is not None:
+                lines.append({"kind": "team", "short": "Equipo",
+                              "label": "Promedio del equipo", "value": round(pa["team"], 1)})
+            if pa.get("position"):
+                pos = pa["position"]
+                lines.append({"kind": "position", "short": pos["label"],
+                              "label": f"Promedio {pos['label']}", "value": round(pos["avg"], 1)})
+            if lines:
+                out[f"{source.id}::{field_key}"] = lines
+    return out
+
+
 def _resolve_line_with_selector(
     widget: Widget,
     sources: list[WidgetDataSource],
@@ -224,10 +293,97 @@ def _resolve_line_with_selector(
                 for r in results
             ]
 
+    # Training-load chart: overlay acute/chronic match-load reference lines.
+    reference_lines: dict[str, list[dict[str, Any]]] = {}
+    anchor = date_to or timezone.now()
+    # `date_to` arrives naive (parsed from a date string); DB timestamps are
+    # tz-aware, so normalize before any comparison.
+    if timezone.is_naive(anchor):
+        anchor = timezone.make_aware(anchor, timezone.get_default_timezone())
+    for source in sources:
+        if source.template.slug != _GPS_TRAIN_SLUG:
+            continue
+        fkeys = source.field_keys or [
+            f["key"] for f in iter_template_fields(source.template)
+            if f.get("type") in {"number", "calculated"}
+        ]
+        reference_lines.update(
+            _match_load_reference_lines(player_id, source, fkeys, anchor)
+        )
+
+    # Team + same-position average lines for EVERY field (GPS + any metric).
+    from core.models import Player
+
+    player = (
+        Player.objects.select_related("position", "category")
+        .filter(id=player_id).first()
+    )
+    for key, lines in _peer_average_lines(player, sources).items():
+        reference_lines.setdefault(key, []).extend(lines)
+
     return {
         "chart_type": ChartType.LINE_WITH_SELECTOR.value,
         "available_fields": available_fields,
         "series": series,
+        "reference_lines": reference_lines,
+    }
+
+
+def _resolve_training_radar(
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict[str, Any]:
+    """Radar: the latest training session's GPS variables as a % of the
+    player's chronic match-load reference (max match in 28 d, ≥75 GPS-min).
+    One axis per metric; the reference ring is 100% (= match-day chronic)."""
+    from .player_state import TRAIN_TO_MATCH_FIELD, match_load_refs
+
+    empty = {"chart_type": ChartType.TRAINING_RADAR.value, "empty": True, "axes": []}
+    src = next((s for s in sources if s.template.slug == _GPS_TRAIN_SLUG), None)
+    if src is None:
+        return empty
+    template = src.template
+    field_keys = [
+        k for k in (src.field_keys or list(TRAIN_TO_MATCH_FIELD))
+        if k in TRAIN_TO_MATCH_FIELD
+    ]
+
+    qs = ExamResult.objects.filter(player_id=player_id, template=template)
+    if date_to is not None:
+        cap = date_to
+        if timezone.is_naive(cap):
+            cap = timezone.make_aware(cap, timezone.get_default_timezone())
+        qs = qs.filter(recorded_at__lte=cap)
+    latest = qs.order_by("-recorded_at").first()
+    if latest is None:
+        return empty
+
+    refs = match_load_refs(player_id, latest.recorded_at, field_keys)
+    axes: list[dict[str, Any]] = []
+    for key in field_keys:
+        tv = _safe_float((latest.result_data or {}).get(key))
+        chronic = (refs.get(key) or {}).get("chronic")
+        if tv is None or not chronic:
+            continue
+        meta = _field_meta(template, key)
+        axes.append({
+            "key": key,
+            "label": meta.get("label") or key,
+            "unit": meta.get("unit"),
+            "training_value": round(tv, 1),
+            "reference_value": round(chronic, 1),
+            "pct": round(tv / chronic * 100, 1),
+        })
+
+    return {
+        "chart_type": ChartType.TRAINING_RADAR.value,
+        "axes": axes,
+        "reference_pct": 100,
+        "session_date": latest.recorded_at.isoformat(),
+        "empty": not axes,
     }
 
 
@@ -547,6 +703,7 @@ def _resolve_body_map_heatmap(
 _RESOLVERS: dict[str, Callable[..., dict[str, Any]]] = {
     ChartType.COMPARISON_TABLE.value: _resolve_comparison_table,
     ChartType.LINE_WITH_SELECTOR.value: _resolve_line_with_selector,
+    ChartType.TRAINING_RADAR.value: _resolve_training_radar,
     ChartType.DONUT_PER_RESULT.value: _resolve_donut_per_result,
     ChartType.GROUPED_BAR.value: _resolve_grouped_bar,
     ChartType.MULTI_LINE.value: _resolve_multi_line,

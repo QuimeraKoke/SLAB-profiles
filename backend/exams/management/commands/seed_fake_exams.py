@@ -106,11 +106,75 @@ NUMERIC_BASELINES: dict[str, tuple[float, float]] = {
     "shots_on_target": (0.0, 3.0),
     "fouls_committed": (0.0, 4.0),
     "fouls_received": (0.0, 4.0),
+    "goals": (0.0, 1.0),
+    "assists": (0.0, 1.0),
+    "yellow_cards": (0.0, 1.0),
+    # Físico — GPS Partido (per-half inputs; the *_total fields are calculated
+    # from these). A 90' match for an elite player ≈ 9-11 km total, so each
+    # ~45' half ≈ 4.3-5.6 km. Without these the per-half keys fell back to the
+    # generic (10, 100) m default → absurd ~190 m match totals.
+    "tot_dur_p1": (44.0, 49.0), "tot_dur_p2": (45.0, 51.0),
+    "tot_dist_p1": (4300.0, 5600.0), "tot_dist_p2": (4200.0, 5500.0),
+    "hsr_p1": (220.0, 480.0), "hsr_p2": (200.0, 460.0),
+    "sprint_p1": (40.0, 150.0), "sprint_p2": (35.0, 140.0),
+    "dist_70_85_p1": (500.0, 1200.0), "dist_70_85_p2": (480.0, 1150.0),
+    "dist_85_95_p1": (150.0, 520.0), "dist_85_95_p2": (140.0, 500.0),
+    "acc_dec_p1": (28.0, 58.0), "acc_dec_p2": (26.0, 55.0),
+    "acc_p1": (14.0, 32.0), "acc_p2": (13.0, 30.0),
+    "dec_p1": (14.0, 32.0), "dec_p2": (13.0, 30.0),
+    "max_vel_p1": (29.0, 34.0), "max_vel_p2": (28.5, 33.5),
+    "hiaa_p1": (45.0, 110.0), "hiaa_p2": (40.0, 100.0),
+    "hmld_p1": (320.0, 760.0), "hmld_p2": (300.0, 720.0),
+    "player_load_p1": (230.0, 420.0), "player_load_p2": (220.0, 400.0),
+    "mpm_p1": (98.0, 124.0), "mpm_p2": (95.0, 120.0),
+    "hsr_rel_p1": (5.0, 12.0), "hsr_rel_p2": (4.5, 11.0),
+    "sprint_rel_p1": (1.0, 4.0), "sprint_rel_p2": (0.8, 3.5),
+    # Nutricional — Pentacompartimental anthropometry (elite male soccer).
+    "biacromial": (38.0, 43.0), "bi_iliocrestideo": (26.0, 31.0),
+    "diam_torax_ap": (18.0, 23.0), "diam_torax_transverso": (26.0, 31.0),
+    "perim_cabeza": (55.0, 59.0), "perim_torax": (90.0, 104.0),
+    "perim_antebrazo": (25.0, 30.0), "perim_brazo_contraido": (30.0, 38.0),
+    "talla_sentado": (88.0, 99.0),
+    "pliegue_bicipital": (2.5, 5.0), "pliegue_supracrestideo": (5.0, 12.0),
+    # Médico — Análisis de sangre (male-athlete reference values).
+    "hemoglobina": (14.0, 17.0), "hematocrito": (41.0, 50.0),
+    "ferritina": (40.0, 200.0), "vitamina_d": (30.0, 55.0),
+    "vitamina_b12": (300.0, 800.0), "cortisol": (8.0, 20.0),
+    "testosterona_total": (400.0, 900.0), "testosterona_libre": (9.0, 25.0),
+    "t3": (80.0, 190.0), "t4_libre": (0.9, 1.7), "tsh": (0.6, 3.8),
+    # Físico — Fase / Densidad.
+    "edad_phv": (13.0, 15.0), "indice_mad": (0.9, 1.1),
+    "densidad_urinaria": (1.005, 1.022),
+    # Médico misc.
+    "dias_perdidos": (0.0, 21.0), "partidos_perdidos": (0.0, 4.0),
+    "cantidad": (1.0, 30.0),
 }
 
 # Slugs that need episode-aware or date-range-aware generation. The main
 # loop SKIPS these templates and dispatches to dedicated handlers below.
-SPECIAL_TEMPLATE_SLUGS = {"lesiones", "medicacion", "molestias", "check_in"}
+SPECIAL_TEMPLATE_SLUGS = {"lesiones", "medicacion", "molestias", "check_in",
+                          "gps_entrenamiento"}
+
+# Training microcycle: training-day load as a % of the player's match-day
+# reference, keyed by days-BEFORE the next match. The match (MD) and the
+# recovery day after it (MD+1) get NO training GPS. Load rises from MD-5
+# (≈ MD+2) to the MD-3 peak (~78%, i.e. 76–80%), then tapers to MD-1.
+_TRAINING_MICROCYCLE: dict[int, float] = {
+    5: 0.50,  # MD-5 (≈ MD+2) — rising start
+    4: 0.65,  # MD-4
+    3: 0.78,  # MD-3 — PEAK
+    2: 0.58,  # MD-2 — decreasing
+    1: 0.38,  # MD-1 — pre-match activation
+}
+
+# GPS realism: a per-session "intensity" factor (game/session-to-session
+# variation — opponent, tactics, extra time, weather) shared by every metric
+# in that session, layered on top of per-metric noise. Without it every match
+# / training day comes out near-identical (and ACWR collapses to ~1.0).
+_GPS_MATCH_SLUG = "gps_rendimiento_fisico_de_partido"
+_GPS_SESSION_FACTOR = (0.85, 1.16)        # match: wide game-to-game variation
+_GPS_TRAIN_SESSION_FACTOR = (0.86, 1.08)  # training: planned, tighter spread
+_GPS_METRIC_NOISE = 0.08                  # ±8% independent per-metric noise
 
 # Realistic Lesiones content. Picks one combo per episode so the Episode's
 # `title_template` ("{type} — {body_part}") renders something believable.
@@ -261,12 +325,21 @@ class Command(BaseCommand):
                             ))
         parser.add_argument("--reset", action="store_true",
                             help="Delete every existing ExamResult in scope before seeding.")
+        parser.add_argument("--healthy", action="store_true",
+                            help=(
+                                "Generate IN-RANGE data: numeric fields with "
+                                "reference_ranges land in the good (green) band, "
+                                "categoricals/booleans pick the healthy option, and "
+                                "random injuries/molestias are suppressed (set them "
+                                "deliberately instead). For clean demo workspaces."
+                            ))
 
     def handle(self, *args, **options):
         club_name = options["club"]
         cadence = options["cadence"]
         weeks = options["weeks"]
         reset = options["reset"]
+        self.healthy = options["healthy"]
 
         if weeks <= 0:
             raise CommandError("--weeks must be positive.")
@@ -309,8 +382,20 @@ class Command(BaseCommand):
             if reset:
                 deleted, _ = ExamResult.objects.filter(player__category__club=club).delete()
                 total_deleted += deleted
+                # Per-result alerts (medication, training-load) key on
+                # source_id = result.id with no FK cascade, so they'd orphan
+                # (and pile up across re-runs). Clear them alongside the data.
+                from goals.models import Alert, AlertSource
+                club_pids = Player.objects.filter(
+                    category__club=club,
+                ).values_list("id", flat=True)
+                alerts_deleted, _ = Alert.objects.filter(
+                    player_id__in=club_pids,
+                    source_type__in=[AlertSource.MEDICATION, AlertSource.TRAINING_LOAD],
+                ).delete()
                 self.stdout.write(self.style.NOTICE(
-                    f"Club '{club.name}': deleted {deleted} existing results."
+                    f"Club '{club.name}': deleted {deleted} existing results, "
+                    f"{alerts_deleted} per-result alert(s)."
                 ))
 
             templates_by_category: dict[str, list[ExamTemplate]] = {}
@@ -325,6 +410,9 @@ class Command(BaseCommand):
 
             now = datetime.now(timezone.utc)
             step = timedelta(weeks=weeks) / max(count - 1, 1) if count > 1 else timedelta(0)
+            # Weekly match-day anchors (same grid the link_to_match templates
+            # use); the training microcycle hangs off these.
+            match_dates = [now - step * (count - 1 - i) for i in range(count)]
 
             # Resolve the special templates once per club.
             templates_by_slug: dict[str, ExamTemplate] = {
@@ -411,6 +499,14 @@ class Command(BaseCommand):
                     ):
                         total_created += self._seed_check_in_for_player(
                             player, check_in_t, rng, now,
+                        )
+                    gps_train_t = templates_by_slug.get("gps_entrenamiento")
+                    if (
+                        gps_train_t is not None
+                        and gps_train_t in templates
+                    ):
+                        total_created += self._seed_gps_training_for_player(
+                            player, gps_train_t, rng, match_dates,
                         )
 
             self.stdout.write(self.style.SUCCESS(
@@ -509,6 +605,11 @@ class Command(BaseCommand):
         fields = schema.get("fields", []) or []
         out: dict[str, Any] = {}
 
+        # Match GPS: one intensity factor per match, shared by all metrics
+        # (game-to-game variation), on top of the per-metric noise below.
+        is_gps_match = template.slug == _GPS_MATCH_SLUG
+        session_factor = rng.uniform(*_GPS_SESSION_FACTOR) if is_gps_match else 1.0
+
         for field in fields:
             if not isinstance(field, dict):
                 continue
@@ -517,6 +618,9 @@ class Command(BaseCommand):
             if not key or ftype == "calculated":
                 continue
             value = self._value_for_field(field, baseline, recorded_at, rng)
+            if value is not None and is_gps_match and ftype == "number":
+                noisy = value * session_factor * (1 + rng.uniform(-_GPS_METRIC_NOISE, _GPS_METRIC_NOISE))
+                value = round(noisy, 2)
             if value is not None:
                 out[key] = value
         return out
@@ -527,14 +631,19 @@ class Command(BaseCommand):
         key = field.get("key", "")
 
         if ftype == "boolean":
-            return rng.random() < 0.3
+            # In healthy mode boolean flags read as "no problem present".
+            return False if getattr(self, "healthy", False) else rng.random() < 0.3
 
         if ftype == "date":
             return recorded_at.date().isoformat()
 
         if ftype == "categorical":
             options = field.get("options") or []
-            return rng.choice(options) if options else None
+            if not options:
+                return None
+            if getattr(self, "healthy", False):
+                return self._good_categorical(field, options)
+            return rng.choice(options)
 
         if ftype == "text":
             return self._text_for_key(key, field, rng)
@@ -542,6 +651,12 @@ class Command(BaseCommand):
         if ftype == "number":
             if key == "sexo":
                 return baseline.get("sexo", 0)
+            # Healthy mode: if the field declares reference bands, draw inside
+            # the good band so the value reads as in-range (no alert).
+            if getattr(self, "healthy", False) and field.get("reference_ranges"):
+                good = self._good_band_value(field, rng)
+                if good is not None:
+                    return good
             base = baseline.get(key)
             if base is None:
                 low, high = DEFAULT_NUMERIC_RANGE
@@ -550,6 +665,81 @@ class Command(BaseCommand):
             return round(jittered, 2)
 
         return None
+
+    # --- Healthy-mode value pickers ----------------------------------
+
+    _GOOD_COLOR = "#16a34a"  # green band used across the seed templates
+    _BAD_RISK = {"PROHIBIDO", "CONDICIONAL"}
+
+    def _good_categorical(self, field: dict, options: list) -> Any:
+        """Pick the 'healthy' option: avoid WADA-flagged risks, prefer an
+        option whose label/value reads positive, else the first option (the
+        seed templates list the good/normal option first, e.g. 'disponible')."""
+        risk = field.get("option_risk") or {}
+        safe = [o for o in options if (risk.get(o) or "").upper() not in self._BAD_RISK]
+        pool = safe or options
+        positive = ("disponible", "normal", "bueno", "buena", "óptimo", "optimo",
+                    "sano", "sin", "no", "ninguna", "ok", "verde", "leve")
+        for o in pool:
+            token = f"{o} {field.get('option_labels', {}).get(o, '')}".lower()
+            if any(p in token for p in positive):
+                return o
+        return pool[0]
+
+    def _good_band_value(self, field: dict, rng: random.Random):
+        """Draw a numeric value inside the field's 'good' reference band.
+
+        Picks the green band (or, lacking colors, the best band per
+        direction_of_good), then samples uniformly within it. Open-ended
+        edges fall back to the field's `max`/`min` or the union of band edges.
+        """
+        bands = [b for b in (field.get("reference_ranges") or []) if isinstance(b, dict)]
+        if not bands:
+            return None
+        edges = [e for b in bands for e in (b.get("min"), b.get("max")) if isinstance(e, (int, float))]
+        if not edges:
+            return None
+        emin, emax = min(edges), max(edges)
+        field_min = field.get("min")
+        field_max = field.get("max")
+        floor = field_min if isinstance(field_min, (int, float)) else emin
+        ceil = field_max if isinstance(field_max, (int, float)) else emax
+
+        good = next((b for b in bands if (b.get("color") or "").lower() == self._GOOD_COLOR), None)
+        if good is None:
+            direction = (field.get("direction_of_good") or "").lower()
+            if direction == "down":
+                good = min(bands, key=lambda b: b.get("max", b.get("min", emax)))
+            else:  # up / neutral → the band reaching the highest value
+                good = max(bands, key=lambda b: b.get("min", b.get("max", emin)))
+
+        b_lo = good.get("min")
+        b_hi = good.get("max")
+        edge_span = (emax - emin) or (abs(emax) * 0.2) or 1.0
+
+        if b_hi is None and b_lo is not None:
+            # Open upward (higher is better): spread ABOVE the threshold instead
+            # of collapsing to it. Prefer the field max if declared.
+            lo = b_lo
+            hi = (field_max if isinstance(field_max, (int, float)) and field_max > b_lo
+                  else b_lo + max(edge_span, abs(b_lo) * 0.12))
+        elif b_lo is None and b_hi is not None:
+            # Open downward (lower is better): spread BELOW the threshold.
+            hi = b_hi
+            lo = (field_min if isinstance(field_min, (int, float)) and field_min < b_hi
+                  else max(0.0, b_hi - max(edge_span, abs(b_hi) * 0.8)))
+        else:
+            lo = b_lo if isinstance(b_lo, (int, float)) else floor
+            hi = b_hi if isinstance(b_hi, (int, float)) else ceil
+
+        if hi < lo:
+            lo, hi = hi, lo
+        if hi <= lo:
+            hi = lo + max(1.0, abs(lo) * 0.1)
+        # Stay a hair inside the edges so band boundaries never tip over.
+        span = hi - lo
+        val = rng.uniform(lo + span * 0.1, hi - span * 0.1)
+        return round(val, 2)
 
     def _text_for_key(self, key: str, field: dict, rng: random.Random) -> str:
         # Pick contextual content where the key gives us a hint.
@@ -588,6 +778,11 @@ class Command(BaseCommand):
         """
         # Lazy-import to avoid load-time cycles with the goals app's signals.
         from exams.models import Episode
+
+        # Healthy mode: no random injuries — statuses are set deliberately
+        # by the workspace orchestrator (seed_chile_demo) instead.
+        if getattr(self, "healthy", False):
+            return 0
 
         # ~70% of players have at least one episode. Of those, 40% have an
         # active one (open today) and the rest are historical.
@@ -752,6 +947,96 @@ class Command(BaseCommand):
         return created
 
     # ------------------------------------------------------------------
+    # GPS Entrenamiento — one entry per training day, microcycle-shaped
+    # ------------------------------------------------------------------
+
+    def _seed_gps_training_for_player(
+        self, player, template: "ExamTemplate", rng: random.Random,
+        match_dates: list,
+    ) -> int:
+        """One training-GPS entry per training day across each microcycle.
+
+        For every match anchor we generate the 5 preceding days (MD-5…MD-1);
+        the match day itself and MD+1 (the recovery day after the previous
+        match) get nothing. Volume metrics scale to a % of the player's
+        match-day reference per `_TRAINING_MICROCYCLE` — load rises from MD-5
+        to the MD-3 peak (~78%) then tapers to MD-1.
+        """
+        # Anchor the microcycle "100%" to the player's OWN match demand (match
+        # GPS was already generated this run, before this handler). Falls back
+        # to a generic range only if the player has no match data. Anchoring
+        # keeps training a real % of *their* match, so the ≥85% load alert
+        # fires only for genuinely hard sessions, not random over-draws.
+        match_rows = list(
+            ExamResult.objects
+            .filter(player=player, template__slug=_GPS_MATCH_SLUG)
+            .values_list("result_data", flat=True)
+        )
+
+        def _match_mean(match_key: str, lo: float, hi: float) -> float:
+            vals = [
+                d[match_key] for d in match_rows
+                if isinstance(d, dict) and isinstance(d.get(match_key), (int, float)) and d[match_key] > 0
+            ]
+            return sum(vals) / len(vals) if vals else rng.uniform(lo, hi)
+
+        ref = {
+            "tot_dist": _match_mean("tot_dist_total", 9000, 11000),
+            "hsr": _match_mean("hsr_total", 550, 850),
+            "sprint": _match_mean("sprint_total", 120, 260),
+            "hmld": _match_mean("hmld_total", 900, 1400),
+            "player_load": _match_mean("player_load_total", 480, 640),
+            "hiaa": _match_mean("hiaa_total", 110, 190),
+            "acc": _match_mean("acc_total", 40, 60),
+            "dec": _match_mean("dec_total", 40, 60),
+        }
+        created = 0
+        seen_days: set = set()
+        for md in match_dates:
+            for offset, pct in _TRAINING_MICROCYCLE.items():
+                recorded_at = md - timedelta(days=offset)
+                day_key = recorded_at.date()
+                if day_key in seen_days:
+                    continue  # overlapping windows → one session per calendar day
+                seen_days.add(day_key)
+
+                # Per-session intensity (shared by all metrics this day) ×
+                # independent ±8% per-metric noise — the session feels different
+                # week to week instead of a flat microcycle template.
+                session = rng.uniform(*_GPS_TRAIN_SESSION_FACTOR)
+
+                def j() -> float:
+                    return session * (1 + rng.uniform(-_GPS_METRIC_NOISE, _GPS_METRIC_NOISE))
+
+                raw_data = {
+                    # Duration: its own noise, not scaled by session intensity.
+                    "tot_dur": round((40 + pct * 55) * (1 + rng.uniform(-0.08, 0.08)), 1),
+                    "tot_dist": round(ref["tot_dist"] * pct * j(), 1),
+                    "hsr": round(ref["hsr"] * pct * j(), 1),
+                    "sprint": round(ref["sprint"] * pct * j(), 1),
+                    "hmld": round(ref["hmld"] * pct * j(), 1),
+                    "player_load": round(ref["player_load"] * pct * j(), 1),
+                    "hiaa": round(ref["hiaa"] * pct * j()),
+                    "acc": round(ref["acc"] * pct * j()),
+                    "dec": round(ref["dec"] * pct * j()),
+                    # Intensity peaks less sharply than volume.
+                    "max_vel": round(28 + pct * 6 + rng.uniform(-1.2, 1.2), 1),
+                    "rpe": max(1, min(10, round(1 + pct * 8 + rng.uniform(-0.6, 0.6)))),
+                }
+                result_data, inputs_snapshot = compute_result_data(
+                    template, raw_data, player=player,
+                )
+                ExamResult.objects.create(
+                    player=player,
+                    template=template,
+                    recorded_at=recorded_at,
+                    result_data=result_data,
+                    inputs_snapshot=inputs_snapshot,
+                )
+                created += 1
+        return created
+
+    # ------------------------------------------------------------------
     # Molestias — sporadic daily-log entries (~1-2 per week per player)
     # ------------------------------------------------------------------
 
@@ -783,6 +1068,9 @@ class Command(BaseCommand):
         """Sprinkle ~1-2 molestias entries per week across the last 8
         weeks. Independent random seed per player so re-runs are stable.
         """
+        # Healthy mode: keep the squad symptom-free (no discomfort noise).
+        if getattr(self, "healthy", False):
+            return 0
         weeks_back = 8
         entries_per_week_distribution = [0, 0, 1, 1, 1, 2, 2, 3]
         created = 0
@@ -827,12 +1115,16 @@ class Command(BaseCommand):
         consistently rested, etc.)."""
         days_back = 30
         # Per-player baseline ∈ [3.0, 4.5] biased toward good values.
-        baseline = 3.0 + (rng.random() * 1.5)
+        # Healthy mode tightens it to [4.2, 4.9] so every axis lands in the
+        # good band (4–5) with minimal jitter.
+        healthy = getattr(self, "healthy", False)
+        baseline = (4.2 + rng.random() * 0.7) if healthy else (3.0 + rng.random() * 1.5)
+        jitter = 0.6 if healthy else 1.6
         created = 0
         for d in range(days_back, 0, -1):
-            # Daily jitter ±0.8 around baseline, clamped 1..5.
+            # Daily jitter around baseline, clamped 1..5.
             def sample_axis() -> int:
-                v = baseline + (rng.random() - 0.5) * 1.6
+                v = baseline + (rng.random() - 0.5) * jitter
                 return max(1, min(5, round(v)))
             recorded_at = now - timedelta(days=d, hours=rng.randint(7, 9))
             raw_data = {

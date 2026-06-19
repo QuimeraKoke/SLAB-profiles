@@ -55,6 +55,10 @@ class ChartType(models.TextChoices):
     # you want all series visible at once (vs. line_with_selector's dropdown).
     MULTI_LINE = "multi_line", "Multi-series line chart"
 
+    # 1 source (GPS entrenamiento). Radar comparing the latest training
+    # session's GPS variables as a % of the player's chronic match load.
+    TRAINING_RADAR = "training_radar", "Radar: entrenamiento vs carga crónica"
+
     # 1 source, aggregation=latest. Display config defines reference targets.
     # Reserved — V1 ships with the renderer falling back to "Unsupported".
     REFERENCE_CARD = "reference_card", "Reference card (current vs target)"
@@ -844,6 +848,31 @@ class TeamReportSnapshot(models.Model):
 
     def __str__(self) -> str:
         return f"team report · {self.department_id}/{self.category_id} · {self.data_hash[:12]}"
+
+
+class PlayerReadiness(models.Model):
+    """Cached readiness assessment per player. A deterministic base (wellness
+    + ACWR + status + molestias + trend) is refined by an agent (LLM) reading
+    the player's cross-area data; the result is cached by a `signature` of the
+    inputs so it's only recomputed when the player's values change — not on
+    every roster load. See `dashboards/readiness.py`."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.OneToOneField(
+        "core.Player", on_delete=models.CASCADE, related_name="readiness",
+    )
+    score = models.IntegerField(null=True, blank=True)          # displayed value
+    deterministic = models.IntegerField(null=True, blank=True)  # base/fallback
+    source = models.CharField(max_length=16, default="deterministic")  # agent|deterministic
+    rationale = models.TextField(blank=True)
+    flags = models.JSONField(default=list, blank=True)
+    factors = models.JSONField(default=dict, blank=True)        # input breakdown
+    signature = models.CharField(max_length=64, db_index=True, blank=True)
+    model = models.CharField(max_length=64, blank=True)
+    computed_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"readiness {self.score} · {self.player_id} ({self.source})"
 
 
 class BriefingSnapshot(models.Model):

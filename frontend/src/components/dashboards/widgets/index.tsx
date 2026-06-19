@@ -12,11 +12,13 @@ import GoalCard from "./GoalCard";
 import GroupedBar from "./GroupedBar";
 import MultiLine from "./MultiLine";
 import PlayerAlerts from "./PlayerAlerts";
+import RadarTrainingLoad from "./RadarTrainingLoad";
 import Unsupported from "./Unsupported";
 
 const widgetRegistry: Record<string, React.ComponentType<{ widget: DashboardWidget }>> = {
   comparison_table: ComparisonTable,
   line_with_selector: LineWithSelector,
+  training_radar: RadarTrainingLoad,
   donut_per_result: DonutPerResult,
   grouped_bar: GroupedBar,
   multi_line: MultiLine,

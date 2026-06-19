@@ -5,6 +5,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -17,6 +18,21 @@ import styles from "./Widget.module.css";
 interface LineWithSelectorProps {
   widget: DashboardWidget;
 }
+
+// Reference-line styling by kind: load context (match acute/chronic) vs peer
+// averages (team / same-position).
+const REF_LINE_COLORS: Record<string, string> = {
+  acute: "#f59e0b",
+  chronic: "#7c3aed",
+  team: "#64748b",
+  position: "#0d9488",
+};
+const REF_LINE_FALLBACK: Record<string, string> = {
+  acute: "Aguda",
+  chronic: "Crónica",
+  team: "Equipo",
+  position: "Posición",
+};
 
 export default function LineWithSelector({ widget }: LineWithSelectorProps) {
   const data = widget.data as LineWithSelectorPayload;
@@ -51,6 +67,9 @@ export default function LineWithSelector({ widget }: LineWithSelectorProps) {
         label: formatShortDate(p.recorded_at),
       }));
   }, [data.series, activeField]);
+
+  // Acute / chronic match-load reference lines for the active variable.
+  const refLines = (activeField && data.reference_lines?.[activeField.key]) || [];
 
   if (fields.length === 0) {
     return (
@@ -91,7 +110,7 @@ export default function LineWithSelector({ widget }: LineWithSelectorProps) {
       ) : (
         <div className={styles.chartArea} style={{ height: widget.chart_height ?? 240 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={activeSeries} margin={{ top: 8, right: 16, left: 8, bottom: 24 }}>
+            <LineChart data={activeSeries} margin={{ top: 8, right: refLines.length ? 70 : 16, left: 8, bottom: 24 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
               <XAxis
                 dataKey="label"
@@ -130,6 +149,27 @@ export default function LineWithSelector({ widget }: LineWithSelectorProps) {
                 content={(p) => <ChartTooltip {...p} unit={activeField?.unit ?? ""} />}
                 cursor={{ stroke: "#9ca3af", strokeDasharray: "3 3" }}
               />
+              {refLines.map((rl) => {
+                const color = REF_LINE_COLORS[rl.kind] ?? "#64748b";
+                const prefix = rl.short ?? REF_LINE_FALLBACK[rl.kind] ?? "";
+                return (
+                  <ReferenceLine
+                    key={rl.kind}
+                    y={rl.value}
+                    stroke={color}
+                    strokeDasharray="5 4"
+                    strokeWidth={1.5}
+                    ifOverflow="extendDomain"
+                    label={{
+                      value: `${prefix} ${fmtRef(rl.value)}`.trim(),
+                      position: "right",
+                      fill: color,
+                      fontSize: 10,
+                      fontWeight: 700,
+                    }}
+                  />
+                );
+              })}
               <Line
                 type="monotone"
                 dataKey="value"
@@ -185,4 +225,10 @@ function formatLongDate(iso: string): string {
 
 function pad(n: number): string {
   return n < 10 ? `0${n}` : String(n);
+}
+
+/** Compact reference-line value: 9835.8 → "9.8k", 33.5 → "33.5". */
+function fmtRef(v: number): string {
+  if (Math.abs(v) >= 1000) return `${(v / 1000).toFixed(1)}k`;
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }

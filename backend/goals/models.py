@@ -109,6 +109,7 @@ class AlertSource(models.TextChoices):
     GOAL_WARNING = "goal_warning", "Objetivo (aviso pre-vencimiento)"
     THRESHOLD = "threshold", "Umbral"  # reserved for the alarms engine
     MEDICATION = "medication", "Medicación (WADA)"
+    TRAINING_LOAD = "training_load", "Carga de entrenamiento"
 
 
 class Alert(models.Model):

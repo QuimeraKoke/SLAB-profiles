@@ -150,7 +150,7 @@ def _kpis(category, players, states, alerts, crit_player_ids, now) -> dict:
         },
         "riesgo": _kpi_riesgo(players, alerts, crit_player_ids),
         "carga": _kpi_carga(category, players, now),
-        "wellness": _kpi_wellness(players, now),
+        "wellness": _kpi_wellness(category, players),
         "completitud": _kpi_completitud(category, [p.id for p in players], now),
     }
 
@@ -226,50 +226,40 @@ def _kpi_carga(category, players, now) -> dict:
     }
 
 
-def _kpi_wellness(players, now) -> dict:
-    """Team wellness = mean of each player's latest check_in, 0–100 scaled
-    (Hooper-Mackinnon family: 1–5 per dimension, higher = better)."""
+def _kpi_wellness(category, players) -> dict:
+    """Team wellness from the real Check-IN data (`checkin_fisico`), each
+    item normalized by its own scale (recuperación ÷10, the others ÷5) and
+    averaged to 0–100. See `api/wellness.py`."""
+    from api import wellness as w
+
     pids = [p.id for p in players]
-    templates = list(ExamTemplate.objects.filter(slug="check_in").values_list("id", flat=True))
-    if not templates:
+    fmax = w.field_max(category)
+    recent = w.recent_by_player(category, pids, limit=1)
+
+    scores: list[float] = []
+    dim_acc: dict[str, list[float]] = {k: [] for k, _ in w.DIMENSIONS}
+    for datas in recent.values():
+        latest = datas[0]
+        s = w.score(latest, fmax)
+        if s is not None:
+            scores.append(s)
+        for k, _ in w.DIMENSIONS:
+            dv = w.dimension_pct(latest, k, fmax)
+            if dv is not None:
+                dim_acc[k].append(dv)
+
+    if not scores:
         return {"value": None, "status": "Sin datos", "tone": "muted", "dimensions": []}
-
-    # Latest check_in per player.
-    latest: dict[Any, dict] = {}
-    rows = ExamResult.objects.filter(
-        player_id__in=pids, template_id__in=templates,
-    ).order_by("player_id", "-recorded_at").values_list("player_id", "result_data")
-    for pid, data in rows:
-        if pid not in latest:
-            latest[pid] = data or {}
-
-    if not latest:
-        return {"value": None, "status": "Sin datos", "tone": "muted", "dimensions": []}
-
-    dims = [("sueno", "Sueño"), ("doms", "Dolor"), ("fatiga", "Fatiga")]
-    totals: list[float] = []
-    dim_acc: dict[str, list[float]] = {k: [] for k, _ in dims}
-    for data in latest.values():
-        tot = _coerce(data.get("total_bienestar"))
-        if tot is not None:
-            totals.append(tot / 25.0 * 100.0)
-        for k, _ in dims:
-            v = _coerce(data.get(k))
-            if v is not None:
-                dim_acc[k].append(v / 5.0 * 100.0)
-
-    if not totals:
-        return {"value": None, "status": "Sin datos", "tone": "muted", "dimensions": []}
-    team = round(sum(totals) / len(totals))
+    team = round(sum(scores) / len(scores))
     return {
         "value": team,
         "status": "Bueno" if team >= 75 else ("Aceptable" if team >= 60 else "Bajo"),
         "tone": "ok" if team >= 75 else ("warn" if team >= 60 else "crit"),
-        "responses": len(latest),
+        "responses": len(scores),
         "expected": len(players),
         "dimensions": [
             {"label": lbl, "value": round(sum(dim_acc[k]) / len(dim_acc[k]))}
-            for k, lbl in dims if dim_acc[k]
+            for k, lbl in w.DIMENSIONS if dim_acc[k]
         ],
     }
 
