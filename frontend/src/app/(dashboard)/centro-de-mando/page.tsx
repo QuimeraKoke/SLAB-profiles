@@ -110,7 +110,7 @@ function DataQuality({ rows }: { rows: CCDataQualityRow[] }) {
 
 function QuickActions() {
   const actions = [
-    { icon: <FileText size={15} aria-hidden="true" />, label: "Crear reporte", href: "/reportes/fisico" },
+    { icon: <FileText size={15} aria-hidden="true" />, label: "Ver Dashboard", href: "/reportes/fisico" },
     { icon: <Plus size={15} aria-hidden="true" />, label: "Registrar lesión", href: "/equipo" },
     { icon: <HeartPulse size={15} aria-hidden="true" />, label: "Cargar wellness", href: "/equipo" },
   ];

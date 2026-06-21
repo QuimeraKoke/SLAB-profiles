@@ -125,6 +125,14 @@ export default function DynamicUploader({
   }, [fields, existingResult, initialValues]);
 
   const [values, setValues] = useState<Record<string, FormValue>>(startingValues);
+
+  // Live out-of-range check (numeric min/max) so the user is blocked from
+  // saving — and sees the error — as they type, not only on submit.
+  const rangeInvalid = useMemo(
+    () => fields.some((f) => f.type === "number" && isOutOfRange(f, values[f.key])),
+    [fields, values],
+  );
+
   // Files queued client-side per file-field key. Uploaded after the result
   // is created, in handleSubmit's second phase.
   const [queuedFiles, setQueuedFiles] = useState<Record<string, File[]>>({});
@@ -422,7 +430,12 @@ export default function DynamicUploader({
             Cancelar
           </button>
         )}
-        <button type="submit" className={styles.submitBtn} disabled={submitting}>
+        <button
+          type="submit"
+          className={styles.submitBtn}
+          disabled={submitting || rangeInvalid}
+          title={rangeInvalid ? "Hay valores fuera de rango" : undefined}
+        >
           {submitting
             ? uploadProgress
               ? `Subiendo ${uploadProgress.uploaded}/${uploadProgress.total} archivos…`
@@ -434,6 +447,29 @@ export default function DynamicUploader({
       </div>
     </form>
   );
+}
+
+/** True when a numeric field's value falls outside its configured min/max.
+ *  Shared by the live submit-guard and the per-field inline error. */
+function isOutOfRange(field: ExamField, value: FormValue): boolean {
+  if (field.type !== "number") return false;
+  if (value === "" || value === null || value === undefined) return false;
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return false;
+  return (
+    (typeof field.min === "number" && n < field.min) ||
+    (typeof field.max === "number" && n > field.max)
+  );
+}
+
+/** Compact "(1–10)" / "(≥ 1)" / "(≤ 5)" range hint for a numeric field. */
+function rangeHint(field: ExamField): string {
+  const hasMin = typeof field.min === "number";
+  const hasMax = typeof field.max === "number";
+  if (hasMin && hasMax) return `${field.min}–${field.max}`;
+  if (hasMax) return `≤ ${field.max}`;
+  if (hasMin) return `≥ ${field.min}`;
+  return "";
 }
 
 interface FieldInputProps {
@@ -512,20 +548,37 @@ function FieldInput({ field, value, onChange }: FieldInputProps) {
   const inputType =
     field.type === "number" ? "number" : field.type === "date" ? "date" : "text";
 
+  const hint = field.type === "number" ? rangeHint(field) : "";
+  const outOfRange = isOutOfRange(field, value);
+  const errId = `${id}-range-error`;
+
   return (
     <label htmlFor={id} className={styles.field}>
-      <span className={styles.label}>{label}</span>
+      <span className={styles.label}>
+        {label}
+        {hint && <span className={styles.rangeHint}> ({hint})</span>}
+      </span>
       <input
         id={id}
         type={inputType}
         step={field.type === "number" ? "any" : undefined}
         min={field.type === "number" ? field.min : undefined}
         max={field.type === "number" ? field.max : undefined}
+        title={hint ? `Rango permitido: ${hint}` : undefined}
         placeholder={field.placeholder}
         value={typeof value === "string" || typeof value === "number" ? value : ""}
         onChange={(e) => onChange(e.target.value)}
         required={field.required}
+        aria-invalid={outOfRange || undefined}
+        aria-describedby={outOfRange ? errId : undefined}
       />
+      {outOfRange && (
+        <span id={errId} className={styles.fieldError} role="alert">
+          {hint
+            ? `El valor debe estar dentro del rango ${hint}.`
+            : "Valor fuera de rango."}
+        </span>
+      )}
       {field.type === "number" && field.reference_ranges && field.reference_ranges.length > 0 && (
         <ReferenceBandsHint
           bands={field.reference_ranges}

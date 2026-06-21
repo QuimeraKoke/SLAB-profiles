@@ -64,3 +64,10 @@
     display: block;
   }
 }
+
+/* NAV-13: honor reduced-motion — no backdrop fade-in. */
+@media (prefers-reduced-motion: reduce) {
+  .backdrop {
+    animation: none;
+  }
+}

@@ -111,24 +111,12 @@
   flex-direction: column;
 }
 
-.teamTitle,
-.teamSubtitle {
-  display: block;
-}
-
 .teamTitle {
+  display: block;
   font-size: 0.875rem;
   font-weight: 700;
   margin: 0;
   line-height: 1.2;
-}
-
-.teamSubtitle {
-  font-size: 0.75rem;
-  color: #8f9baf;
-  margin: 0;
-  line-height: 1.2;
-  margin-top: 2px;
 }
 
 .rightSection {

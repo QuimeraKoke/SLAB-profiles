@@ -147,7 +147,7 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
          * convention). L7: decorative SVG is hidden from AT — the "SLAB"
          * text after it carries the accessible name. L5: demoted from
          * <h1> to <p> so each page's own H1 can own the document outline. */}
-        <Link href="/equipo" className={styles.brandLink} aria-label="Ir al inicio (Equipo)">
+        <Link href="/centro-de-mando" className={styles.brandLink} aria-label="Ir al inicio (Centro de mando)">
           <span className={styles.slabLogo}>
             <svg
               width="24"
@@ -178,9 +178,8 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
             )}
             <span className={styles.teamText}>
               <span className={styles.teamTitle}>
-                Perfil Jugadores{club ? ` — ${club.name}` : ""}
+                {club?.name ?? "SLAB"}
               </span>
-              <span className={styles.teamSubtitle}>Información integral de los jugadores del club</span>
             </span>
           </span>
         </Link>

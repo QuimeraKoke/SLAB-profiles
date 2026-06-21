@@ -144,6 +144,20 @@
   cursor: pointer;
 }
 
+.playerGroupLabel {
+  padding: 7px 12px 2px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9ca3af;
+}
+
+.playerGroup:not(:first-child) .playerGroupLabel {
+  border-top: 1px solid #f0f1f3;
+  margin-top: 2px;
+}
+
 .playerEmpty {
   padding: 12px;
   font-size: 0.85rem;

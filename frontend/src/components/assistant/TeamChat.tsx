@@ -8,6 +8,7 @@ import remarkGfm from "remark-gfm";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useCategoryContext } from "@/context/CategoryContext";
+import { useAssistant } from "@/context/AssistantContext";
 import styles from "./TeamChat.module.css";
 
 interface ChatMessage {
@@ -27,15 +28,28 @@ const SUGGESTIONS = [
 export default function TeamChat() {
   const { user } = useAuth();
   const { categoryId, categories } = useCategoryContext();
-  const [open, setOpen] = useState(false);
+  const { open, setOpen } = useAssistant();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, loading, open]);
+
+  // NAV-14: when the chat opens, move focus into the dialog (the close button)
+  // and let Escape close it — matching the app's dialog conventions.
+  useEffect(() => {
+    if (!open) return;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [open, setOpen]);
 
   // Don't render for logged-out users (e.g. the /login screen).
   if (!user) return null;
@@ -95,6 +109,7 @@ export default function TeamChat() {
               </div>
             </div>
             <button
+              ref={closeRef}
               type="button"
               className={styles.close}
               onClick={() => setOpen(false)}

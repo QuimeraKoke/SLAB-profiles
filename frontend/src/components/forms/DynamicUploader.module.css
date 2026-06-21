@@ -69,6 +69,28 @@
   font-size: 0.78rem;
 }
 
+/* Allowed-range hint next to a numeric field's label, e.g. "(1–10)". */
+.rangeHint {
+  margin-left: 6px;
+  color: #6b7280;
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+/* Per-field inline error shown live as the user types out of range. */
+.fieldError {
+  margin-top: 4px;
+  color: #b42318;
+  font-size: 0.75rem;
+}
+
+.field input[aria-invalid="true"] {
+  border-color: #f04438;
+}
+.field input[aria-invalid="true"]:focus {
+  outline-color: #f04438;
+}
+
 .field input,
 .field select,
 .field textarea {

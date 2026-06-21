@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from "react";
 
 import DownloadPlayerExcelButton from "@/components/perfil/ProfileDepartment/DownloadPlayerExcelButton";
-import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
 import { api, ApiError } from "@/lib/api";
 import type {
   DepartmentLayoutResponse,
@@ -30,24 +29,6 @@ interface ProfileDepartmentProps {
    *  shared across all department tabs without prop drilling setters. */
   dateRangeControl: React.ReactNode;
 }
-
-// Mirror of the team-report endpoint builder in
-// `app/(dashboard)/reportes/[deptSlug]/page.tsx`. Kept inline (rather
-// than extracted to a shared util) so the two call sites stay easy to
-// reason about — the endpoint is a single line and changes rarely.
-function buildPlayerReportEndpoint(
-  playerId: string,
-  deptSlug: string,
-  dateFrom: string,
-  dateTo: string,
-): string {
-  const params = new URLSearchParams();
-  if (dateFrom) params.set("date_from", dateFrom);
-  if (dateTo) params.set("date_to", dateTo);
-  const qs = params.toString();
-  return `/players/${playerId}/departments/${deptSlug}/report.docx${qs ? "?" + qs : ""}`;
-}
-
 
 export default function ProfileDepartment({
   playerId,
@@ -206,21 +187,13 @@ export default function ProfileDepartment({
         <div className={styles.controls}>
           {dateRangeControl}
           {layout && (
-            <>
-              <DownloadPlayerExcelButton
-                playerName={playerName}
-                department={department}
-                sections={layout.sections}
-                dateFrom={dateFrom}
-                dateTo={dateTo}
-              />
-              <DownloadPdfButton
-                endpoint={buildPlayerReportEndpoint(
-                  playerId, department.slug, dateFrom, dateTo,
-                )}
-                filename={`reporte-${playerName.replace(/\s+/g, "_")}-${department.slug}.docx`}
-              />
-            </>
+            <DownloadPlayerExcelButton
+              playerName={playerName}
+              department={department}
+              sections={layout.sections}
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+            />
           )}
         </div>
       </header>

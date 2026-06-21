@@ -163,15 +163,20 @@ function PlayerMultiSelect({ players, selected, onChange }: PlayerMultiSelectPro
             {filtered.length === 0 ? (
               <div className={styles.playerEmpty}>Sin coincidencias</div>
             ) : (
-              filtered.map((p) => (
-                <label key={p.id} className={styles.playerOption}>
-                  <input
-                    type="checkbox"
-                    checked={selected.includes(p.id)}
-                    onChange={() => toggle(p.id)}
-                  />
-                  <span>{p.first_name} {p.last_name}</span>
-                </label>
+              groupPlayersByPosition(filtered).map((g) => (
+                <div key={g.key} className={styles.playerGroup}>
+                  <div className={styles.playerGroupLabel}>{g.label}</div>
+                  {g.players.map((p) => (
+                    <label key={p.id} className={styles.playerOption}>
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(p.id)}
+                        onChange={() => toggle(p.id)}
+                      />
+                      <span>{p.first_name} {p.last_name}</span>
+                    </label>
+                  ))}
+                </div>
               ))
             )}
           </div>
@@ -184,6 +189,44 @@ function PlayerMultiSelect({ players, selected, onChange }: PlayerMultiSelectPro
 function playerName(players: PlayerSummary[], id: string): string | null {
   const p = players.find((x) => x.id === id);
   return p ? `${p.first_name} ${p.last_name}` : null;
+}
+
+/** Group players by position for grouped pickers (the filter list + the
+ *  Dashboard page's "Ver perfil" select). Ordered by Position.sort_order;
+ *  players with no position fall into "Sin posición" last; within a group,
+ *  sorted by name. */
+export function groupPlayersByPosition(
+  players: PlayerSummary[],
+): Array<{ key: string; label: string; players: PlayerSummary[] }> {
+  const groups = new Map<
+    string,
+    { key: string; label: string; sort: number; players: PlayerSummary[] }
+  >();
+  for (const p of players) {
+    const key = p.position?.id ?? "__none__";
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        key,
+        label: p.position
+          ? `${p.position.name}${p.position.abbreviation ? ` (${p.position.abbreviation})` : ""}`
+          : "Sin posición",
+        sort: p.position ? p.position.sort_order : Number.MAX_SAFE_INTEGER,
+        players: [],
+      };
+      groups.set(key, g);
+    }
+    g.players.push(p);
+  }
+  return [...groups.values()]
+    .sort((a, b) => a.sort - b.sort || a.label.localeCompare(b.label))
+    .map((g) => ({
+      key: g.key,
+      label: g.label,
+      players: [...g.players].sort((x, y) =>
+        `${x.last_name} ${x.first_name}`.localeCompare(`${y.last_name} ${y.first_name}`),
+      ),
+    }));
 }
 
 /** Default value matching "Últimos 30 días". Exported so the page can

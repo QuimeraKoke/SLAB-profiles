@@ -13,12 +13,15 @@ import {
   ChevronRight,
   LogOut,
   Settings,
+  Sparkles,
   TrendingUp,
   X,
 } from "lucide-react";
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { useAssistant } from "@/context/AssistantContext";
+import { useFocusTrap } from "@/hooks/useFocusTrap";
 import type { ApiUser, Department } from "@/lib/types";
 import styles from "./Sidebar.module.css";
 
@@ -51,6 +54,9 @@ interface NavGroup {
   /** Optional list of additional pathname prefixes that should mark this
    *  item as the active nav entry (e.g. /perfil/* → highlight Equipo). */
   activePrefixes?: string[];
+  /** Action item (no route) — renders a <button> that runs this on click.
+   *  Used by "Ask S-LAB AI" to open the floating chat (NAV-02). */
+  onClick?: () => void;
 }
 
 // QW-10: Partidos promoted to a top-level entry — it's a daily flow for
@@ -85,13 +91,22 @@ interface SidebarProps {
 export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   const pathname = usePathname();
   const { membership, user, logout } = useAuth();
-  // L3: only the group containing the current route is expanded by default.
-  // Falls back to "Reportes" so first-time users on /equipo see the
-  // department list at a glance. Manual toggles still work via toggleExpand.
+  const { setOpen: setAssistantOpen } = useAssistant();
+  // NAV-06: focus-trap the drawer while open (mobile only — `open` is always
+  // false on desktop, so the trap stays inert there). On open it moves focus
+  // inside; on close it restores focus to the opener (the navbar hamburger).
+  const drawerRef = useFocusTrap<HTMLElement>(open);
+  // L3 / NAV-08: expand only the group that contains the active route; on
+  // Operativa pages expand nothing (the prior always-expand-Dashboard added
+  // noise). Manual toggles still work via toggleExpand. Runs once at mount —
+  // the Sidebar stays mounted across client navigation, so switching groups
+  // mid-session relies on a manual toggle (acceptable).
   const [expandedItems, setExpandedItems] = useState<string[]>(() => {
-    if (pathname.startsWith("/configuraciones")) return ["Administración"];
-    if (pathname.startsWith("/reportes")) return ["Reportes"];
-    return ["Reportes"];
+    if (pathname.startsWith("/reportes")) return ["Dashboard"];
+    if (pathname.startsWith("/configuraciones") || pathname.startsWith("/uso")) {
+      return ["Administración"];
+    }
+    return [];
   });
   const [departments, setDepartments] = useState<Department[]>([]);
 
@@ -121,7 +136,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   const reportsGroup: NavGroup | null =
     departments.length > 0
       ? {
-          label: "Reportes",
+          label: "Dashboard",
           icon: BarChart3,
           subItems: departments.map((d) => ({
             label: d.name,
@@ -136,31 +151,36 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     ? { label: "Uso", icon: TrendingUp, href: "/uso" }
     : null;
 
-  // IA-2: visually group navigation by frequency-of-use (audit principle
-   // #4). Operativa = daily; Análisis = read-only insight; Administración
-   // = lower-traffic admin. A full role-aware nav (audit IA-2 long-term)
-   // would also hide irrelevant groups per role; for now everyone sees
-   // every group they have access to, just spatially grouped.
+  // NAV-02: a discoverable doorway to the floating chat (no dedicated route)
+  // — opens the same assistant the FAB does, via AssistantContext.
+  const askAiItem: NavGroup = {
+    label: "Ask S-LAB AI",
+    icon: Sparkles,
+    onClick: () => {
+      onClose?.();
+      setAssistantOpen(true);
+    },
+  };
+
+  // IA-2: visually group navigation by frequency-of-use (audit principle #4).
+  // Operativa = daily; Análisis = read-only insight (dashboards + the S-LAB AI
+  // assistant); Administración = lower-traffic admin. NAV-11 moved "Uso" into
+  // Administración; NAV-02 added the assistant entry. Role-aware hiding is
+  // still TODO (P2) — for now everyone sees every group they can access.
   const navSections: Array<{ label: string | null; items: NavGroup[] }> = [
     {
       label: "Operativa",
       items: STATIC_NAV,
     },
-    ...(reportsGroup
-      ? [{ label: "Análisis", items: [reportsGroup, ...(usoItem ? [usoItem] : [])] }]
-      : usoItem
-        ? [{ label: "Análisis", items: [usoItem] }]
-        : []),
+    {
+      label: "Análisis",
+      items: [...(reportsGroup ? [reportsGroup] : []), askAiItem],
+    },
     {
       label: "Administración",
-      items: [SETTINGS_NAV],
+      items: [SETTINGS_NAV, ...(usoItem ? [usoItem] : [])],
     },
   ];
-
-  // Flat list still used by the iteration below (preserve existing
-  // expansion logic + active-state matching). Sections only add visual
-  // grouping headers, not behavior changes.
-  const navItems: NavGroup[] = navSections.flatMap((s) => s.items);
 
   // QW-7: was an inline onClick with preventDefault on a <div>. Now invoked
   // from a real <button>, so no preventDefault is needed.
@@ -172,8 +192,12 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
 
   return (
     <aside
+      ref={drawerRef}
       className={`${styles.sidebar} ${open ? styles.sidebarOpen : ""}`}
-      aria-hidden={!open ? undefined : false}
+      tabIndex={-1}
+      role={open ? "dialog" : undefined}
+      aria-modal={open ? true : undefined}
+      aria-label={open ? "Menú de navegación" : undefined}
     >
       <div className={styles.profileSection}>
         <div className={styles.avatar}>
@@ -213,7 +237,12 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
             {section.items.map((item) => {
           const Icon = item.icon;
           const isExpanded = expandedItems.includes(item.label);
-          const matchesHref = item.href && pathname === item.href;
+          // NAV-07: a leaf is active on its own route AND any child route
+          // (so /partidos/nuevo highlights "Partidos"). activePrefixes still
+          // covers cross-tree cases like /perfil/* → "Equipo".
+          const matchesHref = item.href
+            ? pathname === item.href || pathname.startsWith(`${item.href}/`)
+            : false;
           const matchesPrefix =
             item.activePrefixes?.some((p) => pathname.startsWith(p)) ?? false;
           const matchesSubItem =
@@ -246,6 +275,19 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
                   ) : (
                     <ChevronRight size={16} className={styles.icon} />
                   )}
+                </button>
+              ) : item.onClick ? (
+                // NAV-02: action item (no route) — opens the floating chat.
+                // A real <button> so it's keyboard-operable.
+                <button
+                  type="button"
+                  className={styles.navItem}
+                  onClick={item.onClick}
+                >
+                  <div className={styles.navItemLeft}>
+                    <Icon size={18} className={styles.icon} />
+                    <span>{item.label}</span>
+                  </div>
                 </button>
               ) : (
                 // QW-8: aria-current="page" communicates the active route

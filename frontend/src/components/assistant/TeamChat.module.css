@@ -22,6 +22,12 @@
   box-shadow: 0 10px 26px rgba(79, 70, 229, 0.5);
 }
 
+/* NAV-14: explicit focus ring (the gradient FAB had only the UA default). */
+.fab:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 3px;
+}
+
 .panel {
   position: fixed;
   right: 22px;
@@ -291,4 +297,16 @@
 .sendBtn:disabled {
   background: #c7cad6;
   cursor: not-allowed;
+}
+
+/* NAV-13: honor reduced-motion — no FAB lift, no typing-dot blink. */
+@media (prefers-reduced-motion: reduce) {
+  .fab,
+  .fab:hover {
+    transition: none;
+    transform: none;
+  }
+  .dot {
+    animation: none;
+  }
 }

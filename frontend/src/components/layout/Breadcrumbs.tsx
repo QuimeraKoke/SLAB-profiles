@@ -22,13 +22,14 @@ const SEGMENT_LABELS: Record<string, string> = {
   equipo: "Equipo",
   perfil: "Jugador",
   partidos: "Partidos",
-  reportes: "Reportes",
+  reportes: "Dashboard",
   configuraciones: "Administración",
-  jugadores: "Jugadores",
+  jugadores: "Gestionar plantel",
   registrar: "Registrar examen",
   editar: "Editar",
   nuevo: "Nuevo",
   uso: "Uso",
+  "centro-de-mando": "Centro de mando",
 };
 
 function isDynamicSegment(s: string): boolean {
@@ -101,27 +102,29 @@ export default function Breadcrumbs() {
     const href = "/" + segments.slice(0, idx + 1).join("/");
     let label = SEGMENT_LABELS[seg];
     if (!label) {
-      if (isDynamicSegment(seg)) {
-        label = labels[seg] ?? "…";
-      } else {
-        // Unknown static segment — capitalize as a sane fallback.
-        label = seg.charAt(0).toUpperCase() + seg.slice(1);
-      }
+      // NAV-15: a page may register a real name for ANY segment (dynamic IDs
+      // OR slugs like a department) via useBreadcrumbLabel — consult it first,
+      // then fall back to "…" (dynamic) or a capitalized slug (static).
+      label =
+        labels[seg] ??
+        (isDynamicSegment(seg)
+          ? "…"
+          : seg.charAt(0).toUpperCase() + seg.slice(1));
     }
     return { href, label, isLast: idx === segments.length - 1 };
   });
 
-  // Suppress the "Inicio" crumb when the user is already at /equipo —
-  // otherwise the trail reads "Inicio › Equipo" with both linking to the
-  // same URL, which looks like a duplicate to power users.
-  const showHome = !(segments.length === 1 && segments[0] === "equipo");
+  // Suppress the "Inicio" crumb when the user is already at /centro-de-mando —
+  // otherwise the trail reads "Inicio › Centro de mando" with both linking to
+  // the same URL, which looks like a duplicate to power users.
+  const showHome = !(segments.length === 1 && segments[0] === "centro-de-mando");
 
   return (
     <nav aria-label="Migas de pan" className={styles.breadcrumbs}>
       <ol>
         {showHome && (
           <li>
-            <Link href="/equipo" className={styles.link}>
+            <Link href="/centro-de-mando" className={styles.link}>
               Inicio
             </Link>
           </li>

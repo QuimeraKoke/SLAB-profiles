@@ -1,16 +1,14 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   AlertCircle,
   AlertTriangle,
   Info,
   ArrowDown,
   ArrowUp,
-  Download,
-  Minus,
 } from "lucide-react";
-import { api, ApiError, getToken } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import type {
   TriageAlert,
   TriageAlertedMetric,
@@ -20,9 +18,6 @@ import type {
   TriageResponse,
 } from "@/lib/types";
 import styles from "./PlayerTriage.module.css";
-
-const API_URL =
-  process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:8000/api";
 
 interface Props {
   playerId: string;
@@ -38,7 +33,6 @@ interface Props {
 export default function PlayerTriage({ playerId }: Props) {
   const [data, setData] = useState<TriageResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,30 +50,6 @@ export default function PlayerTriage({ playerId }: Props) {
       });
     return () => { cancelled = true; };
   }, [playerId]);
-
-  const handleDownload = async () => {
-    setDownloading(true);
-    try {
-      const token = getToken();
-      const res = await fetch(`${API_URL}/players/${playerId}/triage.docx`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `resumen-${playerId}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al descargar.");
-    } finally {
-      setDownloading(false);
-    }
-  };
 
   if (error) {
     return <div className={styles.error} role="alert">{error}</div>;
@@ -100,16 +70,6 @@ export default function PlayerTriage({ playerId }: Props) {
           <h2 className={styles.title}>Resumen del jugador</h2>
           <p className={styles.subtitle}>Datos al {generatedLabel}</p>
         </div>
-        <button
-          type="button"
-          onClick={handleDownload}
-          disabled={downloading}
-          className={styles.pdfButton}
-          aria-label="Descargar resumen en Word"
-        >
-          <Download size={14} aria-hidden="true" />
-          {downloading ? "Generando…" : "Descargar Word"}
-        </button>
       </header>
 
       <Section1Alerts alerts={data.alerts} />

@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import Navbar from "@/components/layout/Navbar";
 import Sidebar from "@/components/layout/Sidebar";
 import Breadcrumbs, { BreadcrumbProvider } from "@/components/layout/Breadcrumbs";
 import TeamChat from "@/components/assistant/TeamChat";
+import { AssistantProvider } from "@/context/AssistantContext";
 import { CategoryProvider } from "@/context/CategoryContext";
 import { ConfirmProvider } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import { ToastProvider } from "@/components/ui/Toast/Toast";
@@ -22,11 +23,23 @@ export default function DashboardLayout({
   // its onClose callback bound to each Link's onClick).
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // NAV-06: Escape closes the mobile drawer (the Sidebar's focus trap then
+  // restores focus to the hamburger). Only armed while the drawer is open.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSidebarOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [sidebarOpen]);
+
   return (
     <CategoryProvider>
       <ToastProvider>
         <ConfirmProvider>
           <BreadcrumbProvider>
+            <AssistantProvider>
             <div className={styles.layoutWrapper}>
               {/* QW-6: keyboard skip-link must be the first focusable element so
                * Tab from page load lands on it before any navbar/sidebar control. */}
@@ -46,7 +59,12 @@ export default function DashboardLayout({
                     aria-hidden="true"
                   />
                 )}
-                <main id="main-content" className={styles.content} tabIndex={-1}>
+                <main
+                  id="main-content"
+                  className={styles.content}
+                  tabIndex={-1}
+                  inert={sidebarOpen || undefined}
+                >
                   {/* ME-1: route trail across all dashboard pages. */}
                   <Breadcrumbs />
                   {children}
@@ -56,6 +74,7 @@ export default function DashboardLayout({
                *  dashboard page, scoped to the navbar's selected category. */}
               <TeamChat />
             </div>
+            </AssistantProvider>
           </BreadcrumbProvider>
         </ConfirmProvider>
       </ToastProvider>

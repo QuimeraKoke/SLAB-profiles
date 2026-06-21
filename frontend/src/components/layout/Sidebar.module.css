@@ -87,11 +87,18 @@
 }
 
 .navSection {
-  margin-bottom: 12px;
+  margin-bottom: 18px;
 }
 
 .navSection:last-child {
   margin-bottom: 0;
+}
+
+/* NAV-12: a hairline divider above each group (reusing the profile/bottom
+ * section language) so the three frequency-of-use groups read as distinct
+ * blocks rather than one flat list. */
+.navSection:not(:first-child) {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 /* IA-2: small uppercase section labels group nav by frequency-of-use
@@ -235,7 +242,14 @@
 .subItemsList {
   display: flex;
   flex-direction: column;
-  background-color: rgba(0, 0, 0, 0.1); 
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* The `hidden` attribute (set when a group is collapsed) is otherwise
+ * defeated by `display: flex` above (equal specificity, author wins over the
+ * UA [hidden] rule), so collapsing never hid the sub-items. Make it real. */
+.subItemsList[hidden] {
+  display: none;
 }
 
 .subItem {
@@ -255,20 +269,12 @@
 
 .subItemActive {
   color: white;
-  background-color: rgba(255, 255, 255, 0.08); 
+  background-color: rgba(255, 255, 255, 0.08);
   font-weight: 500;
-}
-
-.subItemActive::before {
-  content: "";
-  position: absolute;
-  left: 24px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background-color: #6366f1;
+  /* NAV-12: one "active" language at every depth — an indigo left-edge,
+   * matching top-level .navItemActive (replaces the old floating dot). */
+  border-left: 3px solid #6366f1;
+  padding-left: 51px; /* 54 base − 3px border keeps the label aligned */
 }
 
 /* Tablet / mobile: pull the sidebar out of the flex flow and overlay it.
@@ -283,11 +289,25 @@
     bottom: 0;
     z-index: 40;
     transform: translateX(-100%);
-    transition: transform 200ms ease;
+    /* NAV-06: hide the closed drawer from the tab order + AT tree (not merely
+     * off-screen). visibility flips after the slide-out finishes (200ms delay
+     * on hide) and instantly on open, so the slide animation still plays. */
+    visibility: hidden;
+    transition: transform 200ms ease, visibility 0s linear 200ms;
     box-shadow: 4px 0 20px rgba(0, 0, 0, 0.2);
   }
 
   .sidebar.sidebarOpen {
     transform: translateX(0);
+    visibility: visible;
+    transition: transform 200ms ease, visibility 0s linear 0s;
+  }
+}
+
+/* NAV-13: honor reduced-motion — drop the drawer slide (it just appears /
+ * disappears). Matches the codebase's L6 motion policy. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
   }
 }
