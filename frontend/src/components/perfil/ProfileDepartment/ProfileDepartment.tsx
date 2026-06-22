@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 
 import DownloadPlayerExcelButton from "@/components/perfil/ProfileDepartment/DownloadPlayerExcelButton";
+import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
 import { api, ApiError } from "@/lib/api";
 import type {
   DepartmentLayoutResponse,
@@ -198,6 +199,12 @@ export default function ProfileDepartment({
               dateTo={dateTo}
             />
           )}
+          {layout && (
+            <DownloadPdfButton
+              endpoint={playerDeptDocxEndpoint(playerId, department.slug, dateFrom, dateTo)}
+              filename={`reporte-${playerName}-${department.slug}.docx`.replace(/\s+/g, "_")}
+            />
+          )}
         </div>
       </header>
 
@@ -214,4 +221,19 @@ export default function ProfileDepartment({
       {renderBody()}
     </section>
   );
+}
+
+/** Word report endpoint for a player's department, carrying the current date
+ *  window so the .docx matches what's on screen. */
+function playerDeptDocxEndpoint(
+  playerId: string,
+  slug: string,
+  dateFrom: string,
+  dateTo: string,
+): string {
+  const sp = new URLSearchParams();
+  if (dateFrom) sp.set("date_from", dateFrom);
+  if (dateTo) sp.set("date_to", dateTo);
+  const qs = sp.toString();
+  return `/players/${playerId}/departments/${slug}/report.docx${qs ? `?${qs}` : ""}`;
 }

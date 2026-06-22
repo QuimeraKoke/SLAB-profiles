@@ -1496,3 +1496,65 @@ export interface TriageResponse {
   other_metrics: TriageOtherMetric[];
   last_match: TriageLastMatch | null;
 }
+
+// ─── Resumen S-LAB summary (3 stat cards + agent narrative) ──────────────
+
+export interface ResumenSeasonStats {
+  partidos_jugados: number;
+  minutos_totales: number;
+  goles: number;
+  asistencias: number | null;
+  amarillas: number;
+  rojas: number;
+}
+
+export interface ResumenGpsCard {
+  partidos_con_gps: number;
+  distancia_promedio: number | null;
+  v_max_promedio: number | null;
+  hiaa_promedio: number | null;
+  hmld_promedio: number | null;
+  aceleraciones_promedio: number | null;
+}
+
+export interface ResumenMedicalEpisode {
+  id: string;
+  title: string;
+  stage: string;
+  status: string;
+  started_at: string | null;
+  ended_at: string | null;
+}
+
+export interface ResumenMedicalCard {
+  player_status: string;
+  player_status_label: string;
+  episodes: ResumenMedicalEpisode[];
+}
+
+/** `GET /players/{id}/resumen-slab` — fast, no LLM. */
+export interface ResumenCardsResponse {
+  number: string | null;
+  cards: {
+    estadisticas: ResumenSeasonStats;
+    rendimiento_fisico: ResumenGpsCard;
+    reporte_medico: ResumenMedicalCard;
+  };
+}
+
+export interface ResumenNarrativeObjetivo {
+  foco: string;
+  estado_actual: string;
+  estrategia: string;
+}
+
+export interface ResumenNarrative {
+  resumen: string;
+  hallazgos: string[];
+  objetivos: ResumenNarrativeObjetivo[];
+}
+
+/** `GET /players/{id}/resumen-narrative` — cached LLM (~20s on a miss). */
+export interface ResumenNarrativeResponse {
+  narrative: ResumenNarrative | null;
+}

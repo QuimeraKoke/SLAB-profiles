@@ -232,7 +232,7 @@
 /* ─── Sparkline ────────────────────────────────────────────────────── */
 
 .sparkCell {
-  width: 100px;
+  width: 264px;
   padding: 4px 8px !important;
 }
 
@@ -243,6 +243,56 @@
   border-radius: 50%;
   background: #d1d5db;
   vertical-align: middle;
+}
+
+/* Interactive trajectory chart (wider sparkline with hover tooltip). */
+.trajWrap {
+  position: relative;
+}
+
+.trajWrap svg {
+  display: block;
+  cursor: crosshair;
+}
+
+.trajTooltip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 8px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 3px 7px;
+  background: #111827;
+  color: #fff;
+  border-radius: 6px;
+  font-size: 0.7rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+/* Edge clamping so the tooltip never spills off the cell. */
+.trajTooltip.tipLeft {
+  transform: translate(-8px, calc(-100% - 8px));
+  align-items: flex-start;
+}
+
+.trajTooltip.tipRight {
+  transform: translate(calc(-100% + 8px), calc(-100% - 8px));
+  align-items: flex-end;
+}
+
+.trajTipVal {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.trajTipDate {
+  color: #cbd5e1;
+  text-transform: capitalize;
 }
 
 /* ─── Delta badges ─────────────────────────────────────────────────── */

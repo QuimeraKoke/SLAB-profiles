@@ -127,7 +127,7 @@ function Section2AlertedMetrics({ metrics }: { metrics: TriageAlertedMetric[] })
   return (
     <section className={styles.section}>
       <h3 className={styles.sectionTitle}>
-        Métricas alertadas <span className={styles.sectionHint}>último vs previo</span>
+        Métricas alertadas <span className={styles.sectionHint}>previo → actual</span>
       </h3>
       <table className={styles.table}>
         <colgroup>
@@ -139,8 +139,8 @@ function Section2AlertedMetrics({ metrics }: { metrics: TriageAlertedMetric[] })
         <thead>
           <tr>
             <th>Métrica</th>
-            <th className={styles.numCell}>Actual</th>
             <th className={styles.numCell}>Previo</th>
+            <th className={styles.numCell}>Actual</th>
             <th className={styles.numCell}>Δ</th>
           </tr>
         </thead>
@@ -178,17 +178,17 @@ function Section3OtherMetrics({ metrics }: { metrics: TriageOtherMetric[] }) {
       <table className={styles.table}>
         <colgroup>
           <col style={{ width: "auto" }} />
-          <col style={{ width: "100px" }} />
-          <col style={{ width: "15%" }} />
-          <col style={{ width: "15%" }} />
-          <col style={{ width: "16%" }} />
+          <col style={{ width: "264px" }} />
+          <col style={{ width: "13%" }} />
+          <col style={{ width: "13%" }} />
+          <col style={{ width: "14%" }} />
         </colgroup>
         <thead>
           <tr>
             <th>Métrica</th>
             <th>Trayectoria</th>
-            <th className={styles.numCell}>Actual</th>
             <th className={styles.numCell}>Previo</th>
+            <th className={styles.numCell}>Actual</th>
             <th className={styles.numCell}>Δ</th>
           </tr>
         </thead>
@@ -204,13 +204,14 @@ function Section3OtherMetrics({ metrics }: { metrics: TriageOtherMetric[] }) {
                   points={m.history_30d}
                   unit={m.unit}
                   direction_of_good={m.direction_of_good}
+                  delta={m.delta}
                 />
               </td>
               <td className={styles.numCell}>
-                {formatValue(m.current_value, m.unit)}
+                {formatValue(m.previous_value, m.unit)}
               </td>
               <td className={styles.numCell}>
-                {formatValue(m.previous_value, m.unit)}
+                {formatValue(m.current_value, m.unit)}
               </td>
               <td className={styles.numCell}>
                 <DeltaBadge
@@ -306,8 +307,8 @@ function MetricRow({ m }: { m: TriageAlertedMetric }) {
         <div className={styles.metricLabel}>{m.field_label}</div>
         <div className={styles.metricTpl}>{m.template_label}</div>
       </td>
-      <td className={styles.numCell}>{formatValue(m.current_value, m.unit)}</td>
       <td className={styles.numCell}>{formatValue(m.previous_value, m.unit)}</td>
+      <td className={styles.numCell}>{formatValue(m.current_value, m.unit)}</td>
       <td className={styles.numCell}>
         <DeltaBadge
           delta={m.delta}
@@ -357,38 +358,50 @@ function Sparkline({
   points,
   unit,
   direction_of_good,
+  delta,
 }: {
   points: TriageHistoryPoint[];
   unit: string | null;
   direction_of_good: "up" | "down" | null;
+  /** previo → actual change — SAME signal the Δ chip uses, so the line color
+   *  and the chip always agree (null/0 → neutral). */
+  delta: number | null;
 }) {
+  // Index of the point under the cursor (null = not hovering). Per-row state
+  // — each Sparkline owns its own hover so rows don't interfere.
+  const [hover, setHover] = useState<number | null>(null);
+
   // Need at least 2 points to draw a line. Otherwise show a single dot
   // or a dash so the row stays visually balanced.
   if (points.length < 2) {
     return <span className={styles.sparkDot} aria-label="Sin trayectoria"></span>;
   }
-  const W = 90;
-  const H = 24;
-  const PAD = 2;
-  const xs = points.map((_, i) => (i / (points.length - 1)) * (W - 2 * PAD) + PAD);
+  const W = 240;
+  const H = 52;
+  const PAD_X = 6;
+  const PAD_Y = 10;
+  const xs = points.map((_, i) => (i / (points.length - 1)) * (W - 2 * PAD_X) + PAD_X);
   const min = Math.min(...points.map((p) => p.value));
   const max = Math.max(...points.map((p) => p.value));
   const range = max - min || 1;
   const ys = points.map(
-    (p) => H - PAD - ((p.value - min) / range) * (H - 2 * PAD),
+    (p) => H - PAD_Y - ((p.value - min) / range) * (H - 2 * PAD_Y),
   );
   const path = points
     .map((_, i) => `${i === 0 ? "M" : "L"} ${xs[i].toFixed(1)} ${ys[i].toFixed(1)}`)
     .join(" ");
 
-  // Trend color: aligned with the DeltaBadge logic. UP isn't always
-  // "good" — for body-fat %, fatigue, RPE the good direction is down.
-  // Without that parity the sparkline and the Δ chip could disagree in
-  // the same row.
-  const goingUp = points[points.length - 1].value > points[0].value;
+  // Trend color must MATCH the Δ chip on the same row, so it uses the same
+  // signal: the previo → actual `delta` (NOT first-vs-last of the window,
+  // which could disagree with the chip). UP isn't always "good" — for
+  // body-fat %, fatigue, RPE the good direction is down. Null/zero delta →
+  // neutral gray, same as the chip.
   let isWorse: boolean | null = null;
-  if (direction_of_good === "up") isWorse = !goingUp;
-  if (direction_of_good === "down") isWorse = goingUp;
+  if (delta != null && Math.abs(delta) >= 1e-9) {
+    const goingUp = delta > 0;
+    if (direction_of_good === "up") isWorse = !goingUp;
+    if (direction_of_good === "down") isWorse = goingUp;
+  }
   const stroke =
     isWorse === true ? "#dc2626"
     : isWorse === false ? "#16a34a"
@@ -396,17 +409,63 @@ function Sparkline({
 
   const title = `${points.length} lecturas · min ${min.toFixed(1)}${unit ?? ""} · max ${max.toFixed(1)}${unit ?? ""}`;
 
+  // Map a pointer X (relative to the SVG) to the nearest data point.
+  const nearest = (offsetX: number): number => {
+    let best = 0;
+    let bestDist = Infinity;
+    for (let i = 0; i < xs.length; i++) {
+      const d = Math.abs(xs[i] - offsetX);
+      if (d < bestDist) {
+        bestDist = d;
+        best = i;
+      }
+    }
+    return best;
+  };
+
+  const hi = hover != null && hover < points.length ? hover : null;
+  // Keep the tooltip from spilling off the cell edges.
+  const tipAlign = hi == null ? "" : xs[hi] < 46 ? styles.tipLeft : xs[hi] > W - 46 ? styles.tipRight : "";
+
   return (
-    <svg
-      width={W}
-      height={H}
-      role="img"
-      aria-label={title}
-    >
-      <title>{title}</title>
-      <path d={path} fill="none" stroke={stroke} strokeWidth="1.5" />
-      <circle cx={xs[xs.length - 1]} cy={ys[ys.length - 1]} r="2" fill={stroke} />
-    </svg>
+    <div className={styles.trajWrap} style={{ width: W, height: H }}>
+      <svg
+        width={W}
+        height={H}
+        role="img"
+        aria-label={title}
+        onMouseMove={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setHover(nearest(e.clientX - rect.left));
+        }}
+        onMouseLeave={() => setHover(null)}
+      >
+        <title>{title}</title>
+        {hi != null && (
+          <line
+            x1={xs[hi]} y1={2} x2={xs[hi]} y2={H - 2}
+            stroke="#cbd5e1" strokeWidth="1" strokeDasharray="2 2"
+          />
+        )}
+        <path d={path} fill="none" stroke={stroke} strokeWidth="1.75" />
+        {points.map((_, i) => (
+          <circle
+            key={i}
+            cx={xs[i]}
+            cy={ys[i]}
+            r={i === hi ? 3.5 : 1.75}
+            fill={stroke}
+            opacity={hi == null || i === hi ? 1 : 0.45}
+          />
+        ))}
+      </svg>
+      {hi != null && (
+        <div className={`${styles.trajTooltip} ${tipAlign}`} style={{ left: xs[hi], top: ys[hi] }}>
+          <span className={styles.trajTipVal}>{formatValue(points[hi].value, unit)}</span>
+          <span className={styles.trajTipDate}>{shortDate(points[hi].recorded_at)}</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -458,6 +517,11 @@ function formatValue(value: number | null, unit: string | null): string {
   const rounded = Math.abs(value) < 10 ? value.toFixed(2) : value.toFixed(1);
   const stripped = rounded.replace(/\.?0+$/, "");
   return unit ? `${stripped} ${unit}` : stripped;
+}
+
+function shortDate(iso: string): string {
+  // "18 jun" — compact label for the trajectory tooltip.
+  return new Date(iso).toLocaleDateString("es-CL", { day: "numeric", month: "short" });
 }
 
 function relativeTime(iso: string): string {

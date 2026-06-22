@@ -423,6 +423,48 @@ def get_player_triage(request, player_id: str):
     return build_triage_payload(player)
 
 
+@api.get("/players/{player_id}/resumen-slab")
+def get_player_resumen_slab(request, player_id: str):
+    """Resumen S-LAB stat cards (FAST, no LLM): jersey number + three season
+    cards (estadísticas de juego, rendimiento físico, reporte médico). The
+    agent narrative is a SEPARATE endpoint (`/resumen-narrative`) so the cards
+    render instantly while the narrative — a ~20s LLM call on a cache miss —
+    streams in on its own. All-time over the player's matches."""
+    from api.player_summary import build_player_season_summary, player_squad_number
+
+    membership = get_membership(request.user)
+    player = scope_players(
+        Player.objects.select_related("category__club"), membership,
+    ).filter(pk=player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+
+    return {
+        "number": player_squad_number(player),
+        "cards": build_player_season_summary(player),
+    }
+
+
+@api.get("/players/{player_id}/resumen-narrative")
+def get_player_resumen_narrative(request, player_id: str):
+    """The agents' narrative for the Resumen (estado / preocupaciones /
+    recomendaciones). Cached — shares the PDF's content-addressed cache — so
+    it's generated at most once per data signature (~20s on a miss, instant
+    after). `narrative` is null when the LLM is unavailable; the frontend then
+    just renders the cards. Plain dict so model output-shape variance can never
+    fail response validation."""
+    from dashboards.pdf.player_triage import get_or_build_triage_narrative
+
+    membership = get_membership(request.user)
+    player = scope_players(
+        Player.objects.select_related("category__club"), membership,
+    ).filter(pk=player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+
+    return {"narrative": get_or_build_triage_narrative(player)}
+
+
 def _check_category_in_scope(category_id, membership):
     """Validates the user can see the given category. Returns the Category
     instance on success, raises 404/403 otherwise — used by player CRUD
@@ -2025,6 +2067,37 @@ def player_assistant(request, payload: PlayerAssistantIn):
     return answer_player_question(
         player,
         dept,
+        [{"role": m.role, "content": m.content} for m in payload.messages],
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
+class PlayerResumenAssistantIn(Schema):
+    player_id: str
+    messages: list[ChatMessageIn]
+    date_from: str | None = None
+    date_to: str | None = None
+
+
+@api.post("/assistant/player/resumen")
+def player_resumen_assistant(request, payload: PlayerResumenAssistantIn):
+    """Cross-department per-player assistant for the Resumen tab: answers about
+    ONE player across ALL areas + proposes per-player charts to review inline
+    (transient — the Resumen view is not a configurable layout, so charts are
+    NOT promotable). Scoped to the user's visible players."""
+    from dashboards.assistant import answer_player_resumen_question
+
+    membership = get_membership(request.user)
+    player = scope_players(
+        Player.objects.select_related("category__club"), membership,
+    ).filter(pk=payload.player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+
+    date_from, date_to = _parse_date_window(payload.date_from, payload.date_to)
+    return answer_player_resumen_question(
+        player,
         [{"role": m.role, "content": m.content} for m in payload.messages],
         date_from=date_from,
         date_to=date_to,

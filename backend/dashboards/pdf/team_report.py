@@ -112,7 +112,7 @@ def render_team_pdf(
     `/reports/{slug}` HTTP endpoint so caller code can share parsing."""
     layout = (
         TeamReportLayout.objects
-        .filter(department=department, category=category, is_active=True)
+        .filter(department=department, category=category, scope="period", is_active=True)
         .prefetch_related("sections__widgets__data_sources")
         .first()
     )

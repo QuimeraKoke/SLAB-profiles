@@ -60,7 +60,7 @@ def render_team_docx(
 
     layout = (
         TeamReportLayout.objects
-        .filter(department=department, category=category, is_active=True)
+        .filter(department=department, category=category, scope="period", is_active=True)
         .prefetch_related("sections__widgets__data_sources")
         .first()
     )

@@ -4,6 +4,7 @@ import React, { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import DownloadExcelButton from "@/components/reports/DownloadExcelButton";
+import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
 import MatchSelector from "@/components/reports/MatchSelector";
 import MatchMultiSelector from "@/components/reports/MatchMultiSelector";
 import ReportFilters, { defaultFilters, groupPlayersByPosition } from "@/components/reports/ReportFilters";
@@ -237,6 +238,12 @@ export default function ReportePage({ params }: PageProps) {
               }}
             />
           )}
+          {layout && categoryId && (
+            <DownloadPdfButton
+              endpoint={`/reports/${department.slug}/team.docx?${teamDocxQuery(categoryId, filters)}`}
+              filename={`reporte-${department.slug}-${layout.category.name}.docx`.replace(/\s+/g, "_")}
+            />
+          )}
         </div>
       </header>
 
@@ -327,6 +334,17 @@ function filterPlayerNames(playerIds: string[], players: PlayerSummary[]): strin
   if (playerIds.length === 0) return [];
   const byId = new Map(players.map((p) => [p.id, `${p.first_name} ${p.last_name}`]));
   return playerIds.map((id) => byId.get(id) ?? id);
+}
+
+/** Query string for the team Word report endpoint — mirrors the current
+ *  on-screen filters so the .docx matches what the user is looking at. */
+function teamDocxQuery(categoryId: string, filters: ReportFiltersValue): string {
+  const sp = new URLSearchParams({ category_id: categoryId });
+  if (filters.positionId) sp.set("position_id", filters.positionId);
+  if (filters.playerIds.length > 0) sp.set("player_ids", filters.playerIds.join(","));
+  if (filters.date.from) sp.set("date_from", filters.date.from);
+  if (filters.date.to) sp.set("date_to", filters.date.to);
+  return sp.toString();
 }
 
 function Placeholder({ departmentName }: { departmentName: string }) {

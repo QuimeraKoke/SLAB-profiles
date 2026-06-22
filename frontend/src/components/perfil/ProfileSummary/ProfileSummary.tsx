@@ -2,9 +2,12 @@
 
 import React from "react";
 import PlayerTriage from "./PlayerTriage";
+import ResumenAssistant from "./ResumenAssistant";
+import ResumenSummary from "./ResumenSummary";
 
 interface Props {
   playerId: string;
+  playerName: string;
 }
 
 /**
@@ -16,7 +19,18 @@ interface Props {
  * averages) was retired here in favor of "what should I worry about
  * today?". The pre-match summary data is still surfaced via the
  * department tabs and dashboards.
+ *
+ * A cross-department Q&A bar (`ResumenAssistant`) sits above the triage —
+ * collapsed by default — so the user can ask about the player and review
+ * proposed charts inline. Charts are transient (this view isn't a
+ * configurable layout, so they're not promotable).
  */
-export default function ProfileSummary({ playerId }: Props) {
-  return <PlayerTriage playerId={playerId} />;
+export default function ProfileSummary({ playerId, playerName }: Props) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      <ResumenAssistant playerId={playerId} playerName={playerName} />
+      <ResumenSummary playerId={playerId} playerName={playerName} />
+      <PlayerTriage playerId={playerId} />
+    </div>
+  );
 }

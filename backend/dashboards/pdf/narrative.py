@@ -148,10 +148,122 @@ def generate_player_narrative(payload: dict, *, agent=None) -> dict | None:
     return _call_model(api_key, model, system, stable_json(payload))
 
 
+# ─── Analytical narrative (Resumen / Análisis / Conclusiones) ──────────
+
+_ANALYSIS_ROLE_PROMPT = (
+    "Eres un analista de ciencias del deporte de un club de fútbol profesional. "
+    "Redactas el informe analítico individual de un jugador para el cuerpo "
+    "técnico, en español (Chile), tono clínico y accionable. El objetivo es "
+    "entender si el rendimiento del jugador va bien o mal, ponerlo en contexto "
+    "frente a sus pares de la MISMA POSICIÓN, y detectar tendencias antes de que "
+    "se transformen en problemas.\n\n"
+    "Recibes un JSON con dos bloques:\n"
+    "- `triage`: alertas activas, métricas alertadas y su evolución, último "
+    "partido.\n"
+    "- `analysis`:\n"
+    "  • `match_load`: por cada métrica de GPS de partido, su `trend` "
+    "(direction up/down/flat + pct_change) y `correlations` = pares de variables "
+    "que CO-MUEVEN (coeficiente de Pearson `r`; |r|≥0,6 es fuerte). `primary` es "
+    "la carga (distancia total) con sus `comovers` (variables que siguen su "
+    "tendencia).\n"
+    "  • `training`: `acwr` (agudo 7d ÷ crónico 28d-semanal; rango óptimo "
+    "0,8–1,3; ≥1,5 = pico de riesgo) con su `band`/`label`; `microcycle` = carga "
+    "del microciclo actual vs. el promedio de los previos (`pct_change`).\n"
+    "  • `position`: el jugador vs. el promedio de su posición (`position_avg`) "
+    "y su `percentile` (con tamaño de muestra `n`).\n\n"
+    "Reglas estrictas:\n"
+    "- Usa SÓLO los datos provistos. NO inventes métricas, valores, r, "
+    "percentiles ni diagnósticos.\n"
+    "- Correlación NO implica causalidad: describe co-movimientos ('X tiende a "
+    "subir junto con Y, r=0,82'), no causas.\n"
+    "- Cita números reales (r, percentil, ACWR, % de cambio).\n"
+    "- Interpreta el ACWR según su banda; marca riesgo si ≥1,5 o descarga si "
+    "<0,8.\n"
+    "- Si un bloque no tiene datos suficientes (`n` chico, pocas tomas), dilo en "
+    "vez de rellenar.\n"
+    "- Sé conciso; el cuerpo técnico lo lee de un vistazo."
+)
+
+_ANALYSIS_OUTPUT_CONTRACT = (
+    "Responde EXCLUSIVAMENTE con un objeto JSON válido (sin texto antes ni "
+    "después, sin ```), con esta forma exacta:\n"
+    "{\n"
+    '  "resumen": "2 a 4 frases: estado general del jugador y si la tendencia '
+    'es positiva o preocupante",\n'
+    '  "analisis": ["3 a 6 puntos que INTERPRETAN los datos: tendencia de carga '
+    'de partido y qué variables la acompañan (citá r); ACWR y microciclo; '
+    'contexto por posición (citá percentil/promedio). Una frase cada uno"],\n'
+    '  "conclusiones": ["2 a 4 conclusiones o acciones concretas: qué vigilar y '
+    'qué hacer. Una frase cada una"]\n'
+    "}\n"
+    "No agregues otras claves."
+)
+
+
+def generate_player_analysis_narrative(payload: dict, *, agent=None) -> dict | None:
+    """Return ``{"resumen", "analisis": [...], "conclusiones": [...]}`` for the
+    analytical Resumen report — interprets the deterministic `analysis` payload
+    (trends, correlations, ACWR, microcycle, position). ``None`` on no key /
+    API / parse failure; never raises. Caching happens one layer up."""
+    api_key = getattr(settings, "ANTHROPIC_API_KEY", "") or ""
+    if not api_key.strip():
+        return None
+
+    if agent is not None:
+        model = (agent.model or "").strip() or getattr(
+            settings, "ANTHROPIC_MODEL", "claude-opus-4-7"
+        )
+        knowledge = agent.knowledge
+    else:
+        model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+        knowledge = ""
+
+    parts = [_ANALYSIS_ROLE_PROMPT.strip()]
+    if knowledge and knowledge.strip():
+        parts.append("# Base de conocimiento del club\n" + knowledge.strip())
+    parts.append(_ANALYSIS_OUTPUT_CONTRACT)
+    system = "\n\n".join(parts)
+
+    return _call_model(api_key, model, system, stable_json(payload), parser=_parse_analysis)
+
+
+def _parse_analysis(text: str) -> dict | None:
+    """Parse the analytical narrative JSON into ``{resumen, analisis[],
+    conclusiones[]}``. Returns None on anything unusable."""
+    raw = _extract_json_object(text)
+    if raw is None:
+        logger.warning("Analysis narrative: no JSON object in model output.")
+        return None
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        logger.warning("Analysis narrative: JSON parse failed.")
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    resumen = str(data.get("resumen") or "").strip()
+
+    def _strlist(key: str) -> list[str]:
+        out: list[str] = []
+        for item in data.get(key) or []:
+            s = str(item).strip()
+            if s:
+                out.append(s)
+        return out
+
+    analisis = _strlist("analisis")
+    conclusiones = _strlist("conclusiones")
+    if not (resumen or analisis or conclusiones):
+        return None
+    return {"resumen": resumen, "analisis": analisis, "conclusiones": conclusiones}
+
+
 # ─── Model call ──────────────────────────────────────────────────────
 
 
-def _call_model(api_key: str, model: str, system: str, prompt_json: str) -> dict | None:
+def _call_model(api_key: str, model: str, system: str, prompt_json: str, parser=None) -> dict | None:
+    parser = parser or _parse_narrative
     try:
         import anthropic
     except ImportError:
@@ -192,7 +304,7 @@ def _call_model(api_key: str, model: str, system: str, prompt_json: str) -> dict
     text = _extract_text(response)
     if not text:
         return None
-    return _parse_narrative(text)
+    return parser(text)
 
 
 def _extract_text(response: Any) -> str:

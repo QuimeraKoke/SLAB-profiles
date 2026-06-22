@@ -30,6 +30,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from api.player_analysis import build_player_analysis
 from api.triage import build_triage_payload
 from core.models import Player
 
@@ -57,26 +58,94 @@ _CONTENT_W = 18.2 * cm
 # Bump RENDER_VERSION whenever the rendered layout changes, so previously
 # saved snapshots are superseded without needing a data change.
 _REPORT_KIND = "triage"
-RENDER_VERSION = 1
+# v2: added the "Resumen de temporada" 3-card block + jersey number, mirroring
+# the on-screen Resumen S-LAB summary. `_REPORT_KIND`/`RENDER_VERSION` now back
+# the WEB Resumen's light narrative cache (get_or_build_triage_narrative) only.
+RENDER_VERSION = 2
+
+# The downloadable per-player Resumen REPORT is the analytical
+# Resumen/Análisis/Conclusiones document — cached under its own kind so it
+# never collides with the web's light narrative. Bump the render version when
+# the report layout changes.
+_ANALYSIS_KIND = "resumen"
+_ANALYSIS_RENDER_VERSION = 2
 
 
 # ─── Public entry points ──────────────────────────────────────────────
 
 
-def render_or_get_triage_pdf(player: Player) -> bytes:
-    """Download entry point. Returns the saved PDF for the player's current
-    data signature if one exists (no LLM, no re-render); otherwise renders
-    once, persists it, and returns it. This is what guarantees the same
-    data always yields the exact same report. Generation never fails the
-    download — a storage error just falls back to a fresh render."""
+def report_inputs(player: Player):
+    """Shared inputs for the analytical Resumen report (PDF + Word): the agent,
+    model, content signature, and the triage + analysis payloads. Both
+    renderers use this so they hit the SAME content-addressed cache (kind
+    `resumen`) and share the analysis narrative."""
     from django.conf import settings
 
     from .narrative import resolve_insight_agent
-    from .report_cache import get_saved_file, report_signature, save_file
+    from .report_cache import report_signature
 
-    # The stage's editable agent (prompt + knowledge base). None ⇒ built-in
-    # default prompt. Its config fingerprint goes into the signature, so
-    # editing the knowledge/prompt regenerates instead of serving a stale PDF.
+    agent = resolve_insight_agent(_ANALYSIS_KIND) or resolve_insight_agent(_REPORT_KIND)
+    model = (
+        (agent.model or "").strip() if agent else ""
+    ) or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+    fingerprint = agent.config_fingerprint() if agent else "builtin"
+
+    triage = build_triage_payload(player)
+    analysis = build_player_analysis(player)
+    payload = {"triage": triage, "analysis": analysis}
+    signature = report_signature(
+        payload, model=model, kind=_ANALYSIS_KIND,
+        render_version=_ANALYSIS_RENDER_VERSION, agent_fingerprint=fingerprint,
+    )
+    return agent, model, signature, triage, analysis, payload
+
+
+def render_or_get_triage_pdf(player: Player) -> bytes:
+    """Download entry point. Returns the saved PDF for the player's current
+    data signature if one exists (no LLM, no re-render); otherwise renders
+    once, persists it, and returns it. Generation never fails the download —
+    a storage error just falls back to a fresh render."""
+    from .narrative import generate_player_analysis_narrative
+    from .report_cache import get_saved_file, get_saved_narrative, save_file
+
+    agent, model, signature, triage, analysis, payload = report_inputs(player)
+
+    saved = get_saved_file(player, _ANALYSIS_KIND, signature, fmt="pdf")
+    if saved is not None:
+        return saved
+
+    narrative = get_saved_narrative(player, _ANALYSIS_KIND, signature)
+    if narrative is None:
+        narrative = generate_player_analysis_narrative(payload, agent=agent)
+    pdf_bytes = _render_from_payload(triage, analysis, player, narrative)
+    try:
+        save_file(
+            player, _ANALYSIS_KIND, signature, pdf_bytes,
+            fmt="pdf", model=model, narrative=narrative,
+        )
+    except Exception:  # noqa: BLE001 — persistence is best-effort, never block the download
+        import logging
+        logging.getLogger(__name__).exception("Failed to persist report snapshot.")
+    return pdf_bytes
+
+
+def get_or_build_triage_narrative(player: Player) -> dict | None:
+    """Cached agent narrative for the WEB Resumen (estado/preocupaciones/
+    recomendaciones). Shares the exact content-addressed cache as the PDF —
+    same `kind`/signature — so the narrative is generated at most once per
+    data signature regardless of whether the web or the PDF asks first, and a
+    narrative made here is reused by a later PDF download (and vice versa).
+
+    Returns the `{resumen, hallazgos, objetivos}` dict, or None if the LLM is
+    unavailable/failed (the caller renders the stat cards alone). Persistence
+    is best-effort — a storage hiccup never fails the request."""
+    import logging
+
+    from django.conf import settings
+
+    from .narrative import resolve_insight_agent
+    from .report_cache import get_saved_narrative, report_signature
+
     agent = resolve_insight_agent(_REPORT_KIND)
     model = (
         (agent.model or "").strip() if agent else ""
@@ -89,81 +158,263 @@ def render_or_get_triage_pdf(player: Player) -> bytes:
         render_version=RENDER_VERSION, agent_fingerprint=fingerprint,
     )
 
-    saved = get_saved_file(player, _REPORT_KIND, signature, fmt="pdf")
-    if saved is not None:
-        return saved
+    cached = get_saved_narrative(player, _REPORT_KIND, signature)
+    if cached:
+        return cached
 
     narrative = generate_player_narrative(payload, agent=agent)
-    pdf_bytes = _render_from_payload(payload, player, narrative)
-    try:
-        save_file(
-            player, _REPORT_KIND, signature, pdf_bytes,
-            fmt="pdf", model=model, narrative=narrative,
-        )
-    except Exception:  # noqa: BLE001 — persistence is best-effort, never block the download
-        import logging
-        logging.getLogger(__name__).exception("Failed to persist report snapshot.")
-    return pdf_bytes
+    if narrative:
+        # Persist a narrative-only snapshot (no rendered file) so the web and
+        # the PDF share it. Mirrors save_file's get_or_create, sans bytes.
+        try:
+            from dashboards.models import PlayerReportSnapshot
+
+            PlayerReportSnapshot.objects.get_or_create(
+                player=player, kind=_REPORT_KIND, data_hash=signature,
+                defaults={"model": model, "narrative": narrative},
+            )
+        except Exception:  # noqa: BLE001 — caching is best-effort, never block.
+            logging.getLogger(__name__).exception("Failed to cache web narrative.")
+    return narrative
 
 
 def render_triage_pdf(player: Player) -> bytes:
-    """Always render a fresh PDF (builds payload + narrative). Bypasses the
+    """Always render a fresh PDF (builds payloads + narrative). Bypasses the
     saved-snapshot cache — use for tests/previews; the download path uses
     `render_or_get_triage_pdf`."""
-    payload = build_triage_payload(player)
-    narrative = generate_player_narrative(payload)
-    return _render_from_payload(payload, player, narrative)
+    from .narrative import generate_player_analysis_narrative
+
+    _agent, _model, _sig, triage, analysis, payload = report_inputs(player)
+    narrative = generate_player_analysis_narrative(payload, agent=_agent)
+    return _render_from_payload(triage, analysis, player, narrative)
 
 
 # ─── Layout ───────────────────────────────────────────────────────────
 
 
-def _render_from_payload(payload: dict, player: Player, narrative: dict | None) -> bytes:
+def _render_from_payload(triage: dict, analysis: dict, player: Player, narrative: dict | None) -> bytes:
+    """Analytical Resumen report: Resumen → Análisis → Conclusiones. The agent
+    narrative ({resumen, analisis, conclusiones}) interprets the deterministic
+    `analysis` blocks (match-load trends + correlations, ACWR/microcycles,
+    position context), which are rendered as tables/charts alongside it."""
     s = styles()
     fs = _ficha_styles()
+    narrative = narrative or {}
 
     club = player.category.club if player.category else None
-    cover = {  # PDF document metadata only (flat-flowables mode skips the cover page)
-        "title": f"Ficha — {player.first_name} {player.last_name}",
+    cover = {
+        "title": f"Resumen — {player.first_name} {player.last_name}",
         "club_name": club.name if club else "",
     }
 
     flow: list = []
 
-    # 1. Ficha identity band — club lockup + player name + bio + status badge.
-    flow.extend(_ficha_header(player, club, payload, fs))
+    # Ficha identity band — club lockup + player name + bio + status badge.
+    flow.extend(_ficha_header(player, club, triage, fs))
 
-    # 2. The "telling a story" narrative (LLM), generated by the caller and
-    #    passed in. Rendered on top, above the supporting data tables;
-    #    skipped silently when unavailable so the PDF always degrades to the
-    #    deterministic tables alone.
-    if narrative:
-        flow.extend(_narrative_block(narrative, s, fs))
+    # ── RESUMEN ──────────────────────────────────────────────────────────
+    flow.extend(_ficha_section_header("Resumen", fs))
+    if narrative.get("resumen"):
+        flow.append(Paragraph(_esc(narrative["resumen"]), fs["narrative"]))
+    flow.extend(_headline_chips(analysis, fs))
+    flow.extend(_season_summary_block(player, fs))
 
-    # 3. Supporting data — the existing deterministic tables, restyled with
-    #    ficha section headers. These are the verifiable evidence under the
-    #    narrative; the narrative is grounded in exactly this data.
-    flow.extend(_ficha_section(
-        "Alertas activas", _alerts_block(payload["alerts"], s), fs,
-    ))
-    flow.extend(_ficha_section(
-        "Métricas alertadas", _alerted_metrics_block(payload["alerted_metrics"], s), fs,
-    ))
-    flow.extend(_ficha_section(
+    # ── ANÁLISIS ─────────────────────────────────────────────────────────
+    flow.extend(_ficha_section_header("Análisis", fs))
+    for b in narrative.get("analisis") or []:
+        flow.append(Paragraph(f"•  {_esc(b)}", fs["bullet"]))
+    flow.append(Spacer(1, 3 * mm))
+
+    flow.extend(_match_load_block(analysis.get("match_load") or {}, s, fs))
+    flow.extend(_training_block(analysis.get("training") or {}, s, fs))
+    flow.extend(_position_block(analysis.get("position") or {}, s, fs))
+
+    # Supporting evidence (the timeline + current flags), under Análisis.
+    flow.extend(_subsection(
         "Evolución de métricas (30 días)",
-        _metrics_evolution_block(payload["other_metrics"], s, fs),
-        fs,
+        _metrics_evolution_block(triage["other_metrics"], s, fs), fs,
+    ))
+    flow.extend(_subsection(
+        "Alertas activas", _alerts_block(triage["alerts"], s), fs,
     ))
     match_title = (
         "Último partido"
-        if (payload["last_match"] and payload["last_match"]["is_past"])
+        if (triage["last_match"] and triage["last_match"]["is_past"])
         else "Próximo partido"
     )
-    flow.extend(_ficha_section(
-        match_title, _last_match_block(payload["last_match"], s), fs,
+    flow.extend(_subsection(
+        match_title, _last_match_block(triage["last_match"], s), fs,
     ))
 
+    # ── CONCLUSIONES ─────────────────────────────────────────────────────
+    flow.extend(_ficha_section_header("Conclusiones", fs))
+    conclusiones = narrative.get("conclusiones") or []
+    if conclusiones:
+        for c in conclusiones:
+            flow.append(Paragraph(f"•  {_esc(c)}", fs["bullet"]))
+    else:
+        flow.append(Paragraph(
+            "<i>Sin conclusiones automáticas (IA no disponible).</i>", s["body_muted"],
+        ))
+
     return build_pdf(orientation="portrait", cover=cover, flowables=flow)
+
+
+# ─── Analytical blocks ────────────────────────────────────────────────
+
+_ACWR_COLORS = {
+    "ok": COLOR_OK, "low": COLOR_WARN, "high": COLOR_WARN, "danger": COLOR_CRIT,
+}
+
+
+def _subsection(title: str, block: list, fs: dict) -> list:
+    """A lighter sub-block under a main section (navy bold, no red rule)."""
+    return [Spacer(1, 2 * mm), Paragraph(_esc(title), fs["subhead"]), *block, Spacer(1, 3 * mm)]
+
+
+def _data_table(header: list[str], rows: list[list], col_widths: list, numeric_from: int = 1):
+    data = [header, *rows]
+    tbl = Table(data, colWidths=col_widths, repeatRows=1)
+    style = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (numeric_from, 0), (-1, -1), "RIGHT"),
+        ("ALIGN", (0, 0), (numeric_from - 1, -1), "LEFT"),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, COLOR_FICHA_NAVY),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fafafa")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+    ]
+    tbl.setStyle(TableStyle(style))
+    return tbl
+
+
+_TREND_ARROW = {"up": "↑", "down": "↓", "flat": "→"}
+
+
+def _headline_chips(analysis: dict, fs: dict) -> list:
+    """ACWR badge line under the Resumen — the one-glance load-risk indicator."""
+    acwr = ((analysis.get("training") or {}).get("acwr")) or None
+    if not acwr:
+        return []
+    color = _ACWR_COLORS.get(acwr["band"], COLOR_MUTED)
+    chip = Table(
+        [[Paragraph(f"ACWR {_num(acwr['value'])}", fs["badge"]),
+          Paragraph(_esc(acwr["label"]), fs["cardRow"])]],
+        colWidths=[2.6 * cm, _CONTENT_W - 2.6 * cm], hAlign="LEFT",
+    )
+    chip.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (0, 0), color),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (0, 0), 8), ("RIGHTPADDING", (0, 0), (0, 0), 8),
+        ("LEFTPADDING", (1, 0), (1, 0), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return [Spacer(1, 2 * mm), chip, Spacer(1, 2 * mm)]
+
+
+def _match_load_block(match_load: dict, s: dict, fs: dict) -> list:
+    n = match_load.get("n_matches") or 0
+    if n < 2:
+        return _subsection(
+            "Carga de partido",
+            [Paragraph("<i>Sin suficientes partidos con GPS para analizar la tendencia.</i>", s["body_muted"])],
+            fs,
+        )
+    out: list = [Spacer(1, 2 * mm), Paragraph("Carga de partido — tendencia y correlaciones", fs["subhead"])]
+
+    primary = match_load.get("primary")
+    if primary and primary.get("trend"):
+        tr = primary["trend"]
+        arrow = _TREND_ARROW.get(tr["direction"], "")
+        pct = f" ({tr['pct_change']:+.1f}%)" if tr.get("pct_change") is not None else ""
+        comov = ", ".join(
+            f"{_esc(c['label'])} (r={_num(c['r'])})" for c in (primary.get("comovers") or [])
+        )
+        line = f"<b>{_esc(primary['label'])}</b>: tendencia {arrow}{pct} sobre {n} partidos."
+        if comov:
+            line += f" Acompañan: {comov}."
+        out.append(Paragraph(line, fs["cardRow"]))
+
+    corrs = match_load.get("correlations") or []
+    if corrs:
+        out.append(Spacer(1, 1.5 * mm))
+        out.append(Paragraph("Variables que co-mueven (Pearson r):", fs["cardTitle"]))
+        # Plain Table cells render literally (no mini-XML), so pass raw labels.
+        rows = [[c["a_label"], c["b_label"], _num(c["r"]), str(c["n"])] for c in corrs]
+        out.append(_data_table(
+            ["Variable A", "Variable B", "r", "n"], rows,
+            [6.0 * cm, 6.0 * cm, _CONTENT_W - 12 * cm - 1.6 * cm, 1.6 * cm], numeric_from=2,
+        ))
+    out.append(Spacer(1, 3 * mm))
+    return out
+
+
+def _training_block(training: dict, s: dict, fs: dict) -> list:
+    out: list = [Spacer(1, 2 * mm), Paragraph("Carga de entrenamiento — ACWR y microciclos", fs["subhead"])]
+    has = False
+
+    acwr = training.get("acwr")
+    if acwr:
+        has = True
+        out.append(Paragraph(
+            f"<b>ACWR {_num(acwr['value'])}</b> — {_esc(acwr['label'])} "
+            "<font color='#6b7280'>(agudo 7d ÷ crónico 28d-semanal)</font>.",
+            fs["cardRow"],
+        ))
+
+    micro = training.get("microcycle")
+    if micro:
+        has = True
+        pct = f" ({micro['pct_change']:+.1f}%)" if micro.get("pct_change") is not None else ""
+        out.append(Paragraph(
+            f"<b>Microciclo actual</b> ({_esc(micro['current_week'])}): "
+            f"{_num(micro['current_load'])} u.a. vs. promedio previo "
+            f"{_num(micro['prior_avg_load'])} u.a.{pct}.",
+            fs["cardRow"],
+        ))
+
+    weekly = training.get("weekly") or []
+    if weekly:
+        has = True
+        out.append(Spacer(1, 1.5 * mm))
+        rows = [[_esc(w["week"]), f"{_num(w['dist'])}", f"{_num(w['load'])}", str(w["sessions"])] for w in weekly]
+        out.append(_data_table(
+            ["Semana", "Distancia (m)", "Player Load", "Sesiones"], rows,
+            [4.5 * cm, 5.0 * cm, 5.0 * cm, _CONTENT_W - 14.5 * cm], numeric_from=1,
+        ))
+
+    if not has:
+        out.append(Paragraph("<i>Sin datos de entrenamiento suficientes.</i>", s["body_muted"]))
+    out.append(Spacer(1, 3 * mm))
+    return out
+
+
+def _position_block(position: dict, s: dict, fs: dict) -> list:
+    label = position.get("position_label")
+    metrics = position.get("metrics") or []
+    title = f"Contexto por posición — {_esc(label)}" if label else "Contexto por posición"
+    out: list = [Spacer(1, 2 * mm), Paragraph(title, fs["subhead"])]
+    if not metrics:
+        out.append(Paragraph(
+            "<i>Sin pares de la misma posición suficientes para comparar.</i>", s["body_muted"],
+        ))
+        out.append(Spacer(1, 3 * mm))
+        return out
+    rows = [
+        [m["label"], _num(m["value"]), _num(m["position_avg"]), f"{m['percentile']}", str(m["n"])]
+        for m in metrics
+    ]
+    out.append(_data_table(
+        ["Métrica", "Jugador", "Prom. posición", "Percentil", "n"], rows,
+        [6.0 * cm, 3.2 * cm, 3.8 * cm, _CONTENT_W - 13 * cm - 1.6 * cm, 1.6 * cm], numeric_from=1,
+    ))
+    out.append(Spacer(1, 3 * mm))
+    return out
 
 
 # ─── Ficha identity + narrative ───────────────────────────────────────
@@ -202,7 +453,12 @@ def _ficha_header(player: Player, club, payload: dict, fs: dict) -> list:
     ))
 
     # Bio line — only the facts we actually have.
+    from api.player_summary import player_squad_number
+
     bio_bits: list[str] = []
+    number = player_squad_number(player)
+    if number:
+        bio_bits.append(f"#{_esc(number)}")
     if player.age is not None:
         bio_bits.append(f"{player.age} años")
     if player.current_height_cm:
@@ -328,7 +584,93 @@ def _ficha_styles() -> dict:
             textColor=colors.HexColor("#1f2937"), leading=14, alignment=TA_LEFT,
             spaceAfter=2,
         ),
+        "cardTitle": ParagraphStyle(
+            "ficha_card_title", fontName="Helvetica-Bold", fontSize=8,
+            textColor=COLOR_MUTED, leading=11, alignment=TA_LEFT, spaceAfter=4,
+        ),
+        "cardRow": ParagraphStyle(
+            "ficha_card_row", fontName="Helvetica", fontSize=9,
+            textColor=colors.HexColor("#1f2937"), leading=13, alignment=TA_LEFT,
+            spaceAfter=1,
+        ),
+        "subhead": ParagraphStyle(
+            "ficha_subhead", fontName="Helvetica-Bold", fontSize=9.5,
+            textColor=COLOR_FICHA_NAVY, leading=12, alignment=TA_LEFT,
+            spaceBefore=2, spaceAfter=3,
+        ),
     }
+
+
+def _season_summary_block(player: Player, fs: dict) -> list:
+    """The 3-card season block (estadísticas de juego · rendimiento físico ·
+    reporte médico), mirroring the on-screen Resumen S-LAB summary. Rendered as
+    a single 3-column table so the cards sit side by side. Reuses the same
+    `build_player_season_summary` aggregation as the web."""
+    from api.player_summary import build_player_season_summary
+
+    data = build_player_season_summary(player)
+    est = data["estadisticas"]
+    gps = data["rendimiento_fisico"]
+    med = data["reporte_medico"]
+
+    def _m(v):  # meters
+        return "—" if v is None else f"{round(v):,} m".replace(",", ".")
+
+    def _i(v):  # integer
+        return "—" if v is None else f"{round(v):,}".replace(",", ".")
+
+    def _d1(v):  # one decimal
+        return "—" if v is None else f"{v:.1f}"
+
+    def card(title: str, rows: list[tuple[str, object]]) -> list:
+        cell: list = [Paragraph(_esc(title).upper(), fs["cardTitle"])]
+        for label, val in rows:
+            cell.append(Paragraph(f"{_esc(label)}: <b>{_esc(str(val))}</b>", fs["cardRow"]))
+        return cell
+
+    est_rows = [
+        ("Partidos jugados", est["partidos_jugados"]),
+        ("Minutos totales", f"{est['minutos_totales']} min"),
+        ("Goles", est["goles"]),
+        ("Asistencias", est["asistencias"] if est["asistencias"] is not None else "—"),
+        ("Amarillas", est["amarillas"]),
+        ("Rojas", est["rojas"]),
+    ]
+    gps_rows = [
+        ("Partidos con GPS", gps.get("partidos_con_gps", 0)),
+        ("Distancia/partido", _m(gps.get("distancia_promedio"))),
+        ("V max prom", _d1(gps.get("v_max_promedio"))),
+        ("HIAA prom", _i(gps.get("hiaa_promedio"))),
+        ("HMLD prom", _m(gps.get("hmld_promedio"))),
+        ("Acc prom", _i(gps.get("aceleraciones_promedio"))),
+    ]
+    med_rows: list[tuple[str, object]] = [("Estado", med["player_status_label"])]
+    episodes = med.get("episodes") or []
+    if episodes:
+        for e in episodes[:3]:
+            med_rows.append((e["title"], e["stage"] or ("Cerrado" if e["status"] == "closed" else "Abierto")))
+    else:
+        med_rows.append(("Episodios", "Sin episodios"))
+
+    parent = Table(
+        [[
+            card("Estadísticas de juego", est_rows),
+            card("Rendimiento físico", gps_rows),
+            card("Reporte médico", med_rows),
+        ]],
+        colWidths=[_CONTENT_W / 3] * 3,
+    )
+    parent.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BOX", (0, 0), (0, 0), 0.5, COLOR_RULE),
+        ("BOX", (1, 0), (1, 0), 0.5, COLOR_RULE),
+        ("BOX", (2, 0), (2, 0), 0.5, COLOR_RULE),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    return [*_ficha_section_header("Resumen de temporada", fs), parent, Spacer(1, 5 * mm)]
 
 
 def _num(value) -> str:

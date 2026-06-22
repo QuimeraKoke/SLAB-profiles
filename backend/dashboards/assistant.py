@@ -340,6 +340,99 @@ _PLAYER_CHART_TOOL = {
 }
 
 
+_PLAYER_RESUMEN_PROMPT = (
+    "Sos el asistente del perfil de {player} ({category}) en una plataforma de "
+    "ciencias del deporte de un club de fútbol profesional. Estás en la vista "
+    "RESUMEN del jugador: cruzás TODAS las áreas (médico, físico, nutricional, "
+    "táctico, etc.), no una sola. Respondés preguntas sobre ESTE jugador y, "
+    "cuando una visualización ayude, PROPONÉS UN GRÁFICO con "
+    "`proponer_grafico_jugador` para que el cuerpo técnico lo revise en el "
+    "momento. Español (Chile), breve y accionable.\n\n"
+    "Los gráficos son POR JUGADOR: muestran la evolución y los registros de "
+    "{player} (no del plantel). Herramientas de datos (read-only): "
+    "listar_examenes (slug/campo y última fecha, de CUALQUIER área), "
+    "historial_jugador, estado_jugador, ranking_jugadores. Más "
+    "proponer_grafico_jugador para graficar.\n\n"
+    "Cómo trabajar:\n"
+    "- Si no conocés el slug/campo exactos, llamá primero a listar_examenes y "
+    "recién después proponé con valores REALES (no inventes slugs/campos/datos).\n"
+    "- SÓLO graficá campos que EXISTEN. Para un ratio/cálculo sin campo propio, "
+    "decilo y mostrá los componentes; no inventes una métrica ni una columna.\n"
+    "- Elegí el chart_type según el CATÁLOGO (abajo) y la pregunta; NO uses "
+    "siempre el mismo tipo.\n"
+    "- Acompañá el gráfico con 1–3 frases que lo interpreten, citando valores y "
+    "fechas reales.\n"
+    "- Estos gráficos son para REVISAR en el momento; esta vista no es "
+    "configurable, así que NO se fijan a ningún panel.\n"
+    "- Si {player} no tiene datos suficientes, decilo en vez de un gráfico vacío."
+)
+
+
+def answer_player_resumen_question(
+    player,
+    messages: list[dict],
+    *,
+    date_from=None,
+    date_to=None,
+) -> dict:
+    """Cross-department per-player assistant for the RESUMEN tab: answers about
+    ONE player across ALL areas and proposes per-player charts to REVIEW inline.
+    Transient by design — the Resumen view is NOT a configurable layout, so the
+    charts are not promotable (the caller omits the promote action). Returns
+    ``{"reply": str, "charts": [...]}``. Never raises."""
+    from dashboards.pdf.narrative import resolve_insight_agent
+    from dashboards.chart_spec import resolve_player_chart_spec
+
+    api_key = (getattr(settings, "ANTHROPIC_API_KEY", "") or "").strip()
+    if not api_key:
+        return {
+            "reply": (
+                "El asistente de IA no está configurado en este entorno "
+                "(falta ANTHROPIC_API_KEY)."
+            ),
+            "charts": [],
+        }
+
+    convo = _sanitize(messages)
+    if not convo:
+        return {"reply": "¿Qué querés analizar de este jugador?", "charts": []}
+
+    category = player.category
+    # Cross-department → use the orchestrator persona (multidisciplinary), like
+    # the floating team chat, NOT a single department's agent.
+    agent = resolve_insight_agent("assistant")
+    model = (
+        ((agent.model or "").strip() if agent else "")
+        or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+    )
+    player_name = f"{player.first_name} {player.last_name}".strip()
+    system = _PLAYER_RESUMEN_PROMPT.format(
+        player=player_name,
+        category=getattr(category, "name", ""),
+    )
+    system += "\n\n" + _PLAYER_CHART_CATALOG
+    # All specialists' knowledge so the resumen assistant reasons across areas.
+    specialists = _specialist_knowledge()
+    if specialists:
+        system += "\n\n" + specialists
+
+    # `resolve_player_chart_spec` needs a department ONLY as the throwaway-layout
+    # container for the rollback preview — the chart itself resolves by
+    # template-slug + category + player (department-agnostic). Any of the
+    # category's departments works; None degrades to "no chart" gracefully.
+    container_dept = category.departments.first() if category else None
+
+    def _resolve(spec):
+        return resolve_player_chart_spec(
+            player=player, department=container_dept, spec=spec,
+            date_from=date_from, date_to=date_to,
+        )
+
+    return _chat_with_charts(
+        api_key, model, system, convo, category, _PLAYER_CHART_TOOL, _resolve,
+    )
+
+
 def answer_team_question(category, messages: list[dict]) -> str:
     """Return the assistant's reply to the conversation `messages`
     (`[{role, content}]`), grounded in `category`'s current snapshot.

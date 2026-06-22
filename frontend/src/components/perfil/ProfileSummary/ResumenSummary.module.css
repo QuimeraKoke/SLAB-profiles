@@ -1,0 +1,309 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.spark {
+  color: #6d28d9;
+}
+
+.number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: #111827;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.download {
+  margin-left: auto;
+}
+
+/* ─── Agent narrative ──────────────────────────────────────────────── */
+
+.narrative {
+  border: 1px solid #ede9fe;
+  background: linear-gradient(180deg, #faf5ff 0%, #ffffff 100%);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.narrLoading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #6d28d9;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.sparkPulse {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sparkPulse { animation: none; }
+}
+
+.narrSection {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.narrLabel {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7c3aed;
+}
+
+.narrText {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: #1f2937;
+}
+
+.narrList {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.narrList li {
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: #374151;
+}
+
+.recList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rec {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 12px;
+  border-left: 2px solid #ddd6fe;
+}
+
+.recFoco {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.recState {
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+
+.recStrategy {
+  font-size: 0.82rem;
+  color: #4338ca;
+}
+
+/* ─── Stat cards ───────────────────────────────────────────────────── */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6b7280;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.cardHead svg {
+  color: #9ca3af;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  font-size: 0.85rem;
+}
+
+.rowLabel {
+  color: #4b5563;
+}
+
+.rowValue {
+  font-weight: 600;
+  color: #111827;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rowAccent {
+  color: #2563eb;
+}
+
+.rowDanger {
+  color: #dc2626;
+}
+
+/* ─── Medical card ─────────────────────────────────────────────────── */
+
+.statusChip {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.statusOk {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.statusWarn {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.statusBad {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.medEmpty {
+  margin: 6px 0 0;
+  font-size: 0.82rem;
+  color: #6b7280;
+}
+
+.episodes {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.episode {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.epTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.epTitle {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: #111827;
+}
+
+.epStage {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.epMeta {
+  font-size: 0.74rem;
+  color: #6b7280;
+}
+
+/* ─── Skeleton / error ─────────────────────────────────────────────── */
+
+.skeleton {
+  min-height: 180px;
+  background: linear-gradient(90deg, #f9fafb 0%, #f3f4f6 50%, #f9fafb 100%);
+  border-style: dashed;
+}
+
+.error {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 0.88rem;
+}

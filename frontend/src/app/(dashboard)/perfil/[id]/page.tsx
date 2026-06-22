@@ -169,7 +169,12 @@ export default function PerfilPlayerPage({ params }: PageProps) {
         aria-labelledby={`tab-${safeActive}`}
         tabIndex={0}
       >
-        {safeActive === RESUMEN_TAB_ID && <ProfileSummary playerId={player.id} />}
+        {safeActive === RESUMEN_TAB_ID && (
+          <ProfileSummary
+            playerId={player.id}
+            playerName={`${player.first_name} ${player.last_name}`}
+          />
+        )}
         {safeActive === TIMELINE_TAB_ID && <ProfileTimeline playerId={player.id} />}
         {safeActive === EVENTS_TAB_ID && <ProfileEvents playerId={player.id} />}
         {safeActive === GOALS_TAB_ID && <ProfileGoals player={player} />}
