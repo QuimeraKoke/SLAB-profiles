@@ -9,6 +9,7 @@ import MatchMultiSelector from "@/components/reports/MatchMultiSelector";
 import ReportFilters, { defaultFilters, groupPlayersByPosition } from "@/components/reports/ReportFilters";
 import type { ReportFiltersValue } from "@/components/reports/ReportFilters";
 import TeamReportDashboard from "@/components/reports/TeamReportDashboard";
+import DashboardAssistant from "@/components/reports/DashboardAssistant";
 import { useBreadcrumbLabel } from "@/components/layout/Breadcrumbs";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
@@ -47,6 +48,8 @@ export default function ReportePage({ params }: PageProps) {
   const [layout, setLayout] = useState<TeamReportResponse["layout"] | null>(null);
   const [layoutFetched, setLayoutFetched] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped after a chart is promoted, so the layout refetches and shows it.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const updateUrl = (next: {
     match?: string | null;
@@ -184,7 +187,7 @@ export default function ReportePage({ params }: PageProps) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [department, categoryId, categoryLoading, filters, matchFromUrl, matchIdsParam]);
+  }, [department, categoryId, categoryLoading, filters, matchFromUrl, matchIdsParam, reloadKey]);
 
   if (!department) {
     return (
@@ -238,6 +241,21 @@ export default function ReportePage({ params }: PageProps) {
       </header>
 
       {error && <div className={styles.error}>{error}</div>}
+
+      {categoryId && (
+        <DashboardAssistant
+          categoryId={categoryId}
+          departmentSlug={department.slug}
+          departmentName={department.name}
+          filters={{
+            positionId: filters.positionId,
+            playerIds: filters.playerIds,
+            dateFrom: filters.date.from,
+            dateTo: filters.date.to,
+          }}
+          onPromoted={() => setReloadKey((k) => k + 1)}
+        />
+      )}
 
       {!layoutFetched && !error && (
         <div className={styles.muted}>Cargando reporte…</div>
