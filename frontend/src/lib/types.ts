@@ -1406,6 +1406,22 @@ export interface TeamReportResponse {
   } | null;
 }
 
+/** Combined, cross-department MATCH report shown in the Partidos view.
+ *  Same section/widget shape as a team report (so it renders with the
+ *  same `<TeamReportDashboard>`), but `department` is null — it spans
+ *  departments — and it carries the locked `match` instead of a
+ *  `match_selector`. */
+export interface MatchReportResponse {
+  layout: {
+    id: string;
+    department: null;
+    category: Category;
+    name: string;
+    sections: TeamReportSection[];
+    match: TeamMatchOption;
+  } | null;
+}
+
 
 // ─── Player triage (Resumen tab) ──────────────────────────────────────
 

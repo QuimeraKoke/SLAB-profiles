@@ -25,17 +25,22 @@ from uuid import UUID
 from django.db import transaction
 from django.db.models import Max
 
-from core.models import Category, Department
+from core.models import Category, Department, Player
 from exams.models import ExamTemplate
 
 from .models import (
     Aggregation,
     ChartType,
+    DepartmentLayout,
+    LayoutSection,
     TeamReportLayout,
     TeamReportSection,
     TeamReportWidget,
     TeamReportWidgetDataSource,
+    Widget,
+    WidgetDataSource,
 )
+from .aggregation import resolve_widget
 from .team_aggregation import resolve_team_widget
 
 logger = logging.getLogger(__name__)
@@ -43,6 +48,9 @@ logger = logging.getLogger(__name__)
 # Only team-scoped chart types are resolvable here (the assistant proposes
 # squad charts). Per-player chart types live in a different resolver.
 VALID_CHART_TYPES = {c.value for c in ChartType if c.value.startswith("team_")}
+# Per-player chart types (resolved by dashboards.aggregation, on the player
+# profile's department tabs). Everything that isn't a team_* type.
+VALID_PLAYER_CHART_TYPES = {c.value for c in ChartType if not c.value.startswith("team_")}
 _VALID_AGGREGATIONS = {a.value for a in Aggregation}
 
 # Section a promoted chart lands in (created on demand).
@@ -57,16 +65,18 @@ def _err(msg: str) -> dict[str, Any]:
     return {"error": msg, "empty": True}
 
 
-def _normalize_spec(category: Category, spec: Any) -> tuple[str, str, dict, list[dict]]:
+def _normalize_spec(
+    category: Category, spec: Any, valid_chart_types: set[str]
+) -> tuple[str, str, dict, list[dict]]:
     """Validate + resolve a chart spec. Returns
     ``(chart_type, title, display_config, resolved_sources)`` where each
     resolved source carries a real `template` instance. Raises `_SpecError`
-    (user-facing message) on anything invalid. Shared by resolve + promote so
-    a promoted chart is validated exactly like a previewed one."""
+    (user-facing message) on anything invalid. Shared by team + player resolve
+    + promote (the caller passes the valid chart-type set for its surface)."""
     if not isinstance(spec, dict):
         raise _SpecError("spec debe ser un objeto")
     chart_type = str(spec.get("chart_type") or "").strip()
-    if chart_type not in VALID_CHART_TYPES:
+    if chart_type not in valid_chart_types:
         raise _SpecError(f"chart_type inválido: {chart_type!r}")
 
     sources_in = spec.get("sources") or []
@@ -125,7 +135,9 @@ def resolve_chart_spec(
     renders) WITHOUT persisting anything. Returns ``{"error": ...}`` on a bad
     spec — never raises."""
     try:
-        chart_type, title, display_config, resolved_sources = _normalize_spec(category, spec)
+        chart_type, title, display_config, resolved_sources = _normalize_spec(
+            category, spec, VALID_CHART_TYPES
+        )
     except _SpecError as e:
         return _err(str(e))
 
@@ -133,11 +145,11 @@ def resolve_chart_spec(
     try:
         with transaction.atomic():
             layout = TeamReportLayout.objects.filter(
-                department=department, category=category
+                department=department, category=category, scope="period"
             ).first()
             if layout is None:
                 layout = TeamReportLayout.objects.create(
-                    department=department, category=category,
+                    department=department, category=category, scope="period",
                     name="__chart_preview__", is_active=False,
                 )
             section = TeamReportSection.objects.create(
@@ -170,6 +182,63 @@ def resolve_chart_spec(
     return payload
 
 
+def resolve_player_chart_spec(
+    *,
+    player: Player,
+    department: Department,
+    spec: dict[str, Any],
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict[str, Any]:
+    """Per-player twin of `resolve_chart_spec`: resolve a PER-PLAYER chart spec
+    for ONE player via the real `resolve_widget` (the player-profile resolver),
+    without persisting. Builds throwaway DepartmentLayout/Section/Widget rows
+    (reusing the existing layout for the dept+category when present) and rolls
+    back. Returns ``{"error": ...}`` on a bad spec — never raises."""
+    category = player.category
+    try:
+        chart_type, title, display_config, resolved_sources = _normalize_spec(
+            category, spec, VALID_PLAYER_CHART_TYPES
+        )
+    except _SpecError as e:
+        return _err(str(e))
+
+    payload: dict[str, Any] = _err("no se pudo resolver el gráfico")
+    try:
+        with transaction.atomic():
+            layout = DepartmentLayout.objects.filter(
+                department=department, category=category
+            ).first()
+            if layout is None:
+                layout = DepartmentLayout.objects.create(
+                    department=department, category=category,
+                    name="__chart_preview__", is_active=False,
+                )
+            section = LayoutSection.objects.create(
+                layout=layout, title="", sort_order=99999,
+            )
+            widget = Widget.objects.create(
+                section=section, chart_type=chart_type, title=title,
+                display_config=display_config,
+            )
+            for i, rs in enumerate(resolved_sources):
+                WidgetDataSource.objects.create(
+                    widget=widget, template=rs["template"],
+                    field_keys=rs["field_keys"], aggregation=rs["aggregation"],
+                    aggregation_param=rs["aggregation_param"],
+                    label=rs["label"], color=rs["color"], sort_order=i,
+                )
+            payload = resolve_widget(widget, player.id, date_from=date_from, date_to=date_to)
+            payload = _materialize(payload)
+            transaction.set_rollback(True)  # pure preview — discard temp rows
+    except Exception as e:  # noqa: BLE001 — a preview must never 500
+        logger.exception("resolve_player_chart_spec failed")
+        return _err(f"error al resolver el gráfico: {e}")
+
+    payload["spec"] = _echo_spec(chart_type, title, display_config, resolved_sources)
+    return payload
+
+
 def promote_chart_spec(
     *,
     category: Category,
@@ -181,13 +250,15 @@ def promote_chart_spec(
     demand). Returns ``{"widget_id", "section_id", "layout_id", "title"}`` or
     ``{"error": ...}`` on a bad spec. Never raises a validation error."""
     try:
-        chart_type, title, display_config, resolved_sources = _normalize_spec(category, spec)
+        chart_type, title, display_config, resolved_sources = _normalize_spec(
+            category, spec, VALID_CHART_TYPES
+        )
     except _SpecError as e:
         return {"error": str(e)}
 
     with transaction.atomic():
         layout, _created = TeamReportLayout.objects.get_or_create(
-            department=department, category=category,
+            department=department, category=category, scope="period",
             defaults={"name": "Default", "is_active": True},
         )
         if not layout.is_active:
@@ -212,6 +283,69 @@ def promote_chart_spec(
         )
         for i, rs in enumerate(resolved_sources):
             TeamReportWidgetDataSource.objects.create(
+                widget=widget, template=rs["template"],
+                field_keys=rs["field_keys"], aggregation=rs["aggregation"],
+                aggregation_param=rs["aggregation_param"],
+                label=rs["label"], color=rs["color"], sort_order=i,
+            )
+
+    return {
+        "widget_id": str(widget.id),
+        "section_id": str(section.id),
+        "layout_id": str(layout.id),
+        "title": widget.title,
+    }
+
+
+def promote_player_chart_spec(
+    *,
+    category: Category,
+    department: Department,
+    spec: dict[str, Any],
+) -> dict[str, Any]:
+    """Per-player twin of `promote_chart_spec`: persist ``spec`` as a real
+    per-player `Widget` (+ data sources) on the department's `DepartmentLayout`,
+    under a "Mis gráficos" section (created on demand). The widget renders PER
+    PLAYER on every profile's department tab in this category. Returns the
+    created ids or ``{"error": ...}``.
+
+    NOTE: a DepartmentLayout is per (department, category); creating/activating
+    one here switches that department tab from the legacy auto card-grid to the
+    configured layout for the whole category."""
+    try:
+        chart_type, title, display_config, resolved_sources = _normalize_spec(
+            category, spec, VALID_PLAYER_CHART_TYPES
+        )
+    except _SpecError as e:
+        return {"error": str(e)}
+
+    with transaction.atomic():
+        layout, _created = DepartmentLayout.objects.get_or_create(
+            department=department, category=category,
+            defaults={"name": "Default", "is_active": True},
+        )
+        if not layout.is_active:
+            layout.is_active = True
+            layout.save(update_fields=["is_active"])
+
+        section = (
+            layout.sections.filter(title=_PROMOTED_SECTION_TITLE)
+            .order_by("sort_order").first()
+        )
+        if section is None:
+            next_sort = (layout.sections.aggregate(m=Max("sort_order"))["m"] or 0) + 1
+            section = LayoutSection.objects.create(
+                layout=layout, title=_PROMOTED_SECTION_TITLE, sort_order=next_sort,
+            )
+
+        next_w = (section.widgets.aggregate(m=Max("sort_order"))["m"] or 0) + 1
+        widget = Widget.objects.create(
+            section=section, chart_type=chart_type,
+            title=title or "Gráfico", display_config=display_config,
+            column_span=6, sort_order=next_w,
+        )
+        for i, rs in enumerate(resolved_sources):
+            WidgetDataSource.objects.create(
                 widget=widget, template=rs["template"],
                 field_keys=rs["field_keys"], aggregation=rs["aggregation"],
                 aggregation_param=rs["aggregation_param"],

@@ -563,6 +563,34 @@ class TeamReportResponseOut(Schema):
     layout: TeamReportLayoutOut | None = None
 
 
+class MatchInfoOut(Schema):
+    """The match a combined match report is locked to (no in-page selector)."""
+    id: UUID
+    title: str
+    starts_at: datetime
+    location: str = ""
+
+
+class MatchReportLayoutOut(Schema):
+    """Combined cross-department match report (scope=match). `department` is
+    null — it spans departments — and `match` is the locked match instead of
+    a `match_selector`. Reuses `TeamReportSectionOut` so the frontend renders
+    it with the same team-report widgets."""
+    id: UUID
+    department: DepartmentOut | None = None
+    category: CategoryOut
+    name: str
+    sections: list[TeamReportSectionOut] = []
+    match: MatchInfoOut
+
+
+class MatchReportResponseOut(Schema):
+    """Wrapper so the frontend treats `layout=None` as 'no match report / no
+    data for this match'."""
+
+    layout: MatchReportLayoutOut | None = None
+
+
 # ---------- Events ----------
 
 class EventParticipantOut(Schema):

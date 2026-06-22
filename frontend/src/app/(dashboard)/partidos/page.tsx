@@ -260,6 +260,9 @@ function MatchRow({
         )}
       </td>
       <td className={styles.actionsCell}>
+        <Link href={`/partidos/${match.id}`} className={styles.actionLink}>
+          Reporte
+        </Link>
         <Link href={`/partidos/${match.id}/editar`} className={styles.actionLink}>
           Editar
         </Link>

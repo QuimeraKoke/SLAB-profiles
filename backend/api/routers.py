@@ -61,6 +61,7 @@ from .schemas import (
     ResultIn,
     ResultOut,
     ResultPatchIn,
+    MatchReportResponseOut,
     RosterEntryOut,
     RosterReplaceIn,
     TeamReportResponseOut,
@@ -1536,7 +1537,7 @@ def get_team_report(
 
     layout = (
         TeamReportLayout.objects
-        .filter(department=dept, category=category, is_active=True)
+        .filter(department=dept, category=category, scope="period", is_active=True)
         .select_related("department", "category")
         .prefetch_related("sections__widgets")
         .first()
@@ -1694,6 +1695,113 @@ def get_team_report(
                 ],
                 "selected_id": parsed_match_id,
                 "selected_ids": parsed_match_ids,
+            },
+        }
+    }
+
+
+@api.get("/matches/{event_id}/report", response=MatchReportResponseOut)
+def get_match_report(request, event_id: str, position_id: str | None = None):
+    """Return the combined, cross-department MATCH report for one match.
+
+    This is the `scope="match"` TeamReportLayout (department=None, one per
+    category) shown in the Partidos view. Unlike `GET /reports/{slug}`, the
+    match is NOT chosen in-page — it's locked to `event_id`, which the route
+    injects into every widget. No match selector is returned.
+
+    Returns `{layout: null}` when the event isn't a match, has no category,
+    or the category has no match-report layout — so the Partidos view can
+    render a placeholder instead of erroring.
+    """
+    from uuid import UUID as _UUID
+
+    membership = get_membership(request.user)
+
+    try:
+        parsed_event_id = _UUID(event_id)
+    except (TypeError, ValueError):
+        raise HttpError(404, "Match not found")
+
+    event = (
+        Event.objects.select_related("category", "category__club")
+        .filter(pk=parsed_event_id, event_type=Event.TYPE_MATCH)
+        .first()
+    )
+    if event is None or event.category_id is None:
+        return {"layout": None}
+
+    # Auth: the caller must be able to see this match's category.
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=event.category_id).first()
+    if category is None:
+        raise HttpError(404, "Match not found")
+
+    parsed_position_id: _UUID | None = None
+    if position_id:
+        try:
+            cand = _UUID(position_id)
+        except (TypeError, ValueError):
+            cand = None
+        if cand is not None and Position.objects.filter(
+            pk=cand, club_id=category.club_id,
+        ).exists():
+            parsed_position_id = cand
+
+    layout = (
+        TeamReportLayout.objects
+        .filter(category=category, scope="match", is_active=True)
+        .select_related("category")
+        .prefetch_related("sections__widgets")
+        .first()
+    )
+    if layout is None:
+        return {"layout": None}
+
+    sections_payload = []
+    for section in layout.sections.all():
+        widgets_payload = []
+        for widget in section.widgets.all():
+            widgets_payload.append(
+                {
+                    "id": widget.id,
+                    "chart_type": widget.chart_type,
+                    "title": widget.title,
+                    "description": widget.description,
+                    "column_span": widget.column_span,
+                    "chart_height": widget.chart_height,
+                    "sort_order": widget.sort_order,
+                    "data": resolve_team_widget(
+                        widget, category,
+                        position_id=parsed_position_id,
+                        # Locked to this match — no date window, no selector.
+                        event_id=event.id,
+                    ),
+                }
+            )
+        sections_payload.append(
+            {
+                "id": section.id,
+                "title": section.title,
+                "is_collapsible": section.is_collapsible,
+                "default_collapsed": section.default_collapsed,
+                "sort_order": section.sort_order,
+                "widgets": widgets_payload,
+            }
+        )
+
+    return {
+        "layout": {
+            "id": layout.id,
+            "department": None,
+            "category": category,
+            "name": layout.name,
+            "sections": sections_payload,
+            "match": {
+                "id": event.id,
+                "title": event.title,
+                "starts_at": event.starts_at,
+                "location": event.location or "",
             },
         }
     }
@@ -1886,6 +1994,43 @@ def dashboard_assistant(request, payload: DashboardAssistantIn):
     )
 
 
+class PlayerAssistantIn(Schema):
+    player_id: str
+    department_slug: str
+    messages: list[ChatMessageIn]
+    date_from: str | None = None
+    date_to: str | None = None
+
+
+@api.post("/assistant/player")
+def player_assistant(request, payload: PlayerAssistantIn):
+    """Per-player profile assistant (V4): answers about ONE player + proposes
+    per-player charts (promotable to the department's profile layout, rendered
+    per player). Scoped to the player's category + the user's departments."""
+    from dashboards.assistant import answer_player_question
+
+    membership = get_membership(request.user)
+    player = scope_players(
+        Player.objects.select_related("category__club"), membership,
+    ).filter(pk=payload.player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+    dept = scope_departments(
+        Department.objects.filter(club_id=player.category.club_id), membership,
+    ).filter(slug=payload.department_slug).first()
+    if dept is None:
+        raise HttpError(404, "Department not found")
+
+    date_from, date_to = _parse_date_window(payload.date_from, payload.date_to)
+    return answer_player_question(
+        player,
+        dept,
+        [{"role": m.role, "content": m.content} for m in payload.messages],
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+
 class PromoteChartIn(Schema):
     category_id: str
     spec: dict
@@ -1913,6 +2058,40 @@ def promote_chart(request, department_slug: str, payload: PromoteChartIn):
         raise HttpError(404, "Department not found")
 
     result = promote_chart_spec(category=category, department=dept, spec=payload.spec)
+    if result.get("error"):
+        raise HttpError(400, result["error"])
+    return result
+
+
+class PromotePlayerChartIn(Schema):
+    department_slug: str
+    spec: dict
+
+
+@api.post("/players/{player_id}/dashboard-widgets")
+@require_perm("dashboards.add_widget")
+def promote_player_chart(request, player_id: str, payload: PromotePlayerChartIn):
+    """V4 — promote a per-player chart: persist its spec as a real per-player
+    Widget on the department's DepartmentLayout, under a "Mis gráficos" section
+    (rendered per player across the category). Editor-gated; scoped to the
+    player's club."""
+    from dashboards.chart_spec import promote_player_chart_spec
+
+    membership = get_membership(request.user)
+    player = scope_players(
+        Player.objects.select_related("category__club"), membership,
+    ).filter(pk=player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+    dept = scope_departments(
+        Department.objects.filter(club_id=player.category.club_id), membership,
+    ).filter(slug=payload.department_slug).first()
+    if dept is None:
+        raise HttpError(404, "Department not found")
+
+    result = promote_player_chart_spec(
+        category=player.category, department=dept, spec=payload.spec
+    )
     if result.get("error"):
         raise HttpError(400, result["error"])
     return result

@@ -14,6 +14,7 @@ import DashboardEntryPanel from "@/components/perfil/ProfileDepartment/Dashboard
 import DepartmentCard from "@/components/perfil/DepartmentCard/DepartmentCard";
 import DepartmentDashboard from "@/components/dashboards/DepartmentDashboard";
 import MatchHistoryTable from "@/components/perfil/MatchHistoryTable/MatchHistoryTable";
+import PlayerAssistant from "./PlayerAssistant";
 import styles from "./ProfileDepartment.module.css";
 
 interface ProfileDepartmentProps {
@@ -42,6 +43,8 @@ export default function ProfileDepartment({
   const [templates, setTemplates] = useState<ExamTemplate[]>([]);
   const [layout, setLayout] = useState<DepartmentLayoutResponse["layout"] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Bumped after a chart is promoted, so the layout refetches and shows it.
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Refetch only the results list. Used after a row is edited or deleted in
   // a child DepartmentCard so the table re-renders without thrashing the
@@ -106,7 +109,7 @@ export default function ProfileDepartment({
     return () => {
       cancelled = true;
     };
-  }, [playerId, department.slug, dateFrom, dateTo]);
+  }, [playerId, department.slug, dateFrom, dateTo, reloadKey]);
 
   const renderBody = () => {
     if (results === null && !error) {
@@ -197,6 +200,16 @@ export default function ProfileDepartment({
           )}
         </div>
       </header>
+
+      <PlayerAssistant
+        playerId={playerId}
+        playerName={playerName}
+        departmentSlug={department.slug}
+        departmentName={department.name}
+        dateFrom={dateFrom}
+        dateTo={dateTo}
+        onPromoted={() => setReloadKey((k) => k + 1)}
+      />
 
       {renderBody()}
     </section>

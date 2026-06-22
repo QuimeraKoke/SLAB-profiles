@@ -248,6 +248,98 @@ _CHART_CATALOG = (
 )
 
 
+# ─── Player-profile assistant (per-player: answers + PROPOSES per-player CHARTS) ──
+# Same loop as the dashboard assistant, scoped to ONE player and using the
+# per-player chart vocabulary + resolver (resolve_player_chart_spec).
+
+_PLAYER_DASHBOARD_PROMPT = (
+    "Sos el asistente del perfil de {player} ({category}) en el área "
+    "{department}, en una plataforma de ciencias del deporte de un club de "
+    "fútbol profesional. Respondés preguntas sobre ESTE jugador y, cuando una "
+    "visualización ayude, PROPONÉS UN GRÁFICO con `proponer_grafico_jugador` "
+    "para que el cuerpo técnico lo vea y pueda fijarlo al panel del perfil. "
+    "Español (Chile), breve y accionable.\n\n"
+    "Los gráficos son POR JUGADOR: muestran la evolución y los registros de "
+    "{player} (no del plantel). Herramientas de datos (read-only): "
+    "listar_examenes (slug/campo y última fecha), historial_jugador, "
+    "estado_jugador, ranking_jugadores. Más proponer_grafico_jugador para "
+    "graficar.\n\n"
+    "Cómo trabajar:\n"
+    "- Si no conocés el slug/campo exactos, llamá primero a listar_examenes y "
+    "recién después proponé con valores REALES (no inventes slugs/campos/datos).\n"
+    "- SÓLO graficá campos que EXISTEN. Para un ratio/cálculo sin campo propio, "
+    "decilo y mostrá los componentes; no inventes una métrica ni una columna.\n"
+    "- Elegí el chart_type según el CATÁLOGO (abajo) y la pregunta; NO uses "
+    "siempre el mismo tipo.\n"
+    "- Acompañá el gráfico con 1–3 frases que lo interpreten, citando valores y "
+    "fechas reales.\n"
+    "- Si {player} no tiene datos suficientes, decilo en vez de un gráfico vacío."
+)
+
+_PLAYER_CHART_CATALOG = (
+    "# Catálogo de gráficos del PERFIL (por jugador; elegí el que mejor "
+    "responde). Formato — tipo: cuándo · campos · agregación · display_config.\n\n"
+    "- multi_line: evolución en el tiempo de 1+ métricas (todas las series "
+    "visibles a la vez). 1 fuente · VARIOS campos · aggregation=all (o last_n). "
+    "display_config: {\"colors\":[\"#hex\"], \"x_axis_title\":\"Fecha\", "
+    "\"y_axis_title\":\"…\"}.\n"
+    "- line_with_selector: evolución de UNA variable por vez, con dropdown para "
+    "cambiar de campo. 1+ fuentes · VARIOS campos · aggregation=all.\n"
+    "- comparison_table: últimas N tomas lado a lado con deltas (una fila por "
+    "campo). 1 fuente · VARIOS campos · aggregation=last_n + aggregation_param=N.\n"
+    "- grouped_bar: comparar 2–5 campos a través de las últimas tomas. 1 fuente · "
+    "2–5 campos · aggregation=last_n. display_config: {\"colors\":[\"#hex\"]}.\n"
+    "- donut_per_result: fracciones de un total, una dona por toma (p. ej. "
+    "composición corporal). 1 fuente · campos que SUMAN un todo · "
+    "aggregation=last_n.\n\n"
+    "Agregación: all = toda la historia (tendencias); last_n = últimas N tomas "
+    "(con aggregation_param); latest = sólo la última. El widget guardado se "
+    "renderiza por jugador en el panel del perfil del departamento."
+)
+
+_PLAYER_CHART_TOOL = {
+    "name": "proponer_grafico_jugador",
+    "description": (
+        "Propone un gráfico del PERFIL del jugador (su evolución/registros) para "
+        "visualizar la respuesta. Se renderiza para el jugador actual y se puede "
+        "fijar al panel del perfil del departamento (se mostrará por jugador). "
+        "Elegí chart_type y su forma de datos según el CATÁLOGO del sistema. Usá "
+        "slug/campo REALES (listar_examenes). Tipos: multi_line, "
+        "line_with_selector, comparison_table, grouped_bar, donut_per_result."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "chart_type": {
+                "type": "string",
+                "enum": [
+                    "multi_line", "line_with_selector", "comparison_table",
+                    "grouped_bar", "donut_per_result",
+                ],
+            },
+            "title": {"type": "string", "description": "Título corto (español)."},
+            "sources": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "template_slug": {"type": "string"},
+                        "field_keys": {"type": "array", "items": {"type": "string"}},
+                        "aggregation": {"type": "string", "enum": ["latest", "last_n", "all"]},
+                        "aggregation_param": {"type": "integer"},
+                    },
+                    "required": ["template_slug", "field_keys"],
+                    "additionalProperties": False,
+                },
+            },
+            "display_config": {"type": "object", "additionalProperties": True},
+        },
+        "required": ["chart_type", "sources"],
+        "additionalProperties": False,
+    },
+}
+
+
 def answer_team_question(category, messages: list[dict]) -> str:
     """Return the assistant's reply to the conversation `messages`
     (`[{role, content}]`), grounded in `category`'s current snapshot.
@@ -341,13 +433,69 @@ def answer_dashboard_question(
         + json.dumps(build_team_overview(category), ensure_ascii=False, default=str)
     )
 
-    filters = {
-        "position_id": position_id,
-        "player_ids": player_ids,
-        "date_from": date_from,
-        "date_to": date_to,
-    }
-    return _chat_dashboard(api_key, model, system, convo, category, department, filters)
+    from dashboards.chart_spec import resolve_chart_spec
+
+    def _resolve(spec):
+        return resolve_chart_spec(
+            category=category, department=department, spec=spec,
+            position_id=position_id, player_ids=player_ids,
+            date_from=date_from, date_to=date_to,
+        )
+
+    return _chat_with_charts(api_key, model, system, convo, category, _CHART_TOOL, _resolve)
+
+
+def answer_player_question(
+    player,
+    department,
+    messages: list[dict],
+    *,
+    date_from=None,
+    date_to=None,
+) -> dict:
+    """Per-player profile assistant: answers about ONE player and can propose
+    per-player charts (`proponer_grafico_jugador` → `resolve_player_chart_spec`).
+    Returns ``{"reply": str, "charts": [...]}``. Never raises."""
+    from dashboards.pdf.narrative import resolve_insight_agent
+    from dashboards.chart_spec import resolve_player_chart_spec
+
+    api_key = (getattr(settings, "ANTHROPIC_API_KEY", "") or "").strip()
+    if not api_key:
+        return {
+            "reply": (
+                "El asistente de IA no está configurado en este entorno "
+                "(falta ANTHROPIC_API_KEY)."
+            ),
+            "charts": [],
+        }
+
+    convo = _sanitize(messages)
+    if not convo:
+        return {"reply": "¿Qué querés analizar de este jugador?", "charts": []}
+
+    category = player.category
+    agent = resolve_insight_agent(getattr(department, "slug", ""))
+    model = (
+        ((agent.model or "").strip() if agent else "")
+        or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+    )
+    player_name = f"{player.first_name} {player.last_name}".strip()
+    system = _PLAYER_DASHBOARD_PROMPT.format(
+        player=player_name,
+        department=getattr(department, "name", ""),
+        category=getattr(category, "name", ""),
+    )
+    system += "\n\n" + _PLAYER_CHART_CATALOG
+    if agent and (agent.knowledge or "").strip():
+        system += "\n\n# Base de conocimiento del área\n" + agent.knowledge.strip()
+
+    def _resolve(spec):
+        return resolve_player_chart_spec(
+            player=player, department=department, spec=spec,
+            date_from=date_from, date_to=date_to,
+        )
+
+    return _chat_with_charts(api_key, model, system, convo, category, _PLAYER_CHART_TOOL, _resolve)
 
 
 def _specialist_knowledge() -> str:
@@ -602,21 +750,23 @@ def _sanitize(messages: list[dict]) -> list[dict]:
 # ─── Dashboard assistant loop (data tools + proponer_grafico) ─────────
 
 
-def _chat_dashboard(api_key, model, system, messages, category, department, filters) -> dict:
-    """Agentic loop for the Dashboard assistant: the data tools (run_tool) plus
-    `proponer_grafico` (resolve_chart_spec). Collects every resolved chart and
-    returns ``{"reply": text, "charts": [...]}``. Never raises."""
+def _chat_with_charts(api_key, model, system, messages, category, chart_tool, resolve_spec) -> dict:
+    """Agentic loop shared by the team-dashboard and player-profile assistants:
+    the data tools (run_tool) plus a chart tool whose spec is resolved by
+    `resolve_spec(spec) -> payload`. Collects every resolved chart and returns
+    ``{"reply": text, "charts": [...]}``. Never raises."""
     try:
         import anthropic
     except ImportError:
-        logger.warning("anthropic SDK not installed; dashboard assistant unavailable.")
+        logger.warning("anthropic SDK not installed; chart assistant unavailable.")
         return {"reply": "El asistente no está disponible en este entorno.", "charts": []}
 
     system_blocks = [
         {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
     ]
     convo = list(messages)
-    tools = TOOLS + [_CHART_TOOL]
+    tools = TOOLS + [chart_tool]
+    chart_tool_name = chart_tool["name"]
     charts: list[dict] = []
 
     def _create(with_tools: bool):
@@ -644,8 +794,8 @@ def _chat_dashboard(api_key, model, system, messages, category, department, filt
             for block in response.content:
                 if getattr(block, "type", None) != "tool_use":
                     continue
-                if block.name == "proponer_grafico":
-                    out, is_error = _run_chart_tool(category, department, block.input, filters, charts)
+                if block.name == chart_tool_name:
+                    out, is_error = _run_chart(resolve_spec, block.input, charts)
                 else:
                     out, is_error = run_tool(category, block.name, block.input)
                 result = {"type": "tool_result", "tool_use_id": block.id, "content": out}
@@ -657,31 +807,21 @@ def _chat_dashboard(api_key, model, system, messages, category, department, filt
         final = _create(with_tools=False)
         return {"reply": _extract_text(final) or _NO_ANSWER, "charts": charts}
     except Exception:  # noqa: BLE001 — chat must always reply, never 500
-        logger.exception("Dashboard assistant generation failed.")
+        logger.exception("Chart assistant generation failed.")
         return {
             "reply": "No pude consultar el asistente en este momento. Intentá nuevamente.",
             "charts": charts,
         }
 
 
-def _run_chart_tool(category, department, spec, filters, charts) -> tuple[str, bool]:
-    """Resolve a `proponer_grafico` spec, collect the chart for the client, and
-    return a compact tool-result for the model. Empty/error specs are reported
-    back so the model can correct or rephrase (and aren't shown to the user)."""
-    from dashboards.chart_spec import resolve_chart_spec
-
+def _run_chart(resolve_spec, spec, charts) -> tuple[str, bool]:
+    """Resolve a chart spec via `resolve_spec(spec)`, collect the chart for the
+    client, and return a compact tool-result for the model. Empty/error specs are
+    reported back so the model can correct (and aren't shown to the user)."""
     try:
-        payload = resolve_chart_spec(
-            category=category,
-            department=department,
-            spec=spec or {},
-            position_id=filters.get("position_id"),
-            player_ids=filters.get("player_ids"),
-            date_from=filters.get("date_from"),
-            date_to=filters.get("date_to"),
-        )
+        payload = resolve_spec(spec or {})
     except Exception:  # noqa: BLE001
-        logger.exception("proponer_grafico resolution failed")
+        logger.exception("chart spec resolution failed")
         return json.dumps({"error": "No se pudo resolver el gráfico."}, ensure_ascii=False), True
 
     if payload.get("error"):

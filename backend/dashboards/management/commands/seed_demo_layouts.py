@@ -42,6 +42,7 @@ from dashboards.models import (
     Aggregation,
     ChartType,
     DepartmentLayout,
+    LayoutScope,
     LayoutSection,
     TeamReportLayout,
     TeamReportSection,
@@ -129,20 +130,26 @@ def _build_player_layout(
 
 
 def _build_team_layout(
-    department: Department, category: Category, name: str,
+    department: Department | None, category: Category, name: str,
     sections: list[dict],
     *,
     match_selector_config: dict | None = None,
+    scope: str = LayoutScope.PERIOD,
 ) -> tuple[str, int]:
     """Same pattern as `_build_player_layout` but for TeamReportLayout.
 
+    `scope` is `period` (a dashboard sub-item scoped by date range, like
+    Médico / Nutricional) or `match` (the combined cross-department match
+    report shown in Partidos, locked to the opened match). A `match`-scoped
+    layout carries `department=None`.
+
     `match_selector_config` is an optional JSON blob set on the
-    TeamReportLayout to enable the per-match hero selector at the top
-    of the report page (see TeamReportLayout.match_selector_config in
-    `dashboards/models.py` for the expected shape).
+    TeamReportLayout to enable a per-match hero selector. The combined match
+    report leaves it empty — the match is injected by the Partidos route, not
+    chosen in-page.
     """
     existing = TeamReportLayout.objects.filter(
-        department=department, category=category,
+        department=department, category=category, scope=scope,
     ).first()
     if existing:
         existing.sections.all().delete()
@@ -154,7 +161,7 @@ def _build_team_layout(
     else:
         layout = TeamReportLayout.objects.create(
             department=department, category=category, name=name, is_active=True,
-            match_selector_config=match_selector_config or {},
+            scope=scope, match_selector_config=match_selector_config or {},
         )
         action = "created"
 
@@ -726,22 +733,12 @@ def _spec_fisico(department: Department) -> dict:
         })
 
     team: list[dict] = []
-    team_match_selector_config: dict | None = None
-    if gps_match is not None:
-        # Físico team report = per-match GPS dashboard. The selector hero
-        # at the top scopes EVERY widget below to the chosen match.
-        team_match_selector_config = {
-            "enabled": True,
-            "event_type": "match",
-            "required": True,
-            "label": "Partido",
-            # 0 = no cap (capped at 500 in the resolver). past_only=True
-            # filters out scheduled / future matches so the dropdown
-            # only lists games that have already been played.
-            "show_recent": 0,
-            "past_only": True,
-        }
-        team.extend(_gps_team_sections(gps_match))
+    if gps_train is not None:
+        # Físico DASHBOARD (período) = carga de ENTRENAMIENTO agregada por
+        # rango de fechas, igual que Médico / Nutricional. El GPS de PARTIDO
+        # ya no vive acá: se movió al reporte combinado de la vista Partidos
+        # (scope=match), fijado al partido abierto.
+        team.extend(_gps_training_team_sections(gps_train))
 
     # Alerts always lead — they're the "needs attention now" surface,
     # so they should be the first thing the doctor / coach sees when
@@ -751,7 +748,9 @@ def _spec_fisico(department: Department) -> dict:
     return {
         "player": player,
         "team": team,
-        "team_match_selector_config": team_match_selector_config,
+        # Period dashboards never carry a match selector — they're scoped by
+        # the global date range.
+        "team_match_selector_config": None,
     }
 
 
@@ -963,6 +962,197 @@ def _gps_team_sections(gps_match) -> list[dict]:
     return sections
 
 
+def _gps_training_team_sections(gps_train) -> list[dict]:
+    """Period Físico dashboard built on TRAINING GPS (`gps_entrenamiento`).
+
+    Training sessions have no p1/p2 split and aren't tied to a match, so this
+    is a date-range load dashboard (like Médico / Nutricional): accumulated
+    load leaderboards, a weekly Player Load trend, and a per-player matrix of
+    the latest session. NOTE: `team_leaderboard` reduces each player's series
+    via `display_config.aggregator` (it ignores the source `aggregation`), so
+    "acumulado" = aggregator `sum` over the window; the per-player matrix /
+    distribution are latest-per-cell.
+    """
+    return [
+        {
+            "title": "Carga de entrenamiento",
+            "is_collapsible": False,
+            "widgets": [
+                {
+                    "chart_type": ChartType.TEAM_LEADERBOARD,
+                    "title": "Distancia total acumulada",
+                    "description": "Suma de la distancia de entrenamiento en el período.",
+                    "column_span": 6,
+                    "chart_height": 320,
+                    "display_config": {
+                        "style": "vertical_bars",
+                        "aggregator": "sum",
+                        "order": "desc",
+                        "limit": 20,
+                    },
+                    "sources": [{
+                        "template": gps_train,
+                        "field_keys": _filter_keys(gps_train, ["tot_dist"]),
+                        "aggregation": Aggregation.ALL,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_LEADERBOARD,
+                    "title": "Player Load acumulado",
+                    "description": "Suma del Player Load de entrenamiento en el período.",
+                    "column_span": 6,
+                    "chart_height": 320,
+                    "display_config": {
+                        "style": "vertical_bars",
+                        "aggregator": "sum",
+                        "order": "desc",
+                        "limit": 20,
+                    },
+                    "sources": [{
+                        "template": gps_train,
+                        "field_keys": _filter_keys(gps_train, ["player_load"]),
+                        "aggregation": Aggregation.ALL,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_TREND_LINE,
+                    "title": "Player Load promedio del plantel (semanal)",
+                    "column_span": 12,
+                    "display_config": {"bucket_size": "week"},
+                    "sources": [{
+                        "template": gps_train,
+                        "field_keys": _filter_keys(gps_train, ["player_load"]),
+                        "aggregation": Aggregation.ALL,
+                    }],
+                },
+            ],
+        },
+        {
+            "title": "Resumen por jugador",
+            "is_collapsible": True,
+            "default_collapsed": False,
+            "widgets": [
+                {
+                    "chart_type": ChartType.TEAM_ROSTER_MATRIX,
+                    "title": "Resumen jugador × métrica (última sesión)",
+                    "column_span": 12,
+                    "display_config": {"coloring": "vs_team_range"},
+                    "sources": [{
+                        "template": gps_train,
+                        "field_keys": _filter_keys(gps_train, [
+                            "tot_dur", "tot_dist", "mpm", "hsr",
+                            "sprint", "max_vel", "acc", "player_load",
+                        ]),
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_DISTRIBUTION,
+                    "title": "Distribución de Player Load (última sesión)",
+                    "column_span": 6,
+                    "display_config": {"bin_count": 6},
+                    "sources": [{
+                        "template": gps_train,
+                        "field_keys": _filter_keys(gps_train, ["player_load"]),
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_DISTRIBUTION,
+                    "title": "Distribución de distancia total (última sesión)",
+                    "column_span": 6,
+                    "display_config": {"bin_count": 6},
+                    "sources": [{
+                        "template": gps_train,
+                        "field_keys": _filter_keys(gps_train, ["tot_dist"]),
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+            ],
+        },
+    ]
+
+
+def _match_report_sections(club: Club, category: Category) -> list[dict]:
+    """Combined cross-department MATCH report (scope=match) for the Partidos
+    view. Locked to the opened match — the route injects the event_id, so
+    there is NO in-page match selector. Pulls Físico GPS de partido (from the
+    Físico department's template) + rendimiento Táctico (from the Táctico
+    department's template) into one report.
+    """
+    fisico = Department.objects.filter(club=club, slug="fisico").first()
+    tactico = Department.objects.filter(club=club, slug="tactico").first()
+    gps_match = (
+        _resolve_template(fisico, "gps_rendimiento_fisico_de_partido")
+        if fisico else None
+    )
+    rendimiento = (
+        _resolve_template(tactico, "rendimiento_de_partido")
+        if tactico else None
+    )
+
+    sections: list[dict] = []
+
+    # Táctico first — the "how did we play" headline (rating + per-player line).
+    if rendimiento is not None:
+        sections.append({
+            "title": "Rendimiento del partido",
+            "is_collapsible": False,
+            "widgets": [
+                {
+                    "chart_type": ChartType.TEAM_DISTRIBUTION,
+                    "title": "Distribución de ratings",
+                    "column_span": 6,
+                    "display_config": {"bin_count": 6},
+                    "sources": [{
+                        "template": rendimiento,
+                        "field_keys": ["rating"],
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_LEADERBOARD,
+                    "title": "Rating por jugador",
+                    "column_span": 6,
+                    "chart_height": 320,
+                    "display_config": {
+                        "style": "vertical_bars",
+                        "aggregator": "latest",
+                        "order": "desc",
+                        "limit": 20,
+                    },
+                    "sources": [{
+                        "template": rendimiento,
+                        "field_keys": ["rating"],
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+                {
+                    "chart_type": ChartType.TEAM_ROSTER_MATRIX,
+                    "title": "Rendimiento jugador × métrica",
+                    "column_span": 12,
+                    "display_config": {"coloring": "vs_team_range"},
+                    "sources": [{
+                        "template": rendimiento,
+                        "field_keys": _filter_keys(rendimiento, [
+                            "minutes_played", "rating", "goals", "assists",
+                            "shots", "shots_on_target", "yellow_cards",
+                            "fouls_committed", "fouls_received",
+                        ]),
+                        "aggregation": Aggregation.LATEST,
+                    }],
+                },
+            ],
+        })
+
+    # Físico — the per-match GPS sections (General / Primer T. / Segundo T.),
+    # reused verbatim from the old Físico match dashboard.
+    if gps_match is not None:
+        sections.extend(_gps_team_sections(gps_match))
+
+    return sections
+
+
 def _spec_tactico(department: Department) -> dict:
     """Táctico: per-player match performance — objective + subjective."""
     rendimiento = _resolve_template(department, "rendimiento_de_partido")
@@ -1004,32 +1194,22 @@ def _spec_tactico(department: Department) -> dict:
         })
 
     team: list[dict] = []
-    team_match_selector_config: dict | None = None
     if rendimiento is not None:
-        # Táctico team view scopes everything by a MULTI-match selector —
-        # the season-stats table lives or dies by which matches the user
-        # ticks. show_recent=0 means "no cap" (all past matches), and
-        # past_only=True trims out scheduled fixtures.
-        team_match_selector_config = {
-            "enabled": True,
-            "mode": "multi",
-            "event_type": "match",
-            "required": True,
-            "label": "Partidos",
-            "show_recent": 0,
-            "past_only": True,
-        }
+        # Táctico DASHBOARD (período) = rendimiento agregado por rango de
+        # fechas, igual que Médico / Nutricional. Sin selector de partido:
+        # los widgets se acotan a la ventana de fechas global. El detalle
+        # por partido vive en el reporte combinado de la vista Partidos.
         team.append({
             "title": "Resumen por jugador",
             "is_collapsible": False,
             "widgets": [
                 {
-                    # Season aggregate driven by the multi-match selector.
+                    # Aggregate over the matches that fall in the date window.
                     "chart_type": ChartType.TEAM_SEASON_STATS,
-                    "title": "Resumen de temporada por jugador",
+                    "title": "Resumen por jugador",
                     "description": (
                         "Citaciones, minutos, goles y tarjetas para los "
-                        "partidos seleccionados. % minutos jugados usa 90 "
+                        "partidos del período. % minutos jugados usa 90 "
                         "min por partido como referencia."
                     ),
                     "column_span": 12,
@@ -1047,7 +1227,7 @@ def _spec_tactico(department: Department) -> dict:
             "widgets": [
                 {
                     "chart_type": ChartType.TEAM_DISTRIBUTION,
-                    "title": "Distribución de ratings (último partido)",
+                    "title": "Distribución de ratings (último partido del período)",
                     "column_span": 6,
                     "display_config": {"bin_count": 6},
                     "sources": [{
@@ -1078,7 +1258,8 @@ def _spec_tactico(department: Department) -> dict:
     return {
         "player": player,
         "team": team,
-        "team_match_selector_config": team_match_selector_config,
+        # Period dashboards never carry a match selector.
+        "team_match_selector_config": None,
     }
 
 
@@ -1399,6 +1580,33 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.SUCCESS(
                     f"  · {label} team report: {action} with {n} widget(s) "
                     f"in {len(spec['team'])} section(s)."
+                ))
+
+        # ---- Combined match report (cross-department, scope=match) ----
+        # One per category, department=None, locked to the opened match in
+        # the Partidos view. Built after the per-department loop so both the
+        # Físico and Táctico templates are available.
+        match_sections = _match_report_sections(club, category)
+        if not match_sections:
+            self.stdout.write(self.style.NOTICE(
+                "  · Match report: no GPS/rendimiento templates seeded yet, skipped."
+            ))
+        else:
+            existing_match = TeamReportLayout.objects.filter(
+                category=category, scope=LayoutScope.MATCH,
+            ).exists()
+            if existing_match and skip_existing:
+                self.stdout.write(self.style.NOTICE(
+                    "  · Match report: existing layout left alone (--skip-existing)."
+                ))
+            else:
+                action, n = _build_team_layout(
+                    None, category, "Reporte de partido", match_sections,
+                    scope=LayoutScope.MATCH,
+                )
+                self.stdout.write(self.style.SUCCESS(
+                    f"  · Match report: {action} with {n} widget(s) "
+                    f"in {len(match_sections)} section(s)."
                 ))
 
         self.stdout.write(self.style.SUCCESS(

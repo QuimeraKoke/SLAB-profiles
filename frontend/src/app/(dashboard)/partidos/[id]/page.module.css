@@ -1,0 +1,138 @@
+.container {
+  padding: 32px;
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.backLink {
+  align-self: flex-start;
+  color: #6d28d9;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.titleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.meta {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.metaDate {
+  text-transform: capitalize;
+}
+
+.dot {
+  color: #d1d5db;
+}
+
+.editBtn {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  color: #374151;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.editBtn:hover {
+  background: #f9fafb;
+  border-color: #d1d5db;
+}
+
+.reportLead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+  flex-wrap: wrap;
+}
+
+.reportTitle {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.reportHint {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.errorBox {
+  padding: 12px 14px;
+  border-radius: 6px;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  font-size: 0.9rem;
+}
+
+.placeholder {
+  padding: 32px;
+  border-radius: 10px;
+  border: 1px dashed #d1d5db;
+  background: #fafafa;
+  color: #4b5563;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.placeholder strong {
+  display: block;
+  margin-bottom: 6px;
+  color: #111827;
+}
+
+.placeholder p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.inlineLink {
+  color: #6d28d9;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.inlineLink:hover {
+  text-decoration: underline;
+}

@@ -131,7 +131,7 @@ function MatchChip({ match }: { match: CalendarEvent }) {
   const hasData = match.result_count > 0;
   return (
     <Link
-      href={`/partidos/${match.id}/editar`}
+      href={`/partidos/${match.id}`}
       className={styles.chip}
       title={`${time} · ${match.title}${match.location ? " · " + match.location : ""}`}
     >

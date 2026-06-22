@@ -485,18 +485,28 @@ def iter_template_fields(template: ExamTemplate) -> Iterable[dict]:
 # =============================================================================
 
 
-class TeamReportLayout(models.Model):
-    """One team-wide report layout per (department, category) pair.
+class LayoutScope(models.TextChoices):
+    PERIOD = "period", "Período (dashboard por rango de fechas)"
+    MATCH = "match", "Partido (reporte combinado)"
 
-    Mirrors `DepartmentLayout`'s shape but its widgets resolve against the
-    full category roster instead of one player. The frontend reads it from
-    `GET /api/reports/{department_slug}?category_id=...` and renders the
-    payload through a parallel team-widget registry.
+
+class TeamReportLayout(models.Model):
+    """A team-wide report layout, resolved against the full category roster.
+
+    `scope=period` (default): one per (department, category) — the Dashboard
+    sub-items, date-range scoped. `scope=match`: ONE combined, cross-department
+    report per category (department null), rendered in Partidos locked to the
+    opened match. Widgets resolve through the team-widget registry either way.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     department = models.ForeignKey(
-        Department, on_delete=models.CASCADE, related_name="team_report_layouts"
+        Department, on_delete=models.CASCADE, related_name="team_report_layouts",
+        null=True, blank=True,
+        help_text=(
+            "Department for a period dashboard. NULL for a match report "
+            "(combined, cross-department)."
+        ),
     )
     category = models.ForeignKey(
         Category, on_delete=models.CASCADE, related_name="team_report_layouts"
@@ -511,6 +521,16 @@ class TeamReportLayout(models.Model):
         help_text=(
             "If unchecked, the API returns `{layout: null}` and the frontend "
             "shows the placeholder 'no report configured' state."
+        ),
+    )
+    scope = models.CharField(
+        max_length=10,
+        choices=LayoutScope.choices,
+        default=LayoutScope.PERIOD,
+        help_text=(
+            "period = dashboard por departamento + rango de fechas (sub-ítems "
+            "del menú Dashboard). match = reporte combinado del partido "
+            "(cross-departamento, en Partidos, fijado al partido abierto)."
         ),
     )
     match_selector_config = models.JSONField(
@@ -528,13 +548,28 @@ class TeamReportLayout(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ("department", "category")
-        ordering = ("department__name", "category__name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["department", "category"],
+                condition=models.Q(scope="period"),
+                name="uniq_team_period_layout",
+            ),
+            models.UniqueConstraint(
+                fields=["category"],
+                condition=models.Q(scope="match"),
+                name="uniq_team_match_layout",
+            ),
+        ]
+        ordering = ("category__name", "scope")
         verbose_name = "Team report — Layout"
         verbose_name_plural = "Team report — Layouts"
 
     def clean(self) -> None:
         super().clean()
+        if self.scope == LayoutScope.PERIOD and not self.department_id:
+            raise ValidationError(
+                "Un layout de período (sub-ítem del Dashboard) requiere un departamento."
+            )
         if self.department_id and self.category_id:
             if self.department.club_id != self.category.club_id:
                 raise ValidationError(

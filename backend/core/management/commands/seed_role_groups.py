@@ -60,6 +60,11 @@ OPERATIONAL_MODELS: list[tuple[str, str]] = [
     ("dashboards", "teamreportsection"),
     ("dashboards", "teamreportwidget"),
     ("dashboards", "teamreportwidgetdatasource"),
+    # Per-player profile dashboards (promote a chart to the profile layout).
+    ("dashboards", "departmentlayout"),
+    ("dashboards", "layoutsection"),
+    ("dashboards", "widget"),
+    ("dashboards", "widgetdatasource"),
 ]
 
 
