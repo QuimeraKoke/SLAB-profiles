@@ -489,7 +489,19 @@ class DailyNote(models.Model):
     is tagged with the department (área) that raised it, so the outcome of
     the meeting ("la pauta del día") stays in the platform instead of on
     the whiteboard — and it's recorded who entered it.
+
+    `kind` splits two uses of the same machinery: 'pauta' (the meeting's
+    per-day outcome, shown on /daily and the profile's Pauta del día card)
+    and 'plan' (the player's ongoing work plan — medium-term guidance per
+    área, shown only on the profile's Plan de trabajo card).
     """
+
+    KIND_PAUTA = "pauta"
+    KIND_PLAN = "plan"
+    KIND_CHOICES = [
+        (KIND_PAUTA, "Pauta del día"),
+        (KIND_PLAN, "Plan de trabajo"),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     player = models.ForeignKey(
@@ -500,6 +512,9 @@ class DailyNote(models.Model):
         null=True, blank=True,
         help_text="Área that raised the note (Médico, Físico, Nutrición, ...). "
                   "Empty = general/cross-department.",
+    )
+    kind = models.CharField(
+        max_length=16, choices=KIND_CHOICES, default=KIND_PAUTA, db_index=True,
     )
     date = models.DateField(
         db_index=True, help_text="Meeting day the note belongs to.",

@@ -66,6 +66,8 @@ export interface DailyNote {
   player_id: string;
   player_name: string;
   department: { id: string; name: string; slug: string } | null;
+  /** 'pauta' = morning-meeting note; 'plan' = ongoing work-plan entry. */
+  kind?: "pauta" | "plan";
   date: string;
   text: string;
   author: string;

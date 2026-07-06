@@ -417,7 +417,9 @@ def _latest_wellness(category, pids) -> dict:
 def _notes(category, target_date, user) -> tuple[dict, list]:
     """Meeting notes for the date: ({player_id: [note, ...]}, flat list)."""
     notes = list(
-        DailyNote.objects.filter(player__category=category, date=target_date)
+        DailyNote.objects.filter(
+            player__category=category, date=target_date, kind=DailyNote.KIND_PAUTA,
+        )
         .select_related("player", "department", "created_by")
         .order_by("created_at")
     )
@@ -445,6 +447,7 @@ def serialize_note(n: DailyNote, user) -> dict:
             {"id": str(n.department.id), "name": n.department.name, "slug": n.department.slug}
             if n.department else None
         ),
+        "kind": n.kind,
         "date": n.date.isoformat(),
         "text": n.text,
         "author": author,

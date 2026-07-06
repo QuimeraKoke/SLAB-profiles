@@ -2461,9 +2461,14 @@ def download_daily_deck(request, category_id: str, date: str = ""):
 
 @api.get("/players/{player_id}/daily-notes", response=list[DailyNoteOut])
 def list_player_daily_notes(
-    request, player_id: str, date: str | None = None, limit: int = 60,
+    request,
+    player_id: str,
+    date: str | None = None,
+    limit: int = 60,
+    kind: str = DailyNote.KIND_PAUTA,
 ):
-    """One player's pauta del día.
+    """One player's pauta del día (kind='pauta') or plan de trabajo
+    (kind='plan').
 
     With `date` (ISO): that meeting day's notes, oldest first — the daily
     plan view. Without it: the player's most recent notes across all days
@@ -2475,8 +2480,10 @@ def list_player_daily_notes(
     player = scope_players(Player.objects.all(), membership).filter(pk=player_id).first()
     if player is None:
         raise HttpError(404, "Player not found")
+    if kind not in dict(DailyNote.KIND_CHOICES):
+        raise HttpError(422, "kind inválido — 'pauta' o 'plan'.")
 
-    qs = DailyNote.objects.filter(player=player).select_related(
+    qs = DailyNote.objects.filter(player=player, kind=kind).select_related(
         "player", "department", "created_by",
     )
     if date:
@@ -2507,6 +2514,8 @@ def create_daily_note(request, payload: DailyNoteIn):
     text = (payload.text or "").strip()
     if not text:
         raise HttpError(400, "La nota no puede estar vacía.")
+    if payload.kind not in dict(DailyNote.KIND_CHOICES):
+        raise HttpError(422, "kind inválido — 'pauta' o 'plan'.")
 
     department = None
     if payload.department_id:
@@ -2517,8 +2526,8 @@ def create_daily_note(request, payload: DailyNoteIn):
             raise HttpError(404, "Department not found")
 
     note = DailyNote.objects.create(
-        player=player, department=department, date=payload.date,
-        text=text, created_by=request.user,
+        player=player, department=department, kind=payload.kind,
+        date=payload.date, text=text, created_by=request.user,
     )
     return serialize_note(note, request.user)
 

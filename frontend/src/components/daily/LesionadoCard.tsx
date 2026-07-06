@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowUpRight, CalendarClock, MessageSquarePlus } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CalendarClock, ClipboardList, MessageSquarePlus } from "lucide-react";
 
 import type { DailyLesionado, GpsCompare } from "./types";
 import styles from "./LesionadoCard.module.css";
@@ -26,10 +26,12 @@ const STATUS_TONE: Record<string, string> = {
 export default function LesionadoCard({
   row,
   onAddNote,
+  onAddPlan,
   canNote,
 }: {
   row: DailyLesionado;
   onAddNote: (playerId: string) => void;
+  onAddPlan: (playerId: string) => void;
   canNote: boolean;
 }) {
   const ep = row.episode;
@@ -111,10 +113,16 @@ export default function LesionadoCard({
           )}
         </div>
         {canNote && (
-          <button className={styles.noteBtn} onClick={() => onAddNote(row.player_id)}>
-            <MessageSquarePlus size={14} aria-hidden="true" />
-            Nota
-          </button>
+          <span className={styles.noteBtns}>
+            <button className={styles.noteBtn} onClick={() => onAddNote(row.player_id)}>
+              <MessageSquarePlus size={14} aria-hidden="true" />
+              Nota
+            </button>
+            <button className={styles.noteBtn} onClick={() => onAddPlan(row.player_id)}>
+              <ClipboardList size={14} aria-hidden="true" />
+              Plan
+            </button>
+          </span>
         )}
       </footer>
     </article>

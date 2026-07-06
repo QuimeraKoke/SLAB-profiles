@@ -325,3 +325,9 @@
     grid-template-columns: 1fr;
   }
 }
+
+.alertBtns {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+}

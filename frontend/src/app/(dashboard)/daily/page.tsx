@@ -64,6 +64,7 @@ export default function DailyPage() {
   const [reload, setReload] = useState(0);
   const [noteFor, setNoteFor] = useState<string | null>(null); // player_id | null
   const [noteOpen, setNoteOpen] = useState(false);
+  const [noteKind, setNoteKind] = useState<"pauta" | "plan">("pauta");
 
   useEffect(() => {
     if (catLoading || !categoryId) return;
@@ -102,6 +103,13 @@ export default function DailyPage() {
     categories.find((c) => c.id === categoryId)?.name ?? data?.category ?? "";
 
   function openNote(playerId: string | null) {
+    setNoteKind("pauta");
+    setNoteFor(playerId);
+    setNoteOpen(true);
+  }
+
+  function openPlan(playerId: string) {
+    setNoteKind("plan");
     setNoteFor(playerId);
     setNoteOpen(true);
   }
@@ -201,6 +209,7 @@ export default function DailyPage() {
                     row={l}
                     canNote={canNote}
                     onAddNote={(pid) => openNote(pid)}
+                    onAddPlan={(pid) => openPlan(pid)}
                   />
                 ))}
               </div>
@@ -219,7 +228,7 @@ export default function DailyPage() {
             ) : (
               <div className={styles.alertList}>
                 {data.alertas.map((row) => (
-                  <AlertCard key={row.player_id} row={row} canNote={canNote} onAddNote={openNote} />
+                  <AlertCard key={row.player_id} row={row} canNote={canNote} onAddNote={openNote} onAddPlan={openPlan} />
                 ))}
               </div>
             )}
@@ -264,6 +273,13 @@ export default function DailyPage() {
         departments={data.departments}
         onClose={() => setNoteOpen(false)}
         onSaved={() => setReload((n) => n + 1)}
+        kind={noteKind}
+        title={noteKind === "plan" ? "Entrada del plan de trabajo" : "Nota de la reunión"}
+        placeholder={
+          noteKind === "plan"
+            ? "Directriz vigente para este jugador — p. ej. bloque de fuerza 3×/semana, progresión de carrera, plan nutricional…"
+            : "Qué se decidió para este jugador hoy…"
+        }
       />
     </div>
   );
@@ -295,10 +311,12 @@ function AlertCard({
   row,
   canNote,
   onAddNote,
+  onAddPlan,
 }: {
   row: DailyAlertRow;
   canNote: boolean;
   onAddNote: (playerId: string) => void;
+  onAddPlan: (playerId: string) => void;
 }) {
   return (
     <div className={`${styles.alertCard} ${row.worst === "critical" ? styles.railCrit : styles.railWarn}`}>
@@ -308,9 +326,14 @@ function AlertCard({
           <ArrowUpRight size={14} aria-hidden="true" />
         </Link>
         {canNote && (
-          <button className={styles.alertNoteBtn} onClick={() => onAddNote(row.player_id)}>
-            Nota
-          </button>
+          <span className={styles.alertBtns}>
+            <button className={styles.alertNoteBtn} onClick={() => onAddNote(row.player_id)}>
+              Nota
+            </button>
+            <button className={styles.alertNoteBtn} onClick={() => onAddPlan(row.player_id)}>
+              Plan
+            </button>
+          </span>
         )}
       </div>
       <ul className={styles.alertMsgs}>

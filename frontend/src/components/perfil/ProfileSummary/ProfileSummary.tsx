@@ -2,7 +2,7 @@
 
 import React from "react";
 import type { Department } from "@/lib/types";
-import PautaDelDia from "@/components/perfil/PautaDelDia/PautaDelDia";
+import PlayerNotesCard from "@/components/perfil/PlayerNotesCard/PlayerNotesCard";
 import PlayerTriage from "./PlayerTriage";
 import ResumenAssistant from "./ResumenAssistant";
 import ResumenSummary from "./ResumenSummary";
@@ -33,7 +33,8 @@ export default function ProfileSummary({ playerId, playerName, departments }: Pr
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       <ResumenAssistant playerId={playerId} playerName={playerName} />
       <ResumenSummary playerId={playerId} playerName={playerName} />
-      <PautaDelDia playerId={playerId} playerName={playerName} departments={departments} />
+      <PlayerNotesCard kind="pauta" playerId={playerId} playerName={playerName} departments={departments} />
+      <PlayerNotesCard kind="plan" playerId={playerId} playerName={playerName} departments={departments} />
       <PlayerTriage playerId={playerId} />
     </div>
   );

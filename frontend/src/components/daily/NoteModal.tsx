@@ -16,6 +16,9 @@ export default function NoteModal({
   departments,
   onClose,
   onSaved,
+  kind = "pauta",
+  title = "Nota de la reunión",
+  placeholder = "Qué se decidió para este jugador hoy…",
 }: {
   open: boolean;
   date: string;
@@ -24,6 +27,10 @@ export default function NoteModal({
   departments: { id: string; name: string; slug: string }[];
   onClose: () => void;
   onSaved: (note: DailyNote) => void;
+  /** 'pauta' (default, morning meeting) or 'plan' (work-plan entry). */
+  kind?: "pauta" | "plan";
+  title?: string;
+  placeholder?: string;
 }) {
   const { toast } = useToast();
   const [player, setPlayer] = useState<string>("");
@@ -70,6 +77,7 @@ export default function NoteModal({
         body: JSON.stringify({
           player_id: player,
           department_id: department || null,
+          kind,
           date,
           text: text.trim(),
         }),
@@ -84,7 +92,7 @@ export default function NoteModal({
   }
 
   return (
-    <Modal open={open} title="Nota de la reunión" onClose={onClose}>
+    <Modal open={open} title={title} onClose={onClose}>
       <form onSubmit={submit} className={styles.form}>
         {error && (
           <div className={styles.error} role="alert" id="daily-note-error">
@@ -122,7 +130,7 @@ export default function NoteModal({
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={4}
-            placeholder="Qué se decidió para este jugador hoy…"
+            placeholder={placeholder}
             aria-invalid={!!error && !text.trim()}
             aria-describedby={error && !text.trim() ? "daily-note-error" : undefined}
           />

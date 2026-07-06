@@ -313,3 +313,9 @@
   background: #f7f8fb;
   border-color: #b9c0d4;
 }
+
+.noteBtns {
+  display: inline-flex;
+  gap: 6px;
+  flex-shrink: 0;
+}

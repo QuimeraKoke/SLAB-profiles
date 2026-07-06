@@ -754,6 +754,7 @@ class DailyNoteDeptOut(Schema):
 class DailyNoteIn(Schema):
     player_id: UUID
     department_id: UUID | None = None
+    kind: str = "pauta"
     date: date
     text: str
 
@@ -763,6 +764,7 @@ class DailyNoteOut(Schema):
     player_id: UUID
     player_name: str
     department: DailyNoteDeptOut | None = None
+    kind: str = "pauta"
     date: date
     text: str
     author: str = ""

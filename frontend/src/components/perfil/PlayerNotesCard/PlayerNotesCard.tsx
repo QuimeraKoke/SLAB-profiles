@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   MessageSquarePlus,
   NotebookPen,
   Trash2,
@@ -16,13 +17,54 @@ import { useToast } from "@/components/ui/Toast/Toast";
 import NoteModal from "@/components/daily/NoteModal";
 import type { DailyNote } from "@/components/daily/types";
 import type { Department } from "@/lib/types";
-import styles from "./PautaDelDia.module.css";
+import styles from "./PlayerNotesCard.module.css";
+
+type NoteKind = "pauta" | "plan";
 
 interface Props {
+  kind: NoteKind;
   playerId: string;
   playerName: string;
   departments: Department[];
 }
+
+const COPY: Record<
+  NoteKind,
+  {
+    title: string;
+    Icon: typeof NotebookPen;
+    addLabel: string;
+    emptyDay: string;
+    emptyHistory: string;
+    modalTitle: string;
+    placeholder: string;
+    deleteTitle: string;
+  }
+> = {
+  pauta: {
+    title: "Pauta del día",
+    Icon: NotebookPen,
+    addLabel: "Agregar nota",
+    emptyDay:
+      "Sin pauta para esta fecha. Registra qué debe hacer hoy este jugador — tarea, foco del entrenamiento, recuperación — por área.",
+    emptyHistory: "Este jugador aún no tiene notas registradas.",
+    modalTitle: "Nota de la reunión",
+    placeholder: "Qué se decidió para este jugador hoy…",
+    deleteTitle: "Eliminar nota",
+  },
+  plan: {
+    title: "Plan de trabajo",
+    Icon: ClipboardList,
+    addLabel: "Agregar entrada",
+    emptyDay:
+      "Sin entradas del plan para esta fecha. Registra aquí las directrices para este jugador — progresión de fuerza, plan de recuperación, objetivos nutricionales — por área.",
+    emptyHistory: "Este jugador aún no tiene plan de trabajo registrado.",
+    modalTitle: "Entrada del plan de trabajo",
+    placeholder:
+      "Directriz vigente para este jugador — p. ej. bloque de fuerza 3×/semana, progresión de carrera, plan nutricional…",
+    deleteTitle: "Eliminar entrada del plan",
+  },
+};
 
 function todayIso(): string {
   const d = new Date();
@@ -46,13 +88,16 @@ function formatDay(iso: string): string {
 }
 
 /**
- * The player's "Pauta del día" — what the morning meeting decided for this
- * player today (tarea, foco del entrenamiento, recuperación, …), one note
- * per área. Same `core.DailyNote` records as the /daily meeting view, seen
- * from the player's side: a day view grouped by área (‹ › to move across
- * meeting days) and a history view of the most recent notes across days.
+ * One player's dated notes of a given `kind`, seen from the profile:
+ * - 'pauta' — what the morning meeting decided for the day.
+ * - 'plan'  — the player's work plan entries (foco, progresiones, …).
+ *
+ * Both share `core.DailyNote` and the same UX: a day view grouped by área
+ * (‹ › to move across days + Hoy), an "Historial" view of recent entries
+ * across days grouped by date, and add/delete via the shared NoteModal.
  */
-export default function PautaDelDia({ playerId, playerName, departments }: Props) {
+export default function PlayerNotesCard({ kind, playerId, playerName, departments }: Props) {
+  const copy = COPY[kind];
   const canNote = usePermission("core.add_dailynote");
   const { confirm } = useConfirm();
   const { toast } = useToast();
@@ -65,7 +110,7 @@ export default function PautaDelDia({ playerId, playerName, departments }: Props
 
   useEffect(() => {
     let cancelled = false;
-    const qs = history ? "" : `?date=${date}`;
+    const qs = history ? `?kind=${kind}&limit=100` : `?kind=${kind}&date=${date}`;
     api<DailyNote[]>(`/players/${playerId}/daily-notes${qs}`)
       .then((rows) => {
         if (!cancelled) setNotes(rows);
@@ -76,7 +121,7 @@ export default function PautaDelDia({ playerId, playerName, departments }: Props
     return () => {
       cancelled = true;
     };
-  }, [playerId, date, history, reloadKey]);
+  }, [playerId, kind, date, history, reloadKey]);
 
   const refetch = useCallback(() => setReloadKey((k) => k + 1), []);
 
@@ -95,7 +140,7 @@ export default function PautaDelDia({ playerId, playerName, departments }: Props
 
   async function remove(note: DailyNote) {
     const ok = await confirm({
-      title: "Eliminar nota",
+      title: copy.deleteTitle,
       message: `Se eliminará la nota sobre ${playerName}. Esta acción no se puede deshacer.`,
       confirmLabel: "Eliminar",
       variant: "danger",
@@ -103,21 +148,22 @@ export default function PautaDelDia({ playerId, playerName, departments }: Props
     if (!ok) return;
     try {
       await api(`/daily-notes/${note.id}`, { method: "DELETE" });
-      toast.success("Nota eliminada.");
+      toast.success("Eliminada.");
       refetch();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : "No se pudo eliminar la nota.");
+      toast.error(err instanceof ApiError ? err.message : "No se pudo eliminar.");
     }
   }
 
   const isToday = date === todayIso();
+  const titleId = `player-notes-${kind}-title`;
 
   return (
-    <section className={styles.panel} aria-labelledby="pauta-title">
+    <section className={styles.panel} aria-labelledby={titleId}>
       <header className={styles.head}>
-        <h2 id="pauta-title" className={styles.title}>
-          <NotebookPen size={16} aria-hidden="true" />
-          Pauta del día
+        <h2 id={titleId} className={styles.title}>
+          <copy.Icon size={16} aria-hidden="true" />
+          {copy.title}
         </h2>
         <div className={styles.controls}>
           {!history && (
@@ -155,7 +201,7 @@ export default function PautaDelDia({ playerId, playerName, departments }: Props
           {canNote && (
             <button className={styles.addBtn} onClick={() => setModalOpen(true)}>
               <MessageSquarePlus size={14} aria-hidden="true" />
-              Agregar nota
+              {copy.addLabel}
             </button>
           )}
         </div>
@@ -164,11 +210,7 @@ export default function PautaDelDia({ playerId, playerName, departments }: Props
       {notes === null ? (
         <p className={styles.loading}>Cargando…</p>
       ) : notes.length === 0 ? (
-        <p className={styles.empty}>
-          {history
-            ? "Este jugador aún no tiene notas registradas."
-            : "Sin pauta para esta fecha. Registra qué debe hacer hoy este jugador — tarea, foco del entrenamiento, recuperación — por área."}
-        </p>
+        <p className={styles.empty}>{history ? copy.emptyHistory : copy.emptyDay}</p>
       ) : (
         groups.map(([key, rows]) => (
           <div key={key} className={styles.group}>
@@ -196,7 +238,7 @@ export default function PautaDelDia({ playerId, playerName, departments }: Props
                     <button
                       className={styles.trash}
                       onClick={() => remove(n)}
-                      aria-label="Eliminar nota"
+                      aria-label="Eliminar"
                     >
                       <Trash2 size={14} aria-hidden="true" />
                     </button>
@@ -216,6 +258,9 @@ export default function PautaDelDia({ playerId, playerName, departments }: Props
         departments={departments}
         onClose={() => setModalOpen(false)}
         onSaved={refetch}
+        kind={kind}
+        title={copy.modalTitle}
+        placeholder={copy.placeholder}
       />
     </section>
   );
