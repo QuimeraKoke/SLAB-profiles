@@ -2459,6 +2459,37 @@ def download_daily_deck(request, category_id: str, date: str = ""):
     return response
 
 
+@api.get("/players/{player_id}/daily-notes", response=list[DailyNoteOut])
+def list_player_daily_notes(
+    request, player_id: str, date: str | None = None, limit: int = 60,
+):
+    """One player's pauta del día.
+
+    With `date` (ISO): that meeting day's notes, oldest first — the daily
+    plan view. Without it: the player's most recent notes across all days
+    (newest day first), capped at `limit` — the history view.
+    """
+    from api.daily_report import serialize_note
+
+    membership = get_membership(request.user)
+    player = scope_players(Player.objects.all(), membership).filter(pk=player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+
+    qs = DailyNote.objects.filter(player=player).select_related(
+        "player", "department", "created_by",
+    )
+    if date:
+        try:
+            target = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError:
+            raise HttpError(422, "Fecha inválida — se espera YYYY-MM-DD.")
+        notes = qs.filter(date=target).order_by("created_at")
+    else:
+        notes = qs.order_by("-date", "created_at")[: min(max(limit, 1), 200)]
+    return [serialize_note(n, request.user) for n in notes]
+
+
 @api.post("/daily-notes", response=DailyNoteOut)
 @require_perm("core.add_dailynote")
 def create_daily_note(request, payload: DailyNoteIn):

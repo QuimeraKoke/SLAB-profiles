@@ -1,6 +1,8 @@
 "use client";
 
 import React from "react";
+import type { Department } from "@/lib/types";
+import PautaDelDia from "@/components/perfil/PautaDelDia/PautaDelDia";
 import PlayerTriage from "./PlayerTriage";
 import ResumenAssistant from "./ResumenAssistant";
 import ResumenSummary from "./ResumenSummary";
@@ -8,6 +10,7 @@ import ResumenSummary from "./ResumenSummary";
 interface Props {
   playerId: string;
   playerName: string;
+  departments: Department[];
 }
 
 /**
@@ -25,11 +28,12 @@ interface Props {
  * proposed charts inline. Charts are transient (this view isn't a
  * configurable layout, so they're not promotable).
  */
-export default function ProfileSummary({ playerId, playerName }: Props) {
+export default function ProfileSummary({ playerId, playerName, departments }: Props) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       <ResumenAssistant playerId={playerId} playerName={playerName} />
       <ResumenSummary playerId={playerId} playerName={playerName} />
+      <PautaDelDia playerId={playerId} playerName={playerName} departments={departments} />
       <PlayerTriage playerId={playerId} />
     </div>
   );

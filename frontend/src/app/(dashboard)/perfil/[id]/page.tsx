@@ -168,6 +168,7 @@ export default function PerfilPlayerPage({ params }: PageProps) {
           <ProfileSummary
             playerId={player.id}
             playerName={`${player.first_name} ${player.last_name}`}
+            departments={player.category.departments}
           />
         )}
         {safeActive === TIMELINE_TAB_ID && <ProfileTimeline playerId={player.id} />}
