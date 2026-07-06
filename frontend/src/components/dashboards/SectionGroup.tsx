@@ -8,9 +8,12 @@ import styles from "./SectionGroup.module.css";
 
 interface SectionGroupProps {
   section: DashboardSection;
+  /** When rendering a player profile, enables per-player widget features
+   *  (e.g. the position-comparison toggle on line charts). */
+  playerId?: string;
 }
 
-export default function SectionGroup({ section }: SectionGroupProps) {
+export default function SectionGroup({ section, playerId }: SectionGroupProps) {
   const [collapsed, setCollapsed] = useState(section.default_collapsed);
   const showHeader = section.title.length > 0;
   const canCollapse = section.is_collapsible && showHeader;
@@ -58,7 +61,7 @@ export default function SectionGroup({ section }: SectionGroupProps) {
                 } as React.CSSProperties
               }
             >
-              {renderWidget(widget)}
+              {renderWidget(widget, playerId)}
             </div>
           ))}
         </div>

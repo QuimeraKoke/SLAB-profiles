@@ -19,7 +19,7 @@ export default function SquadStatus({ squad }: { squad: CCSquad }) {
   const counts: { label: string; n: number; dot: string }[] = [
     { label: "Disponibles", n: c.disponibles, dot: styles.dotOk },
     { label: "Riesgo alto", n: c.riesgo_alto, dot: styles.dotCrit },
-    { label: "Reintegración", n: c.reintegracion, dot: styles.dotInfo },
+    { label: "Return to Train", n: c.reintegracion, dot: styles.dotInfo },
     { label: "Lesionados", n: c.lesionados, dot: styles.dotCrit },
     { label: "Recuperación", n: c.recuperacion, dot: styles.dotWarn },
   ];

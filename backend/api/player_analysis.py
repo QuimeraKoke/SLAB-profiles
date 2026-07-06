@@ -20,25 +20,27 @@ from typing import Any
 from core.models import Player
 from exams.models import ExamResult, ExamTemplate
 
-_GPS_MATCH_SLUG = "gps_rendimiento_fisico_de_partido"
-_GPS_TRAIN_SLUG = "gps_entrenamiento"
+_GPS_MATCH_SLUG = "gps_partido"
+_GPS_TRAIN_SLUG = "gps_sesion"
 
 # Core match-GPS metrics for trends + correlations (key, label, unit).
+# player_load / hiaa are optional provider metrics — builders degrade
+# gracefully when an export doesn't carry them.
 _MATCH_METRICS: list[tuple[str, str, str]] = [
-    ("tot_dist_total", "Distancia total", "m"),
-    ("hsr_total", "HSR (>19,8 km/h)", "m"),
-    ("sprint_total", "Sprint (>25 km/h)", "m"),
-    ("hiaa_total", "HIAA", "n"),
-    ("hmld_total", "HMLD", "m"),
-    ("acc_dec_total", "Acc+Dec ≥3", "n"),
-    ("player_load_total", "Player Load", "a.u."),
-    ("max_vel_total", "Vel. máxima", "km/h"),
+    ("tot_dist", "Distancia total", "m"),
+    ("hsr", "HSR (>19,8 km/h)", "m"),
+    ("sprint_dist", "Sprint (>25 km/h)", "m"),
+    ("hiaa", "HIAA", "n"),
+    ("hmld", "HMLD", "m"),
+    ("acc_dec", "Acc+Dec ≥3", "n"),
+    ("player_load", "Player Load", "a.u."),
+    ("max_vel", "Vel. máxima", "km/h"),
 ]
 # The headline load metric whose trend + co-movers lead the analysis.
-_PRIMARY_MATCH_METRIC = "tot_dist_total"
+_PRIMARY_MATCH_METRIC = "tot_dist"
 # Position-context metrics (subset of match metrics that read well as peer
 # benchmarks).
-_POSITION_METRICS = ["tot_dist_total", "hsr_total", "hiaa_total", "max_vel_total"]
+_POSITION_METRICS = ["tot_dist", "hsr", "hiaa", "max_vel"]
 
 _STRONG_R = 0.6   # |r| at/above which a correlation is "strong"
 _MIN_SERIES = 4   # min paired points for a meaningful correlation/trend
@@ -209,7 +211,7 @@ def _weekly_load(player: Player, match_tpl, train_tpl) -> list[dict[str, Any]]:
         add(
             ExamResult.objects.filter(player=player, template__family_id=match_tpl.family_id)
             .values_list("recorded_at", "result_data"),
-            "tot_dist_total",
+            "tot_dist",
         )
 
     ordered = sorted(weeks.items())

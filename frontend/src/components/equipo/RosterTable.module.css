@@ -112,10 +112,24 @@
 
 /* forma */
 .forma { display: inline-flex; align-items: flex-end; gap: 3px; height: 20px; }
-.bar { width: 5px; border-radius: 2px; display: inline-block; }
+.bar { width: 5px; border-radius: 2px; display: inline-block; cursor: default; }
 .barOk { background: #16a34a; }
 .barWarn { background: #f59e0b; }
 .barCrit { background: #dc2626; }
+/* Missing-day slot — a faint "–" so the trend always spans the full window. */
+.barEmpty {
+  width: 5px; display: inline-flex; align-items: flex-end; justify-content: center;
+  color: #d0d5dd; font-size: 11px; line-height: 1; cursor: default; user-select: none;
+}
+
+/* Instant cursor tooltip (rendered in a portal so the card's overflow:hidden
+   can't clip it; React-state-driven ⇒ no native title delay). */
+.formaTip {
+  position: fixed; transform: translate(-50%, calc(-100% - 10px));
+  background: #1d2939; color: #fff; padding: 4px 8px; border-radius: 6px;
+  font-size: 11px; font-weight: 500; white-space: nowrap; pointer-events: none;
+  z-index: 1000; box-shadow: 0 2px 8px rgba(16, 24, 40, 0.2);
+}
 
 .dash { color: #cbd2dc; font-weight: 600; }
 

@@ -1,0 +1,327 @@
+.page {
+  padding: 16px 28px 56px;
+  max-width: 1640px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.h1 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 22px;
+  font-weight: 700;
+  color: #0a2240;
+  margin: 0;
+}
+
+.h1 :global(svg) {
+  color: #4f46e5;
+}
+
+.sub {
+  font-size: 13px;
+  color: #667085;
+  margin: 2px 0 0;
+}
+
+/* ── Date navigation ── */
+.dateNav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dateBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: #fff;
+  border: 1px solid #d7dbe6;
+  border-radius: 8px;
+  color: #475467;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.dateBtn:hover:not(:disabled) {
+  background: #f7f8fb;
+}
+
+.dateBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.dateLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #0a2240;
+  text-transform: capitalize;
+  min-width: 170px;
+  justify-content: center;
+}
+
+.dateLabel :global(svg) {
+  color: #98a2b3;
+}
+
+.todayBtn {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #4f46e5;
+  background: none;
+  border: 1px solid #d7dbe6;
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+}
+
+.todayBtn:hover {
+  background: #f7f8fb;
+}
+
+/* ── KPI strip ── */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.kpi {
+  background: #fff;
+  border: 1px solid #e8eaf0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kpiLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #667085;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.kpiValue {
+  font-size: 24px;
+  font-weight: 800;
+  color: #0a2240;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi_ok { color: #16a34a; }
+.kpi_warn { color: #b76e00; }
+.kpi_crit { color: #b42318; }
+
+.kpiDetail {
+  font-size: 12px;
+  color: #98a2b3;
+}
+
+/* ── Layout ── */
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 20px;
+  align-items: start;
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  min-width: 0;
+}
+
+.rail {
+  position: sticky;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0a2240;
+  margin: 0 0 12px;
+}
+
+.sectionNum {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.count {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #475467;
+  background: #eef0f5;
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.emptySection {
+  font-size: 13px;
+  color: #98a2b3;
+  background: #fff;
+  border: 1px dashed #d7dbe6;
+  border-radius: 12px;
+  padding: 18px;
+  margin: 0;
+}
+
+/* Lesionado cards: presentation-friendly two-up grid. */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
+  gap: 14px;
+}
+
+/* ── Alert cards ── */
+.alertList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 12px;
+}
+
+.alertCard {
+  background: #fff;
+  border: 1px solid #e8eaf0;
+  border-left-width: 4px;
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.railCrit { border-left-color: #dc2626; }
+.railWarn { border-left-color: #f59e0b; }
+
+.alertHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.alertName {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0a2240;
+  text-decoration: none;
+}
+
+.alertName:hover {
+  color: #4f46e5;
+}
+
+.alertName :global(svg) {
+  color: #98a2b3;
+}
+
+.alertNoteBtn {
+  font-size: 12px;
+  font-weight: 600;
+  color: #4f46e5;
+  background: none;
+  border: 1px solid #d7dbe6;
+  border-radius: 7px;
+  padding: 3px 9px;
+  cursor: pointer;
+}
+
+.alertNoteBtn:hover {
+  background: #f7f8fb;
+}
+
+.alertMsgs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.alertMsgs li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.alertMsgs li :global(svg) {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.msgCrit { color: #b42318; }
+.msgWarn { color: #b76e00; }
+
+.muted {
+  font-size: 13px;
+  color: #98a2b3;
+  padding: 4px 0;
+}
+
+.error {
+  font-size: 14px;
+  color: #b42318;
+  background: #fde8e8;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+@media (max-width: 1180px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rail {
+    position: static;
+  }
+
+  .kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+}

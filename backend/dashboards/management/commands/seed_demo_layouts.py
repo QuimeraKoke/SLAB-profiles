@@ -365,24 +365,9 @@ def _spec_medico(department: Department) -> dict:
             ],
         })
 
-    if molestias is not None:
-        player.append({
-            "title": "Molestias recientes",
-            "widgets": [{
-                "chart_type": ChartType.ACTIVITY_LOG,
-                "title": "Últimas molestias registradas",
-                "column_span": 12,
-                "display_config": {"limit": 15},
-                "sources": [{
-                    "template": molestias,
-                    "field_keys": _filter_keys(molestias, [
-                        "tipo", "zona", "comentarios",
-                    ]),
-                    "aggregation": Aggregation.LAST_N,
-                    "aggregation_param": 15,
-                }],
-            }],
-        })
+    # "Molestias recientes" was removed from the médico player layout by
+    # request (2026-07-05) — molestias still surface via alerts and the
+    # wellness check-in; the section was redundant noise on the profile.
 
     if check_in is not None:
         player.append({
@@ -645,8 +630,8 @@ def _spec_medico(department: Department) -> dict:
 
 def _spec_fisico(department: Department) -> dict:
     """Físico: GPS partido + GPS entrenamiento."""
-    gps_match = _resolve_template(department, "gps_rendimiento_fisico_de_partido")
-    gps_train = _resolve_template(department, "gps_entrenamiento")
+    gps_match = _resolve_template(department, "gps_partido")
+    gps_train = _resolve_template(department, "gps_sesion")
 
     player: list[dict] = []
     if gps_match is not None:
@@ -661,9 +646,9 @@ def _spec_fisico(department: Department) -> dict:
                     "sources": [{
                         "template": gps_match,
                         "field_keys": _filter_keys(gps_match, [
-                            "tot_dist_total", "max_vel_total", "hsr_total",
-                            "sprint_total", "acc_dec_total", "hmld_total",
-                            "player_load_total", "mpm_total",
+                            "tot_dist", "max_vel", "hsr",
+                            "sprint_dist", "acc_dec", "hmld",
+                            "player_load", "mpm",
                         ]),
                         "aggregation": Aggregation.ALL,
                     }],
@@ -674,7 +659,7 @@ def _spec_fisico(department: Department) -> dict:
                     "column_span": 6,
                     "sources": [{
                         "template": gps_match,
-                        "field_keys": _filter_keys(gps_match, ["tot_dist_total", "hsr_total"]),
+                        "field_keys": _filter_keys(gps_match, ["tot_dist", "hsr"]),
                         "aggregation": Aggregation.LAST_N,
                         "aggregation_param": 5,
                     }],
@@ -686,8 +671,8 @@ def _spec_fisico(department: Department) -> dict:
                     "sources": [{
                         "template": gps_match,
                         "field_keys": _filter_keys(gps_match, [
-                            "tot_dist_total", "tot_dur_total", "max_vel_total",
-                            "hmld_total", "player_load_total",
+                            "tot_dist", "tot_dur", "max_vel",
+                            "hmld", "player_load",
                         ]),
                         "aggregation": Aggregation.LAST_N,
                         "aggregation_param": 3,
@@ -708,7 +693,7 @@ def _spec_fisico(department: Department) -> dict:
                         "template": gps_train,
                         "field_keys": _filter_keys(gps_train, [
                             "tot_dist", "tot_dur", "player_load", "max_vel",
-                            "hsr", "sprint", "acc", "rpe", "mpm",
+                            "hsr", "sprint_dist", "acc", "rpe", "mpm",
                         ]),
                         "aggregation": Aggregation.ALL,
                     }],
@@ -723,7 +708,7 @@ def _spec_fisico(department: Department) -> dict:
                     "sources": [{
                         "template": gps_train,
                         "field_keys": _filter_keys(gps_train, [
-                            "tot_dist", "hsr", "sprint", "hmld", "mpm",
+                            "tot_dist", "hsr", "sprint_dist", "hmld", "mpm",
                             "max_vel", "acc", "dec", "hiaa", "player_load",
                         ]),
                         "aggregation": Aggregation.LATEST,
@@ -755,98 +740,27 @@ def _spec_fisico(department: Department) -> dict:
 
 
 def _gps_team_sections(gps_match) -> list[dict]:
-    """Build the 3-section GPS match report: General / Primer T. / Segundo T.
-
-    Same widget shapes in each half, just swapping `_total` → `_p1` / `_p2`
-    suffixes. Keeps the seed compact and the page narrative consistent.
+    """Build the GPS match report on `gps_partido` (whole-match totals —
+    the flat per-session schema carries no Primer/Segundo tiempo split).
     """
     def keys_for(suffix: str) -> dict:
-        # Helpers so the section block stays readable.
+        # Kept as a mapping so the section block reads the same as before
+        # the per-half → flat migration; `suffix` is ignored.
         return {
-            "tot_dist": f"tot_dist_{suffix}",
-            "mpm": f"mpm_{suffix}",
-            "tot_dur": f"tot_dur_{suffix}",
-            "hsr": f"hsr_{suffix}",
-            "sprint": f"sprint_{suffix}",
-            "dist70": f"dist_70_85_{suffix}",
-            "dist85": f"dist_85_95_{suffix}",
-            "acc_dec": f"acc_dec_{suffix}",
-            "acc": f"acc_{suffix}",
-            "dec": f"dec_{suffix}",
-            "max_vel": f"max_vel_{suffix}",
-            "hiaa": f"hiaa_{suffix}",
-            "hmld": f"hmld_{suffix}",
-            "player_load": f"player_load_{suffix}",
-        }
-
-    def per_half_sections(label: str, suffix: str) -> dict:
-        k = keys_for(suffix)
-        return {
-            "title": label,
-            "is_collapsible": True,
-            "default_collapsed": False,
-            "widgets": [
-                {
-                    "chart_type": ChartType.TEAM_MATCH_SUMMARY,
-                    "title": f"Resumen agregado — {label.lower()}",
-                    "column_span": 12,
-                    "display_config": {"per_player_aggregator": "latest"},
-                    "sources": [{
-                        "template": gps_match,
-                        "field_keys": _filter_keys(gps_match, [
-                            k["tot_dist"], k["mpm"], k["hsr"], k["sprint"],
-                            k["acc_dec"], k["max_vel"], k["hiaa"], k["hmld"],
-                        ]),
-                        "aggregation": Aggregation.LATEST,
-                    }],
-                },
-                {
-                    "chart_type": ChartType.TEAM_HORIZONTAL_COMPARISON,
-                    "title": "Distancia + Metros por minuto",
-                    "column_span": 12,
-                    "chart_height": 520,
-                    "display_config": {"mode": "multi_field"},
-                    "sources": [{
-                        "template": gps_match,
-                        "field_keys": _filter_keys(gps_match, [k["tot_dist"], k["mpm"]]),
-                        "aggregation": Aggregation.LATEST,
-                    }],
-                },
-                {
-                    "chart_type": ChartType.TEAM_LEADERBOARD,
-                    "title": "Sprints (>25 km/h)",
-                    "column_span": 6,
-                    "chart_height": 300,
-                    "display_config": {
-                        "style": "vertical_bars",
-                        "aggregator": "sum",
-                        "order": "desc",
-                        "limit": 20,
-                    },
-                    "sources": [{
-                        "template": gps_match,
-                        "field_keys": _filter_keys(gps_match, [k["sprint"]]),
-                        "aggregation": Aggregation.LATEST,
-                    }],
-                },
-                {
-                    "chart_type": ChartType.TEAM_LEADERBOARD,
-                    "title": "Velocidad máxima",
-                    "column_span": 6,
-                    "chart_height": 300,
-                    "display_config": {
-                        "style": "vertical_bars",
-                        "aggregator": "max",
-                        "order": "desc",
-                        "limit": 20,
-                    },
-                    "sources": [{
-                        "template": gps_match,
-                        "field_keys": _filter_keys(gps_match, [k["max_vel"]]),
-                        "aggregation": Aggregation.LATEST,
-                    }],
-                },
-            ],
+            "tot_dist": "tot_dist",
+            "mpm": "mpm",
+            "tot_dur": "tot_dur",
+            "hsr": "hsr",
+            "sprint": "sprint_dist",
+            "dist70": "zone_75_85",
+            "dist85": "zone_85_95",
+            "acc_dec": "acc_dec",
+            "acc": "acc",
+            "dec": "dec",
+            "max_vel": "max_vel",
+            "hiaa": "hiaa",
+            "hmld": "hmld",
+            "player_load": "player_load",
         }
 
     sections: list[dict] = []
@@ -957,13 +871,11 @@ def _gps_team_sections(gps_match) -> list[dict]:
         ],
     })
 
-    sections.append(per_half_sections("Primer tiempo", "p1"))
-    sections.append(per_half_sections("Segundo tiempo", "p2"))
     return sections
 
 
 def _gps_training_team_sections(gps_train) -> list[dict]:
-    """Period Físico dashboard built on TRAINING GPS (`gps_entrenamiento`).
+    """Period Físico dashboard built on TRAINING GPS (`gps_sesion`).
 
     Training sessions have no p1/p2 split and aren't tied to a match, so this
     is a date-range load dashboard (like Médico / Nutricional): accumulated
@@ -1041,7 +953,7 @@ def _gps_training_team_sections(gps_train) -> list[dict]:
                         "template": gps_train,
                         "field_keys": _filter_keys(gps_train, [
                             "tot_dur", "tot_dist", "mpm", "hsr",
-                            "sprint", "max_vel", "acc", "player_load",
+                            "sprint_dist", "max_vel", "acc", "player_load",
                         ]),
                         "aggregation": Aggregation.LATEST,
                     }],
@@ -1083,7 +995,7 @@ def _match_report_sections(club: Club, category: Category) -> list[dict]:
     fisico = Department.objects.filter(club=club, slug="fisico").first()
     tactico = Department.objects.filter(club=club, slug="tactico").first()
     gps_match = (
-        _resolve_template(fisico, "gps_rendimiento_fisico_de_partido")
+        _resolve_template(fisico, "gps_partido")
         if fisico else None
     )
     rendimiento = (

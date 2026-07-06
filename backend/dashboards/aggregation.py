@@ -8,7 +8,9 @@ happens here.
 
 from __future__ import annotations
 
-from datetime import datetime
+import re
+
+from datetime import datetime, timedelta
 from typing import Any, Callable
 from uuid import UUID
 
@@ -245,6 +247,88 @@ def _peer_average_lines(
     return out
 
 
+def position_comparison(
+    source: WidgetDataSource,
+    field_key: str,
+    player,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict[str, Any]:
+    """Same-position peers' series for one field — the on-demand payload
+    behind a chart's comparison toggle. Two levels:
+
+    - ``players``: each ACTIVE same-position teammate's full series, one
+      entry per player (the viewed player is excluded — they're already the
+      chart's main line).
+    - ``mean``: per-calendar-day average across the WHOLE position
+      (viewed player included), only for days where at least two players
+      have a value — a "mean" of one player is just that player's line.
+
+    Results are fetched with the SAME source aggregation/window rules as
+    the widget's own series (`_fetch_results`), so both sides of the
+    comparison see the same data policy.
+    """
+    from core.models import Player
+
+    if player is None or player.position_id is None:
+        return {"position": None, "players": [], "mean": []}
+
+    def _points(pid) -> list[dict[str, Any]]:
+        results = _fetch_results(source.template, pid, source, date_from, date_to)
+        return [
+            {
+                "recorded_at": r.recorded_at.isoformat(),
+                "value": _safe_float(_read(r, field_key)),
+            }
+            for r in results
+        ]
+
+    day_values: dict[str, list[float]] = {}
+
+    def _collect(points: list[dict[str, Any]]) -> None:
+        for pt in points:
+            if pt["value"] is not None:
+                day_values.setdefault(pt["recorded_at"][:10], []).append(pt["value"])
+
+    _collect(_points(player.id))
+
+    peers = (
+        Player.objects.filter(
+            category_id=player.category_id,
+            position_id=player.position_id,
+            is_active=True,
+        )
+        .exclude(id=player.id)
+        .order_by("last_name", "first_name")
+    )
+    players_payload: list[dict[str, Any]] = []
+    for peer in peers:
+        points = _points(peer.id)
+        if not any(pt["value"] is not None for pt in points):
+            continue
+        first = (peer.first_name or "").strip()
+        last = (peer.last_name or "").strip().title()
+        players_payload.append(
+            {
+                "player_id": str(peer.id),
+                "name": f"{first[:1]}. {last}".strip(". ") if last else first.title(),
+                "points": points,
+            }
+        )
+        _collect(points)
+
+    mean_points = [
+        {"day": day, "value": round(sum(vals) / len(vals), 2), "n": len(vals)}
+        for day, vals in sorted(day_values.items())
+        if len(vals) >= 2
+    ]
+    return {
+        "position": player.position.name,
+        "players": players_payload,
+        "mean": mean_points,
+    }
+
+
 def _resolve_line_with_selector(
     widget: Widget,
     sources: list[WidgetDataSource],
@@ -264,10 +348,12 @@ def _resolve_line_with_selector(
 
     available_fields: list[dict[str, Any]] = []
     series: dict[str, list[dict[str, Any]]] = {}
+    all_results: list[ExamResult] = []
 
     for source in sources:
         template = source.template
         results = _fetch_results(template, player_id, source, date_from, date_to)
+        all_results.extend(results)
         field_keys = source.field_keys or [
             f["key"]
             for f in iter_template_fields(template)
@@ -326,6 +412,9 @@ def _resolve_line_with_selector(
         "available_fields": available_fields,
         "series": series,
         "reference_lines": reference_lines,
+        # Rival names for tooltip rows whose date is a match date (e.g. the
+        # per-match GPS charts, where every point IS a match).
+        "matches": _matches_for([(all_results, timedelta(0))]),
     }
 
 
@@ -336,20 +425,33 @@ def _resolve_training_radar(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
 ) -> dict[str, Any]:
-    """Radar: the latest training session's GPS variables as a % of the
-    player's chronic match-load reference (max match in 28 d, ≥75 GPS-min).
-    One axis per metric; the reference ring is 100% (= match-day chronic)."""
-    from .player_state import TRAIN_TO_MATCH_FIELD, match_load_refs
+    """Radar: one training session's GPS variables as a % of the player's
+    chronic match-load reference (max match in 28 d, ≥75 GPS-min). One axis
+    per metric; the reference ring is 100% (= match-day chronic).
 
-    empty = {"chart_type": ChartType.TRAINING_RADAR.value, "empty": True, "axes": []}
+    Ships the last N sessions (display_config `session_count`, default 15),
+    each with its own reference — the frontend offers them in a selector and
+    defaults to the newest. When no qualifying match sits in the 28 days
+    before a session (subs, layoffs, off-season), that session's reference
+    re-anchors at the player's most recent full match so the comparison
+    still reads against his own match demands — `reference_kind` tells the
+    frontend which one it got."""
+    from .player_state import MATCH_REFERENCE_FIELDS, MIN_MATCH_MINUTES, _GPS_MATCH_SLUG
+
+    empty = {"chart_type": ChartType.TRAINING_RADAR.value, "empty": True,
+             "axes": [], "sessions": []}
     src = next((s for s in sources if s.template.slug == _GPS_TRAIN_SLUG), None)
     if src is None:
         return empty
     template = src.template
     field_keys = [
-        k for k in (src.field_keys or list(TRAIN_TO_MATCH_FIELD))
-        if k in TRAIN_TO_MATCH_FIELD
+        k for k in (src.field_keys or sorted(MATCH_REFERENCE_FIELDS))
+        if k in MATCH_REFERENCE_FIELDS
     ]
+
+    session_count = 15
+    if isinstance(widget.display_config, dict):
+        session_count = int(widget.display_config.get("session_count") or 15)
 
     qs = ExamResult.objects.filter(player_id=player_id, template=template)
     if date_to is not None:
@@ -357,33 +459,73 @@ def _resolve_training_radar(
         if timezone.is_naive(cap):
             cap = timezone.make_aware(cap, timezone.get_default_timezone())
         qs = qs.filter(recorded_at__lte=cap)
-    latest = qs.order_by("-recorded_at").first()
-    if latest is None:
+    trainings = list(qs.order_by("-recorded_at")[:session_count])
+    if not trainings:
         return empty
 
-    refs = match_load_refs(player_id, latest.recorded_at, field_keys)
-    axes: list[dict[str, Any]] = []
-    for key in field_keys:
-        tv = _safe_float((latest.result_data or {}).get(key))
-        chronic = (refs.get(key) or {}).get("chronic")
-        if tv is None or not chronic:
-            continue
-        meta = _field_meta(template, key)
-        axes.append({
-            "key": key,
-            "label": meta.get("label") or key,
-            "unit": meta.get("unit"),
-            "training_value": round(tv, 1),
-            "reference_value": round(chronic, 1),
-            "pct": round(tv / chronic * 100, 1),
+    # One query for every full match up to the newest session; per-session
+    # windows are then resolved in Python (avoids N `match_load_refs` calls).
+    matches = [
+        (rec, data or {}) for rec, data in ExamResult.objects.filter(
+            player_id=player_id, template__slug=_GPS_MATCH_SLUG,
+            recorded_at__lte=trainings[0].recorded_at,
+        ).order_by("-recorded_at").values_list("recorded_at", "result_data")
+        if (_safe_float((data or {}).get("tot_dur")) or 0.0) >= MIN_MATCH_MINUTES
+    ]
+
+    def _axes_for(session) -> tuple[list[dict[str, Any]], str, Any]:
+        anchor = session.recorded_at
+        kind = "ventana_28d"
+        window = [d for rec, d in matches
+                  if anchor - timedelta(days=28) <= rec <= anchor]
+        if not window:
+            # Fall back to a 28 d block ending at the last full match.
+            prior = [(rec, d) for rec, d in matches if rec <= anchor]
+            if prior:
+                kind, anchor = "ultimo_partido_completo", prior[0][0]
+                window = [d for rec, d in prior
+                          if rec >= anchor - timedelta(days=28)]
+        axes: list[dict[str, Any]] = []
+        for key in field_keys:
+            tv = _safe_float((session.result_data or {}).get(key))
+            vals = [v for v in (_safe_float(d.get(key)) for d in window) if v is not None]
+            chronic = max(vals) if vals else None
+            if tv is None or not chronic:
+                continue
+            meta = _field_meta(template, key)
+            axes.append({
+                "key": key,
+                "label": meta.get("label") or key,
+                "unit": meta.get("unit"),
+                "training_value": round(tv, 1),
+                "reference_value": round(chronic, 1),
+                "pct": round(tv / chronic * 100, 1),
+            })
+        return axes, kind, anchor
+
+    sessions_payload: list[dict[str, Any]] = []
+    for t in trainings:
+        axes, kind, anchor = _axes_for(t)
+        label = ((t.result_data or {}).get("sesion") or "").strip()
+        sessions_payload.append({
+            "session_date": t.recorded_at.isoformat(),
+            "label": label,
+            "axes": axes,
+            "reference_kind": kind,
+            "reference_date": anchor.date().isoformat(),
         })
 
+    newest = sessions_payload[0]
     return {
         "chart_type": ChartType.TRAINING_RADAR.value,
-        "axes": axes,
+        # Top-level mirrors the newest session (pre-selector payload shape).
+        "axes": newest["axes"],
         "reference_pct": 100,
-        "session_date": latest.recorded_at.isoformat(),
-        "empty": not axes,
+        "session_date": newest["session_date"],
+        "reference_kind": newest["reference_kind"],
+        "reference_date": newest["reference_date"],
+        "sessions": sessions_payload,
+        "empty": not any(s["axes"] for s in sessions_payload),
     }
 
 
@@ -530,6 +672,73 @@ def _resolve_multi_line(
     }
 
 
+_MATCH_TITLE_COUNTER = re.compile(r"\s*\(\d+\)\s*$")
+_TRAILING_PARENTHETICAL = re.compile(r"\s*\([^)]*\)\s*$")
+
+
+def _match_info(event) -> dict[str, Any]:
+    """Opponent + venue for a match event, best source available.
+
+    Preference order: the structured `opponent_team` FK, then
+    `metadata.opponent`, then parsing the "Home vs Away" title against the
+    event's own club name (which also yields home/away). Parentheticals
+    ("(3)" fixture counters, "(Semifinal)") stay in the title but are
+    stripped from a derived opponent name.
+    """
+    title = _MATCH_TITLE_COUNTER.sub("", event.title or "").strip()
+    club_name = (event.club.name if event.club_id else "").strip()
+    home: bool | None = None
+    opponent = (
+        event.opponent_team.name
+        if event.opponent_team_id
+        else (event.metadata or {}).get("opponent") or None
+    )
+    parts = re.split(r"\s+vs\.?\s+", title, flags=re.IGNORECASE)
+    if len(parts) == 2 and club_name:
+        home_side, away_side = (
+            _TRAILING_PARENTHETICAL.sub("", p).strip() for p in parts
+        )
+        if club_name.lower() in home_side.lower():
+            home = True
+            opponent = opponent or away_side
+        elif club_name.lower() in away_side.lower():
+            home = False
+            opponent = opponent or home_side
+    return {"opponent": opponent, "home": home, "title": title}
+
+
+def _matches_for(
+    groups: list[tuple[list[ExamResult], timedelta]],
+) -> dict[str, dict[str, Any]]:
+    """Match events linked to any of the given results, for tooltips.
+
+    One query. Returns `{YYYY-MM-DD: {opponent, home, title}}` keyed by the
+    match's own date AND by each linked result's displayed day (recorded_at
+    plus that group's display shift), so the frontend lookup hits even when
+    the export was recorded on a different calendar day than the event start.
+    """
+    event_ids = {r.event_id for results, _ in groups for r in results if r.event_id}
+    if not event_ids:
+        return {}
+    from events.models import Event
+
+    info_by_event = {
+        ev.id: (ev, _match_info(ev))
+        for ev in Event.objects.filter(
+            id__in=event_ids, event_type=Event.TYPE_MATCH
+        ).select_related("club", "opponent_team")
+    }
+    matches: dict[str, dict[str, Any]] = {}
+    for ev, info in info_by_event.values():
+        matches[ev.starts_at.date().isoformat()] = info
+    for results, shift in groups:
+        for r in results:
+            hit = info_by_event.get(r.event_id)
+            if hit is not None:
+                matches.setdefault((r.recorded_at + shift).date().isoformat(), hit[1])
+    return matches
+
+
 def _resolve_cross_exam_line(
     widget: Widget,
     sources: list[WidgetDataSource],
@@ -538,12 +747,43 @@ def _resolve_cross_exam_line(
     date_to: datetime | None = None,
 ) -> dict[str, Any]:
     series_payload = []
+    results_by_src: list[tuple[WidgetDataSource, str, list[ExamResult]]] = []
     for src in sources:
-        results = _fetch_results(src.template, player_id, src, date_from, date_to)
         key = src.field_keys[0] if src.field_keys else None
         if key is None:
             continue
+        # The window bounds address DISPLAYED dates; a shifted series must
+        # fetch from the equivalently un-shifted recorded_at range so points
+        # that land inside the window after shifting aren't dropped.
+        shift = timedelta(days=src.date_shift_days or 0)
+        results = _fetch_results(
+            src.template,
+            player_id,
+            src,
+            date_from - shift if date_from else None,
+            date_to - shift if date_to else None,
+        )
+        results_by_src.append((src, key, results))
+
+    matches = _matches_for(
+        [
+            (results, timedelta(days=src.date_shift_days or 0))
+            for src, _key, results in results_by_src
+        ]
+    )
+
+    for src, key, results in results_by_src:
+        shift = timedelta(days=src.date_shift_days or 0)
         meta = _field_meta(src.template, key)
+        points = []
+        for r in results:
+            point: dict[str, Any] = {
+                "recorded_at": (r.recorded_at + shift).isoformat(),
+                "value": _safe_float(_read(r, key)),
+            }
+            if shift:
+                point["actual_recorded_at"] = r.recorded_at.isoformat()
+            points.append(point)
         series_payload.append(
             {
                 "label": src.label or meta["label"],
@@ -551,18 +791,14 @@ def _resolve_cross_exam_line(
                 "unit": meta["unit"],
                 "template": src.template.name,
                 "field_key": key,
-                "points": [
-                    {
-                        "recorded_at": r.recorded_at.isoformat(),
-                        "value": _safe_float(_read(r, key)),
-                    }
-                    for r in results
-                ],
+                "date_shift_days": src.date_shift_days or 0,
+                "points": points,
             }
         )
     return {
         "chart_type": ChartType.CROSS_EXAM_LINE.value,
         "series": series_payload,
+        "matches": matches,
     }
 
 
@@ -606,6 +842,26 @@ def _resolve_body_map_heatmap(
     field = field_lookup(template, field_key) or {}
     option_regions: dict[str, str] = field.get("option_regions") or {}
     option_labels: dict[str, str] = field.get("option_labels") or {}
+    # Optional side-aware mapping: when the schema splits region and side
+    # into two fields (Fuller surveillance format), `option_regions` values
+    # may carry a "{side}" placeholder (e.g. "Muslo" → "{side}_thigh") and
+    # the field declares `side_field` (e.g. "lado"). Central/bilateral or
+    # missing side paints BOTH sides — an injury without a side shouldn't
+    # vanish from the map.
+    side_field_key: str = field.get("side_field") or ""
+    _SIDES = {"izquierdo": "left", "derecho": "right", "izquierda": "left", "derecha": "right"}
+
+    def regions_for(result_data: dict, body_raw: str) -> list[str]:
+        tpl = option_regions.get(body_raw)
+        if not tpl:
+            return []
+        if "{side}" not in tpl:
+            return [tpl]
+        side_raw = str((result_data or {}).get(side_field_key) or "").strip().lower()
+        side = _SIDES.get(side_raw)
+        if side:
+            return [tpl.replace("{side}", side)]
+        return [tpl.replace("{side}", "left"), tpl.replace("{side}", "right")]
 
     # Detect episodic stage field for bucketing.
     episode_cfg = template.episode_config or {} if template.is_episodic else {}
@@ -623,6 +879,18 @@ def _resolve_body_map_heatmap(
 
     results = _fetch_results(template, player_id, source)
 
+    # Episodic templates: one episode = one injury, but an episode may carry
+    # several results (opening, progress notes, closing). Count each episode
+    # once, using its LATEST result — which holds the final stage and data.
+    if template.is_episodic:
+        latest_by_episode: dict = {}
+        for r in results:
+            key = r.episode_id or r.id
+            cur = latest_by_episode.get(key)
+            if cur is None or r.recorded_at > cur.recorded_at:
+                latest_by_episode[key] = r
+        results = list(latest_by_episode.values())
+
     counts: dict[str, int] = {}
     per_option_counts: dict[str, int] = {}
     counts_by_stage: dict[str, dict[str, int]] = {}
@@ -631,24 +899,28 @@ def _resolve_body_map_heatmap(
         body_raw = (r.result_data or {}).get(field_key)
         if not body_raw:
             continue
-        per_option_counts[body_raw] = per_option_counts.get(body_raw, 0) + 1
-        region = option_regions.get(body_raw)
-        if not region:
+        regions = regions_for(r.result_data or {}, body_raw)
+        if not regions:
             continue
-        counts[region] = counts.get(region, 0) + 1
+        per_option_counts[body_raw] = per_option_counts.get(body_raw, 0) + 1
+        for region in regions:
+            counts[region] = counts.get(region, 0) + 1
 
-        if stage_field_key:
-            stage_raw = (r.result_data or {}).get(stage_field_key) or ""
-            stage_raw = str(stage_raw)
-            if stage_raw:
-                bucket = counts_by_stage.setdefault(stage_raw, {})
-                bucket[region] = bucket.get(region, 0) + 1
+            if stage_field_key:
+                stage_raw = str((r.result_data or {}).get(stage_field_key) or "")
+                if stage_raw:
+                    bucket = counts_by_stage.setdefault(stage_raw, {})
+                    bucket[region] = bucket.get(region, 0) + 1
 
     max_count = max(counts.values(), default=0)
 
     region_to_options: dict[str, list[str]] = {}
     for opt, region in option_regions.items():
-        region_to_options.setdefault(region, []).append(opt)
+        if "{side}" in region:
+            region_to_options.setdefault(region.replace("{side}", "left"), []).append(opt)
+            region_to_options.setdefault(region.replace("{side}", "right"), []).append(opt)
+        else:
+            region_to_options.setdefault(region, []).append(opt)
 
     items = [
         {

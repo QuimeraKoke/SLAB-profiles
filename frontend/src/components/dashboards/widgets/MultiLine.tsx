@@ -13,6 +13,8 @@ import {
 } from "recharts";
 
 import type { DashboardWidget, MultiLinePayload } from "@/lib/types";
+import { ChartWindowNav, fullRangeDomain, useChartWindow, windowRangeLabel } from "./ChartWindow";
+import { MovingAvgControl, trailingMean, useMovingAverage } from "./MovingAverage";
 import styles from "./Widget.module.css";
 
 interface MultiLineProps {
@@ -44,6 +46,8 @@ export default function MultiLine({ widget }: MultiLineProps) {
     : "";
   const yAxisTitle = config.y_axis_title ?? sharedUnit;
 
+  const ma = useMovingAverage();
+
   // Pivot the per-series points into a date-indexed array Recharts can chart.
   // Result shape: [{ label: "07-09", recorded_at: "...", masa_muscular: 36.18, masa_adiposa: 11.41, ... }, ...]
   const chartData = useMemo(() => {
@@ -58,12 +62,36 @@ export default function MultiLine({ widget }: MultiLineProps) {
         dateMap.set(point.recorded_at, existing);
       }
     }
-    return [...dateMap.values()].sort(
+    const rows = [...dateMap.values()].sort(
       (a, b) =>
         new Date(a.recorded_at as string).getTime() -
         new Date(b.recorded_at as string).getTime(),
     );
-  }, [data.series]);
+    // Moving average per series over the FULL history (not the visible
+    // window). Keys only exist while the toggle is on — the tooltip keys
+    // off their presence.
+    if (ma.enabled) {
+      for (const series of data.series) {
+        const avg = trailingMean(
+          rows.map((r) => r[series.key] as number | null | undefined),
+          ma.windowSize,
+        );
+        rows.forEach((r, i) => {
+          r[`${series.key}::ma`] = avg[i];
+        });
+      }
+    }
+    return rows;
+  }, [data.series, ma.enabled, ma.windowSize]);
+
+  // Per-chart time window (latest first, chevrons to page through history).
+  const window = useChartWindow(chartData);
+
+  // Fixed axis over the FULL history — the frame stays put while sliding.
+  const yDomain = useMemo(
+    () => fullRangeDomain(data.series.flatMap((s) => s.points.map((p) => p.value))),
+    [data.series],
+  );
 
   if (data.series.length === 0 || chartData.length === 0) {
     return (
@@ -83,18 +111,32 @@ export default function MultiLine({ widget }: MultiLineProps) {
       </header>
       {widget.description && <p className={styles.description}>{widget.description}</p>}
 
-      <div className={styles.chartArea} style={{ height: widget.chart_height ?? 280 }}>
+      <div className={styles.compareBar}>
+        <MovingAvgControl ma={ma} />
+      </div>
+
+      <ChartWindowNav window={window} label={windowRangeLabel(window.visible)} />
+      <div className={styles.chartArea} style={{ height: widget.chart_height ?? 420 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 24 }}>
+          <LineChart data={window.data} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            {/* Numeric idx axis: the viewport (domain) pans smoothly over
+                the full dataset. Explicit height keeps the title INSIDE
+                the axis band, clear of the legend row. */}
             <XAxis
-              dataKey="label"
+              dataKey="idx"
+              type="number"
+              domain={window.xDomain}
+              ticks={window.ticks}
+              tickFormatter={window.formatTick}
+              allowDataOverflow
               tick={{ fontSize: 11, fill: "#6b7280" }}
               stroke="#d1d5db"
+              height={46}
               label={{
                 value: xAxisTitle,
                 position: "insideBottom",
-                offset: -12,
+                offset: 0,
                 style: { fill: "#6b7280", fontSize: 11, fontWeight: 600 },
               }}
             />
@@ -102,7 +144,7 @@ export default function MultiLine({ widget }: MultiLineProps) {
               tick={{ fontSize: 11, fill: "#6b7280" }}
               stroke="#d1d5db"
               width={56}
-              domain={["auto", "auto"]}
+              domain={yDomain ?? ["auto", "auto"]}
               label={
                 yAxisTitle
                   ? {
@@ -121,6 +163,22 @@ export default function MultiLine({ widget }: MultiLineProps) {
             />
             <Tooltip content={<MultiLineTooltip series={data.series} />} cursor={{ stroke: "#9ca3af", strokeDasharray: "3 3" }} />
             <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} iconType="circle" iconSize={8} />
+            {ma.enabled &&
+              data.series.map((series, i) => (
+                <Line
+                  key={`${series.key}::ma`}
+                  type="monotone"
+                  dataKey={`${series.key}::ma`}
+                  name={`${series.label} (media móvil)`}
+                  stroke={series.color || DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]}
+                  strokeOpacity={0.5}
+                  strokeWidth={1.6}
+                  strokeDasharray="4 3"
+                  dot={false}
+                  isAnimationActive={false}
+                  connectNulls
+                />
+              ))}
             {data.series.map((series, i) => (
               <Line
                 key={series.key}
@@ -161,10 +219,12 @@ function MultiLineTooltip({ active, payload, series }: TooltipProps) {
       {series.map((s) => {
         const value = point[s.key];
         if (typeof value !== "number") return null;
+        const avg = point[`${s.key}::ma`];
         return (
           <span key={s.key} className={styles.chartTooltipValue}>
             {s.label}: {value.toFixed(1)}
             {s.unit ? ` ${s.unit}` : ""}
+            {typeof avg === "number" ? ` · MM ${avg.toFixed(1)}` : ""}
           </span>
         );
       })}

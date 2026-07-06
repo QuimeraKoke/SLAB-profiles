@@ -105,6 +105,9 @@ export interface CCDataQualityRow {
   source: string;
   status: Tone;
   detail: string;
+  last_at: string | null;   // most recent recorded_at for this source (ISO), or null
+  players: number | null;   // distinct players uploaded on that last day
+  expected: number;         // roster size, for context
 }
 
 export interface CCRecentItem {

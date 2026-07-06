@@ -101,7 +101,11 @@ function DataQuality({ rows }: { rows: CCDataQualityRow[] }) {
         <div key={r.source} className={styles.dqRow}>
           <span className={`${styles.dot} ${styles[`dot_${r.status}`]}`} />
           <span className={styles.dqSource}>{r.source}</span>
-          <span className={styles.dqDetail}>{r.detail}</span>
+          <span className={styles.dqDetail}>
+            {r.last_at
+              ? `${relativeTime(r.last_at)} · ${r.players} jug.`
+              : r.detail}
+          </span>
         </div>
       ))}
     </div>

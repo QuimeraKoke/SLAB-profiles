@@ -9,9 +9,9 @@ from ninja import File, Form, NinjaAPI, Query, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
-from core.models import Category, Contract, Department, Player, Position
-from dashboards.aggregation import resolve_widget
-from dashboards.models import DepartmentLayout, TeamReportLayout
+from core.models import Category, Contract, DailyNote, Department, Player, Position
+from dashboards.aggregation import position_comparison, resolve_widget
+from dashboards.models import DepartmentLayout, TeamReportLayout, Widget
 from dashboards.team_aggregation import resolve_team_widget
 from events.models import Event
 from exams.bulk_ingest import IngestError, run_ingest
@@ -45,6 +45,7 @@ from .schemas import (
     PlayerIn,
     PlayerOut,
     PlayerPatchIn,
+    PositionComparisonOut,
     PositionOut,
     AlertOut,
     AlertPatchIn,
@@ -53,6 +54,8 @@ from .schemas import (
     ContractIn,
     ContractOut,
     ContractPatchIn,
+    DailyNoteIn,
+    DailyNoteOut,
     EpisodeOut,
     EpisodePatchIn,
     GoalIn,
@@ -844,7 +847,11 @@ def create_result(request, payload: ResultIn):
     return _serialize_result(result)
 
 
-@api.patch("/results/{result_id}", response=ResultOut)
+# {uuid:...} constrains the URL pattern to real UUIDs — with the default
+# greedy converter this pattern also matched the literal paths
+# "/results/team" and "/results/bulk" (registered later), turning their
+# POSTs into 405s. See §7 in STATUS.md.
+@api.patch("/results/{uuid:result_id}", response=ResultOut)
 @require_perm("exams.change_examresult")
 def update_result(request, result_id: UUID, payload: ResultPatchIn):
     """Update an existing ExamResult's raw_data and/or recorded_at.
@@ -900,7 +907,7 @@ def update_result(request, result_id: UUID, payload: ResultPatchIn):
     return _serialize_result(result)
 
 
-@api.delete("/results/{result_id}")
+@api.delete("/results/{uuid:result_id}")
 @require_perm("exams.delete_examresult")
 def delete_result(request, result_id: UUID):
     """Hard-delete an ExamResult plus any attachments pinned to it.
@@ -1236,6 +1243,77 @@ def bulk_results(
     return result
 
 
+# NB: path lives OUTSIDE /results/ on purpose — django-ninja's
+# /results/{result_id} converter is greedy ([^/]+) and would shadow a
+# /results/<literal> POST (the same quirk that currently masks /results/bulk
+# and /results/team — see the routing note in STATUS).
+@api.post("/gps-sessions/upload")
+@require_perm("exams.add_examresult")
+def gps_session_upload(
+    request,
+    file: UploadedFile = File(...),
+    category_id: str = Form(...),
+    template_id: str = Form(""),
+    kind: str = Form("match"),
+    dry_run: bool = Form(True),
+):
+    """Self-service per-session GPS upload (match or training).
+
+    Unlike `/results/bulk` (one result per player), this groups by
+    (player, session) so a player in both the main session and a reintegro on
+    the same day gets two results. Dates come from the session labels (or the
+    `Days` column on match exports).
+
+    `kind="match"` creates/links a match Event per match-day; `kind="training"`
+    stores flat dated results (no Event). `dry_run=True` returns a preview.
+    Idempotent (match: per player+day; training: per player+day+session).
+    """
+    from exams import gps_session_ingest
+    from exams.gps_session import GpsParseError
+
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.all(), membership
+    ).filter(id=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+
+    qs = scope_templates(ExamTemplate.objects.select_related("department"), membership)
+    if template_id:
+        template = qs.filter(id=template_id).first()
+    else:
+        # Matches and trainings live on separate templates: gps_partido
+        # (event-linked) vs gps_sesion. Same field keys on both.
+        slug = "gps_partido" if kind == "match" else "gps_sesion"
+        template = qs.filter(slug=slug, department__club=category.club).first()
+    if template is None:
+        raise HttpError(404, (
+            "Plantilla GPS de partido no encontrada (corre seed_gps_partido)."
+            if kind == "match" else
+            "Plantilla GPS de entrenamiento no encontrada (corre seed_gps_session)."
+        ))
+
+    try:
+        file_bytes = file.read()
+    finally:
+        file.close()
+
+    try:
+        return gps_session_ingest.run(
+            file_bytes, template=template, category=category,
+            dry_run=dry_run, create_events=(kind == "match"),
+            department=template.department, include_rows=True,
+            # The selector is authoritative — don't let file-shape auto-detect
+            # override "Partido" (else a no-Days file silently runs as training
+            # and the missing-match check never fires).
+            mode=("match" if kind == "match" else "training"),
+            # UI requires a real match Event per match-day — never auto-create.
+            auto_create_events=False,
+        )
+    except GpsParseError as exc:
+        raise HttpError(400, str(exc))
+
+
 @api.get("/players/{player_id}/templates", response=list[TemplateOut])
 def list_player_templates(request, player_id: str, department: str | None = None):
     """Templates the doctor can fill in for this player.
@@ -1262,6 +1340,11 @@ def list_player_templates(request, player_id: str, department: str | None = None
             is_active_version=True,
         ),
         membership,
+    ).exclude(
+        # Bulk-ingest-only templates (e.g. the legacy per-half match GPS
+        # export) have no manual-entry form — offering a "+" button for
+        # them just opens a dead registrar.
+        input_config__input_modes=["bulk_ingest"],
     )
     if department:
         qs = qs.filter(department__slug=department)
@@ -1273,7 +1356,7 @@ def get_player_summary(request, player_id: str):
     """Aggregate summary card payload for the player profile's Resumen tab.
 
     Pulls match stats from `rendimiento_de_partido`, physical metrics from
-    `gps_rendimiento_fisico_de_partido`, and the latest 3 injury episodes
+    `gps_partido`, and the latest 3 injury episodes
     from `lesiones`. Each section gracefully degrades to null when no data
     exists for the player on that template.
 
@@ -1331,7 +1414,7 @@ def get_player_summary(request, player_id: str):
     # ---- Physical ----
     physical = None
     gps_template = accessible_templates.filter(
-        slug="gps_rendimiento_fisico_de_partido",
+        slug="gps_partido",
     ).first()
     if gps_template is not None:
         gps_results = list(
@@ -1342,11 +1425,11 @@ def get_player_summary(request, player_id: str):
         if gps_results:
             physical = {
                 "matches_with_gps": len(gps_results),
-                "distance_avg_m": _avg([r.get("tot_dist_total") for r in gps_results]),
-                "max_velocity_avg": _avg([r.get("max_vel_total") for r in gps_results]),
-                "hiaa_avg": _avg([r.get("hiaa_total") for r in gps_results]),
-                "hmld_avg": _avg([r.get("hmld_total") for r in gps_results]),
-                "acc_avg": _avg([r.get("acc_total") for r in gps_results]),
+                "distance_avg_m": _avg([r.get("tot_dist") for r in gps_results]),
+                "max_velocity_avg": _avg([r.get("max_vel") for r in gps_results]),
+                "hiaa_avg": _avg([r.get("hiaa") for r in gps_results]),
+                "hmld_avg": _avg([r.get("hmld") for r in gps_results]),
+                "acc_avg": _avg([r.get("acc") for r in gps_results]),
             }
 
     # ---- Recent injuries (latest 3) ----
@@ -1496,6 +1579,52 @@ def get_player_view(
             "sections": sections_payload,
         }
     }
+
+
+@api.get(
+    "/players/{player_id}/widgets/{widget_id}/position-comparison",
+    response=PositionComparisonOut,
+)
+def get_position_comparison(request, player_id: str, widget_id: str, key: str):
+    """Same-position peer series for one widget field, fetched on demand
+    when the user flips a chart's comparison toggle.
+
+    `key` is the composite series key the chart already uses:
+    `<data_source_id>::<field_key>`.
+    """
+    membership = get_membership(request.user)
+    player = (
+        scope_players(
+            Player.objects.select_related("category", "position"), membership
+        )
+        .filter(id=player_id)
+        .first()
+    )
+    if player is None:
+        raise HttpError(404, "Player not found")
+
+    widget = (
+        Widget.objects.filter(id=widget_id)
+        .prefetch_related("data_sources__template")
+        .first()
+    )
+    if widget is None:
+        raise HttpError(404, "Widget not found")
+
+    source_id, sep, field_key = key.partition("::")
+    if not sep or not field_key:
+        raise HttpError(422, "Malformed key — expected '<source_id>::<field_key>'")
+    source = next(
+        (s for s in widget.data_sources.all() if str(s.id) == source_id), None
+    )
+    if source is None:
+        raise HttpError(404, "Data source not found on this widget")
+    if not scope_templates(
+        ExamTemplate.objects.filter(pk=source.template_id), membership
+    ).exists():
+        raise HttpError(404, "Template not accessible")
+
+    return position_comparison(source, field_key, player)
 
 
 # ---------- Team reports ----------
@@ -2285,6 +2414,103 @@ def command_center(request, category_id: str):
     return build_command_center(category)
 
 
+@api.get("/daily-report")
+def daily_report(request, category_id: str, date: str = ""):
+    """La Daily — the 8 AM planning-meeting view: lesionados (diagnosis,
+    days out, stage, expected return, load vs habitual), available players
+    with active alerts, and the meeting's per-player notes for the date.
+    The rest of the squad ("anexo") comes from `/roster`."""
+    from api.daily_report import build_daily_report, parse_date
+
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club").prefetch_related("departments"),
+        membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    return build_daily_report(category, parse_date(date), request.user)
+
+
+@api.get("/daily-report.pdf")
+def download_daily_deck(request, category_id: str, date: str = ""):
+    """La Daily as a projectable PDF deck (landscape, one slide per player):
+    portada → lesionados (detalle con GPS actual vs. habitual) → alertas →
+    anexo de disponibles. Deterministic — no LLM, no caching; always renders
+    the data of the moment."""
+    from django.http import HttpResponse
+
+    from api.daily_report import parse_date
+    from dashboards.pdf.daily_deck import render_daily_deck
+
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club").prefetch_related("departments"),
+        membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+
+    target = parse_date(date)
+    pdf = render_daily_deck(category, target, request.user)
+    filename = f"daily-{category.name}-{target.isoformat()}.pdf".replace(" ", "_")
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api.post("/daily-notes", response=DailyNoteOut)
+@require_perm("core.add_dailynote")
+def create_daily_note(request, payload: DailyNoteIn):
+    """Record a morning-meeting note for a player, tagged with the área
+    (department) that raised it. Author is the logged-in user."""
+    from api.daily_report import serialize_note
+
+    membership = get_membership(request.user)
+    player = scope_players(
+        Player.objects.select_related("category__club"), membership,
+    ).filter(pk=payload.player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+
+    text = (payload.text or "").strip()
+    if not text:
+        raise HttpError(400, "La nota no puede estar vacía.")
+
+    department = None
+    if payload.department_id:
+        department = Department.objects.filter(
+            pk=payload.department_id, club=player.category.club,
+        ).first()
+        if department is None:
+            raise HttpError(404, "Department not found")
+
+    note = DailyNote.objects.create(
+        player=player, department=department, date=payload.date,
+        text=text, created_by=request.user,
+    )
+    return serialize_note(note, request.user)
+
+
+@api.delete("/daily-notes/{note_id}")
+def delete_daily_note(request, note_id: str):
+    """Remove a meeting note. Authors can delete their own; deleting
+    someone else's requires `core.delete_dailynote`."""
+    membership = get_membership(request.user)
+    note = DailyNote.objects.filter(
+        pk=note_id,
+        player__in=scope_players(Player.objects.all(), membership),
+    ).first()
+    if note is None:
+        raise HttpError(404, "Note not found")
+    if note.created_by_id != request.user.id and not _has_perm(
+        request.user, "core.delete_dailynote"
+    ):
+        raise HttpError(403, "Solo el autor puede eliminar esta nota.")
+    note.delete()
+    return {"ok": True}
+
+
 @api.get("/players/{player_id}/triage.docx")
 def download_player_triage_docx(request, player_id: str):
     """Editable Resumen (Word) — one-page snapshot of alerts, alerted metrics
@@ -2482,6 +2708,16 @@ def create_event(request, payload: EventIn):
     else:
         participants = []
 
+    # Link a rival ExternalTeam when the payload identifies one (match-create
+    # form passes opponent_team_id in metadata; matches the sync's shape).
+    opponent_team = None
+    otid = (payload.metadata or {}).get("opponent_team_id")
+    if otid:
+        from events.models import ExternalTeam
+        opponent_team = ExternalTeam.objects.filter(
+            provider="api_football", external_id=otid,
+        ).first()
+
     event = Event.objects.create(
         club=department.club,
         department=department,
@@ -2494,6 +2730,7 @@ def create_event(request, payload: EventIn):
         scope=payload.scope,
         category=category,
         metadata=payload.metadata or {},
+        opponent_team=opponent_team,
         created_by=request.user if request.user.is_authenticated else None,
     )
     if participants:

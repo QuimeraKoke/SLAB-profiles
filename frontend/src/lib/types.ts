@@ -586,11 +586,27 @@ export interface TrainingRadarAxis {
   reference_value: number;
   pct: number;
 }
+export interface TrainingRadarSession {
+  session_date: string;
+  /** Session label from the GPS record (e.g. "Sesión 26-06-26"); may be empty. */
+  label: string;
+  axes: TrainingRadarAxis[];
+  /** "ventana_28d" (standard) or "ultimo_partido_completo" (fallback when no
+   *  ≥75-min match sits in the 28 days before the session). */
+  reference_kind?: "ventana_28d" | "ultimo_partido_completo";
+  reference_date?: string;
+}
+
 export interface TrainingRadarPayload {
   chart_type: "training_radar";
+  /** Mirrors sessions[0] (the newest) for pre-selector payload consumers. */
   axes: TrainingRadarAxis[];
   reference_pct: number;
   session_date?: string;
+  reference_kind?: "ventana_28d" | "ultimo_partido_completo";
+  reference_date?: string;
+  /** Recent sessions, newest first — the widget's selector options. */
+  sessions?: TrainingRadarSession[];
   empty?: boolean;
 }
 
@@ -659,6 +675,22 @@ export interface LineWithSelectorPayload {
   series: Record<string, { recorded_at: string; value: number | null }[]>;
   /** Per-field reference lines, keyed by the same composite field key as `series`. */
   reference_lines?: Record<string, ChartReferenceLine[]>;
+  /** Match events linked to plotted results, keyed by match date (YYYY-MM-DD). */
+  matches?: Record<string, CrossExamMatchInfo>;
+}
+
+/** On-demand same-position peer series for one widget field
+ *  (`GET /players/{id}/widgets/{id}/position-comparison?key=`). */
+export interface PositionComparison {
+  position: string | null;
+  /** One entry per ACTIVE same-position teammate with data (viewed player excluded). */
+  players: {
+    player_id: string;
+    name: string;
+    points: { recorded_at: string; value: number | null }[];
+  }[];
+  /** Per-day position average (viewed player included), only days with n ≥ 2. */
+  mean: { day: string; value: number; n: number }[];
 }
 
 export interface DonutSlice {
@@ -700,6 +732,12 @@ export interface MultiLinePayload {
   }[];
 }
 
+export interface CrossExamMatchInfo {
+  opponent: string | null;
+  home: boolean | null;
+  title: string;
+}
+
 export interface CrossExamLinePayload {
   chart_type: "cross_exam_line";
   series: {
@@ -708,8 +746,18 @@ export interface CrossExamLinePayload {
     unit: string;
     template: string;
     field_key: string;
-    points: { recorded_at: string; value: number | null }[];
+    /** Display-only shift applied server-side to `recorded_at` (e.g. -2
+     *  plots CK on the date of the match that caused it). */
+    date_shift_days?: number;
+    points: {
+      recorded_at: string;
+      /** Real sample date, present only when the series is date-shifted. */
+      actual_recorded_at?: string;
+      value: number | null;
+    }[];
   }[];
+  /** Match events linked to plotted results, keyed by match date (YYYY-MM-DD). */
+  matches?: Record<string, CrossExamMatchInfo>;
 }
 
 export interface BodyMapStageInfo {

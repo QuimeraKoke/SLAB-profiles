@@ -22,91 +22,123 @@ from exams.models import ExamTemplate
 
 
 LESIONES_SCHEMA: dict = {
+    # Aligned with the club's injury-surveillance sheet (Fuller consensus):
+    # region + side split into two fields, mecanismo/modo, BAMIC (RM), and
+    # the 5-step Fuller severity scale. Option VALUES mirror the sheet
+    # verbatim (accent-free) so imports match exactly; `option_labels`
+    # carry the accented display strings.
     "fields": [
         # === Diagnóstico ===
         {
-            "key": "diagnosed_at", "label": "Fecha del diagnóstico", "type": "date",
+            "key": "diagnosed_at", "label": "Fecha de lesión (inicio)", "type": "date",
             "group": "Diagnóstico", "required": True,
         },
         {
-            "key": "type", "label": "Tipo de lesión", "type": "categorical",
+            "key": "type", "label": "Tipo / Diagnóstico (Fuller)", "type": "categorical",
             "group": "Diagnóstico", "required": True,
             "options": [
-                "Muscular",
-                "Tendinosa",
-                "Ligamentosa",
-                "Articular",
-                "Ósea / fractura",
-                "Contusión",
-                "Concusión / TEC",
-                "Sobreuso",
-                "Otra",
+                "Lesion muscular (desgarro/rotura)",
+                "Lesion tendinosa/Tendinopatia",
+                "Esguince/Lesion ligamentosa",
+                "Lesion meniscal/cartilago",
+                "Fractura/Estres oseo",
+                "Luxacion/Subluxacion",
+                "Contusion/Hematoma",
+                "Laceracion/Abrasion",
+                "Lesion nerviosa",
+                "Conmocion",
+                "Sobrecarga/Otro",
+                "Otro",
             ],
-        },
-        {
-            "key": "body_part", "label": "Parte del cuerpo", "type": "categorical",
-            "group": "Diagnóstico", "required": True,
-            "options": [
-                "Cabeza", "Cuello", "Hombro izq.", "Hombro der.",
-                "Brazo izq.", "Brazo der.",
-                "Codo izq.", "Codo der.",
-                "Antebrazo izq.", "Antebrazo der.",
-                "Muñeca izq.", "Muñeca der.",
-                "Mano izq.", "Mano der.", "Pecho", "Abdomen",
-                "Espalda alta", "Espalda baja",
-                "Cadera / pelvis",
-                "Muslo izq.", "Muslo der.",
-                "Rodilla izq.", "Rodilla der.",
-                "Pantorrilla izq.", "Pantorrilla der.",
-                "Tobillo izq.", "Tobillo der.",
-                "Pie izq.", "Pie der.",
-            ],
-            # Map each option to a canonical body region. The widget renders
-            # front + back silhouettes; limbs share keys across both views,
-            # torso splits (chest/abdomen front-only, upper_back/lower_back
-            # back-only). Tobillo still aliases calf — refine when we add
-            # ankles as a region. Codo aliases brazo, Muñeca aliases mano.
-            "option_regions": {
-                "Cabeza": "head",
-                "Cuello": "neck",
-                "Hombro izq.": "left_shoulder",
-                "Hombro der.": "right_shoulder",
-                "Brazo izq.": "left_arm",
-                "Brazo der.": "right_arm",
-                "Codo izq.": "left_arm",
-                "Codo der.": "right_arm",
-                "Antebrazo izq.": "left_forearm",
-                "Antebrazo der.": "right_forearm",
-                "Muñeca izq.": "left_hand",
-                "Muñeca der.": "right_hand",
-                "Mano izq.": "left_hand",
-                "Mano der.": "right_hand",
-                "Pecho": "chest",
-                "Abdomen": "abdomen",
-                "Espalda alta": "upper_back",
-                "Espalda baja": "lower_back",
-                "Cadera / pelvis": "pelvis",
-                "Muslo izq.": "left_thigh",
-                "Muslo der.": "right_thigh",
-                "Rodilla izq.": "left_knee",
-                "Rodilla der.": "right_knee",
-                "Pantorrilla izq.": "left_calf",
-                "Pantorrilla der.": "right_calf",
-                "Tobillo izq.": "left_calf",
-                "Tobillo der.": "right_calf",
-                "Pie izq.": "left_foot",
-                "Pie der.": "right_foot",
+            "option_labels": {
+                "Lesion muscular (desgarro/rotura)": "Lesión muscular (desgarro/rotura)",
+                "Lesion tendinosa/Tendinopatia": "Lesión tendinosa / Tendinopatía",
+                "Esguince/Lesion ligamentosa": "Esguince / Lesión ligamentosa",
+                "Lesion meniscal/cartilago": "Lesión meniscal / cartílago",
+                "Fractura/Estres oseo": "Fractura / Estrés óseo",
+                "Luxacion/Subluxacion": "Luxación / Subluxación",
+                "Contusion/Hematoma": "Contusión / Hematoma",
+                "Laceracion/Abrasion": "Laceración / Abrasión",
+                "Lesion nerviosa": "Lesión nerviosa",
+                "Conmocion": "Conmoción",
             },
         },
         {
-            "key": "body_part_detail", "label": "Detalle anatómico (texto libre)",
-            "type": "text", "group": "Diagnóstico", "multiline": False,
-            "placeholder": "Ej: 'isquiotibial — cabeza larga del bíceps femoral'",
+            "key": "body_part", "label": "Región", "type": "categorical",
+            "group": "Diagnóstico", "required": True,
+            "options": [
+                "Cabeza/Cara", "Cuello/C. cervical", "Hombro/Clavicula",
+                "Brazo", "Codo", "Antebrazo", "Muneca", "Mano/Dedos",
+                "Torax/Costillas", "Abdomen", "Columna dorsal",
+                "Columna lumbar/Pelvis", "Cadera/Ingle", "Muslo", "Rodilla",
+                "Pierna/Aquiles", "Tobillo", "Pie/Dedos pie",
+            ],
+            "option_labels": {
+                "Cabeza/Cara": "Cabeza / Cara",
+                "Cuello/C. cervical": "Cuello / C. cervical",
+                "Hombro/Clavicula": "Hombro / Clavícula",
+                "Muneca": "Muñeca",
+                "Mano/Dedos": "Mano / Dedos",
+                "Torax/Costillas": "Tórax / Costillas",
+                "Columna lumbar/Pelvis": "Columna lumbar / Pelvis",
+                "Cadera/Ingle": "Cadera / Ingle",
+                "Pierna/Aquiles": "Pierna / Aquiles",
+                "Pie/Dedos pie": "Pie / Dedos del pie",
+            },
+            # Side-aware body-map mapping: "{side}" resolves from the `lado`
+            # field (see side_field). Central/bilateral or missing side
+            # paints both silhouette sides. Codo aliases brazo, Muñeca
+            # aliases mano, Tobillo aliases calf — same aliasing as before.
+            "side_field": "lado",
+            "option_regions": {
+                "Cabeza/Cara": "head",
+                "Cuello/C. cervical": "neck",
+                "Hombro/Clavicula": "{side}_shoulder",
+                "Brazo": "{side}_arm",
+                "Codo": "{side}_arm",
+                "Antebrazo": "{side}_forearm",
+                "Muneca": "{side}_hand",
+                "Mano/Dedos": "{side}_hand",
+                "Torax/Costillas": "chest",
+                "Abdomen": "abdomen",
+                "Columna dorsal": "upper_back",
+                "Columna lumbar/Pelvis": "lower_back",
+                "Cadera/Ingle": "pelvis",
+                "Muslo": "{side}_thigh",
+                "Rodilla": "{side}_knee",
+                "Pierna/Aquiles": "{side}_calf",
+                "Tobillo": "{side}_calf",
+                "Pie/Dedos pie": "{side}_foot",
+            },
         },
         {
-            "key": "severity", "label": "Severidad", "type": "categorical",
+            "key": "lado", "label": "Lado", "type": "categorical",
             "group": "Diagnóstico", "required": True,
-            "options": ["Leve", "Moderada", "Severa"],
+            "options": ["Izquierdo", "Derecho", "Central/Bilateral", "NA"],
+            "option_labels": {"Central/Bilateral": "Central / Bilateral"},
+        },
+        {
+            "key": "body_part_detail", "label": "Localización específica",
+            "type": "text", "group": "Diagnóstico", "multiline": False,
+            "placeholder": "Ej: 'Bíceps femoral', 'Aductor largo', 'Tendón de Aquiles'…",
+        },
+        {
+            "key": "severity", "label": "Severidad (Fuller)", "type": "categorical",
+            "group": "Diagnóstico", "required": True,
+            "options": ["Sin tiempo perdido", "Minima", "Leve", "Moderada", "Severa"],
+            "option_labels": {"Minima": "Mínima"},
+        },
+        {
+            "key": "bamic", "label": "BAMIC (RM)", "type": "categorical",
+            "group": "Diagnóstico",
+            "options": ["NA", "0", "0a", "0b", "1a", "1b", "1c",
+                        "2a", "2b", "2c", "3a", "3b", "3c", "4"],
+            "help_text": "Clasificación muscular británica por RM (solo lesiones musculares).",
+        },
+        {
+            "key": "hallazgos_rm", "label": "Hallazgos RM / Informe", "type": "text",
+            "multiline": True, "rows": 3, "group": "Diagnóstico",
+            "placeholder": "Resumen del informe de imágenes…",
         },
 
         # === Etapa (drives the episode lifecycle) ===
@@ -118,12 +150,16 @@ LESIONES_SCHEMA: dict = {
         {
             "key": "stage", "label": "Etapa", "type": "categorical",
             "group": "Etapa", "required": True,
+            # Canonical keys stay English/stable (they drive the episode
+            # lifecycle + Player.status); the club's RTP-protocol labels
+            # are display-only: Lesionado → Recuperación → Return to
+            # Train → Return to Play (= episodio cerrado, vuelve a jugar).
             "options": ["injured", "recovery", "reintegration", "closed"],
             "option_labels": {
                 "injured": "Lesionado",
                 "recovery": "Recuperación",
-                "reintegration": "Reintegración",
-                "closed": "Cerrado",
+                "reintegration": "Return to Train",
+                "closed": "Return to Play",
             },
         },
 
@@ -138,18 +174,45 @@ LESIONES_SCHEMA: dict = {
             "placeholder": "Completar al cerrar el episodio",
         },
 
-        # === Contexto clínico (extendido a partir del histórico legacy) ===
+        # === Contexto (Fuller: dónde y cómo ocurrió) ===
         {
-            "key": "causa", "label": "Causa", "type": "categorical",
+            "key": "exposicion", "label": "Contexto", "type": "categorical",
             "group": "Contexto clínico",
-            "options": ["Sobrecarga", "Traumática", "Sobreuso", "Otra"],
-            "help_text": "Mecanismo lesional principal.",
+            "options": ["Partido oficial", "Partido amistoso", "Entrenamiento",
+                        "Seleccion nacional", "Otro"],
+            "option_labels": {"Seleccion nacional": "Selección nacional"},
+            "help_text": "Dónde ocurrió la lesión.",
         },
         {
-            "key": "exposicion", "label": "Exposición", "type": "categorical",
+            "key": "mecanismo", "label": "Mecanismo", "type": "categorical",
             "group": "Contexto clínico",
-            "options": ["Entrenamiento", "Partido", "Evento externo", "Otro"],
-            "help_text": "Dónde ocurrió la lesión.",
+            "options": ["No contacto", "Contacto con jugador", "Contacto con objeto",
+                        "Sobreuso", "Otro"],
+        },
+        {
+            "key": "modo", "label": "Modo", "type": "categorical",
+            "group": "Contexto clínico",
+            "options": ["Agudo/Traumatico", "Sobreuso/Gradual"],
+            "option_labels": {
+                "Agudo/Traumatico": "Agudo / Traumático",
+                "Sobreuso/Gradual": "Sobreuso / Gradual",
+            },
+        },
+        {
+            "key": "recurrencia", "label": "Recurrencia", "type": "categorical",
+            "group": "Contexto clínico",
+            "options": ["Nueva", "Recurrente"],
+        },
+        {
+            "key": "tipo_recurrencia", "label": "Tipo de recurrencia", "type": "categorical",
+            "group": "Contexto clínico",
+            "options": ["NA", "Temprana (<2 meses)", "Tardia (2-12 meses)",
+                        "Diferida (>12 meses)"],
+            "option_labels": {
+                "Temprana (<2 meses)": "Temprana (< 2 meses)",
+                "Tardia (2-12 meses)": "Tardía (2–12 meses)",
+                "Diferida (>12 meses)": "Diferida (> 12 meses)",
+            },
         },
         {
             "key": "tratamiento", "label": "Tratamiento", "type": "categorical",
@@ -157,12 +220,7 @@ LESIONES_SCHEMA: dict = {
             "options": ["Kinésico", "Reposo deportivo", "Kinésico + quirúrgico", "Otro"],
         },
         {
-            "key": "is_recurrencia", "label": "¿Es recurrencia?", "type": "boolean",
-            "group": "Contexto clínico",
-            "help_text": "Marque si el jugador ya tuvo esta misma lesión antes.",
-        },
-        {
-            "key": "dias_perdidos", "label": "Días perdidos", "type": "number", "unit": "días",
+            "key": "dias_perdidos", "label": "Días de baja", "type": "number", "unit": "días",
             "group": "Contexto clínico",
             "help_text": "Días totales de baja (puede usarse para inferir severidad).",
         },
@@ -190,7 +248,10 @@ EPISODE_CONFIG = {
     "stage_field": "stage",
     "open_stages": ["injured", "recovery", "reintegration"],
     "closed_stage": "closed",
-    "title_template": "{type} — {body_part}",
+    # Detail-first: "Bíceps femoral — Muslo" reads better on cards than the
+    # long Fuller type strings. Falls back to just "— {region}" when the
+    # detail is empty (formatter tolerates missing keys).
+    "title_template": "{body_part_detail} — {body_part}",
 }
 
 

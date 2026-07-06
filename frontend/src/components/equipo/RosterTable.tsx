@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { Smile, Meh, Frown, Pencil, UserMinus, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 
 import styles from "./RosterTable.module.css";
 
-export interface FormaBar { value: number; tone: "ok" | "warn" | "crit" }
+export interface FormaBar { value: number | null; tone?: "ok" | "warn" | "crit"; date: string }
 export interface RosterRow {
   id: string;
   initials: string;
@@ -20,7 +21,11 @@ export interface RosterRow {
   readiness_note?: string;
   wellness: number | null;
   acwr: number | null;
+  acwr_meta?: AcwrMeta | null;
   forma: FormaBar[];
+}
+export interface AcwrMeta {
+  ratio: number; acute_km: number; chronic_week_km: number; last: string | null;
 }
 
 const STATUS_DOT: Record<string, string> = {
@@ -150,11 +155,7 @@ export default function RosterTable({
                 <Gauge value={r.readiness} />
               </td>
               <td className={styles.center}><Wellness value={r.wellness} /></td>
-              <td className={styles.center}>
-                <span className={`${styles.acwr} ${acwrTone(r.acwr)}`}>
-                  {r.acwr == null ? "—" : r.acwr.toFixed(2)}
-                </span>
-              </td>
+              <td className={styles.center}><Acwr value={r.acwr} meta={r.acwr_meta} /></td>
               <td className={styles.center}><Forma bars={r.forma} /></td>
               {showActions && (
                 <td className={styles.right}>
@@ -240,19 +241,78 @@ function Wellness({ value }: { value: number | null }) {
   );
 }
 
+function Acwr({ value, meta }: { value: number | null; meta?: AcwrMeta | null }) {
+  const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
+  if (value == null) return <span className={styles.dash}>—</span>;
+  const label = meta
+    ? `Agudo 7d: ${meta.acute_km} km · Crónico/sem: ${meta.chronic_week_km} km`
+      + (meta.last ? ` · última carga GPS: ${formatBarDate(meta.last)}` : "")
+    : `ACWR ${value.toFixed(2)}`;
+  const set = (e: React.MouseEvent) => setTip({ text: label, x: e.clientX, y: e.clientY });
+  return (
+    <>
+      <span
+        className={`${styles.acwr} ${acwrTone(value)}`}
+        aria-label={label}
+        onMouseEnter={set}
+        onMouseMove={set}
+        onMouseLeave={() => setTip(null)}
+      >
+        {value.toFixed(2)}
+      </span>
+      {tip && typeof document !== "undefined" && createPortal(
+        <div className={styles.formaTip} style={{ top: tip.y, left: tip.x }}>{tip.text}</div>,
+        document.body,
+      )}
+    </>
+  );
+}
+
 function Forma({ bars }: { bars: FormaBar[] }) {
+  const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
   if (!bars.length) return <span className={styles.dash}>—</span>;
+
+  const show = (text: string) => (e: React.MouseEvent) =>
+    setTip({ text, x: e.clientX, y: e.clientY });
+  const hide = () => setTip(null);
+
   return (
     <span className={styles.forma}>
-      {bars.map((b, i) => (
-        <span
-          key={i}
-          className={`${styles.bar} ${barTone(b.tone)}`}
-          style={{ height: `${6 + Math.round(b.value / 100 * 12)}px` }}
-        />
-      ))}
+      {bars.map((b, i) => {
+        const empty = b.value == null;
+        const label = empty
+          ? `Sin check-in · ${formatBarDate(b.date)}`
+          : `Bienestar ${b.value}/100 · ${formatBarDate(b.date)}`;
+        const common = {
+          "aria-label": label,
+          onMouseEnter: show(label),
+          onMouseMove: show(label),
+          onMouseLeave: hide,
+        } as const;
+        return empty ? (
+          <span key={i} className={styles.barEmpty} {...common}>–</span>
+        ) : (
+          <span
+            key={i}
+            className={`${styles.bar} ${barTone(b.tone ?? "")}`}
+            style={{ height: `${6 + Math.round((b.value as number) / 100 * 12)}px` }}
+            {...common}
+          />
+        );
+      })}
+      {tip && typeof document !== "undefined" && createPortal(
+        <div className={styles.formaTip} style={{ top: tip.y, left: tip.x }}>{tip.text}</div>,
+        document.body,
+      )}
     </span>
   );
+}
+
+// ISO date (YYYY-MM-DD) → short local label, without timezone drift.
+function formatBarDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString("es-CL", { day: "numeric", month: "short" });
 }
 
 function acwrTone(v: number | null): string {

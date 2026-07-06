@@ -13,6 +13,7 @@ import {
 } from "recharts";
 
 import type { DashboardWidget, GroupedBarPayload } from "@/lib/types";
+import { ChartWindowNav, fullRangeDomain, useChartWindow, windowRangeLabel } from "./ChartWindow";
 import styles from "./Widget.module.css";
 
 interface GroupedBarProps {
@@ -37,7 +38,10 @@ export default function GroupedBar({ widget }: GroupedBarProps) {
   const chartData = useMemo(
     () =>
       data.groups.map((g) => {
-        const row: Record<string, string | number | null> = { label: formatShortDate(g.recorded_at) };
+        const row: Record<string, string | number | null> = {
+          label: formatShortDate(g.recorded_at),
+          recorded_at: g.recorded_at,
+        };
         for (const bar of g.bars) {
           row[bar.key] = bar.value;
         }
@@ -46,10 +50,21 @@ export default function GroupedBar({ widget }: GroupedBarProps) {
     [data.groups],
   );
 
+  // Per-chart time window (latest first, chevrons to page through history).
+  const window = useChartWindow(chartData);
+
   const unitsByLabel = useMemo(
     () => new Map(data.fields.map((f) => [f.label, f.unit])),
     [data.fields],
   );
+
+  // Fixed axis over the FULL history — bars keep their scale while sliding.
+  const yMax = useMemo(() => {
+    const d = fullRangeDomain(
+      data.groups.flatMap((g) => g.bars.map((b) => b.value)),
+    );
+    return d ? d[1] : undefined;
+  }, [data.groups]);
 
   if (data.groups.length === 0 || data.fields.length === 0) {
     return (
@@ -69,18 +84,22 @@ export default function GroupedBar({ widget }: GroupedBarProps) {
       </header>
       {widget.description && <p className={styles.description}>{widget.description}</p>}
 
+      <ChartWindowNav window={window} label={windowRangeLabel(window.visible)} />
       <div className={styles.chartArea} style={{ height: widget.chart_height ?? 220 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 64 }}>
+          <BarChart data={window.visible} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            {/* Explicit axis height keeps the title INSIDE the axis band —
+                a negative label offset would draw it into the legend row. */}
             <XAxis
               dataKey="label"
               tick={{ fontSize: 11, fill: "#6b7280" }}
               stroke="#d1d5db"
+              height={46}
               label={{
                 value: xAxisTitle,
                 position: "insideBottom",
-                offset: -12,
+                offset: 0,
                 style: { fill: "#6b7280", fontSize: 11, fontWeight: 600 },
               }}
             />
@@ -88,6 +107,7 @@ export default function GroupedBar({ widget }: GroupedBarProps) {
               tick={{ fontSize: 11, fill: "#6b7280" }}
               stroke="#d1d5db"
               width={56}
+              domain={yMax !== undefined ? [0, yMax] : [0, "auto"]}
               label={
                 yAxisTitle
                   ? {
@@ -121,7 +141,7 @@ export default function GroupedBar({ widget }: GroupedBarProps) {
             />
             <Legend
               verticalAlign="bottom"
-              wrapperStyle={{ fontSize: 11, paddingTop: 20 }}
+              wrapperStyle={{ fontSize: 11, paddingTop: 6 }}
               iconType="circle"
               iconSize={8}
             />

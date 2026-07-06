@@ -19,14 +19,22 @@ from core.models import Category, Club, Department
 
 # Wellness bands per scale (higher = better). recuperación is 1–10; the
 # other four items are 1–5 (proven by the data).
+# Club decision (2026-07-05): only the clearly-bad bottom fires — on the
+# 1–5 items that's 1–2; a 3 is a neutral "Aceptable", never an alert.
+# recuperación (1–10) has its OWN alert ladder (explicit `alert` flags +
+# per-band `severity`, consumed by the threshold evaluator): 1–2 critical,
+# 3–4 warning, 5–6 neutral, 7–10 good.
 _BANDS_10 = [
-    {"max": 5, "label": "Bajo", "color": "#dc2626"},
-    {"min": 5, "max": 8, "label": "Aceptable", "color": "#f59e0b"},
-    {"min": 8, "label": "Bueno", "color": "#16a34a"},
+    {"max": 2, "label": "Muy bajo", "color": "#dc2626",
+     "alert": True, "severity": "critical"},
+    {"min": 3, "max": 4, "label": "Bajo", "color": "#f97316",
+     "alert": True, "severity": "warning"},
+    {"min": 5, "max": 6, "label": "Aceptable", "color": "#f59e0b"},
+    {"min": 7, "label": "Bueno", "color": "#16a34a"},
 ]
 _BANDS_5 = [
-    {"max": 3, "label": "Bajo", "color": "#dc2626"},
-    {"min": 3, "max": 4, "label": "Aceptable", "color": "#f59e0b"},
+    {"max": 2, "label": "Bajo", "color": "#dc2626"},
+    {"min": 3, "max": 3, "label": "Aceptable", "color": "#f59e0b"},
     {"min": 4, "label": "Bueno", "color": "#16a34a"},
 ]
 

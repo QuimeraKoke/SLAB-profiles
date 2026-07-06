@@ -84,6 +84,13 @@ class Event(models.Model):
         default=dict, blank=True,
         help_text="Source row(s) from a legacy system this event was migrated from.",
     )
+    # For matches: the rival, as a reference entity. `metadata.opponent` /
+    # `opponent_team_id` are kept for display/back-compat; this FK is the
+    # structured link (set by the sync + the match-create form).
+    opponent_team = models.ForeignKey(
+        "ExternalTeam", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="matches",
+    )
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -312,3 +319,67 @@ class OpponentScouting(models.Model):
 
     def __str__(self) -> str:
         return f"Scouting · {self.team_name} ({self.season})"
+
+
+class ExternalTeam(models.Model):
+    """A rival/opponent team from an external provider (API-Football).
+
+    Deliberately separate from the internal `Club` model — `Club` is the
+    operator's own clubs (with departments, categories, players); rivals are
+    reference data identified by the provider's team id. One row per provider
+    team (the provider conflates club + senior team for opponents).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=32, default="api_football")
+    external_id = models.IntegerField(help_text="Provider team id (e.g. API-Football).")
+    name = models.CharField(max_length=140)
+    country = models.CharField(max_length=80, blank=True)
+    code = models.CharField(max_length=12, blank=True)
+    logo_url = models.CharField(max_length=300, blank=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "external_id"], name="uniq_external_team",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["provider", "external_id"]),
+            models.Index(fields=["name"]),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class Competition(models.Model):
+    """An external competition for a season (league/cup) with its date window
+    and the teams that play it — reference data for the match-create dropdowns.
+    Refreshed by the API-Football sync.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=32, default="api_football")
+    external_id = models.IntegerField(help_text="Provider league id.")
+    season = models.IntegerField()
+    name = models.CharField(max_length=140)
+    country = models.CharField(max_length=80, blank=True)
+    logo_url = models.CharField(max_length=300, blank=True)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    teams = models.ManyToManyField(ExternalTeam, related_name="competitions", blank=True)
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["provider", "external_id", "season"],
+                name="uniq_competition_season",
+            ),
+        ]
+        indexes = [models.Index(fields=["provider", "external_id", "season"])]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.season})"

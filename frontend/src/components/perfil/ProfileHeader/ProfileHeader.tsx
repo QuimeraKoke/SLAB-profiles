@@ -21,7 +21,7 @@ const STATUS_LABEL: Record<string, string> = {
   available: 'Disponible',
   injured: 'Lesionado',
   recovery: 'Recuperación',
-  reintegration: 'Reintegración',
+  reintegration: 'Return to Train',
 };
 
 function formatMoney(amount: number | null, currency: string): string {

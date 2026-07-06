@@ -14,8 +14,8 @@ import styles from "./ProfileEpisodes.module.css";
 const STAGE_LABEL: Record<string, string> = {
   injured: "Lesionado",
   recovery: "Recuperación",
-  reintegration: "Reintegración",
-  closed: "Cerrado",
+  reintegration: "Return to Train",
+  closed: "Return to Play",
 };
 
 function formatDate(iso: string | null): string {

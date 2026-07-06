@@ -110,6 +110,7 @@ class AlertSource(models.TextChoices):
     THRESHOLD = "threshold", "Umbral"  # reserved for the alarms engine
     MEDICATION = "medication", "Medicación (WADA)"
     TRAINING_LOAD = "training_load", "Carga de entrenamiento"
+    MOLESTIA = "molestia", "Molestia (check-in)"
 
 
 class Alert(models.Model):

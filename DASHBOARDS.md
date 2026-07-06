@@ -126,10 +126,11 @@ whole thing.
 | `multi_line`         | Trend over time, all series visible at once       | 1 source · `all` (or `last_n`) · multiple `field_keys`           |
 | `donut_per_result`   | Body-composition fractions, one donut per take    | 1 source · `last_n` · `field_keys` that sum to a meaningful whole |
 | `grouped_bar`        | Compare a few values across recent takes          | 1 source · `last_n` · 2–5 `field_keys`                           |
-| `body_map_heatmap`   | Counts per body region (e.g. injury frequency)    | 1 source · `all` (or `last_n`) · **exactly 1** categorical `field_key` whose `option_regions` map each option to a body region (e.g. `{"Muslo der.": "right_thigh"}`). |
+| `body_map_heatmap`   | Counts per body region (e.g. injury frequency)    | 1 source · `all` (or `last_n`) · **exactly 1** categorical `field_key` whose `option_regions` map each option to a body region (e.g. `{"Muslo der.": "right_thigh"}`). Side-aware variant: values may carry a `{side}` placeholder (`{"Muslo": "{side}_thigh"}`) resolved from a second field declared as `side_field` on the schema field (the `lesiones` template does this with `lado`); central/bilateral/missing side paints both silhouette sides. On **episodic** templates the resolver counts episodes, not results (an injury with opening + closing results counts once, in its latest stage). |
 | `goal_card`          | Per-player active-goal cards (target vs current)  | 0 sources (department-scoped) or 1 source pinning a template     |
 | `player_alerts`      | Active alerts for this player, filtered to the widget's department | 0 sources (resolver reads `Alert` table directly)               |
 | `activity_log`       | Timeline of recent ExamResults (e.g. Molestias daily log) | 1+ sources · `last_n` · field_keys that should appear in each row card |
+| `cross_exam_line`    | One line per source, each from a DIFFERENT template (e.g. CK vs. match distance) — the only per-player chart with an optional **second y-axis** | **1+ sources** · one `field_key` each · per-source `label`/`color`. Cross-department sources allowed (same club). Dual axis via `display_config.right_axis_keys: ["tot_dist_total"]` (field_keys plotted right); axis titles from `y_axis_title` / `right_y_axis_title`, defaulting to each side's unit. |
 
 ### Team widgets (TeamReportLayout)
 
@@ -150,13 +151,24 @@ whole thing.
 | `team_activity_log`              | Team-wide timeline of recent ExamResults (newest first)          | Multi-source supported; each row shows player name + field values               |
 | `team_daily_grouped_bars`        | Daily team-mean grouped bars across N metrics + optional total line overlay | `y_min`/`y_max` for the bars axis, `total_y_min`/`total_y_max` for the line axis |
 
+**Per-chart time windows (2026-07-05).** The player profile no longer has a
+global date-range selector: `GET /players/{id}/views` is fetched WITHOUT
+date bounds and each time-series widget (`line_with_selector`,
+`multi_line`, `grouped_bar`) owns its window client-side —
+`frontend/src/components/dashboards/widgets/ChartWindow.tsx` slices the
+chronological series to the latest 12 points with ‹ › chevrons, a visible
+date-range label ("12 abr – 30 jun · 18–29 de 41") and a "Reciente" reset.
+The nav hides itself when the series fits in one window. `last_n`
+datasources still cap the series server-side, so paging depth for those
+widgets is bounded by the configured N. Team reports keep their own
+`DateRangeControl` — unchanged.
+
 ### Reserved (configure now, render later)
 
 | `chart_type`        | What V2 will render                                                       |
 | ------------------- | ------------------------------------------------------------------------- |
 | `reference_card`    | Latest result vs a target reference (e.g. Kerr 1988 / Phantom).           |
 | `goals_list`        | Goals from a Metas template, with checkboxes.                             |
-| `cross_exam_line`   | One line chart pulling from multiple exam templates (e.g. weight + sprint + injury subjective pain). |
 
 Configure them today and the frontend renders an "Unsupported renderer"
 placeholder. The data wiring stays valid, so when V2 ships these light up

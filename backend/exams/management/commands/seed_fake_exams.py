@@ -153,7 +153,7 @@ NUMERIC_BASELINES: dict[str, tuple[float, float]] = {
 # Slugs that need episode-aware or date-range-aware generation. The main
 # loop SKIPS these templates and dispatches to dedicated handlers below.
 SPECIAL_TEMPLATE_SLUGS = {"lesiones", "medicacion", "molestias", "check_in",
-                          "gps_entrenamiento"}
+                          "gps_sesion"}
 
 # Training microcycle: training-day load as a % of the player's match-day
 # reference, keyed by days-BEFORE the next match. The match (MD) and the
@@ -171,7 +171,7 @@ _TRAINING_MICROCYCLE: dict[int, float] = {
 # variation — opponent, tactics, extra time, weather) shared by every metric
 # in that session, layered on top of per-metric noise. Without it every match
 # / training day comes out near-identical (and ACWR collapses to ~1.0).
-_GPS_MATCH_SLUG = "gps_rendimiento_fisico_de_partido"
+_GPS_MATCH_SLUG = "gps_partido"
 _GPS_SESSION_FACTOR = (0.85, 1.16)        # match: wide game-to-game variation
 _GPS_TRAIN_SESSION_FACTOR = (0.86, 1.08)  # training: planned, tighter spread
 _GPS_METRIC_NOISE = 0.08                  # ±8% independent per-metric noise
@@ -500,7 +500,7 @@ class Command(BaseCommand):
                         total_created += self._seed_check_in_for_player(
                             player, check_in_t, rng, now,
                         )
-                    gps_train_t = templates_by_slug.get("gps_entrenamiento")
+                    gps_train_t = templates_by_slug.get("gps_sesion")
                     if (
                         gps_train_t is not None
                         and gps_train_t in templates
@@ -981,14 +981,14 @@ class Command(BaseCommand):
             return sum(vals) / len(vals) if vals else rng.uniform(lo, hi)
 
         ref = {
-            "tot_dist": _match_mean("tot_dist_total", 9000, 11000),
-            "hsr": _match_mean("hsr_total", 550, 850),
-            "sprint": _match_mean("sprint_total", 120, 260),
-            "hmld": _match_mean("hmld_total", 900, 1400),
-            "player_load": _match_mean("player_load_total", 480, 640),
-            "hiaa": _match_mean("hiaa_total", 110, 190),
-            "acc": _match_mean("acc_total", 40, 60),
-            "dec": _match_mean("dec_total", 40, 60),
+            "tot_dist": _match_mean("tot_dist", 9000, 11000),
+            "hsr": _match_mean("hsr", 550, 850),
+            "sprint_dist": _match_mean("sprint_dist", 120, 260),
+            "hmld": _match_mean("hmld", 900, 1400),
+            "player_load": _match_mean("player_load", 480, 640),
+            "hiaa": _match_mean("hiaa", 110, 190),
+            "acc": _match_mean("acc", 40, 60),
+            "dec": _match_mean("dec", 40, 60),
         }
         created = 0
         seen_days: set = set()
@@ -1009,11 +1009,14 @@ class Command(BaseCommand):
                     return session * (1 + rng.uniform(-_GPS_METRIC_NOISE, _GPS_METRIC_NOISE))
 
                 raw_data = {
+                    "fecha": recorded_at.date().isoformat(),
+                    "sesion": f"Sesión {recorded_at.strftime('%d-%m-%y')}",
+                    "tipo_sesion": "entrenamiento",
                     # Duration: its own noise, not scaled by session intensity.
                     "tot_dur": round((40 + pct * 55) * (1 + rng.uniform(-0.08, 0.08)), 1),
                     "tot_dist": round(ref["tot_dist"] * pct * j(), 1),
                     "hsr": round(ref["hsr"] * pct * j(), 1),
-                    "sprint": round(ref["sprint"] * pct * j(), 1),
+                    "sprint_dist": round(ref["sprint_dist"] * pct * j(), 1),
                     "hmld": round(ref["hmld"] * pct * j(), 1),
                     "player_load": round(ref["player_load"] * pct * j(), 1),
                     "hiaa": round(ref["hiaa"] * pct * j()),

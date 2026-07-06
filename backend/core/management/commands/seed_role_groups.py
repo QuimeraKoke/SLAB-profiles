@@ -53,6 +53,7 @@ OPERATIONAL_MODELS: list[tuple[str, str]] = [
     ("goals", "alertrule"),
     ("events", "event"),
     ("core", "player"),
+    ("core", "dailynote"),
     ("attachments", "attachment"),
     # Team-report building — the in-app "promote chart to dashboard" flow lets
     # Editors compose their own department dashboards (Solo Lectura: view only).

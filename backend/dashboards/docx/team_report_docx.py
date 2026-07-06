@@ -33,7 +33,7 @@ _STATUS_LABELS = {
     "available": "Disponible",
     "injured": "Lesionado",
     "recovery": "Recuperación",
-    "reintegration": "Reintegración",
+    "reintegration": "Return to Train",
 }
 
 

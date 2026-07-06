@@ -1,0 +1,315 @@
+.card {
+  background: #fff;
+  border: 1px solid #e8eaf0;
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.photo,
+.initials {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.photo {
+  object-fit: cover;
+  background: #f2f4f7;
+}
+
+.initials {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #eef0f5;
+  color: #475467;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.name {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0a2240;
+  text-decoration: none;
+}
+
+.name:hover {
+  color: #4f46e5;
+}
+
+.name :global(svg) {
+  color: #98a2b3;
+}
+
+.meta {
+  font-size: 12.5px;
+  color: #667085;
+  margin-top: 2px;
+}
+
+.meta strong {
+  color: #344054;
+}
+
+.stage {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f2f4f7;
+  color: #475467;
+}
+
+.stageCrit { background: #fde8e8; color: #b42318; }
+.stageWarn { background: #fef4e6; color: #b76e00; }
+.stageInfo { background: #eef0ff; color: #4438ca; }
+
+.timeline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  font-size: 13px;
+  color: #667085;
+}
+
+.dayCount {
+  font-size: 13px;
+  color: #344054;
+}
+
+.dayCount strong {
+  font-size: 17px;
+  font-weight: 800;
+  color: #0a2240;
+}
+
+.timelineItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.plan {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #475467;
+  border-left: 3px solid #e8eaf0;
+  padding-left: 10px;
+}
+
+/* ── GPS comparison ── */
+.gps {
+  border: 1px solid #eef0f5;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fbfbfd;
+}
+
+.gpsHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #344054;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-bottom: 10px;
+}
+
+.gpsWindow {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #98a2b3;
+  text-align: right;
+}
+
+.gpsRows {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.gpsRow {
+  display: grid;
+  grid-template-columns: 110px minmax(90px, max-content) 1fr 44px;
+  align-items: center;
+  gap: 10px;
+}
+
+.gpsLabel {
+  font-size: 12.5px;
+  color: #667085;
+}
+
+.gpsValue {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #0a2240;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gpsBaseline {
+  font-weight: 500;
+  color: #98a2b3;
+}
+
+.gpsPct {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #344054;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter,
+.meterEmpty {
+  position: relative;
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: #eef0f5;
+  min-width: 60px;
+}
+
+.meterFill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 4px;
+  background: #4f46e5;
+}
+
+.meterTick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: #0a2240;
+  border-radius: 1px;
+}
+
+.noGps {
+  margin: 0;
+  font-size: 12.5px;
+  color: #98a2b3;
+}
+
+/* ── Alerts ── */
+.alerts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.alerts li {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.alerts li :global(svg) {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.alertCrit { color: #b42318; }
+.alertWarn { color: #b76e00; }
+
+/* ── Notes footer ── */
+.foot {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid #f4f5f8;
+  padding-top: 10px;
+}
+
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.noNotes {
+  font-size: 12.5px;
+  color: #98a2b3;
+}
+
+.note {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12.5px;
+}
+
+.noteDept {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #4438ca;
+  background: #eef0ff;
+  border-radius: 6px;
+  padding: 1px 7px;
+}
+
+.noteText {
+  color: #344054;
+  line-height: 1.4;
+}
+
+.noteBtn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #4f46e5;
+  background: none;
+  border: 1px solid #d7dbe6;
+  border-radius: 8px;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.noteBtn:hover {
+  background: #f7f8fb;
+  border-color: #b9c0d4;
+}

@@ -3,16 +3,13 @@
 import React, { use, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import styles from "../page.module.css";
-import DateRangeControl, {
-  defaultDateRange,
-  type DateRangeValue,
-} from "@/components/common/DateRangeControl";
 import ProfileHeader from "@/components/perfil/ProfileHeader/ProfileHeader";
 import ProfileTabs, { panelIdFor, type TabSpec } from "@/components/perfil/ProfileTabs/ProfileTabs";
 import ProfileSummary from "@/components/perfil/ProfileSummary/ProfileSummary";
 import ProfileTimeline from "@/components/perfil/ProfileTimeline/ProfileTimeline";
 import ProfileEvents from "@/components/perfil/ProfileEvents/ProfileEvents";
 import ProfileDepartment from "@/components/perfil/ProfileDepartment/ProfileDepartment";
+import ProfileAlerts from "@/components/perfil/ProfileAlerts/ProfileAlerts";
 import ProfileGoals from "@/components/perfil/ProfileGoals/ProfileGoals";
 import ProfileEpisodes from "@/components/perfil/ProfileEpisodes/ProfileEpisodes";
 import { useBreadcrumbLabel } from "@/components/layout/Breadcrumbs";
@@ -22,6 +19,7 @@ import type { PlayerDetail } from "@/lib/types";
 const RESUMEN_TAB_ID = "resumen";
 const TIMELINE_TAB_ID = "timeline";
 const EVENTS_TAB_ID = "eventos";
+const ALERTS_TAB_ID = "alertas";
 const GOALS_TAB_ID = "objetivos";
 const LESIONES_TAB_ID = "lesiones";
 
@@ -86,11 +84,6 @@ export default function PerfilPlayerPage({ params }: PageProps) {
     },
     [pathname, router, searchParams],
   );
-  // Cross-cutting date filter for department tabs. Lives at the page
-  // level so switching between Médico / Físico / Nutricional preserves
-  // the chosen window.
-  const [dateRange, setDateRange] = useState<DateRangeValue>(() => defaultDateRange());
-
   useEffect(() => {
     let cancelled = false;
     // Defer the "clear state for new fetch" via a microtask so the lint
@@ -142,6 +135,8 @@ export default function PerfilPlayerPage({ params }: PageProps) {
     { id: RESUMEN_TAB_ID, label: "Resumen" },
     { id: TIMELINE_TAB_ID, label: "Línea de tiempo" },
     { id: EVENTS_TAB_ID, label: "Eventos" },
+    // Alerts split from Objetivos — one label, one meaning.
+    { id: ALERTS_TAB_ID, label: "Alertas" },
     { id: GOALS_TAB_ID, label: "Objetivos" },
     { id: LESIONES_TAB_ID, label: "Lesiones" },
     ...departmentTabs,
@@ -177,6 +172,7 @@ export default function PerfilPlayerPage({ params }: PageProps) {
         )}
         {safeActive === TIMELINE_TAB_ID && <ProfileTimeline playerId={player.id} />}
         {safeActive === EVENTS_TAB_ID && <ProfileEvents playerId={player.id} />}
+        {safeActive === ALERTS_TAB_ID && <ProfileAlerts playerId={player.id} />}
         {safeActive === GOALS_TAB_ID && <ProfileGoals player={player} />}
         {safeActive === LESIONES_TAB_ID && <ProfileEpisodes player={player} />}
         {activeDepartment && (
@@ -184,15 +180,6 @@ export default function PerfilPlayerPage({ params }: PageProps) {
             playerId={player.id}
             playerName={`${player.first_name} ${player.last_name}`}
             department={activeDepartment}
-            dateFrom={dateRange.date.from}
-            dateTo={dateRange.date.to}
-            dateRangeControl={
-              <DateRangeControl
-                value={dateRange}
-                onChange={setDateRange}
-                variant="compact"
-              />
-            }
           />
         )}
       </div>

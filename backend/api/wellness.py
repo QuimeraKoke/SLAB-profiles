@@ -55,9 +55,12 @@ def dimension_pct(data: dict, key: str, fmax: dict[str, float]) -> int | None:
     return round(min(1.0, v / mx) * 100) if (v is not None and mx) else None
 
 
-def recent_by_player(category, player_ids: list, limit: int = 12) -> dict:
-    """{player_id: [result_data, ...]} newest-first, capped to `limit`,
-    for the category's checkin_fisico responses."""
+def recent_by_player(category, player_ids: list, limit: int = 12, since=None,
+                     with_dates: bool = False) -> dict:
+    """{player_id: [result_data, ...]} newest-first, for the category's
+    checkin_fisico responses. With `since` (an aware datetime) it returns every
+    reading on/after that instant — a date window; otherwise caps to `limit`.
+    With `with_dates=True` each item is a `(recorded_at, result_data)` tuple."""
     tids = list(
         ExamTemplate.objects.filter(slug=WELLNESS_SLUG, applicable_categories=category)
         .values_list("id", flat=True)
@@ -65,16 +68,16 @@ def recent_by_player(category, player_ids: list, limit: int = 12) -> dict:
     out: dict = {}
     if not tids:
         return out
-    rows = (
-        ExamResult.objects
-        .filter(player_id__in=player_ids, template_id__in=tids)
-        .order_by("player_id", "-recorded_at")
-        .values_list("player_id", "result_data")
+    qs = ExamResult.objects.filter(player_id__in=player_ids, template_id__in=tids)
+    if since is not None:
+        qs = qs.filter(recorded_at__gte=since)
+    rows = qs.order_by("player_id", "-recorded_at").values_list(
+        "player_id", "recorded_at", "result_data",
     )
-    for pid, data in rows:
+    for pid, rec, data in rows:
         bucket = out.setdefault(pid, [])
-        if len(bucket) < limit:
-            bucket.append(data or {})
+        if since is not None or len(bucket) < limit:
+            bucket.append((rec, data or {}) if with_dates else (data or {}))
     return out
 
 

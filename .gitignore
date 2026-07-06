@@ -35,6 +35,13 @@ backend/.ruff_cache/
 .DS_Store
 *.pem
 
+# Google / GCP service-account keys — NEVER commit
+slab-platform-*.json
+*service-account*.json
+*serviceaccount*.json
+*.iam.gserviceaccount.com.json
+secrets/
+
 # Logs
 npm-debug.log*
 yarn-debug.log*
@@ -45,3 +52,6 @@ yarn-error.log*
 .env
 .env.*
 !.env.example
+backups/
+backend/migration_runs/
+notes/

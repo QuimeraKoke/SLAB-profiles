@@ -95,7 +95,7 @@ def writeback_player_fields_on_result_save(sender, instance, created, **kwargs):
         player.save(update_fields=list(set(update_fields)))
 
 
-def medication_alert_payload(template, result_data) -> tuple[str, str] | None:
+def medication_alert_payload(template, result_data, recorded_at=None) -> tuple[str, str] | None:
     """Return `(severity, message)` for a flagged medication result, or None
     when the template isn't a medication template, no medicine was chosen, or
     the chosen medicine is PERMITIDO (silent).
@@ -136,7 +136,11 @@ def medication_alert_payload(template, result_data) -> tuple[str, str] | None:
         parts.append(note)
     if action:
         parts.append(f"Acción: {action}")
-    return severity, " · ".join(parts)
+    message = " · ".join(parts)
+    if recorded_at is not None:
+        from django.utils import timezone as _tz
+        message = f"{message} ({_tz.localtime(recorded_at).date().isoformat()})"
+    return severity, message
 
 
 @receiver(post_save, sender=ExamResult)
@@ -155,7 +159,7 @@ def medication_wada_alert_on_result_save(sender, instance, created, **kwargs):
     if not created:
         return
 
-    payload = medication_alert_payload(instance.template, instance.result_data)
+    payload = medication_alert_payload(instance.template, instance.result_data, instance.recorded_at)
     if payload is None:
         return
     severity, message = payload
@@ -173,31 +177,38 @@ def medication_wada_alert_on_result_save(sender, instance, created, **kwargs):
     )
 
 
-@receiver(post_save, sender=ExamResult)
-def recompute_player_state_on_result_save(sender, instance, created, **kwargs):
-    """Refresh the player's materialized metric state (latest values +
-    weekly chronic load) whenever a reading changes. Enqueued on-commit so
-    the worker sees the committed row; if the broker is unreachable (tests /
-    no worker) it falls back to a synchronous recompute so the state still
-    updates."""
+def enqueue_player_state_recompute(player_id) -> None:
+    """Schedule a refresh of the player's materialized metric state (latest
+    values + weekly chronic load) for after the current transaction commits,
+    so the worker sees the committed rows. If the broker is unreachable
+    (tests / no worker) it falls back to a synchronous recompute so the
+    state still updates. Shared by the post_save signal and bulk writers
+    (`gps_session_ingest`), which don't emit signals."""
     from django.db import transaction
 
-    player_id = str(instance.player_id)
+    pid = str(player_id)
 
     def _enqueue() -> None:
         from dashboards.tasks import recompute_player_state, recompute_readiness
         try:
-            recompute_player_state.delay(player_id)
+            recompute_player_state.delay(pid)
         except Exception:  # noqa: BLE001 — broker down: recompute inline rather than skip
-            recompute_player_state(player_id)
+            recompute_player_state(pid)
         # Readiness (agent-refined) is best-effort + signature-gated; never
         # run its LLM call inline, so skip if the broker is unreachable.
         try:
-            recompute_readiness.delay(player_id)
+            recompute_readiness.delay(pid)
         except Exception:  # noqa: BLE001
             pass
 
     transaction.on_commit(_enqueue)
+
+
+@receiver(post_save, sender=ExamResult)
+def recompute_player_state_on_result_save(sender, instance, created, **kwargs):
+    """Refresh the player's materialized metric state whenever a reading
+    changes."""
+    enqueue_player_state_recompute(instance.player_id)
 
 
 def _num(raw):
@@ -211,6 +222,15 @@ def _num(raw):
 
 @receiver(post_save, sender=ExamResult)
 def training_load_alert_on_result_save(sender, instance, created, **kwargs):
+    """Signal wrapper around `check_training_load_alert` for single saves.
+    Bulk writers (`gps_session_ingest`) don't emit post_save — they call the
+    check directly per created result."""
+    if not created:
+        return
+    check_training_load_alert(instance)
+
+
+def check_training_load_alert(instance) -> None:
     """Fire an alert when a GPS *training* session reaches ≥85% of the player's
     match-load reference — acute (max match in 7 d) or chronic (max in 28 d),
     counting only matches with ≥75 GPS-min.
@@ -219,9 +239,8 @@ def training_load_alert_on_result_save(sender, instance, created, **kwargs):
     (distance, player load, HSR, sprint, accel, decel, HIAA, HMLD); duration,
     mpm and max velocity are deliberately excluded. Per-result + idempotent via
     `_upsert_alert` (source_id = result id). Best-effort: never breaks a save.
+    Self-filtering: non-training slugs and stale sessions (backfills) no-op.
     """
-    if not created:
-        return
     try:
         from dashboards.player_state import (
             _GPS_TRAIN_SLUG,
@@ -274,7 +293,8 @@ def training_load_alert_on_result_save(sender, instance, created, **kwargs):
         if len(breaches) > len(shown):
             parts.append(f"+{len(breaches) - len(shown)} más")
         severity = "critical" if worst_pct >= 100 else "warning"
-        message = "Carga de entrenamiento alta (≥85% de partido) — " + " · ".join(parts)
+        message = ("Carga de entrenamiento alta (≥85% de partido) — " + " · ".join(parts)
+                   + f" ({timezone.localtime(instance.recorded_at).date().isoformat()})")
 
         from goals.evaluator import _upsert_alert
         from goals.models import AlertSource

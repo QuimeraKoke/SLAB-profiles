@@ -23,22 +23,12 @@ interface ProfileDepartmentProps {
   /** "First Last" — used for the Excel filename + summary sheet. */
   playerName: string;
   department: Department;
-  /** ISO date strings ("YYYY-MM-DD") for the cross-tab filter, set on
-   *  the parent page. Empty string = no bound on that side. */
-  dateFrom: string;
-  dateTo: string;
-  /** Pre-rendered control so the parent owns the date state — keeps it
-   *  shared across all department tabs without prop drilling setters. */
-  dateRangeControl: React.ReactNode;
 }
 
 export default function ProfileDepartment({
   playerId,
   playerName,
   department,
-  dateFrom,
-  dateTo,
-  dateRangeControl,
 }: ProfileDepartmentProps) {
   const [results, setResults] = useState<ExamResult[] | null>(null);
   const [templates, setTemplates] = useState<ExamTemplate[]>([]);
@@ -80,15 +70,11 @@ export default function ProfileDepartment({
       setError(null);
     });
 
-    // Templates and per-row history (`results`) are intentionally NOT
-    // narrowed by the date filter — the "Agregar examen" picker should
-    // always offer every applicable template, and the per-template
-    // history card (legacy view) shows the full timeline. Only the
-    // dashboard layout aggregation respects the window.
+    // The layout is fetched WITHOUT a date window: every chart receives its
+    // full history and owns its own time window client-side (chevron
+    // navigation in each widget) — there is no global date filter anymore.
     const dept = encodeURIComponent(department.slug);
     const layoutParams = new URLSearchParams({ department: department.slug });
-    if (dateFrom) layoutParams.set("date_from", dateFrom);
-    if (dateTo) layoutParams.set("date_to", dateTo);
 
     Promise.all([
       api<ExamResult[]>(`/players/${playerId}/results?department=${dept}`),
@@ -110,7 +96,7 @@ export default function ProfileDepartment({
     return () => {
       cancelled = true;
     };
-  }, [playerId, department.slug, dateFrom, dateTo, reloadKey]);
+  }, [playerId, department.slug, reloadKey]);
 
   const renderBody = () => {
     if (results === null && !error) {
@@ -136,7 +122,7 @@ export default function ProfileDepartment({
             playerId={playerId}
             departmentSlug={department.slug}
           />
-          <DepartmentDashboard sections={layout.sections} />
+          <DepartmentDashboard sections={layout.sections} playerId={playerId} />
         </>
       );
     }
@@ -189,19 +175,18 @@ export default function ProfileDepartment({
           )}
         </div>
         <div className={styles.controls}>
-          {dateRangeControl}
           {layout && (
             <DownloadPlayerExcelButton
               playerName={playerName}
               department={department}
               sections={layout.sections}
-              dateFrom={dateFrom}
-              dateTo={dateTo}
+              dateFrom=""
+              dateTo=""
             />
           )}
           {layout && (
             <DownloadPdfButton
-              endpoint={playerDeptDocxEndpoint(playerId, department.slug, dateFrom, dateTo)}
+              endpoint={playerDeptDocxEndpoint(playerId, department.slug, "", "")}
               filename={`reporte-${playerName}-${department.slug}.docx`.replace(/\s+/g, "_")}
             />
           )}
@@ -213,8 +198,8 @@ export default function ProfileDepartment({
         playerName={playerName}
         departmentSlug={department.slug}
         departmentName={department.name}
-        dateFrom={dateFrom}
-        dateTo={dateTo}
+        dateFrom=""
+        dateTo=""
         onPromoted={() => setReloadKey((k) => k + 1)}
       />
 

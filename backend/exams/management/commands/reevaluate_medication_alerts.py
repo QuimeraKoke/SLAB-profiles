@@ -52,7 +52,7 @@ class Command(BaseCommand):
 
         upserted = resolved = silent = 0
         for r in results:
-            payload = medication_alert_payload(r.template, r.result_data)
+            payload = medication_alert_payload(r.template, r.result_data, r.recorded_at)
             existing = Alert.objects.filter(
                 source_type=AlertSource.MEDICATION,
                 source_id=r.id,

@@ -6,7 +6,6 @@ import { api, ApiError } from "@/lib/api";
 import { usePermission } from "@/lib/permissions";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import type {
-  Alert as AlertModel,
   ExamField,
   ExamTemplate,
   Goal,
@@ -14,7 +13,6 @@ import type {
   GoalOperator,
   PlayerDetail,
 } from "@/lib/types";
-import AlertList from "./AlertList";
 import styles from "./ProfileGoals.module.css";
 
 interface Props {
@@ -38,7 +36,6 @@ function formatDate(iso: string): string {
 
 export default function ProfileGoals({ player }: Props) {
   const [goals, setGoals] = useState<Goal[] | null>(null);
-  const [alerts, setAlerts] = useState<AlertModel[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const { confirm } = useConfirm();
@@ -47,12 +44,10 @@ export default function ProfileGoals({ player }: Props) {
 
   const refresh = async () => {
     try {
-      const [g, a] = await Promise.all([
-        api<Goal[]>(`/players/${player.id}/goals`),
-        api<AlertModel[]>(`/players/${player.id}/alerts?status=active`),
-      ]);
+      // Alerts moved to their own "Alertas" tab (ProfileAlerts) — this tab
+      // is goals only.
+      const g = await api<Goal[]>(`/players/${player.id}/goals`);
       setGoals(g);
-      setAlerts(a);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudieron cargar los objetivos");
     }
@@ -86,28 +81,12 @@ export default function ProfileGoals({ player }: Props) {
     }
   };
 
-  const handleAlertDismiss = async (alert: AlertModel) => {
-    try {
-      await api(`/alerts/${alert.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "dismissed" }),
-      });
-      setAlerts((prev) => prev.filter((a) => a.id !== alert.id));
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Error al descartar alerta");
-    }
-  };
-
   if (goals === null) {
     return <div className={styles.container}>Cargando objetivos…</div>;
   }
 
   return (
     <div className={styles.container}>
-      {alerts.length > 0 && (
-        <AlertList alerts={alerts} onDismiss={handleAlertDismiss} />
-      )}
-
       {error && <div className={styles.error}>{error}</div>}
 
       <div className={styles.toolbar}>

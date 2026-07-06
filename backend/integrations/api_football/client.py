@@ -118,6 +118,12 @@ class ApiFootballClient:
         payload = self._get("/leagues", params={"team": team_id, "season": season})
         return payload.get("response") or []
 
+    def list_league_teams(self, league_id: int, season: int) -> list[dict[str, Any]]:
+        """Every team in a league for a season — the set of possible rivals.
+        Returns raw `response[]` items (each `{team: {...}, venue: {...}}`)."""
+        payload = self._get("/teams", params={"league": league_id, "season": season})
+        return payload.get("response") or []
+
     def get_fixture_lineups(self, fixture_id: int) -> list[dict[str, Any]]:
         """Per-team lineups + formation + starting XI / substitutes for a
         fixture. Empty until the lineup is published (~40 min pre-match)."""

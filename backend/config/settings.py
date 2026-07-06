@@ -188,8 +188,22 @@ JWT_LIFETIME_HOURS = env.int("JWT_LIFETIME_HOURS", default=12)
 # --- Celery ---
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", default="redis://redis:6379/0")
 CELERY_RESULT_BACKEND = env("CELERY_RESULT_BACKEND", default="redis://redis:6379/0")
-CELERY_TIMEZONE = env("CELERY_TIMEZONE", default="UTC")
+# Local club time so Beat crontab hours mean local hours (e.g. the wellness
+# sync's 08:00–12:00 window). Also shifts the existing 05:00/04:00 jobs to local.
+CELERY_TIMEZONE = env("CELERY_TIMEZONE", default="America/Santiago")
 CELERY_TASK_ALWAYS_EAGER = env.bool("CELERY_TASK_ALWAYS_EAGER", default=False)
+
+# --- Wellness Google-Sheet ingest (Check-IN form responses) ---
+# The form's responses live in a Google Sheet read by a service account.
+# Provide credentials EITHER as a file path (local/Docker, mounted key) OR as
+# an env-var JSON blob — raw or base64 — for platforms without a file mount
+# (Railway/Heroku). Blank both (or blank WELLNESS_SHEET_ID) ⇒ the sync no-ops.
+GOOGLE_SHEETS_CREDENTIALS_FILE = env("GOOGLE_SHEETS_CREDENTIALS_FILE", default="")
+GOOGLE_SHEETS_CREDENTIALS_JSON = env("GOOGLE_SHEETS_CREDENTIALS_JSON", default="")
+WELLNESS_SHEET_ID = env("WELLNESS_SHEET_ID", default="")
+WELLNESS_SHEET_WORKSHEET = env("WELLNESS_SHEET_WORKSHEET", default="Respuestas de formulario 1")
+WELLNESS_CLUB = env("WELLNESS_CLUB", default="Universidad de Chile")
+WELLNESS_CATEGORY = env("WELLNESS_CATEGORY", default="Primer Equipo")
 
 # --- Email ---
 # Default in dev: print emails to stdout. Set EMAIL_BACKEND to

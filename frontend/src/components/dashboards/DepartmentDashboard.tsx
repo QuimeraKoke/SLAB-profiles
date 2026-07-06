@@ -8,9 +8,12 @@ import styles from "./DepartmentDashboard.module.css";
 
 interface DepartmentDashboardProps {
   sections: DashboardSection[];
+  /** Player whose profile hosts this dashboard — enables per-player
+   *  widget features like the position-comparison toggle. */
+  playerId?: string;
 }
 
-export default function DepartmentDashboard({ sections }: DepartmentDashboardProps) {
+export default function DepartmentDashboard({ sections, playerId }: DepartmentDashboardProps) {
   if (sections.length === 0) {
     return (
       <div className={styles.empty}>
@@ -22,7 +25,7 @@ export default function DepartmentDashboard({ sections }: DepartmentDashboardPro
   return (
     <div className={styles.dashboard}>
       {sections.map((section) => (
-        <SectionGroup key={section.id} section={section} />
+        <SectionGroup key={section.id} section={section} playerId={playerId} />
       ))}
     </div>
   );

@@ -69,7 +69,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-slab}
       POSTGRES_USER: ${POSTGRES_USER:-slab}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slab}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3001}
       REDIS_URL: redis://redis:6379/0
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-slab-attachments}
       AWS_S3_REGION_NAME: ${AWS_S3_REGION_NAME:-us-east-1}
@@ -82,6 +82,12 @@ services:
       # LLM narrative for the player Resumen PDF. Blank ⇒ tables-only fallback.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-4-7}
+      # API-Football (match calendar + results sync). Blank ⇒ sync no-ops.
+      API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+      # Wellness Google-Sheet ingest. Key file lives under backend/secrets/
+      # (gitignored) → /app/secrets/ via the ./backend mount.
+      GOOGLE_SHEETS_CREDENTIALS_FILE: ${GOOGLE_SHEETS_CREDENTIALS_FILE:-/app/secrets/gsheets.json}
+      WELLNESS_SHEET_ID: ${WELLNESS_SHEET_ID:-}
     volumes:
       - ./backend:/app
     ports:
@@ -110,7 +116,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slab}
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
-      CELERY_TIMEZONE: ${CELERY_TIMEZONE:-UTC}
+      CELERY_TIMEZONE: ${CELERY_TIMEZONE:-America/Santiago}
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-slab-attachments}
       AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-http://minio:9000}
       AWS_S3_PUBLIC_ENDPOINT_URL: ${AWS_S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
@@ -125,7 +131,12 @@ services:
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
       EMAIL_USE_TLS: ${EMAIL_USE_TLS:-true}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-alerts@s-lab.cl}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3001}
+      # API-Football scheduled fixture sync (events.tasks). Blank ⇒ no-op.
+      API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+      # Wellness Google-Sheet ingest (exams.tasks.sync_wellness_responses).
+      GOOGLE_SHEETS_CREDENTIALS_FILE: ${GOOGLE_SHEETS_CREDENTIALS_FILE:-/app/secrets/gsheets.json}
+      WELLNESS_SHEET_ID: ${WELLNESS_SHEET_ID:-}
     volumes:
       - ./backend:/app
     depends_on:
@@ -152,7 +163,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slab}
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/0
-      CELERY_TIMEZONE: ${CELERY_TIMEZONE:-UTC}
+      CELERY_TIMEZONE: ${CELERY_TIMEZONE:-America/Santiago}
       AWS_STORAGE_BUCKET_NAME: ${AWS_STORAGE_BUCKET_NAME:-slab-attachments}
       AWS_S3_ENDPOINT_URL: ${AWS_S3_ENDPOINT_URL:-http://minio:9000}
       AWS_S3_PUBLIC_ENDPOINT_URL: ${AWS_S3_PUBLIC_ENDPOINT_URL:-http://localhost:9000}
@@ -167,7 +178,12 @@ services:
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
       EMAIL_USE_TLS: ${EMAIL_USE_TLS:-true}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-alerts@s-lab.cl}
-      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3001}
+      # API-Football scheduled fixture sync (events.tasks). Blank ⇒ no-op.
+      API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+      # Wellness Google-Sheet ingest (exams.tasks.sync_wellness_responses).
+      GOOGLE_SHEETS_CREDENTIALS_FILE: ${GOOGLE_SHEETS_CREDENTIALS_FILE:-/app/secrets/gsheets.json}
+      WELLNESS_SHEET_ID: ${WELLNESS_SHEET_ID:-}
     volumes:
       - ./backend:/app
     depends_on:
@@ -196,7 +212,7 @@ services:
       - frontend_node_modules:/app/node_modules
       - frontend_next_cache:/app/.next
     ports:
-      - "3000:3000"
+      - "3001:3000"
     depends_on:
       - backend
 

@@ -1,0 +1,86 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: min(440px, 78vw);
+}
+
+.error {
+  font-size: 13px;
+  color: #b42318;
+  background: #fde8e8;
+  border-radius: 8px;
+  padding: 9px 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.field span {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #344054;
+}
+
+.field select,
+.field textarea {
+  font: inherit;
+  font-size: 13.5px;
+  color: #0a2240;
+  border: 1px solid #d7dbe6;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field select:focus,
+.field textarea:focus {
+  outline: 2px solid #c7d2fe;
+  border-color: #4f46e5;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.ghost {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #475467;
+  background: none;
+  border: 1px solid #d7dbe6;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.primary {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #fff;
+  background: #4f46e5;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.primary:disabled,
+.ghost:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.primary:hover:not(:disabled) {
+  background: #4438ca;
+}

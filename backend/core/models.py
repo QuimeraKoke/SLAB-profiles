@@ -175,7 +175,7 @@ class Player(models.Model):
     STATUS_CHOICES = [
         (STATUS_INJURED, "Lesionado"),
         (STATUS_RECOVERY, "Recuperación"),
-        (STATUS_REINTEGRATION, "Reintegración"),
+        (STATUS_REINTEGRATION, "Return to Train"),
         (STATUS_AVAILABLE, "Disponible"),
     ]
     # Ordered worst (lowest rank) to best (highest rank). Used by the
@@ -479,3 +479,44 @@ class Contract(models.Model):
 
     def __str__(self) -> str:
         return f"{self.player} · {self.start_date} → {self.season_label} ({self.get_contract_type_display()})"
+
+
+class DailyNote(models.Model):
+    """A note captured in the morning planning meeting (the "Daily").
+
+    The medical/physical/nutrition/psych staff meet every morning to plan
+    each player's day. Each note belongs to one player + meeting date and
+    is tagged with the department (área) that raised it, so the outcome of
+    the meeting ("la pauta del día") stays in the platform instead of on
+    the whiteboard — and it's recorded who entered it.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.ForeignKey(
+        Player, on_delete=models.CASCADE, related_name="daily_notes",
+    )
+    department = models.ForeignKey(
+        Department, on_delete=models.PROTECT, related_name="daily_notes",
+        null=True, blank=True,
+        help_text="Área that raised the note (Médico, Físico, Nutrición, ...). "
+                  "Empty = general/cross-department.",
+    )
+    date = models.DateField(
+        db_index=True, help_text="Meeting day the note belongs to.",
+    )
+    text = models.TextField()
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="daily_notes",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["date", "player"]),
+        ]
+
+    def __str__(self) -> str:
+        area = self.department.name if self.department else "General"
+        return f"{self.date} · {self.player} · {area}: {self.text[:40]}"

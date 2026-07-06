@@ -1,4 +1,8 @@
-"""Create / overwrite a GPS match-physical-performance template.
+"""DEPRECATED (2026-07-05): superseded by `seed_gps_partido` (flat per-match
+totals on `gps_partido`). Kept only to reproduce the archived per-half
+template; do not wire into new environments.
+
+Create / overwrite a GPS match-physical-performance template.
 
 Models the metric set in the sample GPS export ('AguArc', 'FabHor', ...
 two rows per starter: 'Primer Tiempo' / 'Segundo Tiempo'). Run with:

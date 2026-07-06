@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Legend,
   PolarAngleAxis,
@@ -12,35 +12,63 @@ import {
   Tooltip,
 } from "recharts";
 
-import type { DashboardWidget, TrainingRadarPayload, TrainingRadarAxis } from "@/lib/types";
+import type {
+  DashboardWidget,
+  TrainingRadarPayload,
+  TrainingRadarAxis,
+  TrainingRadarSession,
+} from "@/lib/types";
 import styles from "./Widget.module.css";
 
 interface Props {
   widget: DashboardWidget;
 }
 
-/** Radar comparing the latest training session's GPS variables against the
- *  player's chronic match load (100% ring). Each axis = training % of chronic. */
+/** Radar comparing a training session's GPS variables against the player's
+ *  chronic match load (100% ring). Each axis = training % of chronic. The
+ *  header selector switches between the recent sessions the backend shipped
+ *  (newest first, selected by default). */
 export default function RadarTrainingLoad({ widget }: Props) {
   const data = widget.data as TrainingRadarPayload;
-  const axes = data.axes ?? [];
+
+  // Older payloads carry a single session at the top level; normalize.
+  const sessions: TrainingRadarSession[] = useMemo(
+    () =>
+      data.sessions?.length
+        ? data.sessions
+        : data.session_date
+          ? [{
+              session_date: data.session_date,
+              label: "",
+              axes: data.axes ?? [],
+              reference_kind: data.reference_kind,
+              reference_date: data.reference_date,
+            }]
+          : [],
+    [data],
+  );
+
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const active =
+    sessions.find((s) => s.session_date === selectedDate) ?? sessions[0];
+  const axes = active?.axes ?? [];
 
   const chartData = useMemo(
     () =>
-      axes.map((a) => ({
+      (active?.axes ?? []).map((a) => ({
         axis: a.label,
         entrenamiento: a.pct,
         cronica: data.reference_pct ?? 100,
         meta: a,
       })),
-    [axes, data.reference_pct],
+    [active, data.reference_pct],
   );
 
   // Domain headroom so a >100% axis (training above match) stays on-canvas.
   const maxPct = axes.reduce((m, a) => Math.max(m, a.pct), 0);
   const domainMax = Math.max(120, Math.ceil(maxPct / 20) * 20);
 
-  if (data.empty || axes.length === 0) {
+  if (sessions.length === 0) {
     return (
       <div className={styles.widget}>
         <header className={styles.header}>
@@ -51,13 +79,48 @@ export default function RadarTrainingLoad({ widget }: Props) {
     );
   }
 
+  const selector = sessions.length > 1 && (
+    <select
+      className={styles.fieldSelect}
+      value={active?.session_date}
+      onChange={(e) => setSelectedDate(e.target.value)}
+    >
+      {sessions.map((s) => (
+        <option key={s.session_date} value={s.session_date}>
+          {formatDate(s.session_date)}
+          {s.label ? ` — ${s.label}` : ""}
+        </option>
+      ))}
+    </select>
+  );
+
+  if (axes.length === 0) {
+    // This session has no match reference to compare against (the player
+    // never logged a ≥75 GPS-min match before it).
+    return (
+      <div className={styles.widget}>
+        <header className={styles.header}>
+          <h4 className={styles.title}>{widget.title}</h4>
+          {selector}
+        </header>
+        <div className={styles.empty}>
+          Sin partido de referencia (≥75 min con GPS) para comparar esta sesión.
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={styles.widget}>
       <header className={styles.header}>
         <h4 className={styles.title}>{widget.title}</h4>
-        {data.session_date && (
-          <span className={styles.headerTag}>Sesión {formatDate(data.session_date)}</span>
-        )}
+        {selector}
+        <span className={styles.headerTag}>
+          Sesión {formatDate(active.session_date)}
+          {active.reference_kind === "ultimo_partido_completo" && active.reference_date
+            ? ` · ref. último partido completo (${formatDate(active.reference_date)})`
+            : ""}
+        </span>
       </header>
       <div className={styles.chartArea} style={{ height: widget.chart_height ?? 320 }}>
         <ResponsiveContainer width="100%" height="100%">

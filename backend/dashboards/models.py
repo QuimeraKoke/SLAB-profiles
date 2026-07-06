@@ -339,7 +339,7 @@ class Widget(models.Model):
         blank=True,
         help_text=(
             "Chart height in pixels. Leave blank to use the per-chart-type default "
-            "(line ≈ 240, multi-line ≈ 280, grouped bar ≈ 220, donut ≈ 180). "
+            "(line ≈ 360, multi-line / cross-exam ≈ 420, grouped bar ≈ 220, donut ≈ 180). "
             "Recommended range: 160–600. Ignored for table-only widgets."
         ),
     )
@@ -404,6 +404,16 @@ class WidgetDataSource(models.Model):
         max_length=20,
         blank=True,
         help_text="Optional hex color for legends / chart series, e.g. '#3b82f6'.",
+    )
+    date_shift_days = models.IntegerField(
+        default=0,
+        help_text=(
+            "Display-only shift (in days) applied to this series' dates on "
+            "cross-exam line charts. Example: CK is sampled 2 days after a "
+            "match, so -2 plots each CK value on the date of the match that "
+            "caused it. The stored results are untouched; tooltips still "
+            "show the real sample date."
+        ),
     )
     sort_order = models.PositiveIntegerField(default=0)
 

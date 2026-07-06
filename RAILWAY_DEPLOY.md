@@ -176,6 +176,22 @@ DEFAULT_FROM_EMAIL=alerts@example.com
 # Used in alert email "Ver" links (still rendered into the message body
 # even though emails go to stdout — useful when reading worker logs).
 FRONTEND_BASE_URL=https://slab-frontend-production-wxyz.up.railway.app
+
+# Celery Beat crontab hours are LOCAL to this timezone (e.g. the wellness
+# sync's 08:00–12:00 window).
+CELERY_TIMEZONE=America/Santiago
+
+# Wellness Check-IN sync (Google Sheet → ExamResults).
+# Railway has no file mount, so the service-account key is passed as JSON in a
+# variable instead of a file. base64-encode the key (one line):
+#   base64 -i backend/secrets/gsheets.json     # macOS; -w0 on Linux
+# Paste the result as GOOGLE_SHEETS_CREDENTIALS_JSON (raw JSON also accepted).
+# Leave GOOGLE_SHEETS_CREDENTIALS_FILE unset on Railway.
+GOOGLE_SHEETS_CREDENTIALS_JSON=     # base64 of the service-account key
+WELLNESS_SHEET_ID=1EbS-iLfggkwMhZ2oKl0Myk1Am0peD2vQMM1TIfkCJX8
+WELLNESS_SHEET_WORKSHEET=Respuestas de formulario 1
+WELLNESS_CLUB=Universidad de Chile
+WELLNESS_CATEGORY=Primer Equipo
 ```
 
 Notes:
@@ -185,6 +201,11 @@ Notes:
   strings. Generate via `python -c "import secrets; print(secrets.token_urlsafe(64))"`.
 - The settings.py code treats empty strings as None for the S3 endpoint
   vars, so it's fine to omit them entirely on Railway.
+- **Service-account key**: never commit it. On Railway it lives ONLY as the
+  `GOOGLE_SHEETS_CREDENTIALS_JSON` variable (encrypted at rest). The
+  worker/beat services inherit it via "Reference all variables" (steps 8–9),
+  so set it once on `backend`. Share the responses Sheet (read-only) with the
+  service-account email. Blank `WELLNESS_SHEET_ID` ⇒ the sync no-ops.
 
 Hit **Deploy** on the backend service. Wait for the build to succeed.
 

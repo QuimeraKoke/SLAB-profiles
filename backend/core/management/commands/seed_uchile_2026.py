@@ -3,9 +3,10 @@
 Idempotent — if a player with the same full name already exists in the target
 category they are updated rather than duplicated. Squad numbers are stored as
 `PlayerAlias(kind='squad_number')` so a year-over-year reshuffle is just an
-alias update, not a Player schema change. The 14 player codes used by the
-sample GPS export are seeded as `kind='nickname'` aliases pointing at the
-matching player.
+alias update, not a Player schema change. The player codes used by the GPS
+exports are seeded as `kind='nickname'` aliases pointing at the matching
+player; cantera/youth players appearing only in the GPS files are created in
+the target category so their codes have something to resolve to.
 
 Run with:
 
@@ -13,12 +14,23 @@ Run with:
 """
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import dataclass
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from core.models import Category, Club, Player, PlayerAlias, Position
+
+
+def _norm(text: str) -> str:
+    """Lowercase + strip diacritics. Reconciles against a legacy roster that
+    may store names in a different case/accent form (e.g. 'FABIAN HORMAZABAL'
+    vs 'Fabián Hormazábal') so we update the existing player instead of
+    creating a duplicate."""
+    decomposed = unicodedata.normalize("NFD", text or "")
+    stripped = "".join(c for c in decomposed if not unicodedata.combining(c))
+    return stripped.casefold().strip()
 
 
 @dataclass(frozen=True)
@@ -63,30 +75,65 @@ ROSTER: list[RosterEntry] = [
     RosterEntry(9,  "Octavio",      "Rivero",    "Uruguay",   "DEL"),
     RosterEntry(11, "Eduardo",      "Vargas",    "Chile",     "DEL"),
     RosterEntry(13, "Jhon",         "Cortés",    "Chile",     "DEL"),
-    RosterEntry(18, "Juan Martín",  "Lucero",    "Argentina", "DEL"),
+    RosterEntry(18, "Juan",         "Lucero",    "Argentina", "DEL"),  # legacy record is "Juan Lucero"
     RosterEntry(27, "Andrés",       "Bolaño",    "Venezuela", "DEL"),
     RosterEntry(32, "Martín",       "Espinoza",  "Chile",     "DEL"),
 ]
 
 
-# Codes used by the sample GPS export (1777329541243.xls). Each code maps to a
-# (first_name, last_name) pair so the alias seeder can resolve the right Player
-# regardless of jersey-number changes year over year.
+# Players appearing in the GPS exports who are NOT in the Wikipedia first-team
+# table — youth / cantera promotions who trained and played with the squad.
+# Created in the target category (no jersey, position TBD) so their GPS codes
+# have something to resolve to. Idempotent get_or_create by full name.
+CANTERANOS: list[tuple[str, str]] = [
+    ("Vicente",   "Ramírez"),   # VicRam — youth; distinct from Nicolás Ramírez
+    ("Cristóbal", "Ulloa"),     # CrisUll
+    ("Renato",    "Huerta"),    # RenHue
+]
+
+
+# Codes used by the GPS exports. Each code maps to a (first_name, last_name)
+# pair so the alias seeder can resolve the right Player regardless of
+# jersey-number changes year over year. The export sometimes labels the same
+# player two different ways across a season (e.g. "NicFer" and "Fernandez") —
+# both are seeded as separate aliases pointing at the one player, which is
+# exactly what the bulk matcher's many-aliases-to-one-player model expects.
 GPS_NICKNAMES: dict[str, tuple[str, str]] = {
+    # --- First-team roster ---
     "AguArc": ("Agustín", "Arce"),
+    "AndBol": ("Andrés", "Bolaño"),
     "Charle": ("Charles", "Aránguiz"),
+    "Cortes": ("Jhon", "Cortés"),
+    "DieVar": ("Diego", "Vargas"),
+    "EduVar": ("Eduardo", "Vargas"),
+    "EliRoj": ("Elías", "Rojas"),
     "FabHor": ("Fabián", "Hormazábal"),
+    "FelSal": ("Felipe", "Salomoni"),
+    "Fernandez": ("Nicolás", "Fernández"),   # alt label for NicFer
     "FraCal": ("Franco", "Calderón"),
     "IgnVas": ("Ignacio", "Vásquez"),
     "IsraPo": ("Israel", "Poblete"),
     "JavAlt": ("Javier", "Altamirano"),
     "LucAss": ("Lucas", "Assadi"),
     "LucBar": ("Lucas", "Barrera"),
-    "Lucero": ("Juan Martín", "Lucero"),
+    "LucRom": ("Lucas", "Romero"),
+    "Lucero": ("Juan", "Lucero"),
+    "MarDia": ("Marcelo", "Díaz"),
+    "MarEsp": ("Martín", "Espinoza"),
     "MarMor": ("Marcelo", "Morales"),
+    "MatRiq": ("Matías", "Riquelme"),
     "MatZal": ("Matías", "Zaldivia"),
     "MaxGue": ("Maximiliano", "Guerrero"),
+    "NicFer": ("Nicolás", "Fernández"),
     "NicRam": ("Nicolás", "Ramírez"),
+    "OctRiv": ("Octavio", "Rivero"),
+    "Tamayo": ("Bianneider", "Tamayo"),   # bare last-name label
+    # --- Cantera / youth (see CANTERANOS) ---
+    "VicRam": ("Vicente", "Ramírez"),
+    "CrisUll": ("Cristóbal", "Ulloa"),
+    "RenHue": ("Renato", "Huerta"),
+    # TODO: "AguKor" — appears in 1782419341661.xls (16 rows) but the player
+    # behind the code is still unidentified. Add once confirmed.
 }
 
 
@@ -108,15 +155,29 @@ class Command(BaseCommand):
 
         positions = self._ensure_positions(club)
 
+        # Normalized-name index of existing players so we reconcile against a
+        # legacy roster (different case/accents) instead of duplicating it.
+        index: dict[str, Player] = {}
+        for p in Player.objects.filter(category=category):
+            index.setdefault(_norm(f"{p.first_name} {p.last_name}"), p)
+
+        def get_or_make(first: str, last: str, defaults: dict):
+            existing = index.get(_norm(f"{first} {last}"))
+            if existing is not None:
+                return existing, False
+            created = Player.objects.create(
+                category=category, first_name=first, last_name=last, **defaults,
+            )
+            index[_norm(f"{first} {last}")] = created
+            return created, True
+
         created_players = 0
         updated_players = 0
         created_squad_aliases = 0
         for entry in ROSTER:
-            player, created = Player.objects.get_or_create(
-                category=category,
-                first_name=entry.first_name,
-                last_name=entry.last_name,
-                defaults={
+            player, created = get_or_make(
+                entry.first_name, entry.last_name,
+                {
                     "nationality": entry.nationality,
                     "position": positions[entry.position_abbr],
                     "is_active": True,
@@ -149,13 +210,19 @@ class Command(BaseCommand):
             if alias_created:
                 created_squad_aliases += 1
 
+        # Cantera / youth players present in the GPS exports but not on the
+        # first-team table. Create them so their nickname aliases resolve.
+        created_canteranos = 0
+        for first, last in CANTERANOS:
+            _, c = get_or_make(first, last, {"nationality": "Chile", "is_active": True})
+            if c:
+                created_canteranos += 1
+
         # GPS-file nickname aliases
         created_nickname_aliases = 0
         missing = []
         for code, (first, last) in GPS_NICKNAMES.items():
-            player = Player.objects.filter(
-                category=category, first_name=first, last_name=last,
-            ).first()
+            player = index.get(_norm(f"{first} {last}"))
             if not player:
                 missing.append(f"{code} -> {first} {last}")
                 continue
@@ -171,6 +238,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"[{club.name} / {category.name}] "
             f"players: +{created_players} created, ~{updated_players} updated, "
+            f"cantera: +{created_canteranos}, "
             f"squad-number aliases: +{created_squad_aliases}, "
             f"GPS nickname aliases: +{created_nickname_aliases}."
         ))

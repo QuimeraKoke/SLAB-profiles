@@ -422,3 +422,43 @@ keeps a materialized read model:
 * **`PlayerStateSnapshot`** captures the state weekly (scheduled via Celery
   beat), giving a longitudinal history that drives evolution charts without
   re-deriving anything at render time.
+### 8. Agentic layer over the analytics substrate
+
+Three LLM surfaces sit ON TOP of the deterministic layers above — they
+narrate and rank computed numbers, never invent them, and every one
+degrades gracefully without an API key:
+
+* **Briefing** (Centro de mando): one call per department `InsightAgent`
+  produces 0–4 prioritized action cards, content-addressed-cached in
+  `BriefingSnapshot` so a re-open is free.
+* **Readiness** (Equipo roster): a deterministic 0–100 composite
+  (wellness × ACWR band × availability status) that an agent may refine
+  within a ±15 anchor, cached per input-signature in `PlayerReadiness`
+  and recomputed off-request on result saves.
+* **Assistant** ("Ask S-LAB"): a tool-using loop over DB search tools.
+  The dashboard/player variants can *propose charts* — specs resolved
+  inside a rolled-back transaction (transient), which the user can
+  promote into a persisted dashboard widget with one click. Chat is the
+  query language; the dashboard is the durable artifact.
+
+### 9. External match-data binding (API-Football)
+
+Competition calendars, rivals and match statistics come from a provider
+binding declared per category (`Category.external_config`). The sync
+maintains a provider-namespaced cache (`ExternalTeam`, `Competition`) —
+deliberately separate from the internal `Club` model — and reconciles
+provider fixtures with locally-created match Events (±16h adoption
+window) so a match created by a GPS import and the same match arriving
+from the API merge instead of duplicating.
+
+### 10. The operational meeting layer (la Daily)
+
+The platform's newest layer targets the *daily planning ritual* rather
+than analysis: `/daily` assembles the 8 AM meeting (lesionados with
+current-vs-healthy-baseline GPS, alerts, squad annex) as both a live view
+and a projectable one-slide-per-player PDF deck, and captures the
+meeting's output — per-player, per-department notes (`DailyNote`) — so
+decisions that used to live on a whiteboard become platform data. Injury
+records follow the club's Fuller-consensus surveillance workbook
+(region + side, mechanism, BAMIC), imported wholesale via
+`import_lesiones` with the workbook as the source of truth.

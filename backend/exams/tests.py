@@ -466,3 +466,131 @@ class EpisodeConfigValidationTests(TestCase):
         )
         with self.assertRaisesRegex(ValidationError, "not found in template fields"):
             t.full_clean()
+
+
+from django.test import SimpleTestCase  # noqa: E402
+from . import gps_session as G  # noqa: E402
+
+
+class GpsSessionParsingTests(SimpleTestCase):
+    """Pure parsing helpers for the one-time per-session GPS backfill."""
+
+    def test_parse_days_java_tostring(self):
+        # Locale-independent parse of "Mon Mar 09 23:01:33 UTC 2026".
+        self.assertEqual(G.parse_days("Mon Mar 09 23:01:33 UTC 2026"), date(2026, 3, 9))
+        self.assertEqual(G.parse_days("Sat Jan 31 20:00:00 UTC 2026"), date(2026, 1, 31))
+
+    def test_parse_days_garbage_is_none(self):
+        self.assertIsNone(G.parse_days("not a date"))
+        self.assertIsNone(G.parse_days(None))
+
+    def test_extract_session_date_full(self):
+        self.assertEqual(G.extract_session_date("Sesión 04-01-26"), date(2026, 1, 4))
+        self.assertEqual(G.extract_session_date("Reintegro 30-03-26"), date(2026, 3, 30))
+
+    def test_extract_session_date_defaults_year(self):
+        # No year in the label -> default season year.
+        self.assertEqual(G.extract_session_date("Reintegro 11-02", default_year=2026),
+                         date(2026, 2, 11))
+
+    def test_extract_session_date_two_digit_year(self):
+        self.assertEqual(G.extract_session_date("Sesión 05-01-25"), date(2025, 1, 5))
+
+    def test_extract_session_date_undated(self):
+        self.assertIsNone(G.extract_session_date("Amistoso vs San Luis"))
+        self.assertIsNone(G.extract_session_date("Sub20 vs UDEC"))
+
+    def test_resolve_date_prefers_days_column(self):
+        row = G.GpsRow(player_label="AguArc", session="Sesión 04-01-26",
+                       days_raw="Mon Mar 09 23:01:33 UTC 2026")
+        self.assertEqual(G.resolve_date(row), date(2026, 3, 9))  # Days wins
+        row2 = G.GpsRow(player_label="AguArc", session="Sesión 04-01-26", days_raw=None)
+        self.assertEqual(G.resolve_date(row2), date(2026, 1, 4))  # falls back to label
+
+    def test_classify_session(self):
+        self.assertEqual(G.classify_session("F8 vs La Serena", is_match_file=True), "partido")
+        self.assertEqual(G.classify_session("Reintegro 01-04-26", is_match_file=False), "reintegro")
+        self.assertEqual(G.classify_session("Amistoso vs San Luis", is_match_file=False), "amistoso")
+        self.assertEqual(G.classify_session("Tareas F5 vs Colo Colo", is_match_file=False), "tareas")
+        self.assertEqual(G.classify_session("Sesión 04-01-26", is_match_file=False), "entrenamiento")
+        self.assertEqual(G.classify_session("Sub20 vs UDEC", is_match_file=False), "otro")
+
+    def test_parse_match_parts(self):
+        self.assertEqual(G.parse_match_parts("F8 vs La Serena"), ("F8", "La Serena"))
+        self.assertEqual(G.parse_match_parts("C.Liga F2 vs ULC"), ("C.Liga F2", "ULC"))
+        self.assertEqual(G.parse_match_parts("Sesión 04-01-26"), (None, None))
+
+    def test_build_result_data_maps_headers_and_coerces(self):
+        row = G.GpsRow(
+            player_label="AguArc", session="F6 vs U.Concepción", days_raw=None,
+            metrics={
+                "Tiempo (min)": 78.0, "Distance (m)": 8952.0, "Max Speed (km/h)": 28.3,
+                "Speed Zones (m) [95.0, 100.0]": 0.0, "HMLD (m)": None,  # None dropped
+            },
+        )
+        data = G.build_result_data(row)
+        self.assertEqual(data["tot_dur"], 78.0)
+        self.assertEqual(data["tot_dist"], 8952.0)
+        self.assertEqual(data["max_vel"], 28.3)
+        self.assertEqual(data["zone_95_100"], 0.0)  # zero is a real value, kept
+        self.assertNotIn("hmld", data)              # None is dropped
+        self.assertIsInstance(data["tot_dur"], float)
+
+
+from .management.commands.split_gps_partido import (  # noqa: E402
+    convert_per_half,
+    remap_display_config,
+    remap_field_keys,
+    PER_HALF_TO_PARTIDO,
+    LEGACY_TRAIN_TO_SESSION,
+)
+
+
+class SplitGpsPartidoHelpersTests(SimpleTestCase):
+    """Pure conversion helpers for the gps_sesion → gps_partido split."""
+
+    def test_convert_per_half_maps_totals_only(self):
+        data = convert_per_half({
+            "tot_dist_total": 9500.0, "tot_dist_p1": 5000.0, "tot_dist_p2": 4500.0,
+            "tot_dur_total": 92.0, "sprint_total": 210.0, "dist_85_95_total": 30.0,
+            "player_load_total": 700.0, "hiaa_total": 40.0, "dist_70_85_total": 120.0,
+            "hsr_rel_total": 8.4,
+        })
+        self.assertEqual(data["tot_dist"], 9500.0)
+        self.assertEqual(data["tot_dur"], 92.0)
+        self.assertEqual(data["sprint_dist"], 210.0)      # distance >25 km/h
+        self.assertEqual(data["zone_85_95"], 30.0)        # same %Vmax band
+        self.assertEqual(data["player_load"], 700.0)      # optional provider metric
+        self.assertEqual(data["hiaa"], 40.0)
+        self.assertNotIn("tot_dist_p1", data)             # halves stay archived
+        self.assertNotIn("hsr_rel", data)                 # no counterpart
+        self.assertNotIn("zone_75_85", data)              # 70-85 band ≠ 75-85
+
+    def test_convert_per_half_skips_non_numeric_and_none(self):
+        data = convert_per_half({"tot_dist_total": None, "max_vel_total": "n/a",
+                                 "hsr_total": True, "hmld_total": 1200})
+        self.assertEqual(data, {"hmld": 1200})
+
+    def test_remap_field_keys_drops_unmappable(self):
+        keys = ["tot_dist_total", "hsr_total", "hsr_rel_total", "mpm_total"]
+        self.assertEqual(remap_field_keys(keys, PER_HALF_TO_PARTIDO),
+                         ["tot_dist", "hsr", "mpm"])
+        self.assertEqual(
+            remap_field_keys(["tot_dist", "sprint", "rpe", "hsr_rel"], LEGACY_TRAIN_TO_SESSION),
+            ["tot_dist", "sprint_dist", "rpe"],
+        )
+
+    def test_remap_display_config_rewrites_axis_keys(self):
+        cfg = {
+            "y_axis_title": "CK (U/L)",
+            "right_axis_keys": ["tot_dist_total"],
+            "right_y_axis_title": "Distancia total (m)",
+        }
+        out = remap_display_config(cfg, PER_HALF_TO_PARTIDO)
+        self.assertEqual(out["right_axis_keys"], ["tot_dist"])
+        self.assertEqual(out["y_axis_title"], "CK (U/L)")
+
+    def test_remap_display_config_drops_unmappable_total_keys_from_lists(self):
+        cfg = {"right_axis_keys": ["tot_dist_total", "hsr_rel_total"]}
+        out = remap_display_config(cfg, PER_HALF_TO_PARTIDO)
+        self.assertEqual(out["right_axis_keys"], ["tot_dist"])

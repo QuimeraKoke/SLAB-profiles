@@ -165,6 +165,91 @@
   width: 100%;
 }
 
+/* Comparison toggle (individual / position mean / per-player) */
+
+.compareBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.segBtn {
+  border: none;
+  background: #ffffff;
+  color: #4b5563;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.segBtn + .segBtn {
+  border-left: 1px solid #d1d5db;
+}
+
+.segBtn:hover {
+  background: #f3f4f6;
+}
+
+.segBtnActive {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.segBtnActive:hover {
+  background: #eff6ff;
+}
+
+.compareHint {
+  font-size: 0.72rem;
+  color: #6b7280;
+}
+
+/* Moving-average toggle shared by the time-line charts */
+
+.maControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.maCheckbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #4b5563;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.maCheckbox input {
+  accent-color: #2563eb;
+  cursor: pointer;
+  margin: 0;
+}
+
+.maWindowSelect {
+  font-size: 0.72rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 2px 4px;
+  background-color: #ffffff;
+  color: #111827;
+  cursor: pointer;
+}
+
 .chartTooltip {
   display: flex;
   flex-direction: column;
@@ -187,6 +272,11 @@
 
 .chartTooltipValue {
   font-weight: 600;
+}
+
+.chartTooltipPeer {
+  font-weight: 500;
+  font-size: 0.72rem;
 }
 
 /* ---------- donut per result ---------- */

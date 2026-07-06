@@ -22,7 +22,7 @@ interface RosterPayload {
 const TABS: { key: string; label: string }[] = [
   { key: "all", label: "Todos" },
   { key: "available", label: "Disponibles" },
-  { key: "reintegration", label: "Reintegración" },
+  { key: "reintegration", label: "Return to Train" },
   { key: "recovery", label: "Recuperación" },
   { key: "injured", label: "Lesionados" },
 ];

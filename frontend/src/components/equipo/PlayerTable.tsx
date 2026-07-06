@@ -20,7 +20,7 @@ export default function PlayerTable({ players }: PlayerTableProps) {
       case "available":
         return "Disponible";
       case "reintegration":
-        return "Reintegración";
+        return "Return to Train";
       case "recovery":
         return "Recuperación";
       case "injured":

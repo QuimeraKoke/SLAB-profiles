@@ -14,7 +14,7 @@ freshly-saved reading can flip a goal to MET *before* its due_date.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from typing import Iterable
 
 from django.db import models
@@ -158,6 +158,176 @@ def _upsert_alert(*, player, source_type: str, source_id, severity: str, message
     except Exception:  # pragma: no cover — broker offline / eager mode
         pass
     return alert
+
+
+def _molestia_labels(template) -> dict:
+    """code → readable zone label, from the molestia field's option_labels."""
+    for f in (template.config_schema or {}).get("fields", []):
+        if f.get("key") == "molestia":
+            return f.get("option_labels") or {}
+    return {}
+
+
+def evaluate_molestia_alert(*, player, template, estado: str, codes: list[str],
+                            mismatch: bool, recorded_at) -> bool:
+    """Upsert (or resolve) a player's molestia alert from their latest check-in.
+
+    One active alert per (player, wellness template). Fires when the latest
+    check-in reports a molestia; auto-resolves when a later check-in clears it.
+    Severity escalates with the declared estado; an estado-mismatch
+    (Disponible + molestia) is flagged for staff review. Returns True when an
+    alert was fired/refreshed.
+    """
+    from .models import Alert, AlertSource, AlertStatus, AlertSeverity
+
+    source_id = template.id  # dedup key is (source_type, source_id, player)
+
+    if not codes:
+        # Discomfort cleared → resolve any standing molestia alert.
+        Alert.objects.filter(
+            source_type=AlertSource.MOLESTIA, source_id=source_id,
+            player=player, status=AlertStatus.ACTIVE,
+        ).update(status=AlertStatus.RESOLVED)
+        return False
+
+    labels = _molestia_labels(template)
+    zonas = ", ".join(labels.get(c, c) for c in codes)
+    when = timezone.localtime(recorded_at).date().isoformat()
+    if estado == "lesion":
+        severity, suffix = AlertSeverity.CRITICAL, " · declara LESIÓN"
+    elif estado == "parcial":
+        severity, suffix = AlertSeverity.WARNING, " · entrena PARCIAL"
+    elif mismatch:
+        severity, suffix = AlertSeverity.WARNING, " · se declara DISPONIBLE — revisar"
+    else:
+        severity, suffix = AlertSeverity.INFO, ""
+    message = f"Molestia: {zonas}{suffix} (check-in {when})"
+
+    _upsert_alert(
+        player=player, source_type=AlertSource.MOLESTIA, source_id=source_id,
+        severity=severity, message=message,
+    )
+    return True
+
+
+# A molestia is a DAILY self-report — once a player stops filling the
+# check-in (e.g. a long-term injury), his last report ages out of relevance.
+MOLESTIA_STALE_DAYS = 7
+
+
+def resolve_stale_checkin_alerts(template, max_age_days: int = MOLESTIA_STALE_DAYS) -> int:
+    """Resolve active check-in-derived alerts (molestia AND band/threshold)
+    whose player has NOT checked in for `max_age_days`.
+
+    The check-in is a DAILY self-report — when a player goes silent
+    (typically because he's now injured and the Episode carries his state),
+    his last report ages out of relevance. Without this, a frozen "check-in
+    from April" alert survives forever, because both molestia and band
+    alerts only auto-resolve when a NEWER reading arrives. Returns how many
+    alerts were resolved.
+    """
+    from django.db.models import Max, Q
+
+    from exams.models import ExamResult
+
+    from .models import Alert, AlertRule, AlertSource, AlertStatus
+
+    cutoff = timezone.now() - timedelta(days=max_age_days)
+    rule_ids = list(AlertRule.objects.filter(template=template).values_list("id", flat=True))
+    active = Alert.objects.filter(
+        Q(source_type=AlertSource.MOLESTIA, source_id=template.id)
+        | Q(source_type=AlertSource.THRESHOLD, source_id__in=rule_ids),
+        status=AlertStatus.ACTIVE,
+    )
+    if not active.exists():
+        return 0
+    last_by_player = dict(
+        ExamResult.objects.filter(
+            template=template, player_id__in=active.values_list("player_id", flat=True),
+        ).values_list("player_id").annotate(last=Max("recorded_at")).values_list("player_id", "last")
+    )
+    stale = 0
+    for alert in active:
+        last = last_by_player.get(alert.player_id)
+        if last is None or last < cutoff:
+            alert.status = AlertStatus.RESOLVED
+            alert.save(update_fields=["status"])
+            stale += 1
+    return stale
+
+
+# Backwards-compatible alias (pre-band-coverage name).
+resolve_stale_molestia_alerts = resolve_stale_checkin_alerts
+
+
+# General staleness policy for measurement-anchored alerts: when the reading
+# behind an alert is older than this, the alert stops being actionable
+# information and expires. (The daily check-in uses the tighter 7-day sweep
+# above; goals follow their own due-date lifecycle and are exempt.)
+ALERT_STALE_DAYS = 30
+
+
+def expire_stale_alerts(max_age_days: int = ALERT_STALE_DAYS) -> dict:
+    """Resolve ACTIVE alerts whose anchoring data is older than `max_age_days`.
+
+    - THRESHOLD (band/bound/variation rules): anchored on the player's
+      LATEST result for the rule's template — "his last anthropometry says
+      X" stops being an alert when that anthropometry is a season old.
+    - MEDICATION / TRAINING_LOAD: anchored on the source result itself
+      (`source_id` is the ExamResult id) — a WADA flag on a prescription
+      from last year isn't a live signal.
+
+    Runs daily via Celery beat. Returns counts per source type.
+    """
+    from django.db.models import Max
+
+    from exams.models import ExamResult
+
+    from .models import Alert, AlertRule, AlertSource, AlertStatus
+
+    cutoff = timezone.now() - timedelta(days=max_age_days)
+    out = {"threshold": 0, "medication": 0, "training_load": 0}
+
+    # THRESHOLD — group lookups: rule -> template, then latest per (player, template).
+    threshold = list(Alert.objects.filter(
+        status=AlertStatus.ACTIVE, source_type=AlertSource.THRESHOLD,
+    ))
+    rules = {
+        r.id: r for r in AlertRule.objects.filter(
+            id__in={a.source_id for a in threshold},
+        )
+    }
+    pairs = {
+        (a.player_id, rules[a.source_id].template_id)
+        for a in threshold if a.source_id in rules
+    }
+    latest = {}
+    for pid, tid in pairs:
+        latest[(pid, tid)] = (
+            ExamResult.objects.filter(player_id=pid, template_id=tid)
+            .aggregate(Max("recorded_at"))["recorded_at__max"]
+        )
+    for a in threshold:
+        rule = rules.get(a.source_id)
+        last = latest.get((a.player_id, rule.template_id)) if rule else None
+        if last is None or last < cutoff:
+            a.status = AlertStatus.RESOLVED
+            a.save(update_fields=["status"])
+            out["threshold"] += 1
+
+    # MEDICATION + TRAINING_LOAD — source_id IS the result id.
+    for source_type, key in ((AlertSource.MEDICATION, "medication"),
+                             (AlertSource.TRAINING_LOAD, "training_load")):
+        for a in Alert.objects.filter(status=AlertStatus.ACTIVE, source_type=source_type):
+            rec = (
+                ExamResult.objects.filter(id=a.source_id)
+                .values_list("recorded_at", flat=True).first()
+            )
+            if rec is None or rec < cutoff:
+                a.status = AlertStatus.RESOLVED
+                a.save(update_fields=["status"])
+                out[key] += 1
+    return out
 
 
 def _format_miss_message(goal: Goal, reading: GoalReading | None) -> str:
@@ -496,6 +666,7 @@ def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
             continue
         label = _field_label(rule)
         cfg = rule.config or {}
+        severity = rule.severity
 
         if rule.kind == AlertRuleKind.BOUND:
             triggered, _side = _bound_violated(value, cfg)
@@ -540,15 +711,26 @@ def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
             msg = _format_band_message(
                 rule, value=value, field_label=label, band=current_band,
             )
+            # A band may carry its own severity (e.g. recuperación 1–10:
+            # "Muy bajo" ≤2 escalates to critical while "Bajo" 3–4 stays a
+            # warning) — the rule's severity is just the default.
+            band_sev = current_band.get("severity")
+            if band_sev in ("info", "warning", "critical"):
+                severity = band_sev
 
         else:
             continue
+
+        # Every warning carries the DATE OF THE READING that fired it —
+        # "= 3 cae en banda «Bajo»" is meaningless without knowing when.
+        when = timezone.localtime(result.recorded_at).date().isoformat()
+        msg = f"{msg} ({when})"
 
         alert = _upsert_alert(
             player=result.player,
             source_type=AlertSource.THRESHOLD,
             source_id=rule.id,
-            severity=rule.severity,
+            severity=severity,
             message=msg,
         )
         fired.append(alert)

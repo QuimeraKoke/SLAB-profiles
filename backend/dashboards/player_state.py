@@ -27,38 +27,36 @@ logger = logging.getLogger(__name__)
 # field. Ranges are the standard weekly chronic-load thresholds; `note` is
 # the physiological relevance (interpretation context for the físico agent).
 # Editable home (admin) can come later — kept as config for Phase 1.
-_GPS_MATCH_SLUG = "gps_rendimiento_fisico_de_partido"
-_GPS_TRAIN_SLUG = "gps_entrenamiento"
+# THE two GPS exams, one per concept, same field keys on both. Every club
+# was migrated onto this pair by `split_gps_partido` (2026-07-05); the legacy
+# per-half / manual-training templates survive only as detached archives.
+_GPS_MATCH_SLUG = "gps_partido"
+_GPS_TRAIN_SLUG = "gps_sesion"
 
 WEEKLY_LOAD_METRICS: list[dict] = [
     {
         "key": "dist_total", "label": "Distancia total", "unit": "m",
-        "min": 28000, "max": 35000,
-        "fields": {_GPS_MATCH_SLUG: "tot_dist_total", _GPS_TRAIN_SLUG: "tot_dist"},
+        "min": 28000, "max": 35000, "field": "tot_dist",
         "note": "Volumen general; gestión de gasto calórico y fatiga sistémica.",
     },
     {
         "key": "hsr", "label": "HSR > 19,8 km/h", "unit": "m",
-        "min": 1800, "max": 2600,
-        "fields": {_GPS_MATCH_SLUG: "hsr_total", _GPS_TRAIN_SLUG: "hsr"},
+        "min": 1800, "max": 2600, "field": "hsr",
         "note": "Volumen de alta intensidad; acondicionamiento aeróbico de alta potencia.",
     },
     {
         "key": "sprint", "label": "Sprint > 25,2 km/h", "unit": "m",
-        "min": 400, "max": 700,
-        "fields": {_GPS_MATCH_SLUG: "sprint_total", _GPS_TRAIN_SLUG: "sprint"},
+        "min": 400, "max": 700, "field": "sprint_dist",
         "note": "Estrés mecánico excéntrico máximo; ligado a riesgo de isquiosurales.",
     },
     {
         "key": "acc", "label": "Aceleraciones ≥3 m/s²", "unit": "n",
-        "min": 150, "max": 250,
-        "fields": {_GPS_MATCH_SLUG: "acc_total", _GPS_TRAIN_SLUG: "acc"},
+        "min": 150, "max": 250, "field": "acc",
         "note": "Costo metabólico y estrés del tejido contráctil; fatiga periférica.",
     },
     {
         "key": "dec", "label": "Desaceleraciones ≥3 m/s²", "unit": "n",
-        "min": 150, "max": 250,
-        "fields": {_GPS_MATCH_SLUG: "dec_total", _GPS_TRAIN_SLUG: "dec"},
+        "min": 150, "max": 250, "field": "dec",
         "note": "Estrés excéntrico de frenado; fatiga periférica.",
     },
 ]
@@ -74,7 +72,6 @@ def compute_weekly_load(player) -> dict | None:
     results = list(
         ExamResult.objects
         .filter(player=player, template__slug__in=[_GPS_MATCH_SLUG, _GPS_TRAIN_SLUG])
-        .select_related("template")
         .order_by("-recorded_at")
     )
     if not results:
@@ -89,10 +86,7 @@ def compute_weekly_load(player) -> dict | None:
         total = 0.0
         sessions = 0
         for r in window:
-            field_key = spec["fields"].get(r.template.slug)
-            if not field_key:
-                continue
-            v = _coerce((r.result_data or {}).get(field_key))
+            v = _coerce((r.result_data or {}).get(spec["field"]))
             if v is not None:
                 total += v
                 sessions += 1
@@ -224,21 +218,21 @@ def _coerce(raw: Any) -> float | None:
 # Acute / chronic load = the MAXIMUM match-day value over the 7-day / 28-day
 # window, counting ONLY matches where the player logged ≥75 GPS-min. Used by
 # (1) the training-load chart reference lines and (2) the training-load alert.
-# Each training field maps to its match "_total" counterpart.
+# Training fields with a match counterpart. `gps_partido` and `gps_sesion`
+# share field keys, so a training key reads match rows as-is — this set just
+# gates which fields make sense as a match-demand comparison.
 MIN_MATCH_MINUTES = 75.0
-TRAIN_TO_MATCH_FIELD: dict[str, str] = {
-    "tot_dist": "tot_dist_total", "tot_dur": "tot_dur_total",
-    "player_load": "player_load_total", "max_vel": "max_vel_total",
-    "hsr": "hsr_total", "sprint": "sprint_total", "acc": "acc_total",
-    "dec": "dec_total", "hiaa": "hiaa_total", "hmld": "hmld_total",
-    "mpm": "mpm_total",
-}
+MATCH_REFERENCE_FIELDS: frozenset[str] = frozenset({
+    "tot_dist", "tot_dur", "mpm", "hsr", "sprint_dist", "acc", "dec",
+    "acc_dec", "hmld", "max_vel", "player_load", "hiaa",
+})
 
 # Metrics the training-load alert watches — cumulative external-load/volume
 # only, per the físico InsightAgent's recommendation (2026-06-19): duration,
 # relative intensity (mpm) and peak speed (max_vel) are deliberately excluded.
 TRAINING_LOAD_ALERT_METRICS: list[str] = [
-    "tot_dist", "player_load", "hsr", "sprint", "acc", "dec", "hiaa", "hmld",
+    "tot_dist", "player_load", "hsr", "sprint_dist", "acc", "dec",
+    "hiaa", "hmld",
 ]
 TRAINING_LOAD_ALERT_RATIO = 0.85  # fire when a session ≥85% of match reference
 
@@ -264,17 +258,16 @@ def match_load_refs(player_id, anchor, train_fields: list[str]) -> dict[str, dic
     ).values_list("recorded_at", "result_data")
     qualifying = [
         (rec, data or {}) for rec, data in rows
-        if (_coerce((data or {}).get("tot_dur_total")) or 0.0) >= MIN_MATCH_MINUTES
+        if (_coerce((data or {}).get("tot_dur")) or 0.0) >= MIN_MATCH_MINUTES
     ]
 
     out: dict[str, dict] = {}
     for tf in train_fields:
-        match_key = TRAIN_TO_MATCH_FIELD.get(tf)
-        if not match_key:
+        if tf not in MATCH_REFERENCE_FIELDS:
             continue
-        chronic_vals = [v for v in (_coerce(d.get(match_key)) for _, d in qualifying) if v is not None]
+        chronic_vals = [v for v in (_coerce(d.get(tf)) for _, d in qualifying) if v is not None]
         acute_vals = [
-            v for v in (_coerce(d.get(match_key)) for rec, d in qualifying if rec >= acute_cut)
+            v for v in (_coerce(d.get(tf)) for rec, d in qualifying if rec >= acute_cut)
             if v is not None
         ]
         out[tf] = {
@@ -282,3 +275,5 @@ def match_load_refs(player_id, anchor, train_fields: list[str]) -> dict[str, dic
             "chronic": max(chronic_vals) if chronic_vals else None,
         }
     return out
+
+

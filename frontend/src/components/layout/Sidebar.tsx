@@ -9,11 +9,13 @@ import {
   BarChart3,
   Calendar,
   LayoutDashboard,
+  Activity,
   ChevronDown,
   ChevronRight,
   LogOut,
   Settings,
   Sparkles,
+  Sunrise,
   TrendingUp,
   X,
 } from "lucide-react";
@@ -64,8 +66,12 @@ interface NavGroup {
 // (formerly "Configuraciones"; see IA-1 below).
 const STATIC_NAV: NavGroup[] = [
   { label: "Centro de mando", icon: LayoutDashboard, href: "/centro-de-mando" },
+  // The 8 AM cross-department planning meeting — a daily flow, so it sits
+  // right under the command center in Operativa.
+  { label: "Daily", icon: Sunrise, href: "/daily" },
   { label: "Equipo", icon: Users, href: "/equipo", activePrefixes: ["/perfil"] },
   { label: "Partidos", icon: Calendar, href: "/partidos" },
+  { label: "Cargar GPS", icon: Activity, href: "/gps-entrenamiento" },
 ];
 
 // IA-1: "Configuraciones" carried both daily ops (Jugadores) and admin

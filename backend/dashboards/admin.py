@@ -51,6 +51,7 @@ class WidgetDataSourceInline(admin.StackedInline):
         "aggregation_param",
         "label",
         "color",
+        "date_shift_days",
         "sort_order",
     )
     autocomplete_fields = ("template",)

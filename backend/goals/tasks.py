@@ -7,7 +7,7 @@ from uuid import UUID
 
 from celery import shared_task
 
-from .evaluator import apply_due_goals, evaluate_goal_warnings
+from .evaluator import apply_due_goals, evaluate_goal_warnings, expire_stale_alerts
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +33,16 @@ def evaluate_due_goals():
         warning_summary,
     )
     return {"due": due_summary, "warnings": warning_summary}
+
+
+@shared_task(name="goals.tasks.expire_stale_alerts")
+def expire_stale_alerts_task():
+    """Daily sweep: resolve alerts whose anchoring reading is older than
+    30 days (ALERT_STALE_DAYS). Keeps the Daily honest when a data stream
+    stops flowing (e.g. anthropometry not loaded since last season)."""
+    summary = expire_stale_alerts()
+    logger.info("expire_stale_alerts: %s", summary)
+    return summary
 
 
 @shared_task(name="goals.tasks.send_alert_email")
@@ -145,6 +155,13 @@ def _department_for_alert(alert):
             pk=alert.source_id,
         ).first()
         return rule.template.department if rule else None
+    if alert.source_type == AlertSource.MOLESTIA:
+        # source_id is the wellness template id → its department gets the mail.
+        from exams.models import ExamTemplate
+        tmpl = ExamTemplate.objects.select_related("department").filter(
+            pk=alert.source_id,
+        ).first()
+        return tmpl.department if tmpl else None
     return None
 
 

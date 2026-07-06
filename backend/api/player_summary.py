@@ -124,8 +124,8 @@ def _sum_field(player: Player, key: str) -> int | None:
 
 
 def _gps_averages(player: Player) -> dict[str, Any]:
-    """Per-match GPS averages over `gps_rendimiento_fisico_de_partido`."""
-    tpl = _active_template("gps_rendimiento_fisico_de_partido", player)
+    """Per-match GPS averages over `gps_partido`."""
+    tpl = _active_template("gps_partido", player)
     if tpl is None:
         return {"partidos_con_gps": 0}
     rows = list(
@@ -139,11 +139,11 @@ def _gps_averages(player: Player) -> dict[str, Any]:
 
     return {
         "partidos_con_gps": len(rows),
-        "distancia_promedio": col("tot_dist_total"),
-        "v_max_promedio": col("max_vel_total"),
-        "hiaa_promedio": col("hiaa_total"),
-        "hmld_promedio": col("hmld_total"),
-        "aceleraciones_promedio": col("acc_dec_total") if col("acc_dec_total") is not None else col("acc_total"),
+        "distancia_promedio": col("tot_dist"),
+        "v_max_promedio": col("max_vel"),
+        "hiaa_promedio": col("hiaa"),
+        "hmld_promedio": col("hmld"),
+        "aceleraciones_promedio": col("acc_dec") if col("acc_dec") is not None else col("acc"),
     }
 
 

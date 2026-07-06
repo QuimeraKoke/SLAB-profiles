@@ -1,4 +1,8 @@
-"""Create / overwrite a GPS template for training sessions.
+"""DEPRECATED (2026-07-05): superseded by `seed_gps_session` (flat per-session
+training totals on `gps_sesion`). Kept only to reproduce the archived manual
+training template; do not wire into new environments.
+
+Create / overwrite a GPS template for training sessions.
 
 A simpler sibling of `seed_gps_match` — same physical-load metrics but
 flat (no Primer Tiempo / Segundo Tiempo split) since trainings don't

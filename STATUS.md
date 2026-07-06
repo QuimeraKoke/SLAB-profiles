@@ -1,13 +1,17 @@
 # SLAB — Project Status & Handoff
 
-> **Snapshot:** the platform now ships the team-reports system (six chart
-> types, configurable per `(department, category)`), real-data
-> ProfileSummary, full event CRUD on player profiles, bulk per-roster
-> match performance entry, the Medicación template with WADA alerts, a
-> tablet/mobile-responsive layout with a global category picker in the
-> navbar, full player CRUD under `/configuraciones/jugadores`, and
-> edit-in-place + delete on every result table. 145 backend tests pass;
-> frontend lint is at zero problems.
+> **Snapshot (2026-07-05):** the platform is running live with Universidad
+> de Chile data. Since the last snapshot it gained: the **Centro de mando**
+> home (aggregated KPIs + cached LLM briefing, §3.47), the **Equipo**
+> roster with agent-refined readiness (§3.48), the **per-session GPS
+> pipeline** — season backfill + self-service upload page with inline
+> match creation (§3.49–3.50), the **live wellness Google-Sheet sync**
+> with molestia alerts (§3.51), the **API-Football fixtures sync**
+> (§3.52), the **Ask-SLAB assistant** with chat-to-charts + promote
+> (§3.53), the **navigation restructure** (§3.54), **la Daily** — the
+> morning-meeting view + one-slide-per-player PDF deck, with meeting notes
+> and per-chart time windows on the profile (§3.55), and the **Fuller
+> injury-surveillance format** + workbook importer (§3.56).
 >
 > **Read first:** [`PROJECT.md`](./PROJECT.md) (vision, philosophy, persona model,
 > architecture rationale). This doc is the *implementation* status — what exists
@@ -2534,6 +2538,351 @@ and the 4 frontend files above.
 
 ---
 
+### 3.47 Centro de mando (`api/command_center.py` + `/centro-de-mando`)
+
+The home screen (post-pivot `/` redirects here). **One aggregated read** —
+`GET /api/command-center?category_id=` → `build_command_center(category)` —
+assembles the whole screen from data SLAB already owns: `context` (next
+match with MD-label, last result, pre-match risk = players with any
+`weekly_load` concept over its ceiling), `kpis` (disponibilidad, riesgo =
+players with a critical alert, **carga** = team-mean ACWR acute 7d ÷ chronic
+28d/4 over `gps_rendimiento_fisico_de_partido` + `gps_entrenamiento` +
+`gps_sesion`, wellness 0–100 from `checkin_fisico`, completitud), `squad`
+(counts + availability por línea + worst-first player list), `decisions`
+(top alert per player, priority alta/media/baja), `data_quality` (per-source
+freshness: fresh ≤3d / warn ≤14d / crit), `recent` (alert-derived feed —
+stubbed until a real audit trail exists).
+
+**LLM briefing is separate + cached**: `GET /api/briefing?category_id=` →
+`dashboards/briefing.py::generate_briefing` — one call per department
+`InsightAgent` in parallel (max 5), each emitting 0–4 action cards
+(priority, evidence, confidence, owner_role, CTA). Content-addressed cache
+in `BriefingSnapshot` (migration `0030`): signature over team snapshot +
+agent fingerprints + model, so re-opens are free. Frontend fetches it
+lazily (`BriefingPanel`) so the dashboard never blocks on the LLM. Degrades
+to `[]` without `ANTHROPIC_API_KEY` or seeded agents.
+
+Frontend: `app/(dashboard)/centro-de-mando/page.tsx` + `components/command/*`
+(Hero, KpiStrip, SquadStatus, DecisionTable, BriefingPanel).
+
+---
+
+### 3.48 Equipo roster metrics + readiness (`api/roster.py` + `dashboards/readiness.py`)
+
+`GET /api/roster?category_id=` powers the Equipo view: per active player —
+status, **readiness** (0–100 composite), **wellness** (latest check-in,
+per-item-scale normalized), **ACWR** (`{ratio, acute_km, chronic_week_km,
+last}`), and **forma** (7-day wellness sparkline, one slot per local day).
+
+Readiness has two tiers: a deterministic fallback (wellness discounted by
+ACWR outside 0.8–1.3 and by availability status: injured ×0.45 / recovery
+×0.80 / reintegration ×0.90), and an **agent-refined score cached in
+`PlayerReadiness`** (migration `0031`, OneToOne per player): LLM score
+anchored to deterministic ±15, with rationale + flags. Recomputed
+off-request — `post_save(ExamResult)` → `on_commit` →
+`recompute_readiness.delay()` (skipped silently if the broker is down —
+never inline, it's an LLM call). Bulk: `manage.py rebuild_readiness`.
+Signature-gated so unchanged inputs never re-hit the LLM.
+
+Frontend: `equipo/page.tsx` + `components/equipo/RosterTable.tsx` (status
+filter tabs, readiness gauge, wellness emoji, ACWR tones, forma bars;
+rows link to `/perfil/{id}`).
+
+---
+
+### 3.49 GPS per-session backfill (`gps_sesion` + `import_gps_sessions`)
+
+The real season GPS lives in per-session exports (one row per player ×
+session, multiple sessions per file) that `bulk_ingest` can't handle. New
+flat template **`gps_sesion`** ("GPS – Rendimiento físico por sesión",
+`seed_gps_session`, Físico, `link_to_match=True`): `fecha`, `sesion`,
+`tipo_sesion` (partido/amistoso/tareas/entrenamiento/reintegro/otro) + 16
+metric keys (`tot_dur`, `tot_dist`, `mpm`, `hsr`, `sprint_dist`, `sprints`,
+`max_vel`, `acc_dec`, `acc`, `dec`, `dist_acc`, `dist_dec`, `hmld`,
+`zone_75_85/85_95/95_100`).
+
+Parser `exams/gps_session.py` (Django-free): match exports carry a `Days`
+column (Java `Date.toString()` format); training exports get their date
+from the session label (`"12-3"` style, `DEFAULT_YEAR` fallback).
+`HEADER_TO_KEY` maps the 16 export headers → field keys (**must stay in
+sync with the seed**). `classify_session` derives `tipo_sesion` from
+label keywords.
+
+Command `import_gps_sessions --file … [--mode auto|match|training]
+[--dry-run] [--update]`: one-shot loader for whole-season files. Match
+files create/link one match **Event per match-day**; training rows store
+flat dated results. Idempotent (match: player+day; training:
+player+day+session). Alias-first player matching (`PlayerAlias`,
+normalized), then full name. Run reports land in
+`backend/migration_runs/`. ACWR/team-load calculations (§3.47/3.48)
+include `gps_sesion` as a source.
+
+---
+
+### 3.50 Self-service GPS upload (`/gps-entrenamiento` + `POST /api/gps-sessions/upload`)
+
+The recurring upload path (the PF uploads the day's export himself).
+Endpoint (`@require_perm("exams.add_examresult")`): multipart `file` +
+`category_id` + `kind` (`match`|`training`) + `dry_run`. Shares
+`exams/gps_session_ingest.py::run` with the backfill command, but with
+`auto_create_events=False`: a **match GPS must link to a real match
+Event** — match-days without one come back as `match_days` +
+`needs_match=true` and the commit button stays disabled.
+
+Frontend page "Cargar GPS": kind selector (Partido/Entrenamiento) →
+dry-run preview (summary metrics, per-session table, per-row values,
+unmatched player codes, undated sessions) → confirm. Missing matches are
+created **inline** (`MissingMatch` component → `POST /api/events` with
+competition + rival dropdowns fed from the fixtures-sync cache, §3.52)
+and the preview re-runs. The selector is authoritative — a no-`Days` file
+uploaded as "Partido" still runs match mode so the missing-match check
+fires.
+
+**Routing note**: this endpoint was placed OUTSIDE `/results/` because
+django-ninja's greedy `/results/{result_id}` converter used to shadow
+literal `/results/<x>` POSTs. That shadowing is now fixed with the
+`{uuid:result_id}` converter (see §7), but the upload path stays where
+it is.
+
+---
+
+### 3.51 Wellness Google Sheet sync (LIVE) + molestia alerts
+
+The players' morning Google Form now flows into `checkin_fisico`
+automatically. `integrations/google_sheets/` (read-only Sheets API;
+credentials via `GOOGLE_SHEETS_CREDENTIALS_FILE` **or**
+`GOOGLE_SHEETS_CREDENTIALS_JSON` raw/base64 blob) →
+`exams/wellness_ingest.py::ingest_wellness`:
+
+- Header-keyword column mapping; timestamps parsed day-first and
+  **truncated to seconds** so Sheets rows (second precision) and manual
+  `.xlsx` loads (microsecond) dedupe against each other. Idempotency key:
+  `(player, recorded_at)`.
+- `normalize_molestia` decodes the comma-separated body-zone codes against
+  the template's `option_labels`; unknown codes are surfaced, `no/ninguna`
+  dropped. Declaring `disponible` while reporting a molestia sets
+  `molestia_revisar=true`.
+- Player matching: exact full name → initial + Levenshtein≤1 surname →
+  exact first name + Levenshtein≤2 surname. **No surname-only fallback**
+  (avoids attaching youth players to seniors).
+
+Celery Beat (hours are LOCAL, `CELERY_TIMEZONE=America/Santiago`): every
+5 min 08–11h, every 30 min off-peak, plus a 13:10 reconcile pass over the
+last 3 days. Redis lock prevents overlapping runs. Manual/bulk:
+`manage.py load_checkin_fisico --file … [--mode all|today|reconcile]`.
+
+After ingest, each player's latest check-in runs
+`goals/evaluator.py::evaluate_molestia_alert` — **`AlertSource.MOLESTIA`**
+(goals migration `0011`): one active alert per (player, template);
+severity `lesion`→CRITICAL, `parcial`→WARNING, mismatch→WARNING, else
+INFO; auto-resolves when a later check-in reports no molestias.
+
+---
+
+### 3.52 Match fixtures sync — API-Football (Slice 2, LIVE)
+
+§3's paused "Slice 2" landed. `events/services/fixtures_sync.py`:
+`sync_category_fixtures(category)` reads the binding from
+`Category.external_config` (`{"provider": "api_football", "team_id",
+"season"}`) and (0) refreshes the **`Competition`** cache + **`ExternalTeam`**
+rosters (competitions with >100 teams — global "Friendlies" buckets — skip
+roster sync), (1) upserts one match Event per fixture, idempotent on
+`metadata.api_football_fixture_id`, setting the new
+**`Event.opponent_team`** FK (events migration `0005`), and (2) backfills
+tactical `MatchData` for completed fixtures (quota-aware, `stats_limit`).
+
+**Reconciliation**: a fixture within ±16h of an existing unbound category
+match Event *adopts* it instead of duplicating — so a match the GPS
+importer created (keyed by date) merges with the API fixture and keeps its
+GPS results.
+
+Scheduled every 6h (`sync-api-football-fixtures` beat entry; no-op without
+`API_FOOTBALL_KEY`). Manual: `manage.py sync_fixtures [--club] [--category]
+[--no-stats] [--stats-limit N]`. The competitions/rivals cache also feeds
+the GPS-upload page's inline match creation (§3.50).
+
+---
+
+### 3.53 Ask-SLAB assistant + chat-to-charts (the 2026-06-21 pivot)
+
+Downloadable reports are de-emphasized in favor of **dashboards + an
+assistant that answers questions and proposes charts you can promote**.
+Four endpoints (all Anthropic-backed, `dashboards/assistant.py`, graceful
+Spanish fallback without an API key):
+
+- `POST /assistant/team` — the floating TeamChat (FAB + "Ask S-LAB AI"
+  sidebar entry share state via `AssistantContext`). Tool-using loop over
+  DB search tools (`listar_examenes`, `ranking_jugadores`,
+  `historial_jugador`, `estado_jugador`). Text only.
+- `POST /assistant/dashboard` — department-scoped, honors the panel's
+  filters; answers AND proposes **transient charts** (`proponer_grafico` →
+  `dashboards/chart_spec.py::resolve_chart_spec`, resolved inside a
+  rolled-back transaction — nothing persists).
+- `POST /assistant/player` and `POST /assistant/player/resumen` — per-player
+  variants (departamento tab / Resumen tab).
+
+**Promote flow**: each transient chart echoes a normalized `spec`;
+`POST /reports/{dept}/widgets` persists it as a real `TeamReportWidget`
+under a "Mis gráficos" section, and `POST /players/{id}/dashboard-widgets`
+persists to the per-player `DepartmentLayout` (⚠️ creating that layout
+switches the department tab from the legacy card grid to the configured
+dashboard for the whole category). Resumen charts are review-only (Resumen
+isn't a configurable layout). Frontend shell:
+`components/reports/AssistantPanel.tsx` with consumers
+`DashboardAssistant` / `PlayerAssistant` / `ResumenAssistant`.
+
+**Pivot status note**: NAV_AUDIT.md declared the Word downloads "retired /
+unlinked", but the `.docx` buttons are in fact **still wired** on the
+Dashboard, department tabs, and Resumen (see §7).
+
+---
+
+### 3.54 Navigation / UX restructure (NAV_AUDIT.md phases)
+
+- **Sidebar** (`components/layout/Sidebar.tsx`) regrouped by
+  frequency-of-use: **Operativa** (Centro de mando, Daily, Equipo,
+  Partidos, Cargar GPS), **Análisis** (Dashboard — renamed from
+  "Reportes", label only, URLs kept — + Ask S-LAB AI), **Administración**
+  (Gestionar plantel, Uso superuser-only). Active state covers child
+  routes; `/perfil/*` highlights Equipo via `activePrefixes`; ARIA
+  expanded/controls on groups; drawer focus-trapped.
+- **Breadcrumbs** (`components/layout/Breadcrumbs.tsx`): auto-derived from
+  the pathname via `SEGMENT_LABELS`; detail pages register real entity
+  labels through `useBreadcrumbLabel(segment, label)`; "Inicio" points at
+  `/centro-de-mando`.
+- **URL-driven tabs**: `?tab=` synced via `router.replace` is the
+  canonical pattern (`perfil/[id]/page.tsx` is the reference
+  implementation; codified as AGENTS.md principle #2).
+- The 9 IA principles extracted from UX_AUDIT.md are codified in
+  **AGENTS.md** and binding on new screens.
+
+---
+
+### 3.55 La Daily — morning-meeting view + presentation deck (2026-07-05)
+
+The 8 AM cross-department planning meeting (médicos, kines, PF, nutri,
+psicólogo) now runs on `/daily` instead of the whiteboard. Spec source:
+`notes/meeting_1.txt` (meeting of 2026-06-25).
+
+**Backend** — `GET /api/daily-report?category_id=&date=`
+(`api/daily_report.py`, mirrors the command-center builder). Sections in
+meeting order:
+1. **`lesionados`** — every non-available player with his open episode
+   (diagnosis title, stage, days_out, expected return, plan) and
+   **`gps_compare`**: per-session training GPS, the player's latest
+   post-injury week (anchored at his most recent session, robust to stale
+   uploads) vs. his **healthy baseline** (the 56 days before the injury) —
+   the "está al 30% de lo habitual" chart. Trainings only
+   (`gps_sesion` rows with `tipo_sesion` partido/amistoso are excluded);
+   per-template key mapping (sprint = `sprint_dist` vs `sprint`; acc_dec =
+   `acc_dec` vs `acc`+`dec`).
+2. **`alertas`** — available players with active alerts, critical first.
+3. The annex of disponibles reuses `GET /api/roster` on the frontend.
+
+**Meeting notes ("pauta del día")** — new model **`core.DailyNote`**
+(migration core `0013`): player + date + department (nullable = General) +
+text + author. `POST /api/daily-notes`
+(`@require_perm("core.add_dailynote")` — model added to
+`seed_role_groups.OPERATIONAL_MODELS`), `DELETE /api/daily-notes/{id}`
+(author, or `core.delete_dailynote`). Notes render on the player cards and
+in the rail panel, tagged by área + author.
+
+**Presentation deck** — `GET /api/daily-report.pdf?category_id=&date=`
+(`dashboards/pdf/daily_deck.py`): landscape A4, **one slide per player** —
+portada (logo + KPIs) → índice de lesionados → one detailed slide per
+lesionado (valores + meters vs. habitual) → divider → one slide per
+jugador con alerta (readiness/wellness/ACWR chips + alerts) → anexo, one
+ficha per disponible (chips + forma sparkline). Deterministic, LLM-free,
+no caching — always renders the moment's data. "Descargar presentación"
+button on the page header.
+
+**Frontend** — `app/(dashboard)/daily/` + `components/daily/*`
+(LesionadoCard with baseline meters, NoteModal, NotesPanel). Meeting date
+lives in the URL (`?date=`, chevron day navigation); global category
+picker honored; sidebar entry in Operativa.
+
+**Player profile restructure (same slice)** — the global
+`DateRangeControl` was **removed** from `/perfil/[id]` (the component
+survives — team reports still use it). `GET /players/{id}/views` is now
+fetched **without** date bounds and each time-series widget owns its
+window client-side: `components/dashboards/widgets/ChartWindow.tsx`
+(`useChartWindow` + `<ChartWindowNav>`) gives LineWithSelector, MultiLine
+and GroupedBar a 12-point window with ‹ › chevrons, a visible date-range
+label and a "Reciente" reset. `LAST_N` datasources still cap server-side.
+
+---
+
+### 3.56 Lesiones — Fuller surveillance format + `import_lesiones` (2026-07-05)
+
+The `lesiones` template was restructured to match the club's **Vigilancia
+de Lesiones** workbook (Fuller consensus), which is now the source of
+truth for injuries:
+
+- **Region + side split**: `body_part` options are the 18 Fuller regions
+  (Muslo, Rodilla, Pierna/Aquiles, …) and a new required **`lado`** field
+  (Izquierdo / Derecho / Central/Bilateral / NA). Option values mirror the
+  sheet verbatim (accent-free); `option_labels` carry the accented display
+  strings.
+- **New fields**: `mecanismo`, `modo`, `recurrencia` + `tipo_recurrencia`
+  (replacing the old `is_recurrencia` boolean), `bamic` (BAMIC RM muscle
+  classification), `hallazgos_rm`. `severity` is now the 5-step Fuller
+  scale; `exposicion` relabelled "Contexto" with the sheet's options;
+  legacy `causa` removed. Episode titles are detail-first
+  (`{body_part_detail} — {body_part}`).
+- **Side-aware body map**: `option_regions` values may carry a `{side}`
+  placeholder (`"Muslo" → "{side}_thigh"`) resolved from the field's new
+  `side_field` declaration; central/bilateral/missing side paints both
+  silhouette sides (`dashboards/aggregation.py::_resolve_body_map_heatmap`).
+  The resolver also now counts **episodes, not results**, on episodic
+  templates (an injury with opening + closing results was double-counting).
+
+**Importer** — `manage.py import_lesiones --file … [--wipe] [--commit]`
+(dry-run by default): reads the workbook's `Registro` sheet, matches
+players alias-first then by the sheet's `X.Apellido` code, and creates one
+Episode per row — closed rows (Estado=Alta) get an opening result at the
+injury date + a closing result at the return date so `ended_at` derives
+correctly; Activa rows stay open and flip `Player.status`. `--wipe`
+replaces all existing lesiones episodes/results for the category and
+recomputes every player's status. JSONL run log in
+`backend/migration_runs/`. First import (2026-07-05): 40 injuries, 4
+active.
+
+---
+
+### 3.57 Alert hygiene — dates, tuned bands, staleness expiry (2026-07-05/06)
+
+A cluster of fixes after the Daily made stale alerts visible:
+
+- **Every alert message carries the date of the reading that fired it**
+  ("Nivel de energía = 2 cae en banda «Bajo» (2026-07-04)"). Stamped at
+  fire time in all three generators: the threshold evaluator
+  (band/bound/variation), the WADA/medication signal (+
+  `reevaluate_medication_alerts`), and the training-load signal.
+- **Check-in bands retuned to the real scales** (`seed_checkin_fisico`):
+  the four 1–5 items alert only on **1–2** (a 3 is neutral "Aceptable"),
+  severity **warning**. `recuperacion` (1–10) has its own ladder — 1–2
+  **critical** "Muy bajo", 3–4 **warning** "Bajo", 5–6/7–10 silent. To
+  support that, reference bands may now carry `"alert": true` +
+  `"severity": "..."` and the threshold evaluator honors per-band severity
+  over the rule's default.
+- **Staleness expiry** — alerts anchored on old readings auto-resolve:
+  - Check-in alerts (molestia + bands): 7 days without a check-in
+    (`resolve_stale_checkin_alerts`, runs inside every wellness sync).
+  - Everything measurement-anchored (threshold on any template,
+    medication, training load): **30 days**
+    (`goals/evaluator.py::expire_stale_alerts`, `ALERT_STALE_DAYS`),
+    swept daily at 04:45 by the new beat entry
+    `expire-stale-alerts-daily` → `goals.tasks.expire_stale_alerts`.
+    Goals are exempt (due-date lifecycle).
+  First run expired 481 stale alerts platform-wide (November anthropometry,
+  Aug-2025 WADA prescriptions, demo-club leftovers).
+- Also part of this cleanup: the legacy `check_in` template's 6 rules were
+  deactivated and its 108 zombie alerts resolved; its two remaining widgets
+  were repointed to `checkin_fisico`; and the wellness sync now evaluates
+  band rules explicitly after `bulk_create` (which skips signals).
+
+---
+
 ## 4. Management commands
 
 All under `backend/exams/management/commands/`. Run via
@@ -2560,6 +2909,14 @@ All under `backend/exams/management/commands/`. Run via
 | `seed_insight_agents`      | `dashboards/management/commands/`     | Create one `InsightAgent` per department slug (medico / fisico / nutricional / psicosocial / tactico) with a persona prompt + starter KB (§3.41). |
 | `rebuild_player_state`     | `dashboards/management/commands/`     | Recompute `PlayerMetricState` for all active players from `ExamResult` (the read model is rebuildable) (§3.43). |
 | `snapshot_player_states`   | `dashboards/management/commands/`     | Recompute-then-snapshot every active player's state into `PlayerStateSnapshot` for today (also runs weekly via Celery beat) (§3.44). |
+| `seed_role_groups`         | `core/management/commands/`           | Seed the **Editor** / **Solo Lectura** permission groups from `OPERATIONAL_MODELS` (one line per model) + backfill ungrouped users to Editor. Re-run (`--skip-backfill`) after adding a model to the permissions story (§3.33, §3.55). |
+| `seed_gps_session`         | `exams/management/commands/`          | Create the flat `gps_sesion` per-session GPS template (16 metrics + `tipo_sesion`); the landing template for the backfill, the match sync and the self-service upload (§3.49). |
+| `import_gps_sessions`      | `exams/management/commands/`          | One-shot backfill of a whole-season per-session GPS export (`--file`, `--mode auto\|match\|training`, `--dry-run`, `--update`). Match files create/link match Events (§3.49). |
+| `load_checkin_fisico`      | `exams/management/commands/`          | Manual/bulk wellness load from an `.xlsx` (`--file`, `--mode all\|today\|reconcile`, `--dry-run`). Shares `ingest_wellness` with the Sheet sync (§3.51). |
+| `sync_fixtures`            | `events/management/commands/`         | Run the API-Football fixtures sync now (`--club`, `--category`, `--no-stats`, `--stats-limit N`) instead of waiting for the 6-hourly beat (§3.52). |
+| `rebuild_readiness`        | `dashboards/management/commands/`     | Recompute the cached `PlayerReadiness` for all active players (§3.48). |
+| `seed_briefing_playbooks`  | `dashboards/management/commands/`     | Seed the per-department briefing playbooks consumed by the Centro de mando briefing (§3.47). |
+| `import_lesiones`          | `exams/management/commands/`          | Import the **Vigilancia de Lesiones** workbook (Fuller format) into the `lesiones` template (`--file`, `--wipe`, `--commit`; dry-run by default). The sheet is the source of truth for injuries (§3.56). |
 
 Common flags across the seed-template commands:
 
@@ -2707,6 +3064,25 @@ Things that work today but should be tidied before they confuse the next contrib
 
 ## 7. Known caveats
 
+- **`POST /results/bulk` / `POST /results/team` shadowing — FIXED
+  (2026-07-05)**: the parameterized routes now use the `{uuid:result_id}`
+  converter, so the URL pattern only matches real UUIDs and the literal
+  paths route correctly (this had turned the CK team-table save into a
+  405). `/gps-sessions/upload` predates the fix and stays where it is.
+- **Word (.docx) report buttons are still wired** on the Dashboard,
+  department tabs and Resumen, despite NAV_AUDIT.md's "retired / unlinked"
+  decision from the 2026-06-21 pivot. Decide: actually unlink them, or
+  amend the audit doc.
+- **Profile GPS dashboard widgets read `gps_entrenamiento` / the match
+  template**, but the U. de Chile season data lives in `gps_sesion` — those
+  layout widgets render empty until their datasources are re-pointed. (The
+  Daily, Equipo ACWR and command-center load KPIs already read `gps_sesion`.)
+- **`import_gps_sessions` docstring** names a stale route
+  (`/api/results/gps-sessions`); the real endpoint is
+  `POST /api/gps-sessions/upload`.
+- **GPS code `AguKor`** appears in season files but has no roster player —
+  it's Agustín Korn (youth, deliberately not in the Primer Equipo roster);
+  rows under that code stay unmatched by design.
 - **`recorded_at` vs `fecha` vs `event.starts_at`** — three timestamps coexist:
   1. `recorded_at` is the column on `ExamResult` and what the platform sorts by.
   2. `result_data.fecha` is whatever the doctor typed in the form.
@@ -2788,8 +3164,16 @@ Defined in `.env.example`, consumed by `docker-compose.yml` and
 | `EMAIL_USE_TLS`           | `true`                           |                                        |
 | `DEFAULT_FROM_EMAIL`      | `alerts@s-lab.cl`                | `From:` header on alert emails         |
 | `FRONTEND_BASE_URL`       | `http://localhost:3000`          | Used in alert email "Ver" link         |
-| `ANTHROPIC_API_KEY`       | _(empty)_                        | Enables LLM report narratives (§3.41). Blank ⇒ PDFs render data/charts only, no narrative. Forwarded to the `backend` + `worker` services. |
-| `ANTHROPIC_MODEL`         | `claude-opus-4-7`                | Default narrative model; overridable per-`InsightAgent` (§3.41).        |
+| `ANTHROPIC_API_KEY`       | _(empty)_                        | Enables the LLM features — report narratives (§3.41), briefing (§3.47), readiness agent (§3.48), assistant (§3.53). Blank ⇒ all degrade gracefully (no narrative / empty briefing / deterministic readiness / fallback reply). Forwarded to `backend` + `worker`. |
+| `ANTHROPIC_MODEL`         | `claude-opus-4-7`                | Default model for all LLM features; overridable per-`InsightAgent`.    |
+| `CELERY_TIMEZONE`         | `America/Santiago`               | Beat schedules run in LOCAL time (wellness sync, goal evaluator, fixtures sync). |
+| `GOOGLE_SHEETS_CREDENTIALS_FILE` | _(empty)_                 | Service-account JSON path for the wellness Sheet sync (§3.51). Either this **or** the JSON blob below. |
+| `GOOGLE_SHEETS_CREDENTIALS_JSON` | _(empty)_                 | Service-account credentials as a raw/base64 JSON blob (container-friendly alternative). |
+| `WELLNESS_SHEET_ID`       | _(empty)_                        | Google Sheet id of the wellness form responses. Blank ⇒ sync no-ops.   |
+| `WELLNESS_SHEET_WORKSHEET`| `Respuestas de formulario 1`     | Worksheet name.                                                        |
+| `WELLNESS_CLUB` / `WELLNESS_CATEGORY` | `Universidad de Chile` / `Primer Equipo` | Scope the sync writes into.             |
+| `API_FOOTBALL_KEY`        | _(empty)_                        | API-Football key for the fixtures sync (§3.52). Blank ⇒ sync no-ops.  |
+| `API_FOOTBALL_BASE_URL`   | `https://v3.football.api-sports.io` | Native endpoint (not RapidAPI).                                     |
 
 ---
 
@@ -3002,16 +3386,42 @@ docker compose exec backend python manage.py shell -c \
 # Or queue it via the worker (round-trips through Redis):
 docker compose exec backend python manage.py shell -c \
   "from goals.tasks import evaluate_due_goals; r=evaluate_due_goals.delay(); print(r.get(timeout=10))"
+
+# Season GPS backfill (dry-run first, then commit):
+docker compose exec backend python manage.py import_gps_sessions \
+    --file /tmp/gps_export.xls --dry-run
+docker compose exec backend python manage.py import_gps_sessions \
+    --file /tmp/gps_export.xls
+
+# Wellness: manual load / run the Sheet sync now:
+docker compose exec backend python manage.py load_checkin_fisico --file /tmp/wellness.xlsx
+docker compose exec backend python manage.py shell -c \
+  "from exams.tasks import sync_wellness_responses; print(sync_wellness_responses())"
+
+# API-Football fixtures sync now (instead of the 6-hourly beat):
+docker compose exec backend python manage.py sync_fixtures
+
+# Injuries: replace platform data with the Vigilancia workbook (dry-run → commit):
+docker compose exec backend python manage.py import_lesiones --file /tmp/lesiones.xlsx --wipe
+docker compose exec backend python manage.py import_lesiones --file /tmp/lesiones.xlsx --wipe --commit
+
+# Recompute cached readiness for the roster:
+docker compose exec backend python manage.py rebuild_readiness
 ```
 
 ---
 
-*Last updated 2026-06-18 — end of session that added: LLM narrative reports
-with content-addressed persistence/dedup (§3.41), editable per-department
-insight agents (§3.41), the three-tier reference + analytics layer (§3.42),
-the materialized `PlayerMetricState` + event/scheduled triggers (§3.43),
-weekly `PlayerStateSnapshot` history + físico load-evolution charts (§3.44),
-the Médico CMJ/Nórdico/Iso strength templates (§3.45), and the **Word (.docx)
-report export that replaced PDF** across all three report types — each leading
-with a specialized-agent narrative + charts (§3.46). When in doubt, read the
+*Last updated 2026-07-05 — end of session that added: **la Daily** (§3.55 —
+morning-meeting view at `/daily`, `core.DailyNote` meeting notes, the
+lesionado "actual vs. habitual pre-lesión" GPS comparison, and the
+one-slide-per-player presentation deck at `GET /daily-report.pdf`), the
+player-profile restructure (global date selector removed; per-chart ‹ ›
+time windows via `ChartWindow.tsx`), and the **Fuller injury-surveillance
+format** (§3.56 — region+lado split, mecanismo/modo/BAMIC/hallazgos_rm,
+side-aware body map, `import_lesiones` workbook importer; 40 injuries / 4
+active imported). Also documented in this pass (shipped earlier,
+previously undocumented): Centro de mando (§3.47), Equipo readiness
+(§3.48), the per-session GPS pipeline (§3.49–3.50), the wellness Sheet
+sync (§3.51), the fixtures sync (§3.52), the assistant + chat-to-charts
+(§3.53) and the navigation restructure (§3.54). When in doubt, read the
 file paths above — the code is the source of truth.*

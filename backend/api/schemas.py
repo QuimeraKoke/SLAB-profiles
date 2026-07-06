@@ -740,3 +740,60 @@ class TriageOut(Schema):
     alerted_metrics: list[TriageAlertedMetricOut]
     other_metrics: list[TriageOtherMetricOut]
     last_match: TriageLastMatchOut | None
+
+
+# ─── Daily (morning meeting) notes ────────────────────────────────────
+
+
+class DailyNoteDeptOut(Schema):
+    id: UUID
+    name: str
+    slug: str
+
+
+class DailyNoteIn(Schema):
+    player_id: UUID
+    department_id: UUID | None = None
+    date: date
+    text: str
+
+
+class DailyNoteOut(Schema):
+    id: UUID
+    player_id: UUID
+    player_name: str
+    department: DailyNoteDeptOut | None = None
+    date: date
+    text: str
+    author: str = ""
+    mine: bool = False
+    created_at: datetime
+
+
+# ---------- Widget position comparison ----------
+
+
+class ComparisonPointOut(Schema):
+    recorded_at: str
+    value: float | None = None
+
+
+class ComparisonPlayerOut(Schema):
+    player_id: str
+    name: str
+    points: list[ComparisonPointOut]
+
+
+class ComparisonMeanPointOut(Schema):
+    day: str
+    value: float
+    n: int
+
+
+class PositionComparisonOut(Schema):
+    """Same-position peer series for one widget field (see
+    `dashboards.aggregation.position_comparison`)."""
+
+    position: str | None = None
+    players: list[ComparisonPlayerOut]
+    mean: list[ComparisonMeanPointOut]

@@ -27,7 +27,7 @@ from dashboards.player_state import _GPS_MATCH_SLUG, _GPS_TRAIN_SLUG
 _STATUS_LABEL = {
     Player.STATUS_INJURED: "Lesionado",
     Player.STATUS_RECOVERY: "Recuperación",
-    Player.STATUS_REINTEGRATION: "Reintegración",
+    Player.STATUS_REINTEGRATION: "Return to Train",
     Player.STATUS_AVAILABLE: "Disponible",
 }
 
@@ -145,7 +145,7 @@ def _kpis(category, players, states, alerts, crit_player_ids, now) -> dict:
             "breakdown": [
                 {"label": "lesionados", "n": by_status.get(Player.STATUS_INJURED, 0), "tone": "crit"},
                 {"label": "recuperación", "n": by_status.get(Player.STATUS_RECOVERY, 0), "tone": "warn"},
-                {"label": "reintegración", "n": by_status.get(Player.STATUS_REINTEGRATION, 0), "tone": "info"},
+                {"label": "return to train", "n": by_status.get(Player.STATUS_REINTEGRATION, 0), "tone": "info"},
             ],
         },
         "riesgo": _kpi_riesgo(players, alerts, crit_player_ids),
@@ -180,10 +180,7 @@ def _kpi_carga(category, players, now) -> dict:
         return {"value": None, "status": "Sin datos", "tone": "muted",
                 "detail": "Sin plantillas GPS para esta categoría."}
 
-    field_by_template = {
-        t.id: ("tot_dist_total" if t.slug == _GPS_MATCH_SLUG else "tot_dist")
-        for t in templates
-    }
+    field_by_template = {t.id: "tot_dist" for t in templates}
     since = now - timedelta(days=28)
     acute_cut = now - timedelta(days=7)
     rows = ExamResult.objects.filter(
@@ -389,37 +386,56 @@ def _decisions(players, alerts_by_player, states) -> list[dict]:
 
 
 def _data_quality(category, player_ids, now) -> list[dict]:
-    today = now.date()
-    n = len(player_ids)
+    """Per-source freshness: how long since the last upload + how many
+    players that last upload covered. `last_at` is the most recent
+    `recorded_at`; `players` counts the distinct players uploaded on that
+    last day (e.g. the squad in the last match / training session)."""
+    from api import wellness as w  # WELLNESS_SLUG (real check-in template)
 
-    def coverage(slugs):
+    n = len(player_ids)
+    today = timezone.localdate(now)
+
+    def freshness(slugs):
         tids = list(ExamTemplate.objects.filter(
             slug__in=slugs, applicable_categories=category,
         ).values_list("id", flat=True))
         if not tids:
-            return None
-        return ExamResult.objects.filter(
-            player_id__in=player_ids, template_id__in=tids, recorded_at__date=today,
-        ).values("player_id").distinct().count()
+            return None  # no template configured
+        qs = ExamResult.objects.filter(player_id__in=player_ids, template_id__in=tids)
+        last_at = qs.order_by("-recorded_at").values_list("recorded_at", flat=True).first()
+        if last_at is None:
+            return "empty"
+        last_day = timezone.localtime(last_at).date()
+        players = (
+            qs.filter(recorded_at__date=last_day)
+            .values("player_id").distinct().count()
+        )
+        return last_at, last_day, players
 
-    def row(label, slugs):
-        c = coverage(slugs)
-        if c is None:
-            return {"source": label, "status": "muted", "detail": "Sin plantilla"}
-        ok = c >= n
-        return {
-            "source": label,
-            "status": "ok" if ok else "warn",
-            "detail": f"{c}/{n} jugadores hoy" if not ok else f"Actualizado · {c}/{n}",
-        }
+    def measured_row(label, slugs):
+        base = {"source": label, "last_at": None, "players": None, "expected": n}
+        f = freshness(slugs)
+        if f is None:
+            return {**base, "status": "muted", "detail": "Sin plantilla"}
+        if f == "empty":
+            return {**base, "status": "muted", "detail": "Sin datos cargados"}
+        last_at, last_day, players = f
+        days = (today - last_day).days
+        # Fresh ≤3d, stale ≤14d, otherwise critical-old.
+        status = "ok" if days <= 3 else ("warn" if days <= 14 else "crit")
+        return {**base, "status": status, "detail": "",
+                "last_at": last_at.isoformat(), "players": players}
 
     rows = [
-        row("GPS", [_GPS_MATCH_SLUG, _GPS_TRAIN_SLUG]),
-        row("Wellness", ["check_in"]),
+        measured_row("GPS", [_GPS_MATCH_SLUG, _GPS_TRAIN_SLUG]),
+        measured_row("Wellness", [w.WELLNESS_SLUG]),
     ]
-    # Sources we don't measure yet — surfaced so the operator knows they exist.
+    # Sources we don't measure automatically yet — surfaced so the operator
+    # knows they exist (no freshness data to show).
     for label in ("Médico", "Nutrición", "Isocinético"):
-        rows.append({"source": label, "status": "muted", "detail": "Sin medición automática"})
+        rows.append({"source": label, "status": "muted",
+                     "detail": "Sin medición automática",
+                     "last_at": None, "players": None, "expected": n})
     return rows
 
 
