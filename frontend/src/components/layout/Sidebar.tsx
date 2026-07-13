@@ -166,15 +166,20 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   // "Usuarios" (Administración) — only users who can manage staff accounts
   // (Administrador role / superuser) see it. Appended to the static
   // Administración sub-items so managers can onboard the rest of the club.
-  const settingsGroup: NavGroup = hasPermission(user, "auth.view_user")
-    ? {
-        ...SETTINGS_NAV,
-        subItems: [
-          ...(SETTINGS_NAV.subItems ?? []),
-          { label: "Usuarios", href: "/configuraciones/usuarios" },
-        ],
-      }
-    : SETTINGS_NAV;
+  const settingsGroup: NavGroup = {
+    ...SETTINGS_NAV,
+    subItems: [
+      ...(SETTINGS_NAV.subItems ?? []),
+      // §1.g — Editors configure the alert/threshold engine per category.
+      ...(hasPermission(user, "goals.change_alertrule")
+        ? [{ label: "Reglas de alerta", href: "/configuraciones/alertas" }]
+        : []),
+      // Only staff-managers (Administrador / superuser) onboard other users.
+      ...(hasPermission(user, "auth.view_user")
+        ? [{ label: "Usuarios", href: "/configuraciones/usuarios" }]
+        : []),
+    ],
+  };
 
   // NAV-02: a discoverable doorway to the floating chat (no dedicated route)
   // — opens the same assistant the FAB does, via AssistantContext.
