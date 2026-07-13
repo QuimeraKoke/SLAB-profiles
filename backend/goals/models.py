@@ -177,7 +177,26 @@ class Alert(models.Model):
 class AlertRuleKind(models.TextChoices):
     BOUND = "bound", "Límite (umbral fijo)"
     VARIATION = "variation", "Variación (% vs. ventana)"
+    ZSCORE = "zscore", "Z-score (vs. basal móvil)"
+    PCT_MATCH = "pct_match", "% de la demanda de partido"
     BAND = "band", "Banda de referencia (clínica)"
+
+
+def _validate_alert_window(window: dict) -> None:
+    """Shared window validation for the variation / zscore kinds."""
+    from django.core.exceptions import ValidationError
+
+    wkind = (window or {}).get("kind")
+    if wkind == "last_n":
+        n = window.get("n")
+        if not isinstance(n, int) or n < 1:
+            raise ValidationError({"config": "window.n must be an integer ≥ 1."})
+    elif wkind == "timedelta":
+        days = window.get("days")
+        if not isinstance(days, int) or days < 1:
+            raise ValidationError({"config": "window.days must be an integer ≥ 1."})
+    else:
+        raise ValidationError({"config": "window.kind must be 'last_n' or 'timedelta'."})
 
 
 class AlertRule(models.Model):
@@ -225,6 +244,16 @@ class AlertRule(models.Model):
         "core.Category", on_delete=models.CASCADE, null=True, blank=True,
         related_name="alert_rules",
         help_text="Restrict to one category. Empty = applies to every category that uses this template.",
+    )
+    scope = models.JSONField(
+        default=dict, blank=True,
+        help_text=(
+            'Optional context filters (all lists; empty = no filter): '
+            '{"session_types": ["entrenamiento", ...], "roles": ["Lateral", ...], '
+            '"microcycle_days": ["MD-1", "MD", ...]}. roles match Position.role; '
+            'session_types match the GPS tipo_sesion / event type; microcycle_days '
+            'match the result md_label.'
+        ),
     )
     kind = models.CharField(max_length=12, choices=AlertRuleKind.choices)
     config = models.JSONField(
@@ -312,10 +341,30 @@ class AlertRule(models.Model):
         # Per-kind config validation.
         cfg = self.config or {}
         if self.kind == AlertRuleKind.BOUND:
+            # Optional per-línea band map (§1.2): {rol: {upper?, lower?}}.
+            by_role = cfg.get("by_role")
+            if by_role is not None:
+                if not isinstance(by_role, dict) or not by_role:
+                    raise ValidationError({"config": "bound.by_role must be a non-empty object {rol: {upper?, lower?}}."})
+                for role, band in by_role.items():
+                    if not isinstance(band, dict):
+                        raise ValidationError({"config": f"bound.by_role['{role}'] must be an object with 'upper'/'lower'."})
+                    bu, bl = band.get("upper"), band.get("lower")
+                    if bu is None and bl is None:
+                        raise ValidationError({"config": f"bound.by_role['{role}'] needs at least one of 'upper'/'lower'."})
+                    for k in ("upper", "lower"):
+                        v = band.get(k)
+                        if v is not None:
+                            try:
+                                float(v)
+                            except (TypeError, ValueError):
+                                raise ValidationError({"config": f"bound.by_role['{role}'].{k} must be numeric."})
+                    if bu is not None and bl is not None and float(bu) <= float(bl):
+                        raise ValidationError({"config": f"bound.by_role['{role}']: 'upper' must be greater than 'lower'."})
             upper = cfg.get("upper")
             lower = cfg.get("lower")
-            if upper is None and lower is None:
-                raise ValidationError({"config": "bound rule requires at least one of 'upper' or 'lower'."})
+            if upper is None and lower is None and not by_role:
+                raise ValidationError({"config": "bound rule requires at least one of 'upper', 'lower', or a 'by_role' map."})
             for k in ("upper", "lower"):
                 v = cfg.get(k)
                 if v is not None:
@@ -326,43 +375,54 @@ class AlertRule(models.Model):
             if upper is not None and lower is not None and float(upper) <= float(lower):
                 raise ValidationError({"config": "'upper' must be greater than 'lower'."})
 
-        elif self.kind == AlertRuleKind.VARIATION:
-            window = cfg.get("window") or {}
-            wkind = window.get("kind")
-            if wkind == "last_n":
-                n = window.get("n")
-                if not isinstance(n, int) or n < 1:
-                    raise ValidationError({"config": "variation.window.n must be an integer ≥ 1."})
-            elif wkind == "timedelta":
-                days = window.get("days")
-                if not isinstance(days, int) or days < 1:
-                    raise ValidationError({"config": "variation.window.days must be an integer ≥ 1."})
-            else:
-                raise ValidationError({
-                    "config": "variation.window.kind must be 'last_n' or 'timedelta'."
-                })
+        elif self.kind in (AlertRuleKind.VARIATION, AlertRuleKind.ZSCORE):
+            _validate_alert_window(cfg.get("window") or {})
+            method = cfg.get("method", "moving_avg")
+            if method not in {"moving_avg", "ewma"}:
+                raise ValidationError({"config": "method must be 'moving_avg' or 'ewma'."})
+            direction = cfg.get("direction", "any")
+            if direction not in {"any", "increase", "decrease"}:
+                raise ValidationError({"config": "direction must be 'any', 'increase', or 'decrease'."})
+            if self.kind == AlertRuleKind.VARIATION:
+                pct = cfg.get("threshold_pct")
+                units = cfg.get("threshold_units")
+                if pct is None and units is None:
+                    raise ValidationError({"config": "variation requires at least one of 'threshold_pct' or 'threshold_units'."})
+                for label, raw in (("threshold_pct", pct), ("threshold_units", units)):
+                    if raw is None:
+                        continue
+                    try:
+                        n = float(raw)
+                    except (TypeError, ValueError):
+                        raise ValidationError({"config": f"variation.{label} must be numeric."})
+                    if n <= 0:
+                        raise ValidationError({"config": f"variation.{label} must be > 0."})
+            else:  # ZSCORE — deviation vs. the player's own rolling basal
+                tz = cfg.get("threshold_z")
+                if tz is None:
+                    raise ValidationError({"config": "zscore requires 'threshold_z'."})
+                try:
+                    tzf = float(tz)
+                except (TypeError, ValueError):
+                    raise ValidationError({"config": "zscore.threshold_z must be numeric."})
+                if tzf <= 0:
+                    raise ValidationError({"config": "zscore.threshold_z must be > 0."})
 
-            pct = cfg.get("threshold_pct")
-            units = cfg.get("threshold_units")
-            if pct is None and units is None:
-                raise ValidationError({
-                    "config": "variation requires at least one of 'threshold_pct' or 'threshold_units'."
-                })
-            for label, raw in (("threshold_pct", pct), ("threshold_units", units)):
+        elif self.kind == AlertRuleKind.PCT_MATCH:
+            # value as a % of the player's own match-demand reference (§1.2).
+            ru = cfg.get("ratio_upper")
+            rl = cfg.get("ratio_lower")
+            if ru is None and rl is None:
+                raise ValidationError({"config": "pct_match requires 'ratio_upper' and/or 'ratio_lower'."})
+            for label, raw in (("ratio_upper", ru), ("ratio_lower", rl)):
                 if raw is None:
                     continue
                 try:
-                    n = float(raw)
+                    rf = float(raw)
                 except (TypeError, ValueError):
-                    raise ValidationError({"config": f"variation.{label} must be numeric."})
-                if n <= 0:
-                    raise ValidationError({"config": f"variation.{label} must be > 0."})
-
-            direction = cfg.get("direction", "any")
-            if direction not in {"any", "increase", "decrease"}:
-                raise ValidationError({
-                    "config": "variation.direction must be 'any', 'increase', or 'decrease'."
-                })
+                    raise ValidationError({"config": f"pct_match.{label} must be numeric."})
+                if rf <= 0:
+                    raise ValidationError({"config": f"pct_match.{label} must be > 0."})
 
         elif self.kind == AlertRuleKind.BAND:
             # The only configurable knob is an optional list of band labels
@@ -396,6 +456,15 @@ class AlertRule(models.Model):
                                 )
                             })
                         break
+
+        # Scope (optional, all kinds): restrict which results the rule sees.
+        scope = self.scope or {}
+        for key in ("session_types", "roles", "microcycle_days"):
+            v = scope.get(key)
+            if v is not None and (
+                not isinstance(v, list) or not all(isinstance(x, str) and x for x in v)
+            ):
+                raise ValidationError({"scope": f"scope.{key} must be a list of non-empty strings."})
 
     def __str__(self) -> str:
         scope = self.category.name if self.category_id else "(all categories)"

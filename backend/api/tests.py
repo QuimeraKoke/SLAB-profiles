@@ -94,3 +94,52 @@ class ExportWorkbookTests(SimpleTestCase):
 
         wb = load_workbook(_io.BytesIO(workbook_bytes([])))
         self.assertEqual(len(wb.sheetnames), 1)
+
+
+class StatsTests(SimpleTestCase):
+    """Pure rolling-statistics helpers (dashboards/stats.py) — §1.2 + §4."""
+
+    def test_mean_stdev_cv(self):
+        from dashboards import stats
+
+        self.assertEqual(stats.mean([2, 4, 6]), 4)
+        self.assertEqual(stats.stdev([2, 4, 6]), 2.0)
+        self.assertEqual(stats.cv([2, 4, 6]), 50.0)
+        self.assertIsNone(stats.stdev([5]))  # <2 values
+        self.assertIsNone(stats.mean([]))
+
+    def test_ewma(self):
+        from dashboards import stats
+
+        self.assertEqual(stats.ewma([1, 1, 1], span=2), 1.0)   # constant series
+        self.assertEqual(stats.ewma([0, 10], span=1), 10.0)    # span 1 → latest
+        self.assertIsNone(stats.ewma([]))
+
+    def test_deviation_full(self):
+        from dashboards import stats
+
+        d = stats.deviation(10, [2, 4, 6])
+        self.assertEqual(d["centre"], 4)
+        self.assertEqual(d["sd"], 2.0)
+        self.assertEqual(d["z"], 3.0)
+        self.assertEqual(d["pct"], 150.0)
+        self.assertEqual(d["cv"], 50.0)
+
+    def test_deviation_partial_and_empty(self):
+        from dashboards import stats
+
+        d = stats.deviation(4, [4, 4])       # zero spread
+        self.assertIsNone(d["z"])
+        self.assertEqual(d["pct"], 0.0)
+        d1 = stats.deviation(5, [5])          # single prior → no sd
+        self.assertIsNone(d1["z"])
+        self.assertEqual(d1["pct"], 0.0)
+        self.assertIsNone(stats.deviation(5, []))          # no prior
+        self.assertIsNone(stats.deviation(None, [1, 2, 3]))  # non-numeric value
+
+    def test_deviation_ewma_method(self):
+        from dashboards import stats
+
+        d = stats.deviation(10, [2, 4, 6], method="ewma", span=1)
+        self.assertEqual(d["centre"], 6.0)   # span-1 EWMA = latest prior
+        self.assertEqual(d["z"], 2.0)        # (10-6)/sd(=2)
