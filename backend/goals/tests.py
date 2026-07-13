@@ -994,3 +994,91 @@ class SeedBandAlertsCommandTests(TestCase):
         self._run("--no-backfill")
         self.assertTrue(AlertRule.objects.filter(kind=AlertRuleKind.BAND).exists())
         self.assertFalse(Alert.objects.filter(source_type=AlertSource.THRESHOLD).exists())
+
+
+class ThresholdNewKindsTests(TestCase):
+    """§1.2 engine: zscore (vs. rolling basal), bound by_role, scope filter."""
+
+    def setUp(self):
+        from core.models import Position
+
+        self.club = Club.objects.create(name="FC")
+        self.dept = Department.objects.create(club=self.club, name="Físico", slug="fisico")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.dept)
+        self.lateral = Position.objects.create(
+            club=self.club, name="Lateral", abbreviation="LAT", role="Lateral")
+        self.central = Position.objects.create(
+            club=self.club, name="Central", abbreviation="DFC", role="Central")
+        self.p_lat = Player.objects.create(
+            category=self.cat, first_name="L", last_name="Uno", position=self.lateral)
+        self.p_cen = Player.objects.create(
+            category=self.cat, first_name="C", last_name="Dos", position=self.central)
+        self.template = _make_template(self.dept, name="GPS", field_key="hsr")
+        self.template.applicable_categories.add(self.cat)
+
+    def _zscore_rule(self, **cfg):
+        base = {"window": {"kind": "last_n", "n": 5}, "threshold_z": 2,
+                "direction": "any", "method": "moving_avg"}
+        base.update(cfg)
+        return AlertRule.objects.create(
+            template=self.template, field_key="hsr", kind=AlertRuleKind.ZSCORE,
+            config=base, severity=AlertSeverity.WARNING)
+
+    def _basal(self):
+        for i, v in enumerate([100, 102, 98, 101, 99], start=1):
+            _make_result(self.p_lat, self.template, v, days_ago=6 - i, field_key="hsr")
+
+    def test_zscore_fires_on_spike(self):
+        rule = self._zscore_rule()
+        self._basal()
+        spike = _make_result(self.p_lat, self.template, 200, days_ago=0, field_key="hsr")
+        Alert.objects.all().delete()  # isolate: ignore alerts from basal creation
+        evaluate_threshold_rules_for_result(spike)
+        a = Alert.objects.filter(source_id=rule.id, player=self.p_lat, status=AlertStatus.ACTIVE)
+        self.assertEqual(a.count(), 1)
+        self.assertIn("z=", a.first().message)
+
+    def test_zscore_quiet_within_basal(self):
+        rule = self._zscore_rule()
+        self._basal()
+        normal = _make_result(self.p_lat, self.template, 100, days_ago=0, field_key="hsr")
+        Alert.objects.all().delete()  # isolate the current reading
+        evaluate_threshold_rules_for_result(normal)
+        self.assertFalse(Alert.objects.filter(
+            source_id=rule.id, player=self.p_lat, status=AlertStatus.ACTIVE).exists())
+
+    def test_zscore_needs_basal(self):
+        rule = self._zscore_rule()  # no prior readings → no z → no false positive
+        r = _make_result(self.p_lat, self.template, 500, days_ago=0, field_key="hsr")
+        Alert.objects.all().delete()
+        evaluate_threshold_rules_for_result(r)
+        self.assertFalse(Alert.objects.filter(source_id=rule.id).exists())
+
+    def test_bound_by_role(self):
+        rule = AlertRule.objects.create(
+            template=self.template, field_key="hsr", kind=AlertRuleKind.BOUND,
+            config={"by_role": {"Lateral": {"upper": 700}, "Central": {"upper": 450}},
+                    "upper": 500},
+            severity=AlertSeverity.WARNING)
+        # 600 m: over for a Central (450) but under for a Lateral (700).
+        evaluate_threshold_rules_for_result(
+            _make_result(self.p_cen, self.template, 600, field_key="hsr"))
+        evaluate_threshold_rules_for_result(
+            _make_result(self.p_lat, self.template, 600, field_key="hsr"))
+        self.assertTrue(Alert.objects.filter(
+            source_id=rule.id, player=self.p_cen, status=AlertStatus.ACTIVE).exists())
+        self.assertFalse(Alert.objects.filter(
+            source_id=rule.id, player=self.p_lat, status=AlertStatus.ACTIVE).exists())
+
+    def test_scope_roles_filters(self):
+        rule = AlertRule.objects.create(
+            template=self.template, field_key="hsr", kind=AlertRuleKind.BOUND,
+            config={"upper": 100}, scope={"roles": ["Lateral"]},
+            severity=AlertSeverity.WARNING)
+        evaluate_threshold_rules_for_result(
+            _make_result(self.p_lat, self.template, 999, field_key="hsr"))
+        evaluate_threshold_rules_for_result(
+            _make_result(self.p_cen, self.template, 999, field_key="hsr"))
+        self.assertTrue(Alert.objects.filter(source_id=rule.id, player=self.p_lat).exists())
+        self.assertFalse(Alert.objects.filter(source_id=rule.id, player=self.p_cen).exists())

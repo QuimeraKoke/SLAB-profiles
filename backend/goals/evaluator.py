@@ -658,6 +658,88 @@ def _field_label(rule: AlertRule) -> str:
     return rule.field_key
 
 
+def _result_in_scope(result: ExamResult, rule: AlertRule) -> bool:
+    """True if the rule's optional scope admits this result. Empty scope = all.
+
+    - session_types: the GPS `tipo_sesion` (or the linked event's type).
+    - roles: the player's `Position.role`.
+    - microcycle_days: the result's `md_label` (set at GPS ingest, §1.e).
+    """
+    scope = rule.scope or {}
+    if not scope:
+        return True
+    data = result.result_data or {}
+
+    session_types = scope.get("session_types")
+    if session_types:
+        sess = data.get("tipo_sesion")
+        if not sess and result.event_id:
+            sess = getattr(result.event, "event_type", None)
+        if sess not in session_types:
+            return False
+
+    roles = scope.get("roles")
+    if roles:
+        pos = getattr(result.player, "position", None)
+        if (getattr(pos, "role", None) if pos else None) not in roles:
+            return False
+
+    mds = scope.get("microcycle_days")
+    if mds and data.get("md_label") not in mds:
+        return False
+
+    return True
+
+
+def _effective_bound(cfg: dict, player) -> dict:
+    """Resolve the bound band for a player: the `by_role` entry for the
+    player's Position.role if present, else the top-level upper/lower (§1.2)."""
+    by_role = cfg.get("by_role") or {}
+    if by_role:
+        pos = getattr(player, "position", None)
+        role = getattr(pos, "role", None) if pos else None
+        if role and role in by_role:
+            band = by_role[role]
+            return {"upper": band.get("upper"), "lower": band.get("lower")}
+    return {"upper": cfg.get("upper"), "lower": cfg.get("lower")}
+
+
+def _prior_values(result: ExamResult, rule: AlertRule) -> tuple[list[float], str]:
+    """Prior numeric readings for (player, template, field), OLDEST→NEWEST,
+    within the rule's window (excludes the current result). For the zscore
+    kind (EWMA needs chronological order)."""
+    from datetime import timedelta
+
+    cfg = rule.config or {}
+    window = cfg.get("window") or {}
+    qs = (
+        ExamResult.objects.filter(
+            player_id=result.player_id, template_id=result.template_id,
+            recorded_at__lt=result.recorded_at,
+        ).order_by("-recorded_at")
+    )
+    if window.get("kind") == "last_n":
+        n = int(window.get("n", 1))
+        rows = list(qs[:n])
+        desc = f"últimas {n}"
+    elif window.get("kind") == "timedelta":
+        days = int(window.get("days", 30))
+        rows = list(qs.filter(recorded_at__gte=result.recorded_at - timedelta(days=days)))
+        desc = f"últimos {days} días"
+    else:
+        return [], "(window inválida)"
+
+    vals: list[float] = []
+    for r in reversed(rows):  # oldest → newest
+        raw = (r.result_data or {}).get(rule.field_key)
+        try:
+            if raw is not None and raw != "":
+                vals.append(float(raw))
+        except (TypeError, ValueError):
+            continue
+    return vals, desc
+
+
 def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
     """Evaluate every active rule on (template, player.category) for `result`.
 
@@ -674,6 +756,8 @@ def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
     )
     fired: list[Alert] = []
     for rule in rules:
+        if not _result_in_scope(result, rule):
+            continue
         value = _value_for_rule(result, rule)
         if value is None:
             continue
@@ -682,12 +766,13 @@ def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
         severity = rule.severity
 
         if rule.kind == AlertRuleKind.BOUND:
-            triggered, _side = _bound_violated(value, cfg)
+            eff = _effective_bound(cfg, result.player)
+            triggered, _side = _bound_violated(value, eff)
             if not triggered:
                 continue
             msg = _format_rule_message(
                 rule, value=value, field_label=label,
-                upper=cfg.get("upper"), lower=cfg.get("lower"),
+                upper=eff.get("upper"), lower=eff.get("lower"),
             )
 
         elif rule.kind == AlertRuleKind.VARIATION:
@@ -707,6 +792,57 @@ def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
                 baseline=baseline, pct_change=pct_change, delta=delta,
                 direction=direction, window_desc=window_desc,
             )
+
+        elif rule.kind == AlertRuleKind.ZSCORE:
+            from dashboards import stats
+
+            prior, window_desc = _prior_values(result, rule)
+            dev = stats.deviation(
+                value, prior,
+                method=cfg.get("method", "moving_avg"), span=cfg.get("span"),
+            )
+            z = dev.get("z") if dev else None
+            if z is None:
+                continue  # no usable basal (need ≥2 prior + spread)
+            direction = cfg.get("direction", "any")
+            tz = float(cfg.get("threshold_z"))
+            if direction == "increase":
+                triggered = z >= tz
+            elif direction == "decrease":
+                triggered = z <= -tz
+            else:
+                triggered = abs(z) >= tz
+            if not triggered:
+                continue
+            centre = dev.get("centre")
+            msg = _format_rule_message(
+                rule, value=value, field_label=label,
+                baseline=centre, pct_change=dev.get("pct"),
+                delta=(value - centre) if centre is not None else None,
+                direction=direction, window_desc=window_desc,
+            )
+            msg = f"{msg} · z={z:+.1f}"
+
+        elif rule.kind == AlertRuleKind.PCT_MATCH:
+            from dashboards.player_state import match_load_refs
+
+            refs = match_load_refs(result.player_id, result.recorded_at, [rule.field_key])
+            ref = (refs.get(rule.field_key) or {}).get("chronic") if refs else None
+            if not ref:
+                continue  # no match-demand reference to compare against
+            ru, rl = cfg.get("ratio_upper"), cfg.get("ratio_lower")
+            triggered = (
+                (ru is not None and value >= float(ru) * ref)
+                or (rl is not None and value <= float(rl) * ref)
+            )
+            if not triggered:
+                continue
+            pct = value / ref * 100.0
+            msg = _format_rule_message(
+                rule, value=value, field_label=label,
+                baseline=ref, pct_change=pct - 100.0, window_desc="vs partido",
+            )
+            msg = f"{msg} · {pct:.0f}% de partido"
 
         elif rule.kind == AlertRuleKind.BAND:
             current_band, alert_band_set = _band_evaluation(rule, value)
