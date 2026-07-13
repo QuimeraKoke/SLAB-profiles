@@ -1,0 +1,87 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 320px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 13px;
+  color: #344054;
+}
+.field > span {
+  font-weight: 600;
+  color: #475467;
+}
+.field select,
+.field input {
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  background: #fff;
+  color: #0a2240;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip,
+.chipOn {
+  font-size: 13px;
+  border-radius: 999px;
+  padding: 4px 12px;
+  cursor: pointer;
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #475467;
+}
+.chipOn {
+  background: #0a2240;
+  border-color: #0a2240;
+  color: #fff;
+}
+.hint {
+  font-size: 12px;
+  color: #98a2b3;
+  margin: 2px 0 0;
+}
+.footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+.primaryBtn {
+  background: #0a2240;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primaryBtn:disabled { opacity: 0.5; cursor: default; }
+.secondaryBtn {
+  background: #fff;
+  color: #344054;
+  border: 1px solid #d0d5dd;
+  border-radius: 10px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.error {
+  background: #fef3f2;
+  border: 1px solid #fecdca;
+  color: #b42318;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}

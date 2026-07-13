@@ -2694,6 +2694,48 @@ def delete_team_widget(request, widget_id: str):
     return {"ok": True}
 
 
+@api.get("/reports/{department_slug}/widget-options")
+@require_perm("dashboards.add_teamreportwidget")
+def team_widget_options(request, department_slug: str, category_id: str):
+    """Form vocab for 'add widget': the category's templates + numeric fields,
+    plus the chart types the builder offers. (department_slug scopes access.)"""
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    dept = scope_departments(
+        Department.objects.filter(club_id=category.club_id), membership,
+    ).filter(slug=department_slug).first()
+    if dept is None:
+        raise HttpError(404, "Department not found")
+
+    numeric_types = {"number", "calculated"}
+    templates = []
+    for t in (
+        ExamTemplate.objects.filter(applicable_categories=category, is_active_version=True)
+        .select_related("department").order_by("department__name", "name").distinct()
+    ):
+        fields = (t.config_schema or {}).get("fields", []) or []
+        numeric = [
+            {"key": f["key"], "label": f.get("label") or f["key"], "unit": f.get("unit", "")}
+            for f in fields
+            if isinstance(f, dict) and f.get("type") in numeric_types and f.get("key")
+        ]
+        if numeric:
+            templates.append({
+                "slug": t.slug, "name": t.name, "department": t.department.name,
+                "numeric_fields": numeric,
+            })
+    chart_types = [
+        {"value": "team_leaderboard", "label": "Ranking por jugador", "multi_field": False},
+        {"value": "team_horizontal_comparison", "label": "Comparación por jugador", "multi_field": True},
+        {"value": "team_roster_matrix", "label": "Tabla de plantel", "multi_field": True},
+    ]
+    return {"templates": templates, "chart_types": chart_types}
+
+
 class PromotePlayerChartIn(Schema):
     department_slug: str
     spec: dict

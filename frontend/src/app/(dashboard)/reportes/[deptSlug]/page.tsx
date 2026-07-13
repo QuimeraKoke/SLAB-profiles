@@ -10,6 +10,7 @@ import MatchMultiSelector from "@/components/reports/MatchMultiSelector";
 import ReportFilters, { defaultFilters, groupPlayersByPosition } from "@/components/reports/ReportFilters";
 import type { ReportFiltersValue } from "@/components/reports/ReportFilters";
 import TeamReportDashboard from "@/components/reports/TeamReportDashboard";
+import AddWidgetModal from "@/components/reports/AddWidgetModal";
 import DashboardAssistant from "@/components/reports/DashboardAssistant";
 import { useBreadcrumbLabel } from "@/components/layout/Breadcrumbs";
 import { api, ApiError } from "@/lib/api";
@@ -53,6 +54,7 @@ export default function ReportePage({ params }: PageProps) {
   // Bumped after a chart is promoted, so the layout refetches and shows it.
   const [reloadKey, setReloadKey] = useState(0);
   const [editMode, setEditMode] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const canEditPanel = usePermission("dashboards.change_teamreportwidget");
 
   const updateUrl = (next: {
@@ -247,6 +249,15 @@ export default function ReportePage({ params }: PageProps) {
               filename={`reporte-${department.slug}-${layout.category.name}.docx`.replace(/\s+/g, "_")}
             />
           )}
+          {editMode && categoryId && (
+            <button
+              type="button"
+              className={styles.editToggle}
+              onClick={() => setAddOpen(true)}
+            >
+              + Agregar widget
+            </button>
+          )}
           {layout && canEditPanel && (
             <button
               type="button"
@@ -300,6 +311,16 @@ export default function ReportePage({ params }: PageProps) {
         />
       ) : (
         layoutFetched && !error && <Placeholder departmentName={department.name} />
+      )}
+
+      {categoryId && (
+        <AddWidgetModal
+          open={addOpen}
+          deptSlug={department.slug}
+          categoryId={categoryId}
+          onClose={() => setAddOpen(false)}
+          onAdded={() => setReloadKey((k) => k + 1)}
+        />
       )}
     </div>
   );
