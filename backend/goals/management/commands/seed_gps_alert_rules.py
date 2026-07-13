@@ -4,9 +4,12 @@ An **intra-individual** default set the club can tune/extend in the in-app
 editor (1.g). These compare each player to *himself*, so they need no
 club-specific configuration:
 
-  * `zscore` vs. a 28-day rolling basal (spike detection) on HSR, Sprint and
-    Acc+Dec — scoped to training sessions (entrenamiento / tareas).
-  * `pct_match` on HSR — training HSR ≥ 85 % of the player's own match demand.
+  * `zscore` vs. a 28-day rolling basal (spike detection) on the *per-minute*
+    intensity rates (hsr_min / sprint_dist_min / acc_dec_min) — duration-
+    normalized so a short session isn't judged on raw volume — scoped to
+    training sessions (entrenamiento / tareas).
+  * `pct_match` on HSR *volume* — training HSR ≥ 85 % of the player's own
+    match demand.
 
 Absolute per-línea (`by_role`) thresholds are intentionally NOT seeded here —
 those are club-specific and belong in the editor. Idempotent: keyed on
@@ -26,30 +29,18 @@ from goals.models import AlertRule, AlertRuleKind, AlertSeverity
 
 _TRAINING = ["entrenamiento", "tareas"]
 
+_ZSCORE_CFG = {"window": {"kind": "timedelta", "days": 28}, "threshold_z": 2,
+               "direction": "increase", "method": "moving_avg"}
+
 RULES = [
-    {
-        "field_key": "hsr", "kind": AlertRuleKind.ZSCORE, "severity": AlertSeverity.WARNING,
-        "config": {"window": {"kind": "timedelta", "days": 28}, "threshold_z": 2,
-                   "direction": "increase", "method": "moving_avg"},
-        "scope": {"session_types": _TRAINING},
-    },
-    {
-        "field_key": "sprint_dist", "kind": AlertRuleKind.ZSCORE, "severity": AlertSeverity.WARNING,
-        "config": {"window": {"kind": "timedelta", "days": 28}, "threshold_z": 2,
-                   "direction": "increase", "method": "moving_avg"},
-        "scope": {"session_types": _TRAINING},
-    },
-    {
-        "field_key": "acc_dec", "kind": AlertRuleKind.ZSCORE, "severity": AlertSeverity.WARNING,
-        "config": {"window": {"kind": "timedelta", "days": 28}, "threshold_z": 2,
-                   "direction": "increase", "method": "moving_avg"},
-        "scope": {"session_types": _TRAINING},
-    },
-    {
-        "field_key": "hsr", "kind": AlertRuleKind.PCT_MATCH, "severity": AlertSeverity.WARNING,
-        "config": {"ratio_upper": 0.85},
-        "scope": {"session_types": _TRAINING},
-    },
+    {"field_key": "hsr_min", "kind": AlertRuleKind.ZSCORE, "severity": AlertSeverity.WARNING,
+     "config": _ZSCORE_CFG, "scope": {"session_types": _TRAINING}},
+    {"field_key": "sprint_dist_min", "kind": AlertRuleKind.ZSCORE, "severity": AlertSeverity.WARNING,
+     "config": _ZSCORE_CFG, "scope": {"session_types": _TRAINING}},
+    {"field_key": "acc_dec_min", "kind": AlertRuleKind.ZSCORE, "severity": AlertSeverity.WARNING,
+     "config": _ZSCORE_CFG, "scope": {"session_types": _TRAINING}},
+    {"field_key": "hsr", "kind": AlertRuleKind.PCT_MATCH, "severity": AlertSeverity.WARNING,
+     "config": {"ratio_upper": 0.85}, "scope": {"session_types": _TRAINING}},
 ]
 
 

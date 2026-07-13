@@ -135,6 +135,31 @@ CONFIG_SCHEMA: dict = {
             "key": "zone_95_100", "label": "Zona 95-100% Vmax",
             "type": "number", "unit": "m", "group": "Velocidad",
         },
+        # --- Intensidad relativa (por minuto) ---
+        # Normalizan el volumen por la duración de la sesión, de modo que un
+        # entrenamiento de 30' no se compara contra uno de 90' en crudo. Base
+        # preferida para las alertas intra-individuales (z-score). tot_dur=0 o
+        # vacío hace fallar la fórmula → el campo queda None (sin ruido).
+        {
+            "key": "hsr_min", "label": "HSR por minuto",
+            "type": "calculated", "unit": "m/min", "group": "Ritmo", "chart_type": "line",
+            "formula": "[hsr] / [tot_dur]",
+        },
+        {
+            "key": "sprint_dist_min", "label": "Distancia Sprint por minuto",
+            "type": "calculated", "unit": "m/min", "group": "Ritmo",
+            "formula": "[sprint_dist] / [tot_dur]",
+        },
+        {
+            "key": "acc_dec_min", "label": "Acc + Dec por minuto",
+            "type": "calculated", "unit": "n/min", "group": "Ritmo",
+            "formula": "[acc_dec] / [tot_dur]",
+        },
+        {
+            "key": "player_load_min", "label": "Player Load por minuto",
+            "type": "calculated", "unit": "a.u./min", "group": "Ritmo",
+            "formula": "[player_load] / [tot_dur]",
+        },
     ],
 }
 

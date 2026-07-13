@@ -598,6 +598,28 @@ def _variation_triggered(delta: float, baseline: float, cfg: dict, direction: st
     return exceeds_pct() or exceeds_units()
 
 
+def _num(x) -> str:
+    """Human-friendly number: ≤2 decimals, trailing zeros stripped, no
+    scientific notation (so a rate like 3.51667 reads 3.52 and a total like
+    5023.4 stays 5023.4 instead of `%g`'s 5.02e+03)."""
+    try:
+        f = round(float(x), 2)
+    except (TypeError, ValueError):
+        return str(x)
+    if f == int(f):
+        return str(int(f))
+    return f"{f:.2f}".rstrip("0").rstrip(".")
+
+
+def _signed(x) -> str:
+    """`_num` with an explicit leading + for non-negative values."""
+    s = _num(x)
+    try:
+        return f"+{s}" if float(x) >= 0 else s
+    except (TypeError, ValueError):
+        return s
+
+
 def _format_rule_message(
     rule: AlertRule,
     *,
@@ -613,13 +635,13 @@ def _format_rule_message(
 ) -> str:
     """Render a message from the rule's template, with safe fallbacks."""
     placeholders = {
-        "value": f"{value:g}",
+        "value": _num(value),
         "field_label": field_label,
-        "upper": "" if upper is None else f"{float(upper):g}",
-        "lower": "" if lower is None else f"{float(lower):g}",
-        "baseline": "" if baseline is None else f"{baseline:g}",
+        "upper": "" if upper is None else _num(upper),
+        "lower": "" if lower is None else _num(lower),
+        "baseline": "" if baseline is None else _num(baseline),
         "pct_change": "" if pct_change is None else f"{pct_change:.1f}",
-        "delta": "" if delta is None else f"{delta:+g}",
+        "delta": "" if delta is None else _signed(delta),
         "direction": direction or "",
         "window_desc": window_desc or "",
     }
@@ -632,19 +654,19 @@ def _format_rule_message(
     # Auto-generated fallback so admins can leave message_template blank.
     if rule.kind == AlertRuleKind.BOUND:
         if upper is not None and value > float(upper):
-            return f"{field_label} = {value:g} (umbral superior {float(upper):g})"
+            return f"{field_label} = {_num(value)} (umbral superior {_num(upper)})"
         if lower is not None and value < float(lower):
-            return f"{field_label} = {value:g} (umbral inferior {float(lower):g})"
-        return f"{field_label} = {value:g}"
+            return f"{field_label} = {_num(value)} (umbral inferior {_num(lower)})"
+        return f"{field_label} = {_num(value)}"
 
     # Variation: prefer the part that's actually configured / meaningful.
-    parts = [f"{field_label}: {value:g}"]
+    parts = [f"{field_label}: {_num(value)}"]
     if delta is not None:
-        parts.append(f"Δ {delta:+g}")
+        parts.append(f"Δ {_signed(delta)}")
     if pct_change is not None:
         parts.append(f"({pct_change:+.1f}%)")
     if baseline is not None:
-        parts.append(f"vs media {baseline:g}")
+        parts.append(f"vs media {_num(baseline)}")
     if window_desc:
         parts.append(f"({window_desc})")
     return " ".join(parts)
