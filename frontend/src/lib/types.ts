@@ -1319,6 +1319,12 @@ export interface TeamLeaderboardPayload {
   window?: { from?: string | null; to?: string | null } | null;
   order: "asc" | "desc";
   limit: number;
+  /** §4 recolor state (surfaced in data since the team read endpoint strips
+   *  display_config). `deviation` = bar encodes each player's intra-individual
+   *  concern (|z| in the bad direction); `value` = raw aggregate (default). */
+  height_mode?: "value" | "deviation";
+  deviation_metric?: "z" | "cv";
+  color_mode?: "none" | "semaforo";
   rows: (
     | {
         rank: number;
@@ -1333,6 +1339,14 @@ export interface TeamLeaderboardPayload {
          *  to a specific recorded_at (`latest`, `max`, `min`). `sum` /
          *  `avg` span the window, so they don't get a date here. */
         dates?: Partial<Record<"latest" | "max" | "min", string>>;
+        /** §4 deviation view. `deviation` = latest reading vs the player's
+         *  own prior window; `bar` = the concern magnitude the bar plots in
+         *  deviation mode (null = no basal); `tone` = semáforo; `latest_value`
+         *  = the reading the deviation is measured on (tooltip raw value). */
+        deviation?: { z: number | null; cv: number | null; centre: number | null; sd: number | null } | null;
+        bar?: number | null;
+        tone?: "ok" | "warn" | "crit" | "none";
+        latest_value?: number | null;
       }
     | {
         rank: number;

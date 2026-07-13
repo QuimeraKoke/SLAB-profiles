@@ -23,6 +23,7 @@ from exams.bands import band_for_value as _band_for_value
 from exams.models import Episode, ExamResult, ExamTemplate
 
 from .models import Aggregation, ChartType, TeamReportWidget
+from .stats import deviation as _stats_deviation
 
 
 # ---------------------------------------------------------------------------
@@ -2139,6 +2140,33 @@ def _resolve_team_leaderboard(
     style_raw = display_config.get("style", "list")
     style = style_raw if style_raw in {"list", "vertical_bars"} else "list"
 
+    # §4 CK recolor — intra-individual deviation view. All optional; a plain
+    # leaderboard (no knobs) behaves exactly as before.
+    #   height_mode      : "value" (default) | "deviation" — what the bar length
+    #                      encodes. "deviation" = |z| of each player's LATEST
+    #                      reading vs. their own prior window ("concern").
+    #   deviation_metric : "z" (default) | "cv"
+    #   color_mode       : "none" | "semaforo" (defaults to semaforo in
+    #                      deviation mode) — traffic-light per bar.
+    #   worse_direction  : "high" (default) | "low" | "both" — which way is bad
+    #                      (CK: high). Good-direction deviations read as ok.
+    #   deviation_bands  : {"warn": 1.5, "crit": 2.5} thresholds on the metric.
+    height_mode = display_config.get("height_mode")
+    height_mode = height_mode if height_mode in {"value", "deviation"} else "value"
+    deviation_metric = display_config.get("deviation_metric")
+    deviation_metric = deviation_metric if deviation_metric in {"z", "cv"} else "z"
+    color_mode = display_config.get("color_mode")
+    if color_mode not in {"none", "semaforo"}:
+        color_mode = "semaforo" if height_mode == "deviation" else "none"
+    worse_direction = display_config.get("worse_direction")
+    worse_direction = worse_direction if worse_direction in {"high", "low", "both"} else "high"
+    _bands = display_config.get("deviation_bands") or {}
+    try:
+        warn_at = float(_bands.get("warn", 1.5))
+        crit_at = float(_bands.get("crit", 2.5))
+    except (TypeError, ValueError):
+        warn_at, crit_at = 1.5, 2.5
+
     # Reference overlays on vertical bars charts. Three coexist:
     #   - `reference_line`  (legacy, single dict — kept for backward compat)
     #   - `reference_lines` (list of dicts: [{value, label, color}, ...])
@@ -2333,13 +2361,77 @@ def _resolve_team_leaderboard(
             "min": min_sample[0].date().isoformat(),
         }
 
+    # Per-player intra-individual deviation (latest reading vs. the prior
+    # window). Computed always so the tooltip can show z even in value mode;
+    # only drives bar height / ranking when height_mode == "deviation".
+    deviation_by_player: dict[UUID, dict | None] = {}
+    for pid, samples in samples_by_player.items():
+        ordered = [v for _, v in reversed(samples)]  # oldest → newest
+        deviation_by_player[pid] = (
+            _stats_deviation(ordered[-1], ordered[:-1]) if len(ordered) >= 2 else None
+        )
+
+    def _concern(dev: dict | None) -> float | None:
+        """Directional 'badness' magnitude (≥0), or None when there's no basal.
+        worse_direction picks which side counts; the good side reads as 0."""
+        if not dev:
+            return None
+        m = dev.get("z") if deviation_metric == "z" else dev.get("cv")
+        if m is None:
+            return None
+        if deviation_metric == "cv":
+            return abs(m)
+        if worse_direction == "high":
+            return max(0.0, m)
+        if worse_direction == "low":
+            return max(0.0, -m)
+        return abs(m)
+
+    concern_by_player: dict[UUID, float | None] = {
+        pid: _concern(deviation_by_player.get(pid)) for pid in samples_by_player
+    }
+
+    def _tone(concern: float | None) -> str:
+        if concern is None:
+            return "none"
+        if concern >= crit_at:
+            return "crit"
+        if concern >= warn_at:
+            return "warn"
+        return "ok"
+
+    def _row_extras(pid: UUID) -> dict[str, Any]:
+        dev = deviation_by_player.get(pid)
+        concern = concern_by_player.get(pid)
+        samples = samples_by_player.get(pid) or []
+        return {
+            "deviation": None if not dev else {
+                k: (round(dev[k], 3) if isinstance(dev.get(k), (int, float)) else None)
+                for k in ("z", "cv", "centre", "sd")
+            },
+            "bar": None if concern is None else round(concern, 3),
+            "tone": _tone(concern),
+            # The latest reading (the one the deviation is measured on) — the
+            # "raw value" the deviation-mode tooltip shows, regardless of which
+            # aggregator drives the value-mode bar. samples is newest-first.
+            "latest_value": round(samples[0][1], 4) if samples else None,
+        }
+
+    def _dev_rank_key(pid: UUID) -> tuple[bool, float]:
+        # Most-concerning first; players without a basal always trail.
+        c = concern_by_player.get(pid)
+        return (c is not None, c or 0.0)
+
     ranked: list[tuple[UUID, float, int]] = []
     for pid, samples in samples_by_player.items():
         if not samples:
             continue
         ranked.append((pid, _aggregate(samples, aggregator), len(samples)))
 
-    ranked.sort(key=lambda triple: triple[1], reverse=(order == "desc"))
+    if height_mode == "deviation":
+        ranked.sort(key=lambda t: _dev_rank_key(t[0]), reverse=True)
+    else:
+        ranked.sort(key=lambda triple: triple[1], reverse=(order == "desc"))
     top = ranked[:limit]
 
     rows = []
@@ -2355,6 +2447,7 @@ def _resolve_team_leaderboard(
             # for players with no samples (they only appear in vertical_bars).
             "aggregates": aggregates_by_player.get(pid, {}),
             "dates": dates_by_player.get(pid, {}),
+            **_row_extras(pid),
         })
 
     # In `vertical_bars` style we want EVERY roster player visible, not
@@ -2366,7 +2459,10 @@ def _resolve_team_leaderboard(
         already = {pid for pid, _, _ in ranked_full}
         for pid in player_index.keys() - already:
             ranked_full.append((pid, 0.0, 0))
-        ranked_full.sort(key=lambda triple: triple[1], reverse=(order == "desc"))
+        if height_mode == "deviation":
+            ranked_full.sort(key=lambda t: _dev_rank_key(t[0]), reverse=True)
+        else:
+            ranked_full.sort(key=lambda triple: triple[1], reverse=(order == "desc"))
         rows = []
         for i, (pid, value, sample_count) in enumerate(ranked_full, start=1):
             player = player_index[pid]
@@ -2378,6 +2474,7 @@ def _resolve_team_leaderboard(
                 "samples": sample_count,
                 "aggregates": aggregates_by_player.get(pid, {}),
                 "dates": dates_by_player.get(pid, {}),
+                **_row_extras(pid),
             })
 
     # Auto-add the team-average line. Computed from the actual rows
@@ -2419,6 +2516,11 @@ def _resolve_team_leaderboard(
         "aggregator": aggregator,
         "order": order,
         "limit": limit,
+        # §4 recolor state — surfaced in `data` because the team read endpoint
+        # strips display_config. The frontend toggle flips height_mode locally.
+        "height_mode": height_mode,
+        "deviation_metric": deviation_metric,
+        "color_mode": color_mode,
         "rows": rows,
         "empty": len(rows) == 0,
     }

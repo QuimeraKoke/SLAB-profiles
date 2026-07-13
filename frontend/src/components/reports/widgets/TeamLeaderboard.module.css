@@ -320,6 +320,43 @@
   filter: brightness(0.92);
 }
 
+/* §4 deviation view — semáforo bar colors (override the default blue). */
+.vBarOk { background: #16a34a; }
+.vBarWarn { background: #f59e0b; }
+.vBarCrit { background: #dc2626; }
+.vBarNone { background: #cbd5e1; }
+
+/* Height-source toggle (Desviación | Valor). */
+.heightToggle {
+  display: inline-flex;
+  gap: 0;
+  margin: 4px 0 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  overflow: hidden;
+  width: fit-content;
+}
+.ht,
+.htOn {
+  border: none;
+  background: #fff;
+  color: #475467;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  cursor: pointer;
+}
+.ht + .ht,
+.ht + .htOn,
+.htOn + .ht,
+.htOn + .htOn {
+  border-left: 1px solid #d0d5dd;
+}
+.htOn {
+  background: #0a2240;
+  color: #fff;
+}
+
 /* Mouse-following tooltip rendered into document.body via React Portal.
  * Lives at the top of the stacking context so it isn't clipped by the
  * chart's overflow box, and updates position on every mousemove. */
@@ -346,6 +383,12 @@
 .floatingTooltipValue {
   margin-top: 2px;
   color: #d1d5db;
+}
+
+.floatingTooltipSub {
+  margin-top: 2px;
+  font-size: 0.72rem;
+  color: #fca5a5;
 }
 
 .floatingTooltipDate {

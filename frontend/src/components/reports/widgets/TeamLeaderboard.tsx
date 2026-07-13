@@ -15,8 +15,17 @@ interface HoverTip {
   name: string;
   value: string;
   date: string | null;
+  sub?: string | null;
   x: number;
   y: number;
+}
+
+/** Semáforo bar class from a row's tone (§4 deviation view). */
+function toneClass(tone: string | undefined): string {
+  if (tone === "crit") return styles.vBarCrit;
+  if (tone === "warn") return styles.vBarWarn;
+  if (tone === "ok") return styles.vBarOk;
+  return styles.vBarNone;
 }
 
 interface Props {
@@ -244,6 +253,15 @@ function hasAggregateBreakdown(data: TeamLeaderboardPayload): boolean {
   return false;
 }
 
+/** True when at least one player has a usable intra-individual deviation
+ *  (a basal to compare against) — gates the deviation/value height toggle. */
+function hasDeviation(data: TeamLeaderboardPayload): boolean {
+  for (const row of data.rows ?? []) {
+    if (!isMultiRow(row) && row.bar != null) return true;
+  }
+  return false;
+}
+
 function VerticalBarsView({
   widget, data, pickedAgg, onPickAgg, showAggSelector,
   showNoData, onToggleShowNoData,
@@ -261,6 +279,25 @@ function VerticalBarsView({
   // Floating tooltip state — rendered into document.body via a portal so
   // it escapes the chart's overflow clip + follows the cursor.
   const [hover, setHover] = useState<HoverTip | null>(null);
+
+  // §4 — bar height source: raw value or intra-individual deviation. Defaults
+  // to whatever the layout configured (`data.height_mode`); the toggle only
+  // appears when a deviation is actually available.
+  const [pickedHeight, setPickedHeight] = useState<"value" | "deviation" | null>(null);
+  const deviationAvailable = hasDeviation(data);
+  const effectiveHeight: "value" | "deviation" =
+    pickedHeight ?? (data.height_mode === "deviation" ? "deviation" : "value");
+  const isDev = effectiveHeight === "deviation" && deviationAvailable;
+  const semaforo = data.color_mode === "semaforo";
+
+  // Deviation-mode bar scale: [0, max concern] across the visible rows.
+  const barMax = React.useMemo(() => {
+    let m = 0;
+    for (const row of data.rows) {
+      if (!isMultiRow(row) && typeof row.bar === "number" && row.bar > m) m = row.bar;
+    }
+    return m > 0 ? m : 1;
+  }, [data.rows]);
 
   // Prefer the new array form; fall back to the legacy single line.
   const refLines = React.useMemo(() => {
@@ -329,6 +366,24 @@ function VerticalBarsView({
         onToggleShowNoData={onToggleShowNoData}
         hiddenCount={hiddenCount}
       />
+      {deviationAvailable && (
+        <div className={styles.heightToggle} role="group" aria-label="Altura de la barra">
+          <button
+            type="button"
+            className={isDev ? styles.htOn : styles.ht}
+            onClick={() => setPickedHeight("deviation")}
+          >
+            Desviación
+          </button>
+          <button
+            type="button"
+            className={!isDev ? styles.htOn : styles.ht}
+            onClick={() => setPickedHeight("value")}
+          >
+            Valor
+          </button>
+        </div>
+      )}
       {hiddenByFilter ? (
         <div className={styles.empty}>
           Ningún jugador tiene datos en este período. Activá &quot;Mostrar
@@ -337,7 +392,7 @@ function VerticalBarsView({
       ) : (
       <div className={styles.vBarsChart}>
         <div className={styles.vBarsArea}>
-          {refBands.map((band, i) => {
+          {!isDev && refBands.map((band, i) => {
             // Clamp band edges into the zoomed [yMin, yMax] viewport so
             // a band that extends beyond the chart still renders to the
             // edge instead of being skipped.
@@ -361,7 +416,7 @@ function VerticalBarsView({
               </div>
             );
           })}
-          {refLines.map((line, i) => {
+          {!isDev && refLines.map((line, i) => {
             const top = 100 - yPercent(line.value);
             return (
               <div
@@ -381,20 +436,44 @@ function VerticalBarsView({
             );
           })}
           {visibleSingles.map((row) => {
-            // Bar starts at yMin (the chart's baseline when zoomed). When
-            // a value falls BELOW yMin the bar becomes 0 — clamp via the
-            // helper. min-height = 1% so a non-zero value is always visible.
-            const heightPct = row.value > 0 ? Math.max(1, yPercent(row.value)) : 0;
-            // Per-bar date — only known for aggregations that map to a
-            // single reading (latest / max / min). Shown in the CSS
-            // tooltip below; avg / sum don't carry one.
-            const dateKey = data.aggregator as "latest" | "max" | "min";
-            const dateIso = row.dates?.[dateKey];
-            const dateShort = dateIso ? formatShortDate(dateIso) : null;
-            const valueLabel =
-              row.value > 0
-                ? `${formatNumber(row.value, decimals)}${unit}`
-                : "Sin datos";
+            let heightPct: number;
+            let aboveLabel: string;
+            let barClass = styles.vBar;
+            let tipValue: string;
+            let tipSub: string | null = null;
+            let tipDate: string | null = null;
+
+            if (isDev) {
+              // Bar length = concern (|z| in the bad direction), scaled to the
+              // squad's max. Color = semáforo; the recognizable raw reading
+              // sits above the bar, with z + baseline in the tooltip.
+              const bar = typeof row.bar === "number" ? row.bar : null;
+              heightPct = bar && bar > 0 ? Math.max(2, (bar / barMax) * 100) : 0;
+              if (semaforo) barClass = `${styles.vBar} ${toneClass(row.tone)}`;
+              const raw = row.latest_value;
+              aboveLabel = raw != null ? formatNumber(raw, decimals) : "—";
+              tipValue = raw != null ? `${formatNumber(raw, decimals)}${unit}` : "Sin datos";
+              const z = row.deviation?.z;
+              const centre = row.deviation?.centre;
+              tipSub =
+                z != null
+                  ? `z ${z >= 0 ? "+" : ""}${formatNumber(z, 1)}${
+                      centre != null ? ` · media ${formatNumber(centre, decimals)}` : ""
+                    }`
+                  : "Sin basal suficiente";
+              tipDate = row.dates?.latest ? formatShortDate(row.dates.latest) : null;
+            } else {
+              // Bar starts at yMin (the chart's baseline when zoomed). When a
+              // value falls BELOW yMin the bar becomes 0. min-height 1% keeps a
+              // non-zero value visible.
+              heightPct = row.value > 0 ? Math.max(1, yPercent(row.value)) : 0;
+              const dateKey = data.aggregator as "latest" | "max" | "min";
+              const dateIso = row.dates?.[dateKey];
+              tipDate = dateIso ? formatShortDate(dateIso) : null;
+              aboveLabel = row.value > 0 ? formatNumber(row.value, decimals) : "—";
+              tipValue = row.value > 0 ? `${formatNumber(row.value, decimals)}${unit}` : "Sin datos";
+            }
+
             return (
               <div
                 key={row.player_id}
@@ -402,8 +481,9 @@ function VerticalBarsView({
                 onMouseEnter={(e) =>
                   setHover({
                     name: row.player_name,
-                    value: valueLabel,
-                    date: dateShort,
+                    value: tipValue,
+                    sub: tipSub,
+                    date: tipDate,
                     x: e.clientX,
                     y: e.clientY,
                   })
@@ -415,13 +495,8 @@ function VerticalBarsView({
                 }
                 onMouseLeave={() => setHover(null)}
               >
-                <span className={styles.vBarValue}>
-                  {row.value > 0 ? formatNumber(row.value, decimals) : "—"}
-                </span>
-                <div
-                  className={styles.vBar}
-                  style={{ height: `${heightPct}%` }}
-                />
+                <span className={styles.vBarValue}>{aboveLabel}</span>
+                <div className={barClass} style={{ height: `${heightPct}%` }} />
                 <span className={styles.vBarLabel} title={row.player_name}>
                   {shortPlayerName(row.player_name)}
                 </span>
@@ -464,6 +539,9 @@ function FloatingTooltip({ hover }: { hover: HoverTip | null }) {
     >
       <div className={styles.floatingTooltipName}>{hover.name}</div>
       <div className={styles.floatingTooltipValue}>{hover.value}</div>
+      {hover.sub && (
+        <div className={styles.floatingTooltipSub}>{hover.sub}</div>
+      )}
       {hover.date && (
         <div className={styles.floatingTooltipDate}>{hover.date}</div>
       )}

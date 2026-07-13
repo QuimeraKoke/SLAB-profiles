@@ -2370,3 +2370,84 @@ class AcwrAlertTests(TestCase):
         self._gps(2000, 1)
         self.assertEqual(evaluate_acwr_alerts(self.player), [])
         self.assertEqual(self._active_acwr().count(), 0)
+
+
+class TeamLeaderboardDeviationTests(TestCase):
+    """§4 CK recolor: team_leaderboard deviation view (bar = intra-individual
+    concern, semáforo tone, most-concerning ranked first)."""
+
+    def setUp(self):
+        self.club = Club.objects.create(name="Test FC")
+        self.dept = Department.objects.create(club=self.club, name="Med", slug="med")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.dept)
+        self.spike = Player.objects.create(category=self.cat, first_name="Spike", last_name="S", is_active=True)
+        self.steady = Player.objects.create(category=self.cat, first_name="Steady", last_name="T", is_active=True)
+        self.template = ExamTemplate.objects.create(
+            name="CK", slug="ck", department=self.dept,
+            config_schema={"fields": [{"key": "ck", "type": "number", "label": "CK", "unit": "U/L"}]},
+        )
+        self.template.applicable_categories.add(self.cat)
+        # Spike: steady baseline then a big latest jump. Steady: flat.
+        for p, series in [
+            (self.spike, [(20, 100), (15, 102), (10, 98), (5, 101), (1, 400)]),
+            (self.steady, [(20, 100), (15, 101), (10, 99), (5, 100), (1, 100)]),
+        ]:
+            for days_ago, val in series:
+                ExamResult.objects.create(
+                    player=p, template=self.template,
+                    recorded_at=timezone.now() - timedelta(days=days_ago),
+                    result_data={"ck": val},
+                )
+
+    def _widget(self, cfg):
+        layout = TeamReportLayout.objects.create(department=self.dept, category=self.cat)
+        section = TeamReportSection.objects.create(layout=layout)
+        widget = TeamReportWidget.objects.create(
+            section=section, chart_type=ChartType.TEAM_LEADERBOARD.value,
+            title="CK", display_config=cfg,
+        )
+        TeamReportWidgetDataSource.objects.create(
+            widget=widget, template=self.template, field_keys=["ck"],
+            aggregation=Aggregation.LATEST,
+        )
+        return widget
+
+    def test_deviation_mode_flags_and_ranks_the_spike(self):
+        payload = resolve_team_widget(
+            self._widget({"style": "vertical_bars", "height_mode": "deviation"}), self.cat,
+        )
+        self.assertEqual(payload["height_mode"], "deviation")
+        self.assertEqual(payload["color_mode"], "semaforo")  # auto in deviation mode
+
+        rows = {r["player_name"]: r for r in payload["rows"]}
+        spike, steady = rows["Spike S"], rows["Steady T"]
+        # Spike's latest (400) is far above his own basal → crit + a bar.
+        self.assertEqual(spike["tone"], "crit")
+        self.assertGreater(spike["deviation"]["z"], 2.5)
+        self.assertGreater(spike["bar"], steady["bar"] or 0)
+        # Steady stays near his mean → ok.
+        self.assertEqual(steady["tone"], "ok")
+        # Most-concerning first.
+        self.assertEqual(payload["rows"][0]["player_name"], "Spike S")
+        # The reading that deviated is preserved for the tooltip.
+        self.assertEqual(spike["latest_value"], 400.0)
+
+    def test_value_mode_is_unchanged_default(self):
+        payload = resolve_team_widget(
+            self._widget({"style": "vertical_bars", "aggregator": "latest"}), self.cat,
+        )
+        self.assertEqual(payload["height_mode"], "value")
+        self.assertEqual(payload["color_mode"], "none")  # no coloring unless asked
+        # Ranked by raw latest value → Spike (400) first.
+        self.assertEqual(payload["rows"][0]["player_name"], "Spike S")
+
+    def test_worse_direction_low_ignores_a_high_spike(self):
+        # With worse_direction=low, a HIGH jump is the good side → no concern.
+        payload = resolve_team_widget(
+            self._widget({"style": "vertical_bars", "height_mode": "deviation",
+                          "worse_direction": "low"}), self.cat,
+        )
+        spike = {r["player_name"]: r for r in payload["rows"]}["Spike S"]
+        self.assertEqual(spike["tone"], "ok")
+        self.assertEqual(spike["bar"], 0.0)
