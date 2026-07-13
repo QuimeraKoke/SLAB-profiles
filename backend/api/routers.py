@@ -2860,6 +2860,26 @@ def create_alert_rule(request, payload: RuleWriteIn):
     return serialize_rule(rule)
 
 
+@api.post("/alert-rules/backtest")
+@require_perm("goals.change_alertrule")
+def backtest_alert_rule(request, payload: BacktestIn):
+    """Dry-run a draft rule over recent real data (no writes) → how many times
+    it would have fired + the players it would have flagged.
+
+    Registered BEFORE the /{rule_id} routes: Django matches URL patterns in
+    registration order, so the literal `/backtest` must precede the
+    `{rule_id}` catch-all or the param route swallows it (→ 405 on POST)."""
+    from api.alert_rules import run_backtest
+
+    template, category = _resolve_rule_template(
+        request, payload.template_id, payload.category_id,
+    )
+    try:
+        return run_backtest(template=template, category=category, payload=payload)
+    except DjangoValidationError as exc:
+        raise HttpError(422, _flatten_validation(exc))
+
+
 @api.patch("/alert-rules/{rule_id}")
 @require_perm("goals.change_alertrule")
 def update_alert_rule(request, rule_id: UUID, payload: RuleUpdateIn):
@@ -2913,22 +2933,6 @@ def delete_alert_rule(request, rule_id: UUID):
     _club_access_or_403(request, rule.template.department.club)
     rule.delete()
     return {"ok": True}
-
-
-@api.post("/alert-rules/backtest")
-@require_perm("goals.change_alertrule")
-def backtest_alert_rule(request, payload: BacktestIn):
-    """Dry-run a draft rule over recent real data (no writes) → how many times
-    it would have fired + the players it would have flagged."""
-    from api.alert_rules import run_backtest
-
-    template, category = _resolve_rule_template(
-        request, payload.template_id, payload.category_id,
-    )
-    try:
-        return run_backtest(template=template, category=category, payload=payload)
-    except DjangoValidationError as exc:
-        raise HttpError(422, _flatten_validation(exc))
 
 
 @api.get("/daily-report")
