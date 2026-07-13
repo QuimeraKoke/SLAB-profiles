@@ -54,7 +54,7 @@ class BacktestIn(Schema):
     config: dict = {}
     scope: dict = {}
     severity: str = AlertSeverity.WARNING
-    days: int = 90
+    days: int = 30
 
 
 # ── Serialization ─────────────────────────────────────────────────────────────
@@ -151,5 +151,5 @@ def run_backtest(*, template, category, payload: BacktestIn) -> dict:
         scope=payload.scope or {}, severity=payload.severity or AlertSeverity.WARNING,
     )
     rule.clean()  # field_key numeric? config valid for kind? scope well-formed?
-    days = max(1, min(int(payload.days or 90), 365))
+    days = max(1, min(int(payload.days or 30), 365))
     return _backtest_rule(rule, days=days)

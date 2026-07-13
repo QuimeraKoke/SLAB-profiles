@@ -928,7 +928,7 @@ def _rule_fire_decision(rule: AlertRule, result: ExamResult, value: float):
     return _FireDecision(message=msg, severity=severity)
 
 
-def backtest_rule(rule: AlertRule, *, days: int = 90, now=None) -> dict:
+def backtest_rule(rule: AlertRule, *, days: int = 30, now=None) -> dict:
     """Dry-run `rule` over the last `days` of real results for its template
     (and category, if set) WITHOUT writing anything — the live-preview behind
     the in-app editor (§1.g). Shares `_rule_fire_decision` with the live
@@ -940,7 +940,7 @@ def backtest_rule(rule: AlertRule, *, days: int = 90, now=None) -> dict:
 
     Note: zscore/variation/pct_match re-derive each result's prior history from
     the DB, so this is read-heavy (a handful of queries per result). Fine for
-    an on-demand preview over ~90 days; not for a hot loop.
+    an on-demand preview over a few weeks; not for a hot loop.
     """
     now = now or timezone.now()
     since = now - timedelta(days=days)

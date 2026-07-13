@@ -118,7 +118,7 @@ export default function RuleForm({
     setError(null);
     setTesting(true);
     try {
-      setBacktest(await backtestRule({ ...draft(), days: 90 }));
+      setBacktest(await backtestRule({ ...draft(), days: 30 }));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "No se pudo simular la regla.");
     } finally {
@@ -399,7 +399,7 @@ export default function RuleForm({
       <div className={styles.backtestBox}>
         <button type="button" className={styles.testBtn} onClick={runBacktest}
           disabled={testing || !fieldKey}>
-          <FlaskConical size={16} /> {testing ? "Simulando…" : "Simular (últimos 90 días)"}
+          <FlaskConical size={16} /> {testing ? "Simulando…" : "Simular (últimos 30 días)"}
         </button>
         {backtest && (
           <div className={styles.backtestResult}>
