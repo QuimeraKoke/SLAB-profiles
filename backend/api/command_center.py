@@ -325,9 +325,9 @@ def _kpi_completitud(category, player_ids, now) -> dict:
 
 
 def _checkin_adherence(category, players, now) -> dict:
-    """Today's check-in adherence: responders vs. the active roster, with the
-    non-responders listed (each deep-linkable to its ficha). Informative — no
-    alert. Feeds the Centro de mando "quién no respondió hoy" card."""
+    """Today's check-in adherence: BOTH the non-responders and the responders
+    (each player deep-linkable to its ficha), so the card can label who's who.
+    Informative — no alert. Feeds the Centro de mando adherence card."""
     from api.wellness import WELLNESS_SLUG
 
     today = timezone.localdate()
@@ -341,22 +341,24 @@ def _checkin_adherence(category, players, now) -> dict:
             template_id__in=tids, recorded_at__date=today,
         ).values_list("player_id", flat=True)
     ) if tids else set()
-    no_resp = [
-        {
+
+    def _row(p):
+        return {
             "player_id": str(p.id),
             "name": _short_name(p),
             "position": p.position.abbreviation if p.position else None,
             "injured": p.status != Player.STATUS_AVAILABLE,
         }
-        for p in players if p.id not in responded_ids
-    ]
+
+    no_resp = [_row(p) for p in players if p.id not in responded_ids]
+    resp = [_row(p) for p in players if p.id in responded_ids]
     expected = len(players)
-    responded = expected - len(no_resp)
     return {
-        "responded": responded,
+        "responded": len(resp),
         "expected": expected,
-        "pct": round(responded / expected * 100) if expected else None,
+        "pct": round(len(resp) / expected * 100) if expected else None,
         "no_respondieron": no_resp,
+        "respondieron": resp,
     }
 
 

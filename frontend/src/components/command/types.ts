@@ -145,6 +145,7 @@ export interface CCCheckinAdherence {
   expected: number;
   pct: number | null;
   no_respondieron: CCCheckinNonResponder[];
+  respondieron: CCCheckinNonResponder[];
 }
 
 export interface CommandCenter {

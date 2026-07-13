@@ -8,6 +8,8 @@ import {
   Plus,
   HeartPulse,
   RefreshCw,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
@@ -119,35 +121,82 @@ function DataQuality({ rows }: { rows: CCDataQualityRow[] }) {
 }
 
 function CheckinAdherence({ data }: { data: CCCheckinAdherence }) {
-  const { responded, expected, pct, no_respondieron } = data;
+  const { responded, expected, pct, no_respondieron, respondieron } = data;
   const tone = pct == null ? "muted" : pct >= 90 ? "ok" : pct >= 60 ? "warn" : "crit";
+  const [openMissing, setOpenMissing] = useState(true);
+  const [openDone, setOpenDone] = useState(false);
   return (
     <div className={styles.railCard}>
       <div className={styles.railHead}>
         <HeartPulse size={15} aria-hidden="true" />
-        Adherencia check-in
+        Adherencia al check-in de hoy
       </div>
       <div className={styles.adhStat}>
         <span className={`${styles.adhPct} ${styles[`adh_${tone}`]}`}>
           {pct == null ? "—" : `${pct}%`}
         </span>
         <span className={styles.adhCount}>
-          {responded}/{expected} respondieron hoy
+          {responded} de {expected} respondieron
         </span>
       </div>
-      {no_respondieron.length === 0 ? (
-        <p className={styles.muted}>Todos respondieron el check-in ✓</p>
-      ) : (
-        <div className={styles.adhList}>
-          {no_respondieron.map((p) => (
-            <a key={p.player_id} href={`/perfil/${p.player_id}`} className={styles.adhRow}>
-              <span className={styles.adhName}>{p.name}</span>
-              {p.position && <span className={styles.adhPos}>{p.position}</span>}
-              {p.injured && <span className={styles.adhChip}>lesionado</span>}
-            </a>
-          ))}
-        </div>
-      )}
+
+      <AdhSection
+        label="Faltan por responder"
+        count={no_respondieron.length}
+        open={openMissing}
+        onToggle={() => setOpenMissing((v) => !v)}
+        players={no_respondieron}
+        emptyText="Todos respondieron ✓"
+      />
+      <AdhSection
+        label="Ya respondieron"
+        count={respondieron.length}
+        open={openDone}
+        onToggle={() => setOpenDone((v) => !v)}
+        players={respondieron}
+        emptyText="Nadie respondió todavía"
+      />
+    </div>
+  );
+}
+
+function AdhSection({
+  label, count, open, onToggle, players, emptyText,
+}: {
+  label: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  players: CCCheckinAdherence["no_respondieron"];
+  emptyText: string;
+}) {
+  const Chevron = open ? ChevronDown : ChevronRight;
+  return (
+    <div className={styles.adhSection}>
+      <button
+        type="button"
+        className={styles.adhSectionHead}
+        onClick={onToggle}
+        aria-expanded={open}
+      >
+        <Chevron size={14} aria-hidden="true" />
+        <span className={styles.adhSectionLabel}>{label}</span>
+        <span className={styles.adhSectionCount}>{count}</span>
+      </button>
+      {open &&
+        (count === 0 ? (
+          <p className={styles.muted}>{emptyText}</p>
+        ) : (
+          <div className={styles.adhList}>
+            {players.map((p) => (
+              <a key={p.player_id} href={`/perfil/${p.player_id}`} className={styles.adhRow}>
+                <span className={styles.adhName}>{p.name}</span>
+                {p.position && <span className={styles.adhPos}>{p.position}</span>}
+                {p.injured && <span className={styles.adhChip}>lesionado</span>}
+              </a>
+            ))}
+          </div>
+        ))}
     </div>
   );
 }

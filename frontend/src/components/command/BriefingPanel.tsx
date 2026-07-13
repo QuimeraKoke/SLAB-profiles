@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { Sparkles, ChevronDown, ChevronUp, Clock, ArrowRight } from "lucide-react";
+import { Sparkles, ChevronDown, ChevronUp, Clock, Info, ListChecks } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import type { BriefingItem } from "./types";
+import AddToPlanModal from "./AddToPlanModal";
+import BriefingInfoModal from "./BriefingInfoModal";
 import styles from "./BriefingPanel.module.css";
 
 const TABS = ["Todos", "Médico", "Carga", "Wellness", "Nutrición", "RTP"] as const;
@@ -16,14 +17,12 @@ const TAB_DEPT: Record<string, string> = {
   "Nutrición": "nutricional",
 };
 
-// Departments with a per-department report (CTA target).
-const REPORT_DEPTS = new Set(["medico", "fisico", "nutricional", "tactico"]);
-
 export default function BriefingPanel({ categoryId }: { categoryId: string | null }) {
   const [items, setItems] = useState<BriefingItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<string>("Todos");
   const [expanded, setExpanded] = useState<Set<number>>(new Set([0]));
+  const [nameById, setNameById] = useState<Map<string, string>>(new Map());
 
   useEffect(() => {
     if (!categoryId) return;
@@ -36,6 +35,20 @@ export default function BriefingPanel({ categoryId }: { categoryId: string | nul
       .catch((err) => {
         if (!cancelled) setError(err instanceof ApiError ? err.message : "No se pudo generar el briefing.");
       });
+    return () => { cancelled = true; };
+  }, [categoryId]);
+
+  // Roster names to label player_ids on the cards / modals (deep-links).
+  useEffect(() => {
+    if (!categoryId) return;
+    let cancelled = false;
+    api<{ id: string; first_name: string; last_name: string }[]>(`/players?category_id=${categoryId}`)
+      .then((ps) => {
+        if (!cancelled) {
+          setNameById(new Map(ps.map((p) => [p.id, `${p.first_name} ${p.last_name}`.trim()])));
+        }
+      })
+      .catch(() => { /* labels are best-effort */ });
     return () => { cancelled = true; };
   }, [categoryId]);
 
@@ -101,6 +114,7 @@ export default function BriefingPanel({ categoryId }: { categoryId: string | nul
               n={i + 1}
               open={expanded.has(i)}
               onToggle={() => toggle(i)}
+              nameById={nameById}
             />
           ))
         )}
@@ -110,10 +124,15 @@ export default function BriefingPanel({ categoryId }: { categoryId: string | nul
 }
 
 function Card({
-  item, n, open, onToggle,
-}: { item: BriefingItem; n: number; open: boolean; onToggle: () => void }) {
+  item, n, open, onToggle, nameById,
+}: {
+  item: BriefingItem; n: number; open: boolean; onToggle: () => void;
+  nameById: Map<string, string>;
+}) {
   const Chevron = open ? ChevronUp : ChevronDown;
-  const ctaHref = REPORT_DEPTS.has(item.department) ? `/reportes/${item.department}` : null;
+  const [showInfo, setShowInfo] = useState(false);
+  const [showPlan, setShowPlan] = useState(false);
+  const hasPlayer = item.player_ids.length > 0;
 
   return (
     <div className={styles.card}>
@@ -169,16 +188,35 @@ function Card({
             </span>
           )}
         </div>
-        {ctaHref ? (
-          <Link href={ctaHref} className={styles.cta}>
-            {item.cta_label || "Ver detalle"} <ArrowRight size={14} aria-hidden="true" />
-          </Link>
-        ) : (
-          <span className={styles.ctaDisabled}>
-            {item.cta_label || "Ver detalle"} <ArrowRight size={14} aria-hidden="true" />
-          </span>
-        )}
+        <div className={styles.cardActions}>
+          <button type="button" className={styles.actionBtn} onClick={() => setShowInfo(true)}>
+            <Info size={14} aria-hidden="true" /> Ver info
+          </button>
+          <button
+            type="button"
+            className={styles.actionBtnPrimary}
+            onClick={() => setShowPlan(true)}
+            disabled={!hasPlayer}
+            title={hasPlayer ? undefined : "Sin jugador asociado a esta recomendación"}
+          >
+            <ListChecks size={14} aria-hidden="true" /> Agregar a plan
+          </button>
+        </div>
       </div>
+
+      <BriefingInfoModal
+        open={showInfo}
+        onClose={() => setShowInfo(false)}
+        item={item}
+        nameById={nameById}
+      />
+      <AddToPlanModal
+        open={showPlan}
+        onClose={() => setShowPlan(false)}
+        playerIds={item.player_ids}
+        nameById={nameById}
+        recommendation={item.recommendation}
+      />
     </div>
   );
 }

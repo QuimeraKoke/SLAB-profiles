@@ -16,13 +16,14 @@ interface PlayerLite {
   id: string;
   first_name: string;
   last_name: string;
+  position: { id: string; name: string; abbreviation: string; role: string } | null;
 }
 
 /**
- * "Exportar datos" (§5) — self-service raw-data download. Pick exams
- * (grouped by department), players and a date range, then pull an Excel
- * workbook (one sheet per exam, row = jugador-fecha, calculated included)
- * from GET /export/results.xlsx. Empty selections = everything.
+ * "Exportar datos" (§5) — self-service raw-data download. Pick exams (by
+ * department), players (grouped by position, with per-position select-all)
+ * and a date range, then pull an Excel workbook (one sheet per exam, row =
+ * jugador-fecha, calculated included). Empty selections = everything.
  */
 export default function ExportarPage() {
   const { categoryId, categories, loading: catLoading } = useCategoryContext();
@@ -61,11 +62,32 @@ export default function ExportarPage() {
     return [...m.values()];
   }, [templates]);
 
+  const byPosition = useMemo(() => {
+    const m = new Map<string, PlayerLite[]>();
+    for (const p of players) {
+      const key = p.position?.role || p.position?.name || "Sin posición";
+      if (!m.has(key)) m.set(key, []);
+      m.get(key)!.push(p);
+    }
+    return [...m.entries()].map(([label, items]) => ({ label, items }));
+  }, [players]);
+
   function toggle(set: Set<string>, setSet: (s: Set<string>) => void, id: string) {
     const next = new Set(set);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setSet(next);
+  }
+
+  function toggleGroup(items: PlayerLite[]) {
+    const ids = items.map((p) => p.id);
+    const allSelected = ids.every((id) => selPl.has(id));
+    const next = new Set(selPl);
+    for (const id of ids) {
+      if (allSelected) next.delete(id);
+      else next.add(id);
+    }
+    setSelPl(next);
   }
 
   async function download() {
@@ -113,32 +135,29 @@ export default function ExportarPage() {
         <p className={styles.sub}>{categoryName} · descargá el dato crudo en Excel</p>
       </header>
 
-      <div className={styles.grid}>
-        <section className={styles.card}>
-          <h2 className={styles.cardTitle}>Rango de fechas</h2>
-          <div className={styles.dates}>
-            <label>
-              Desde
-              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-            </label>
-            <label>
-              Hasta
-              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
-            </label>
-          </div>
-          <p className={styles.hint}>
-            Vacío = todo el historial. Sin selección de exámenes/jugadores se
-            exportan todos.
-          </p>
-        </section>
+      <section className={styles.dateRow}>
+        <span className={styles.dateRowLabel}>Rango de fechas</span>
+        <p className={styles.hint}>Vacío = todo el historial. Sin selección se exportan todos.</p>
+        <div className={styles.dateInputs}>
+          <label>
+            Desde
+            <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          </label>
+          <label>
+            Hasta
+            <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          </label>
+        </div>
+      </section>
 
-        <section className={styles.card}>
-          <h2 className={styles.cardTitle}>
-            Exámenes {selTpl.size > 0 && <span className={styles.badge}>{selTpl.size}</span>}
-          </h2>
-          {byDept.map((d) => (
-            <div key={d.name} className={styles.deptBlock}>
-              <div className={styles.deptName}>{d.name}</div>
+      <section className={styles.card}>
+        <h2 className={styles.cardTitle}>
+          Exámenes {selTpl.size > 0 && <span className={styles.badge}>{selTpl.size}</span>}
+        </h2>
+        {byDept.map((d) => (
+          <div key={d.name} className={styles.deptBlock}>
+            <div className={styles.deptName}>{d.name}</div>
+            <div className={styles.examGrid}>
               {d.items.map((t) => (
                 <label key={t.id} className={styles.check}>
                   <input
@@ -150,29 +169,51 @@ export default function ExportarPage() {
                 </label>
               ))}
             </div>
-          ))}
-          {templates.length === 0 && <p className={styles.muted}>Sin exámenes.</p>}
-        </section>
+          </div>
+        ))}
+        {templates.length === 0 && <p className={styles.muted}>Sin exámenes.</p>}
+      </section>
 
-        <section className={styles.card}>
-          <h2 className={styles.cardTitle}>
-            Jugadores {selPl.size > 0 && <span className={styles.badge}>{selPl.size}</span>}
-          </h2>
-          <div className={styles.playerList}>
-            {players.map((p) => (
-              <label key={p.id} className={styles.check}>
+      <section className={styles.playersCard}>
+        <h2 className={styles.cardTitle}>
+          Jugadores {selPl.size > 0 && <span className={styles.badge}>{selPl.size}</span>}
+        </h2>
+        {byPosition.map((g) => {
+          const ids = g.items.map((p) => p.id);
+          const sel = ids.filter((id) => selPl.has(id)).length;
+          return (
+            <div key={g.label} className={styles.posGroup}>
+              <label className={styles.posHead}>
                 <input
                   type="checkbox"
-                  checked={selPl.has(p.id)}
-                  onChange={() => toggle(selPl, setSelPl, p.id)}
+                  ref={(el) => {
+                    if (el) {
+                      el.checked = sel === ids.length && sel > 0;
+                      el.indeterminate = sel > 0 && sel < ids.length;
+                    }
+                  }}
+                  onChange={() => toggleGroup(g.items)}
                 />
-                {p.first_name} {p.last_name}
+                {g.label}
+                <span className={styles.posCount}>{sel}/{ids.length}</span>
               </label>
-            ))}
-            {players.length === 0 && <p className={styles.muted}>Sin jugadores.</p>}
-          </div>
-        </section>
-      </div>
+              <div className={styles.posGrid}>
+                {g.items.map((p) => (
+                  <label key={p.id} className={styles.check}>
+                    <input
+                      type="checkbox"
+                      checked={selPl.has(p.id)}
+                      onChange={() => toggle(selPl, setSelPl, p.id)}
+                    />
+                    {p.first_name} {p.last_name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+        {players.length === 0 && <p className={styles.muted}>Sin jugadores.</p>}
+      </section>
 
       <div className={styles.footer}>
         <button

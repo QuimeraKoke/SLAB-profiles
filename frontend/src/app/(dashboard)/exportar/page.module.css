@@ -22,19 +22,17 @@
   margin: 2px 0 0;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-}
-
-.card {
+.card,
+.playersCard {
   background: #fff;
   border: 1px solid #e8eaf0;
   border-radius: 14px;
   padding: 16px 18px;
 }
+.card {
+  margin-bottom: 16px;
+}
+
 .cardTitle {
   font-size: 14px;
   font-weight: 700;
@@ -52,20 +50,36 @@
   padding: 1px 8px;
 }
 
-.dates {
+/* Date range — a top row: label left, inputs pushed to the end. */
+.dateRow {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.dates label {
-  display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
+  background: #fff;
+  border: 1px solid #e8eaf0;
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+}
+.dateRowLabel {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0a2240;
+  white-space: nowrap;
+}
+.dateInputs {
+  margin-left: auto;
+  display: flex;
+  gap: 14px;
+}
+.dateInputs label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 13px;
   color: #344054;
 }
-.dates input {
+.dateInputs input {
   border: 1px solid #e8eaf0;
   border-radius: 8px;
   padding: 6px 8px;
@@ -74,13 +88,14 @@
 .hint {
   font-size: 12px;
   color: #98a2b3;
-  margin: 12px 0 0;
+  margin: 0;
   line-height: 1.4;
 }
 
 .deptBlock {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
+.deptBlock:last-child { margin-bottom: 0; }
 .deptName {
   font-size: 12px;
   font-weight: 700;
@@ -89,13 +104,45 @@
   letter-spacing: 0.04em;
   margin-bottom: 6px;
 }
+.examGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 2px 18px;
+}
 
-.playerList {
+/* Players — grouped by position, no scroll, each group has a select-all. */
+.posGroup {
+  padding: 10px 0;
+  border-bottom: 1px solid #f2f4f7;
+}
+.posGroup:last-child { border-bottom: none; }
+
+.posHead {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 340px;
-  overflow-y: auto;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #0a2240;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+.posCount {
+  font-size: 11px;
+  font-weight: 600;
+  color: #98a2b3;
+  background: #f2f4f7;
+  border-radius: 999px;
+  padding: 1px 8px;
+  letter-spacing: 0;
+}
+.posGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 2px 18px;
+  padding-left: 22px;
 }
 
 .check {
@@ -141,8 +188,12 @@
   color: #b42318;
 }
 
-@media (max-width: 900px) {
-  .grid {
-    grid-template-columns: 1fr;
+@media (max-width: 720px) {
+  .dateRow {
+    flex-wrap: wrap;
+  }
+  .dateInputs {
+    margin-left: 0;
+    flex-wrap: wrap;
   }
 }
