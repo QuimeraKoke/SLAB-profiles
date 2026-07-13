@@ -164,3 +164,41 @@ def compute_acwr(player_ids, category, spec: AcwrSpec, *, now=None, templates=No
             "last": timezone.localtime(last[pid]).date().isoformat() if pid in last else None,
         }
     return out
+
+
+def evaluate_acwr_alerts(player, *, now=None) -> list:
+    """Fire / resolve the ACWR alert for one player against their category's
+    first *alerting* variable (``alert: true`` in load_config). A ratio in the
+    red band raises/refreshes an alert; a return to the watch/ok band (or
+    insufficient GPS) resolves it. One alert per player (source_id = category).
+
+    Called from the state-recompute path (daily task + GPS ingest), so it's
+    idempotent and safe to run on every recompute. Returns the fired alert(s)."""
+    from goals.evaluator import _upsert_alert
+    from goals.models import Alert, AlertSource, AlertStatus
+
+    category = getattr(player, "category", None)
+    if category is None:
+        return []
+    spec = next((s for s in resolve_specs(category) if s.alert), None)
+    if spec is None:
+        return []
+
+    now = now or timezone.now()
+    d = compute_acwr([player.id], category, spec, now=now).get(player.id)
+    if d is not None and d["band"] == "danger":
+        ratio = d["ratio"]
+        side = "alta" if ratio > spec.sweet_high else "baja"
+        msg = (f"ACWR {spec.label} = {ratio} (carga {side} — zona de riesgo; "
+               f"objetivo {spec.sweet_low}–{spec.sweet_high})")
+        return [_upsert_alert(
+            player=player, source_type=AlertSource.ACWR, source_id=category.id,
+            severity=spec.severity, message=msg, source_recorded_at=now,
+        )]
+
+    # Safe band / no data → resolve any active ACWR alert for this player.
+    Alert.objects.filter(
+        player=player, source_type=AlertSource.ACWR, source_id=category.id,
+        status=AlertStatus.ACTIVE,
+    ).update(status=AlertStatus.RESOLVED, dismissed_at=now)
+    return []

@@ -2282,3 +2282,91 @@ class AcwrRatioMathTests(SimpleTestCase):
 
     def test_ewma_all_zero_series_is_none(self):
         self.assertIsNone(ewma_ratio([0.0] * 28, 7, 28))
+
+
+from .acwr import evaluate_acwr_alerts  # noqa: E402
+from goals.models import Alert, AlertSource, AlertStatus  # noqa: E402
+
+
+class AcwrAlertTests(TestCase):
+    """evaluate_acwr_alerts fires when a player's ACWR enters the red band and
+    resolves when it returns to a safe band."""
+
+    def setUp(self):
+        self.club = Club.objects.create(name="Test FC")
+        self.dept = Department.objects.create(club=self.club, name="Físico", slug="fisico")
+        self.cat = Category.objects.create(
+            club=self.club, name="A",
+            load_config={"acwr": {"variables": [{
+                "field": "tot_dist", "alert": True, "severity": "warning",
+                "danger_high": 1.5, "sweet_high": 1.3,
+            }]}},
+        )
+        self.cat.departments.add(self.dept)
+        self.template = ExamTemplate.objects.create(
+            name="GPS Entrenamiento", slug="gps_sesion", department=self.dept,
+            is_active_version=True,
+            config_schema={"fields": [{"key": "tot_dist", "type": "number"}]},
+        )
+        self.template.applicable_categories.add(self.cat)
+        self.player = Player.objects.create(
+            category=self.cat, first_name="A", last_name="B", is_active=True,
+        )
+
+    def _gps(self, dist, days_ago):
+        ExamResult.objects.create(
+            player=self.player, template=self.template,
+            recorded_at=timezone.now() - timedelta(days=days_ago),
+            result_data={"tot_dist": dist},
+        )
+
+    def _active_acwr(self):
+        return Alert.objects.filter(
+            player=self.player, source_type=AlertSource.ACWR,
+            status=AlertStatus.ACTIVE,
+        )
+
+    def test_spike_fires_alert(self):
+        # chronic-only load (outside 7d) modest; acute (last 7d) heavy →
+        # ratio = 4000 / (7000/4) ≈ 2.29 → danger.
+        for d in (20, 15, 10):
+            self._gps(1000, d)
+        self._gps(2000, 3)
+        self._gps(2000, 1)
+
+        fired = evaluate_acwr_alerts(self.player)
+        self.assertEqual(len(fired), 1)
+        self.assertEqual(self._active_acwr().count(), 1)
+        self.assertIn("ACWR", self._active_acwr().first().message)
+
+    def test_returns_to_band_resolves_alert(self):
+        for d in (20, 15, 10):
+            self._gps(1000, d)
+        self._gps(2000, 3)
+        self._gps(2000, 1)
+        evaluate_acwr_alerts(self.player)
+        self.assertEqual(self._active_acwr().count(), 1)
+
+        # Add chronic base so weekly rises and the ratio drops back into range.
+        for d in (25, 22, 18, 14, 12):
+            self._gps(2000, d)
+        fired = evaluate_acwr_alerts(self.player)
+        self.assertEqual(fired, [])
+        self.assertEqual(self._active_acwr().count(), 0)
+        self.assertEqual(
+            Alert.objects.filter(
+                player=self.player, source_type=AlertSource.ACWR,
+                status=AlertStatus.RESOLVED,
+            ).count(),
+            1,
+        )
+
+    def test_no_alerting_variable_is_noop(self):
+        # Category with ACWR configured but alert=False → nothing fires.
+        self.cat.load_config = {"acwr": {"variables": [{"field": "tot_dist", "alert": False}]}}
+        self.cat.save()
+        for d in (20, 15, 10):
+            self._gps(1000, d)
+        self._gps(2000, 1)
+        self.assertEqual(evaluate_acwr_alerts(self.player), [])
+        self.assertEqual(self._active_acwr().count(), 0)

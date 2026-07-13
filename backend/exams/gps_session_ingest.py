@@ -244,13 +244,18 @@ def run(
             # backfills no-op).
             from exams.signals import check_training_load_alert, enqueue_player_state_recompute
 
-            touched = {p["player"].id for p in writable}
+            players_by_id = {p["player"].id: p["player"] for p in writable}
             if update:
-                touched.update(p["player"].id for p in present)
-            for pid in touched:
+                players_by_id.update({p["player"].id: p["player"] for p in present})
+            for pid in players_by_id:
                 enqueue_player_state_recompute(pid)
             for result in to_create:
                 check_training_load_alert(result)
+            # Refresh each touched player's ACWR alert (§1.f) now that new load
+            # landed — fires/clears against the category's configured band.
+            from dashboards.acwr import evaluate_acwr_alerts
+            for player in players_by_id.values():
+                evaluate_acwr_alerts(player)
     else:
         blocked = sum(1 for p in fresh if not _linkable(p))
         created = len(fresh) - blocked

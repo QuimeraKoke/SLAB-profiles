@@ -59,6 +59,7 @@ def rebuild_player_states() -> dict:
     "over-ceiling" verdict would linger after a rest block. Recompute only; the
     weekly PlayerStateSnapshot is captured separately."""
     from core.models import Player
+    from .acwr import evaluate_acwr_alerts
     from .player_state import upsert_player_state
 
     n = 0
@@ -67,6 +68,9 @@ def rebuild_player_states() -> dict:
         .select_related("category", "position").iterator()
     ):
         upsert_player_state(player)
+        # Refresh the ACWR alert daily too, so a ratio that drifts into (or out
+        # of) the red band without a new reading still fires / clears.
+        evaluate_acwr_alerts(player)
         n += 1
     logger.info("rebuild_player_states: recomputed %s player states", n)
     return {"recomputed": n}

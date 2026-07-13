@@ -111,6 +111,7 @@ class AlertSource(models.TextChoices):
     MEDICATION = "medication", "Medicación (WADA)"
     TRAINING_LOAD = "training_load", "Carga de entrenamiento"
     MOLESTIA = "molestia", "Molestia (check-in)"
+    ACWR = "acwr", "ACWR (agudo:crónico)"
 
 
 class Alert(models.Model):
