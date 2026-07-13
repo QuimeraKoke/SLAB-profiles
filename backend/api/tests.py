@@ -59,3 +59,38 @@ class WeeklyLoadOverCeilingTests(SimpleTestCase):
                 self.NOW,
             )
         )
+
+
+class ExportWorkbookTests(SimpleTestCase):
+    """The pure workbook builder (§5 export) — no DB."""
+
+    def test_builds_valid_xlsx_with_sheets(self):
+        import io as _io
+
+        from openpyxl import load_workbook
+
+        from api.export import workbook_bytes
+
+        data = workbook_bytes([
+            {"name": "CK", "headers": ["Jugador", "Fecha", "CK (U/L)"],
+             "rows": [["Díaz", "2026-07-10", 720], ["Pérez", "2026-07-10", 310]]},
+            {"name": "GPS: partido/sesión?", "headers": ["Jugador"], "rows": [["X"]]},
+        ])
+        self.assertEqual(data[:2], b"PK")  # xlsx is a zip
+        wb = load_workbook(_io.BytesIO(data))
+        self.assertEqual(wb.sheetnames[0], "CK")
+        self.assertTrue(all(len(n) <= 31 for n in wb.sheetnames))
+        self.assertNotIn(":", wb.sheetnames[1])  # invalid char stripped
+        ws = wb["CK"]
+        self.assertEqual([c.value for c in ws[1]], ["Jugador", "Fecha", "CK (U/L)"])
+        self.assertEqual(ws.cell(row=2, column=3).value, 720)
+
+    def test_empty_yields_one_sheet(self):
+        import io as _io
+
+        from openpyxl import load_workbook
+
+        from api.export import workbook_bytes
+
+        wb = load_workbook(_io.BytesIO(workbook_bytes([])))
+        self.assertEqual(len(wb.sheetnames), 1)

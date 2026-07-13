@@ -1,6 +1,6 @@
-"""Seed the two canonical permission groups + backfill existing users.
+"""Seed the canonical permission groups + backfill existing users.
 
-Two groups:
+Three groups:
 
 - **Editor** — full CRUD on the operational models a doctor/physio/etc.
   works with (ExamResult, Episode, Goal, Event, Player, Attachment,
@@ -10,6 +10,14 @@ Two groups:
 - **Solo Lectura** — only `view_*` on the same models. A user in this
   group sees the data their `StaffMembership` lets them see but
   cannot create, edit or delete anything.
+
+- **Administrador** — everything Editor has PLUS the ability to manage
+  users from the in-app "Administración → Usuarios" module (create
+  users, assign role/scope, reset passwords). This is the "team
+  manager" persona: still scoped to their own club via
+  `StaffMembership`, but able to onboard the rest of the staff without
+  a superuser touching the Django admin. Granting this group is what
+  turns a membership into a club manager.
 
 Contract visibility (`view_contract`) is intentionally left OUT of
 both groups. Admins grant it per-user from `/admin/auth/user/<id>/`
@@ -69,6 +77,22 @@ OPERATIONAL_MODELS: list[tuple[str, str]] = [
 ]
 
 
+# Permissions that let a user run the in-app user-management module
+# ("Administración → Usuarios"). These live on Django's own `auth.user`
+# model plus `core.staffmembership` — NOT in OPERATIONAL_MODELS — so they
+# get resolved by codename separately and unioned into the Administrador
+# group. (`delete_user` is intentionally excluded: the module deactivates
+# users, it never hard-deletes them.)
+USER_MGMT_PERMS: list[tuple[str, str]] = [
+    ("auth", "view_user"),
+    ("auth", "add_user"),
+    ("auth", "change_user"),
+    ("core", "view_staffmembership"),
+    ("core", "add_staffmembership"),
+    ("core", "change_staffmembership"),
+]
+
+
 def _perms_for(actions: list[str]) -> list[Permission]:
     """Resolve `Permission` objects for each (action, app_label, model)
     tuple. Missing perms (e.g. before migrations) silently drop —
@@ -83,6 +107,19 @@ def _perms_for(actions: list[str]) -> list[Permission]:
         codename__in=codenames,
     )
     return list(qs)
+
+
+def _perms_by_codename(pairs: list[tuple[str, str]]) -> list[Permission]:
+    """Resolve `Permission` objects for explicit (app_label, codename)
+    pairs. Missing perms silently drop (same posture as `_perms_for`)."""
+    from django.db.models import Q
+
+    if not pairs:
+        return []
+    query = Q()
+    for app_label, codename in pairs:
+        query |= Q(content_type__app_label=app_label, codename=codename)
+    return list(Permission.objects.filter(query))
 
 
 def _seed_group(name: str, actions: list[str]) -> tuple[Group, bool]:
@@ -119,6 +156,17 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"{'Created' if reader_created else 'Updated'} group 'Solo Lectura' "
             f"with {reader_group.permissions.count()} permissions."
+        ))
+
+        # Administrador = Editor's operational CRUD + the user-management perms.
+        admin_group, admin_created = Group.objects.get_or_create(name="Administrador")
+        admin_group.permissions.set(
+            _perms_for(["view", "add", "change", "delete"])
+            + _perms_by_codename(USER_MGMT_PERMS)
+        )
+        self.stdout.write(self.style.SUCCESS(
+            f"{'Created' if admin_created else 'Updated'} group 'Administrador' "
+            f"with {admin_group.permissions.count()} permissions."
         ))
 
         if opts["skip_backfill"]:

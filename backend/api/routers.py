@@ -2785,6 +2785,64 @@ def wellness_adherence(request, category_id: str, date_from: str = "", date_to: 
     return build_adherence(category, date_from, date_to)
 
 
+@api.get("/templates", response=list[TemplateOut])
+def list_templates(request, category_id: str, department: str | None = None):
+    """Templates applicable to a category (optionally one department), scoped by
+    membership. Powers the export exam-picker (§5) and the "Subir datos"
+    launcher (§7.1)."""
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    qs = scope_templates(
+        ExamTemplate.objects.select_related("department")
+        .filter(applicable_categories=category),
+        membership,
+    )
+    if department:
+        qs = qs.filter(department__slug=department)
+    return list(qs.order_by("department__name", "name").distinct())
+
+
+@api.get("/export/results.xlsx")
+def export_results_xlsx(request, category_id: str, templates: str = "",
+                        player_ids: str = "", date_from: str = "",
+                        date_to: str = "", event_type: str = ""):
+    """Raw-data export (§5): one .xlsx, one sheet per exam type, row =
+    (jugador, fecha) with all values incl. calculated. Filters: `templates`
+    (comma-sep ids), `player_ids`, date range, `event_type` (match/training)."""
+    from django.http import HttpResponse
+
+    from api.export import build_export
+
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+
+    df, dt = _parse_date_window(date_from or None, date_to or None)
+    tids = [x for x in templates.split(",") if x.strip()] or None
+    pids = [x for x in player_ids.split(",") if x.strip()] or None
+    xlsx = build_export(
+        category=category, membership=membership, template_ids=tids,
+        player_ids=pids, date_from=df, date_to=dt,
+        event_type=(event_type or None),
+    )
+    filename = f"export-{category.name}.xlsx".replace(" ", "_")
+    resp = HttpResponse(
+        xlsx,
+        content_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+    )
+    resp["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return resp
+
+
 @api.get("/daily-report.pdf")
 def download_daily_deck(request, category_id: str, date: str = ""):
     """La Daily as a projectable PDF deck (landscape, one slide per player):

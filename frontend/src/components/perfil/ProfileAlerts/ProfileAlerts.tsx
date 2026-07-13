@@ -14,14 +14,19 @@ import styles from "./ProfileAlerts.module.css";
  * goals), dismissible in place. Split out of the Objetivos tab — alerts
  * and goals are different conversations.
  */
+type View = "active" | "resolved";
+
 export default function ProfileAlerts({ playerId }: { playerId: string }) {
   const { toast } = useToast();
+  const [view, setView] = useState<View>("active");
   const [alerts, setAlerts] = useState<AlertModel[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    api<AlertModel[]>(`/players/${playerId}/alerts?status=active`)
+    setAlerts(null);
+    setError(null);
+    api<AlertModel[]>(`/players/${playerId}/alerts?status=${view}`)
       .then((a) => { if (!cancelled) setAlerts(a); })
       .catch((err) => {
         if (!cancelled) {
@@ -29,7 +34,7 @@ export default function ProfileAlerts({ playerId }: { playerId: string }) {
         }
       });
     return () => { cancelled = true; };
-  }, [playerId]);
+  }, [playerId, view]);
 
   const handleDismiss = async (alert: AlertModel) => {
     try {
@@ -44,14 +49,44 @@ export default function ProfileAlerts({ playerId }: { playerId: string }) {
     }
   };
 
-  if (error) return <div className={styles.error} role="alert">{error}</div>;
-  if (alerts === null) return <div className={styles.muted}>Cargando alertas…</div>;
-  if (alerts.length === 0) {
-    return <div className={styles.empty}>Sin alertas activas para este jugador. ✓</div>;
-  }
   return (
     <div className={styles.container}>
-      <AlertList alerts={alerts} onDismiss={handleDismiss} />
+      <div className={styles.toggle} role="tablist" aria-label="Alertas">
+        <button
+          role="tab"
+          aria-selected={view === "active"}
+          className={`${styles.toggleBtn} ${view === "active" ? styles.toggleActive : ""}`}
+          onClick={() => setView("active")}
+        >
+          Activas
+        </button>
+        <button
+          role="tab"
+          aria-selected={view === "resolved"}
+          className={`${styles.toggleBtn} ${view === "resolved" ? styles.toggleActive : ""}`}
+          onClick={() => setView("resolved")}
+        >
+          Historial
+        </button>
+      </div>
+
+      {error ? (
+        <div className={styles.error} role="alert">{error}</div>
+      ) : alerts === null ? (
+        <div className={styles.muted}>Cargando alertas…</div>
+      ) : alerts.length === 0 ? (
+        <div className={styles.empty}>
+          {view === "active"
+            ? "Sin alertas activas para este jugador. ✓"
+            : "Sin alertas históricas."}
+        </div>
+      ) : (
+        <AlertList
+          alerts={alerts}
+          mode={view === "resolved" ? "resolved" : "active"}
+          onDismiss={view === "active" ? handleDismiss : undefined}
+        />
+      )}
     </div>
   );
 }

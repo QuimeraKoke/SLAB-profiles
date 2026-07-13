@@ -68,3 +68,28 @@
 .dismissBtn:hover {
   background: #fed7aa;
 }
+
+.count {
+  margin-left: 6px;
+  color: #9a3412;
+  font-weight: 600;
+}
+
+.dateChip {
+  font-size: 0.72rem;
+  color: #9a3412;
+  background: #ffedd5;
+  border-radius: 999px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Historial (resolved) — cooler, read-only palette. */
+.sectionResolved {
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+.sectionResolved .title { color: #475467; }
+.sectionResolved .row { border-color: #e2e8f0; }
+.sectionResolved .dateChip { color: #475467; background: #eef2f6; }

@@ -67,6 +67,67 @@ export interface Position {
   club_id: string;
 }
 
+// ---------- User management (Administración → Usuarios) ----------
+
+export interface AdminUserScopeRef {
+  id: string;
+  name: string;
+}
+
+/** A staff user as returned by the Usuarios admin module (`GET /users`). */
+export interface AdminUser {
+  id: number;
+  email: string;
+  first_name: string;
+  last_name: string;
+  is_active: boolean;
+  is_superuser: boolean;
+  last_login: string | null;
+  /** Managed role group name: "Editor" | "Solo Lectura" | "Administrador" | "". */
+  role: string;
+  club: Club | null;
+  all_categories: boolean;
+  categories: AdminUserScopeRef[];
+  all_departments: boolean;
+  departments: AdminUserScopeRef[];
+}
+
+export interface AdminUserCreateIn {
+  first_name: string;
+  last_name: string;
+  email: string;
+  role: string;
+  all_categories?: boolean;
+  category_ids?: string[];
+  all_departments?: boolean;
+  department_ids?: string[];
+  is_active?: boolean;
+  /** Superuser-only; ignored for club-scoped managers. */
+  club_id?: string | null;
+}
+
+export interface AdminUserUpdateIn {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  role?: string;
+  all_categories?: boolean;
+  category_ids?: string[];
+  all_departments?: boolean;
+  department_ids?: string[];
+  is_active?: boolean;
+}
+
+/** `POST /users` response — AdminUser plus the one-time temp password. */
+export interface AdminUserCreateResult extends AdminUser {
+  temp_password: string;
+}
+
+export interface UsersMeta {
+  clubs: Club[];
+  assignable_roles: string[];
+}
+
 export type Sex = "" | "M" | "F";
 
 export type PlayerStatus = "available" | "injured" | "recovery" | "reintegration";
@@ -472,6 +533,8 @@ export interface Alert {
   fired_at: string;
   /** Most-recent trigger time. Equal to fired_at on first fire; refreshes on re-trigger. */
   last_fired_at: string | null;
+  /** recorded_at of the reading that fired it — the structured "dato del …" date. */
+  source_recorded_at: string | null;
   /** How many times the source rule has triggered since this alert was raised. */
   trigger_count: number;
   dismissed_at: string | null;

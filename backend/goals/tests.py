@@ -400,7 +400,8 @@ class ThresholdEvaluatorTests(TestCase):
         result = _make_result(self.player, self.template, 920)
         evaluate_threshold_rules_for_result(result)
         alert = Alert.objects.get(source_id=rule.id)
-        self.assertEqual(alert.message, "Valor=920 (>500)")
+        when = timezone.localtime(result.recorded_at).date().isoformat()
+        self.assertEqual(alert.message, f"Valor=920 (>500) ({when})")
 
     # ---------- Variation: last_n ----------
 
@@ -865,7 +866,8 @@ class BandRuleEvaluatorTests(TestCase):
         result = _make_result(self.player, self.template, 150)
         evaluate_threshold_rules_for_result(result)
         alert = Alert.objects.get(source_id=rule.id)
-        self.assertEqual(alert.message, "Valor = 150 → Elevado")
+        when = timezone.localtime(result.recorded_at).date().isoformat()
+        self.assertEqual(alert.message, f"Valor = 150 → Elevado ({when})")
 
 
 class SeedBandAlertsCommandTests(TestCase):

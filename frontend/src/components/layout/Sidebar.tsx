@@ -22,6 +22,7 @@ import {
 
 import { api } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
+import { hasPermission } from "@/lib/permissions";
 import { useAssistant } from "@/context/AssistantContext";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
 import type { ApiUser, Department } from "@/lib/types";
@@ -157,6 +158,19 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     ? { label: "Uso", icon: TrendingUp, href: "/uso" }
     : null;
 
+  // "Usuarios" (Administración) — only users who can manage staff accounts
+  // (Administrador role / superuser) see it. Appended to the static
+  // Administración sub-items so managers can onboard the rest of the club.
+  const settingsGroup: NavGroup = hasPermission(user, "auth.view_user")
+    ? {
+        ...SETTINGS_NAV,
+        subItems: [
+          ...(SETTINGS_NAV.subItems ?? []),
+          { label: "Usuarios", href: "/configuraciones/usuarios" },
+        ],
+      }
+    : SETTINGS_NAV;
+
   // NAV-02: a discoverable doorway to the floating chat (no dedicated route)
   // — opens the same assistant the FAB does, via AssistantContext.
   const askAiItem: NavGroup = {
@@ -184,7 +198,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     },
     {
       label: "Administración",
-      items: [SETTINGS_NAV, ...(usoItem ? [usoItem] : [])],
+      items: [settingsGroup, ...(usoItem ? [usoItem] : [])],
     },
   ];
 
