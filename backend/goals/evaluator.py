@@ -783,130 +783,206 @@ def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
         value = _value_for_rule(result, rule)
         if value is None:
             continue
-        label = _field_label(rule)
-        cfg = rule.config or {}
-        severity = rule.severity
-
-        if rule.kind == AlertRuleKind.BOUND:
-            eff = _effective_bound(cfg, result.player)
-            triggered, _side = _bound_violated(value, eff)
-            if not triggered:
-                continue
-            msg = _format_rule_message(
-                rule, value=value, field_label=label,
-                upper=eff.get("upper"), lower=eff.get("lower"),
-            )
-
-        elif rule.kind == AlertRuleKind.VARIATION:
-            baseline, window_desc = _baseline_for_variation(result, rule)
-            if baseline is None:
-                continue  # no history → skip both checks
-            delta = value - baseline
-            direction = cfg.get("direction", "any")
-            triggered = _variation_triggered(delta, baseline, cfg, direction)
-            if not triggered:
-                continue
-            # `pct_change` is None when baseline=0 — we still let the message
-            # render (the placeholder degrades to empty string).
-            pct_change = (delta / baseline * 100) if baseline != 0 else None
-            msg = _format_rule_message(
-                rule, value=value, field_label=label,
-                baseline=baseline, pct_change=pct_change, delta=delta,
-                direction=direction, window_desc=window_desc,
-            )
-
-        elif rule.kind == AlertRuleKind.ZSCORE:
-            from dashboards import stats
-
-            prior, window_desc = _prior_values(result, rule)
-            dev = stats.deviation(
-                value, prior,
-                method=cfg.get("method", "moving_avg"), span=cfg.get("span"),
-            )
-            z = dev.get("z") if dev else None
-            if z is None:
-                continue  # no usable basal (need ≥2 prior + spread)
-            direction = cfg.get("direction", "any")
-            tz = float(cfg.get("threshold_z"))
-            if direction == "increase":
-                triggered = z >= tz
-            elif direction == "decrease":
-                triggered = z <= -tz
-            else:
-                triggered = abs(z) >= tz
-            if not triggered:
-                continue
-            centre = dev.get("centre")
-            msg = _format_rule_message(
-                rule, value=value, field_label=label,
-                baseline=centre, pct_change=dev.get("pct"),
-                delta=(value - centre) if centre is not None else None,
-                direction=direction, window_desc=window_desc,
-            )
-            msg = f"{msg} · z={z:+.1f}"
-
-        elif rule.kind == AlertRuleKind.PCT_MATCH:
-            from dashboards.player_state import match_load_refs
-
-            refs = match_load_refs(result.player_id, result.recorded_at, [rule.field_key])
-            ref = (refs.get(rule.field_key) or {}).get("chronic") if refs else None
-            if not ref:
-                continue  # no match-demand reference to compare against
-            ru, rl = cfg.get("ratio_upper"), cfg.get("ratio_lower")
-            triggered = (
-                (ru is not None and value >= float(ru) * ref)
-                or (rl is not None and value <= float(rl) * ref)
-            )
-            if not triggered:
-                continue
-            pct = value / ref * 100.0
-            msg = _format_rule_message(
-                rule, value=value, field_label=label,
-                baseline=ref, pct_change=pct - 100.0, window_desc="vs partido",
-            )
-            msg = f"{msg} · {pct:.0f}% de partido"
-
-        elif rule.kind == AlertRuleKind.BAND:
-            current_band, alert_band_set = _band_evaluation(rule, value)
-            in_alert = (
-                current_band is not None
-                and any(b is current_band for b in alert_band_set)
-            )
-            if not in_alert:
-                # Auto-resolve: when a newer reading lands outside the alert
-                # bands, mark any previously-fired active Alert for this
-                # rule+player as RESOLVED. Keeps the team_alerts widget
-                # honest — stale alerts don't haunt the watchlist.
+        decision = _rule_fire_decision(rule, result, value)
+        if decision is None:
+            # BAND rules auto-resolve when a newer reading lands outside the
+            # alert bands (marks a previously-fired active Alert RESOLVED so
+            # the watchlist stays honest). Other kinds don't auto-resolve.
+            if rule.kind == AlertRuleKind.BAND:
                 _resolve_band_alert(rule_id=rule.id, player_id=result.player_id)
-                continue
-            msg = _format_band_message(
-                rule, value=value, field_label=label, band=current_band,
-            )
-            # A band may carry its own severity (e.g. recuperación 1–10:
-            # "Muy bajo" ≤2 escalates to critical while "Bajo" 3–4 stays a
-            # warning) — the rule's severity is just the default.
-            band_sev = current_band.get("severity")
-            if band_sev in ("info", "warning", "critical"):
-                severity = band_sev
-
-        else:
             continue
-
         # Every warning carries the DATE OF THE READING that fired it —
         # "= 3 cae en banda «Bajo»" is meaningless without knowing when.
         when = timezone.localtime(result.recorded_at).date().isoformat()
-        msg = f"{msg} ({when})"
-
         alert = _upsert_alert(
             player=result.player,
             source_type=AlertSource.THRESHOLD,
             source_id=rule.id,
-            severity=severity,
-            message=msg,
+            severity=decision.severity,
+            message=f"{decision.message} ({when})",
             source_recorded_at=result.recorded_at,
         )
         fired.append(alert)
     return fired
+
+
+@dataclass
+class _FireDecision:
+    """A rule fired: the message (WITHOUT the date suffix, which the caller
+    appends) and the effective severity (a BAND may override the rule's)."""
+    message: str
+    severity: str
+
+
+def _rule_fire_decision(rule: AlertRule, result: ExamResult, value: float):
+    """Pure firing decision for one (rule, result) with a known numeric value.
+
+    Returns a `_FireDecision` when the rule fires, else None. NO DB writes and
+    NO band auto-resolve — those side effects belong to the caller. Shared by
+    the live evaluator (above) and the backtest preview (§1.g) so both use the
+    exact same firing logic and can never drift apart.
+    """
+    label = _field_label(rule)
+    cfg = rule.config or {}
+    severity = rule.severity
+
+    if rule.kind == AlertRuleKind.BOUND:
+        eff = _effective_bound(cfg, result.player)
+        triggered, _side = _bound_violated(value, eff)
+        if not triggered:
+            return None
+        msg = _format_rule_message(
+            rule, value=value, field_label=label,
+            upper=eff.get("upper"), lower=eff.get("lower"),
+        )
+
+    elif rule.kind == AlertRuleKind.VARIATION:
+        baseline, window_desc = _baseline_for_variation(result, rule)
+        if baseline is None:
+            return None  # no history → skip both checks
+        delta = value - baseline
+        direction = cfg.get("direction", "any")
+        if not _variation_triggered(delta, baseline, cfg, direction):
+            return None
+        # `pct_change` is None when baseline=0 — we still let the message
+        # render (the placeholder degrades to empty string).
+        pct_change = (delta / baseline * 100) if baseline != 0 else None
+        msg = _format_rule_message(
+            rule, value=value, field_label=label,
+            baseline=baseline, pct_change=pct_change, delta=delta,
+            direction=direction, window_desc=window_desc,
+        )
+
+    elif rule.kind == AlertRuleKind.ZSCORE:
+        from dashboards import stats
+
+        prior, window_desc = _prior_values(result, rule)
+        dev = stats.deviation(
+            value, prior,
+            method=cfg.get("method", "moving_avg"), span=cfg.get("span"),
+        )
+        z = dev.get("z") if dev else None
+        if z is None:
+            return None  # no usable basal (need ≥2 prior + spread)
+        direction = cfg.get("direction", "any")
+        tz = float(cfg.get("threshold_z"))
+        if direction == "increase":
+            triggered = z >= tz
+        elif direction == "decrease":
+            triggered = z <= -tz
+        else:
+            triggered = abs(z) >= tz
+        if not triggered:
+            return None
+        centre = dev.get("centre")
+        msg = _format_rule_message(
+            rule, value=value, field_label=label,
+            baseline=centre, pct_change=dev.get("pct"),
+            delta=(value - centre) if centre is not None else None,
+            direction=direction, window_desc=window_desc,
+        )
+        msg = f"{msg} · z={z:+.1f}"
+
+    elif rule.kind == AlertRuleKind.PCT_MATCH:
+        from dashboards.player_state import match_load_refs
+
+        refs = match_load_refs(result.player_id, result.recorded_at, [rule.field_key])
+        ref = (refs.get(rule.field_key) or {}).get("chronic") if refs else None
+        if not ref:
+            return None  # no match-demand reference to compare against
+        ru, rl = cfg.get("ratio_upper"), cfg.get("ratio_lower")
+        triggered = (
+            (ru is not None and value >= float(ru) * ref)
+            or (rl is not None and value <= float(rl) * ref)
+        )
+        if not triggered:
+            return None
+        pct = value / ref * 100.0
+        msg = _format_rule_message(
+            rule, value=value, field_label=label,
+            baseline=ref, pct_change=pct - 100.0, window_desc="vs partido",
+        )
+        msg = f"{msg} · {pct:.0f}% de partido"
+
+    elif rule.kind == AlertRuleKind.BAND:
+        current_band, alert_band_set = _band_evaluation(rule, value)
+        in_alert = (
+            current_band is not None
+            and any(b is current_band for b in alert_band_set)
+        )
+        if not in_alert:
+            return None
+        msg = _format_band_message(
+            rule, value=value, field_label=label, band=current_band,
+        )
+        # A band may carry its own severity (e.g. recuperación 1–10:
+        # "Muy bajo" ≤2 escalates to critical while "Bajo" 3–4 stays a
+        # warning) — the rule's severity is just the default.
+        band_sev = current_band.get("severity")
+        if band_sev in ("info", "warning", "critical"):
+            severity = band_sev
+
+    else:
+        return None
+
+    return _FireDecision(message=msg, severity=severity)
+
+
+def backtest_rule(rule: AlertRule, *, days: int = 90, now=None) -> dict:
+    """Dry-run `rule` over the last `days` of real results for its template
+    (and category, if set) WITHOUT writing anything — the live-preview behind
+    the in-app editor (§1.g). Shares `_rule_fire_decision` with the live
+    evaluator, so "would have fired N times" matches reality exactly.
+
+    Returns ``{window_days, evaluated, fired_count, players_affected,
+    players: [{player_id, name, count, last_date, last_value}]}`` (players
+    sorted by fire count, then name).
+
+    Note: zscore/variation/pct_match re-derive each result's prior history from
+    the DB, so this is read-heavy (a handful of queries per result). Fine for
+    an on-demand preview over ~90 days; not for a hot loop.
+    """
+    now = now or timezone.now()
+    since = now - timedelta(days=days)
+    results = (
+        ExamResult.objects
+        .filter(template_id=rule.template_id, recorded_at__gte=since)
+        .select_related("player")
+        .order_by("recorded_at")
+    )
+    if rule.category_id:
+        results = results.filter(player__category_id=rule.category_id)
+
+    per_player: dict = {}
+    evaluated = 0
+    for result in results.iterator():
+        if not _result_in_scope(result, rule):
+            continue
+        value = _value_for_rule(result, rule)
+        if value is None:
+            continue
+        evaluated += 1
+        if _rule_fire_decision(rule, result, value) is None:
+            continue
+        rec = per_player.get(result.player_id)
+        if rec is None:
+            rec = per_player[result.player_id] = {
+                "player_id": str(result.player_id),
+                "name": f"{result.player.first_name} {result.player.last_name}".strip(),
+                "count": 0, "last_date": None, "last_value": None,
+            }
+        rec["count"] += 1
+        rec["last_date"] = timezone.localtime(result.recorded_at).date().isoformat()
+        rec["last_value"] = round(value, 2)
+
+    players = sorted(per_player.values(), key=lambda r: (-r["count"], r["name"]))
+    return {
+        "window_days": days,
+        "evaluated": evaluated,
+        "fired_count": sum(r["count"] for r in players),
+        "players_affected": len(players),
+        "players": players,
+    }
 
 
 # ---------------------------------------------------------------------------

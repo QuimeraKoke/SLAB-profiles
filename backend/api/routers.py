@@ -26,10 +26,14 @@ from dashboards.aggregation import position_comparison, resolve_widget
 from dashboards.models import DepartmentLayout, TeamReportLayout, Widget
 from dashboards.team_aggregation import resolve_team_widget
 from events.models import Event
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import Q
+
 from exams.bulk_ingest import IngestError, run_ingest
 from exams.calculations import compute_result_data
 from exams.models import ExamResult, ExamTemplate
 
+from .alert_rules import BacktestIn, RuleUpdateIn, RuleWriteIn
 from .auth import issue_token, jwt_auth
 from .scoping import (
     get_membership,
@@ -2749,6 +2753,182 @@ def command_center(request, category_id: str):
     if category is None:
         raise HttpError(404, "Category not found")
     return build_command_center(category)
+
+
+# ── Alert & Threshold editor (§1.g) — Editor-role gated ──────────────────────
+
+
+def _flatten_validation(exc: DjangoValidationError) -> str:
+    """Django ValidationError → a single human message for HttpError(422)."""
+    msgs: list[str] = []
+    if hasattr(exc, "message_dict"):
+        for field, errs in exc.message_dict.items():
+            for e in errs:
+                msgs.append(e if field == "__all__" else f"{field}: {e}")
+    elif hasattr(exc, "messages"):
+        msgs = list(exc.messages)
+    return "; ".join(msgs) or "Configuración inválida."
+
+
+def _club_access_or_403(request, club) -> None:
+    if request.user.is_superuser:
+        return
+    membership = get_membership(request.user)
+    if membership is None or membership.club_id != club.id:
+        raise HttpError(403, "Sin acceso a este club.")
+
+
+def _resolve_rule_template(request, template_id: str, category_id: str | None):
+    """(template, category|None) for a write/backtest, club-access enforced."""
+    template = (
+        ExamTemplate.objects.filter(pk=template_id)
+        .select_related("department__club").first()
+    )
+    if template is None:
+        raise HttpError(404, "Plantilla no encontrada.")
+    _club_access_or_403(request, template.department.club)
+    category = None
+    if category_id:
+        category = Category.objects.filter(
+            pk=category_id, club=template.department.club,
+        ).first()
+        if category is None:
+            raise HttpError(404, "Categoría no encontrada.")
+    return template, category
+
+
+def _scoped_category_or_404(request, category_id: str):
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    return category
+
+
+@api.get("/alert-rules/meta")
+@require_perm("goals.view_alertrule")
+def alert_rules_meta(request, category_id: str):
+    """Form vocabulary for the editor: applicable templates + their numeric /
+    band fields, kinds, severities, línea (role) values, microcycle labels."""
+    from api.alert_rules import build_rule_meta
+    return build_rule_meta(_scoped_category_or_404(request, category_id))
+
+
+@api.get("/alert-rules")
+@require_perm("goals.view_alertrule")
+def list_alert_rules(request, category_id: str, template_id: str | None = None):
+    """Rules that apply to a category: its own + template-wide (category null)
+    rules on templates in the same club."""
+    from api.alert_rules import serialize_rule
+    from goals.models import AlertRule
+
+    category = _scoped_category_or_404(request, category_id)
+    qs = (
+        AlertRule.objects
+        .filter(template__department__club=category.club)
+        .filter(Q(category_id=category.id) | Q(category__isnull=True))
+        .select_related("template", "category")
+    )
+    if template_id:
+        qs = qs.filter(template_id=template_id)
+    return {"rules": [serialize_rule(r) for r in qs]}
+
+
+@api.post("/alert-rules")
+@require_perm("goals.add_alertrule")
+def create_alert_rule(request, payload: RuleWriteIn):
+    from api.alert_rules import serialize_rule
+    from goals.models import AlertRule
+
+    template, category = _resolve_rule_template(
+        request, payload.template_id, payload.category_id,
+    )
+    rule = AlertRule(
+        template=template, category=category, kind=payload.kind,
+        field_key=payload.field_key, config=payload.config or {},
+        scope=payload.scope or {}, severity=payload.severity,
+        message_template=payload.message_template or "",
+        is_active=payload.is_active, created_by=request.user,
+    )
+    try:
+        rule.full_clean()
+    except DjangoValidationError as exc:
+        raise HttpError(422, _flatten_validation(exc))
+    rule.save()
+    return serialize_rule(rule)
+
+
+@api.patch("/alert-rules/{rule_id}")
+@require_perm("goals.change_alertrule")
+def update_alert_rule(request, rule_id: UUID, payload: RuleUpdateIn):
+    from api.alert_rules import serialize_rule
+    from goals.models import AlertRule
+
+    rule = (
+        AlertRule.objects
+        .select_related("template__department__club", "category")
+        .filter(pk=rule_id).first()
+    )
+    if rule is None:
+        raise HttpError(404, "Regla no encontrada.")
+    _club_access_or_403(request, rule.template.department.club)
+
+    data = payload.dict(exclude_unset=True)
+    if "category_id" in data:
+        cid = data.pop("category_id")
+        if cid:
+            cat = Category.objects.filter(
+                pk=cid, club=rule.template.department.club,
+            ).first()
+            if cat is None:
+                raise HttpError(404, "Categoría no encontrada.")
+            rule.category = cat
+        else:
+            rule.category = None
+    for field in ("field_key", "kind", "config", "scope",
+                  "severity", "message_template", "is_active"):
+        if field in data and data[field] is not None:
+            setattr(rule, field, data[field])
+    try:
+        rule.full_clean()
+    except DjangoValidationError as exc:
+        raise HttpError(422, _flatten_validation(exc))
+    rule.save()
+    return serialize_rule(rule)
+
+
+@api.delete("/alert-rules/{rule_id}")
+@require_perm("goals.delete_alertrule")
+def delete_alert_rule(request, rule_id: UUID):
+    from goals.models import AlertRule
+
+    rule = (
+        AlertRule.objects.select_related("template__department__club")
+        .filter(pk=rule_id).first()
+    )
+    if rule is None:
+        raise HttpError(404, "Regla no encontrada.")
+    _club_access_or_403(request, rule.template.department.club)
+    rule.delete()
+    return {"ok": True}
+
+
+@api.post("/alert-rules/backtest")
+@require_perm("goals.change_alertrule")
+def backtest_alert_rule(request, payload: BacktestIn):
+    """Dry-run a draft rule over recent real data (no writes) → how many times
+    it would have fired + the players it would have flagged."""
+    from api.alert_rules import run_backtest
+
+    template, category = _resolve_rule_template(
+        request, payload.template_id, payload.category_id,
+    )
+    try:
+        return run_backtest(template=template, category=category, payload=payload)
+    except DjangoValidationError as exc:
+        raise HttpError(422, _flatten_validation(exc))
 
 
 @api.get("/daily-report")

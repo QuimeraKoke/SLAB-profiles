@@ -14,6 +14,7 @@ from exams.models import ExamResult, ExamTemplate
 
 from .evaluator import (
     apply_due_goals,
+    backtest_rule,
     evaluate_goal,
     evaluate_threshold_rules_for_result,
     sync_evaluate_for_result,
@@ -1082,3 +1083,65 @@ class ThresholdNewKindsTests(TestCase):
             _make_result(self.p_cen, self.template, 999, field_key="hsr"))
         self.assertTrue(Alert.objects.filter(source_id=rule.id, player=self.p_lat).exists())
         self.assertFalse(Alert.objects.filter(source_id=rule.id, player=self.p_cen).exists())
+
+
+class BacktestRuleTests(TestCase):
+    """backtest_rule (§1.g) counts what the live evaluator would fire, without
+    writing any Alert."""
+
+    def setUp(self):
+        self.club = Club.objects.create(name="Test FC")
+        self.dept = Department.objects.create(club=self.club, name="Med", slug="med")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.dept)
+        self.player = Player.objects.create(category=self.cat, first_name="A", last_name="B")
+        self.template = _make_template(self.dept, name="CK", field_key="valor")
+        self.template.applicable_categories.add(self.cat)
+
+    def _bound_rule(self, **cfg):
+        return AlertRule(
+            template=self.template, field_key="valor", kind=AlertRuleKind.BOUND,
+            config=cfg, severity=AlertSeverity.WARNING, category=self.cat,
+        )
+
+    def test_counts_each_firing_result_and_writes_nothing(self):
+        for v, d in [(920, 10), (700, 5), (600, 2)]:   # over 500 → fire
+            _make_result(self.player, self.template, v, days_ago=d)
+        for v, d in [(100, 8), (200, 4)]:              # under → no fire
+            _make_result(self.player, self.template, v, days_ago=d)
+
+        bt = backtest_rule(self._bound_rule(upper=500), days=90)
+        self.assertEqual(bt["evaluated"], 5)
+        self.assertEqual(bt["fired_count"], 3)
+        self.assertEqual(bt["players_affected"], 1)
+        self.assertEqual(bt["players"][0]["count"], 3)
+        self.assertEqual(Alert.objects.count(), 0)  # dry-run: no writes
+
+    def test_respects_window_days(self):
+        _make_result(self.player, self.template, 920, days_ago=200)  # outside 90d
+        _make_result(self.player, self.template, 920, days_ago=5)    # inside
+        bt = backtest_rule(self._bound_rule(upper=500), days=90)
+        self.assertEqual(bt["fired_count"], 1)
+
+    def test_category_scoped_rule_ignores_other_category(self):
+        other_cat = Category.objects.create(club=self.club, name="B")
+        other_cat.departments.add(self.dept)
+        self.template.applicable_categories.add(other_cat)
+        other = Player.objects.create(category=other_cat, first_name="C", last_name="D")
+        _make_result(other, self.template, 920, days_ago=3)   # would fire, wrong category
+        _make_result(self.player, self.template, 920, days_ago=3)
+        bt = backtest_rule(self._bound_rule(upper=500), days=90)  # rule.category = self.cat
+        self.assertEqual(bt["players_affected"], 1)
+        self.assertEqual(bt["players"][0]["name"], "A B")
+
+    def test_run_backtest_invalid_field_raises(self):
+        from django.core.exceptions import ValidationError
+
+        from api.alert_rules import BacktestIn, run_backtest
+
+        payload = BacktestIn(
+            template_id=str(self.template.id), field_key="ghost",
+            kind="bound", config={"upper": 1}, category_id=str(self.cat.id),
+        )
+        with self.assertRaises(ValidationError):
+            run_backtest(template=self.template, category=self.cat, payload=payload)
