@@ -129,6 +129,8 @@ export interface BriefingItem {
   timing: string;
   cta_label: string;
   players: string[];
+  /** Roster ids resolved from `players` (§7.2) — powers deep-links + actions. */
+  player_ids: string[];
 }
 
 export interface CCCheckinNonResponder {

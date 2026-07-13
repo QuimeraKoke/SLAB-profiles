@@ -87,7 +87,9 @@ def generate_briefing(category) -> list[dict]:
         .first()
     )
     if cached is not None:
-        return cached.items or []
+        items = cached.items or []
+        _attach_player_ids(items, category)  # live — old snapshots lack ids
+        return items
 
     if not api_key or not agents:
         return []
@@ -112,6 +114,7 @@ def generate_briefing(category) -> list[dict]:
                 logger.exception("Briefing: department '%s' failed.", a.key)
 
     items = _rank(items)
+    _attach_player_ids(items, category)
     try:
         BriefingSnapshot.objects.update_or_create(
             category=category, data_hash=signature,
@@ -218,6 +221,52 @@ def _parse_items(text: str, *, department: str, label: str) -> list[dict]:
 def _rank(items: list[dict]) -> list[dict]:
     items.sort(key=lambda i: (_PRIORITY_ORDER.get(i["priority"], 1), -(i["confidence"] or 0)))
     return items
+
+
+# ─── Player-id resolution (§7.2 — deep-link the card to its jugador) ───
+
+def _norm(s: str) -> str:
+    import unicodedata
+
+    s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode()
+    return " ".join(s.lower().split())
+
+
+def _resolve_player_ids(names: list[str], roster: list) -> list[str]:
+    """Map free-text player names (LLM output, drawn from the snapshot) to
+    roster ids. `roster` is [(id, first_name, last_name)]. Pure — matches on
+    normalized full name, then unambiguous last name. Best-effort."""
+    by_full: dict[str, str] = {}
+    by_last: dict[str, list[str]] = {}
+    for pid, fn, ln in roster:
+        by_full[_norm(f"{fn} {ln}")] = str(pid)
+        by_last.setdefault(_norm(ln), []).append(str(pid))
+    out: list[str] = []
+    for name in names or []:
+        n = _norm(name)
+        pid = by_full.get(n)
+        if pid is None:
+            parts = n.split()
+            cand = by_last.get(n) or (by_last.get(parts[-1]) if parts else None)
+            if cand and len(cand) == 1:
+                pid = cand[0]
+        if pid and pid not in out:
+            out.append(pid)
+    return out
+
+
+def _attach_player_ids(items: list[dict], category) -> None:
+    """Add `player_ids` to each item from its `players` names (in place)."""
+    if not items:
+        return
+    from core.models import Player
+
+    roster = list(
+        Player.objects.filter(category=category, is_active=True)
+        .values_list("id", "first_name", "last_name")
+    )
+    for it in items:
+        it["player_ids"] = _resolve_player_ids(it.get("players") or [], roster)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────

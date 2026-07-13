@@ -10,13 +10,13 @@ import {
   Calendar,
   LayoutDashboard,
   Activity,
+  Database,
   ChevronDown,
   ChevronRight,
   LogOut,
   Settings,
   Sparkles,
   Sunrise,
-  TrendingUp,
   X,
 } from "lucide-react";
 
@@ -110,9 +110,8 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   // mid-session relies on a manual toggle (acceptable).
   const [expandedItems, setExpandedItems] = useState<string[]>(() => {
     if (pathname.startsWith("/reportes")) return ["Dashboard"];
-    if (pathname.startsWith("/configuraciones") || pathname.startsWith("/uso")) {
-      return ["Administración"];
-    }
+    if (pathname.startsWith("/exportar") || pathname.startsWith("/uso")) return ["Datos"];
+    if (pathname.startsWith("/configuraciones")) return ["Administración"];
     return [];
   });
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -152,11 +151,17 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
         }
       : null;
 
-  // Admin-only "Uso" link — adoption / engagement chart. Superusers see it
-  // regardless of membership; non-admins don't even get the nav entry.
-  const usoItem: NavGroup | null = user?.is_superuser
-    ? { label: "Uso", icon: TrendingUp, href: "/uso" }
-    : null;
+  // "Datos" — el hogar de datos del sidebar (§5): Exportar datos (todo el staff
+  // — el dato pertenece al club) + Uso (solo superuser, movido aquí desde
+  // Administración). "Subir datos" (§7.1) se suma en Fase 4.
+  const datosGroup: NavGroup = {
+    label: "Datos",
+    icon: Database,
+    subItems: [
+      { label: "Exportar datos", href: "/exportar" },
+      ...(user?.is_superuser ? [{ label: "Uso", href: "/uso" }] : []),
+    ],
+  };
 
   // "Usuarios" (Administración) — only users who can manage staff accounts
   // (Administrador role / superuser) see it. Appended to the static
@@ -194,11 +199,11 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     },
     {
       label: "Análisis",
-      items: [...(reportsGroup ? [reportsGroup] : []), askAiItem],
+      items: [...(reportsGroup ? [reportsGroup] : []), datosGroup, askAiItem],
     },
     {
       label: "Administración",
-      items: [settingsGroup, ...(usoItem ? [usoItem] : [])],
+      items: [settingsGroup],
     },
   ];
 
