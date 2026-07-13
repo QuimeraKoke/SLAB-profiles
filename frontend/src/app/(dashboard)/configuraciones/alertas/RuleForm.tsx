@@ -17,6 +17,13 @@ import {
 } from "@/lib/alertRules";
 import styles from "./page.module.css";
 
+// Temporarily simplified for the first rollout (client, 2026-07-13): hide the
+// Línea/posición scope (positions/líneas aren't set up yet) and the
+// all-categories toggle. Existing rules still keep their scope.roles / null
+// category on save — flip these back to `true` to re-expose the controls.
+const SHOW_LINEA_SCOPE: boolean = false;
+const SHOW_ALL_CATEGORIES: boolean = false;
+
 interface Props {
   meta: RuleMeta;
   categoryId: string;
@@ -367,7 +374,7 @@ export default function RuleForm({
           <ScopeChips label="Tipo de sesión" options={template.session_types}
             selected={scope.session_types || []} onToggle={(v) => toggleScope("session_types", v)} />
         )}
-        {meta.roles.length > 0 && (
+        {SHOW_LINEA_SCOPE && meta.roles.length > 0 && (
           <ScopeChips label="Línea / posición" options={meta.roles}
             selected={scope.roles || []} onToggle={(v) => toggleScope("roles", v)} />
         )}
@@ -380,10 +387,12 @@ export default function RuleForm({
           <input type="checkbox" checked={isActive} onChange={(e) => setIsActive(e.target.checked)} />
           Activa
         </label>
-        <label className={styles.inlineCheck}>
-          <input type="checkbox" checked={allCategories} onChange={(e) => setAllCategories(e.target.checked)} />
-          Aplicar a todas las categorías (no solo {categoryName})
-        </label>
+        {SHOW_ALL_CATEGORIES && (
+          <label className={styles.inlineCheck}>
+            <input type="checkbox" checked={allCategories} onChange={(e) => setAllCategories(e.target.checked)} />
+            Aplicar a todas las categorías (no solo {categoryName})
+          </label>
+        )}
       </div>
 
       {/* Backtest ------------------------------------------------------------ */}
