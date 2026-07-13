@@ -594,3 +594,38 @@ class SplitGpsPartidoHelpersTests(SimpleTestCase):
         cfg = {"right_axis_keys": ["tot_dist_total", "hsr_rel_total"]}
         out = remap_display_config(cfg, PER_HALF_TO_PARTIDO)
         self.assertEqual(out["right_axis_keys"], ["tot_dist"])
+
+
+from .microcycle import microcycle_label  # noqa: E402
+
+
+class MicrocycleLabelTests(SimpleTestCase):
+    MATCH = date(2026, 7, 12)  # a Sunday match
+
+    def test_no_calendar_is_unlabelled(self):
+        self.assertIsNone(microcycle_label(date(2026, 7, 8), []))
+
+    def test_day_before_is_md_minus_1(self):
+        self.assertEqual(microcycle_label(date(2026, 7, 11), [self.MATCH]), "MD-1")
+
+    def test_four_days_before_is_md_minus_4(self):
+        self.assertEqual(microcycle_label(date(2026, 7, 8), [self.MATCH]), "MD-4")
+
+    def test_match_day_is_md(self):
+        self.assertEqual(microcycle_label(self.MATCH, [self.MATCH]), "MD")
+
+    def test_day_after_is_md_plus_1(self):
+        self.assertEqual(microcycle_label(date(2026, 7, 13), [self.MATCH]), "MD+1")
+
+    def test_beyond_a_week_is_unlabelled(self):
+        self.assertIsNone(microcycle_label(date(2026, 7, 1), [self.MATCH]))
+
+    def test_picks_nearest_of_several_matches(self):
+        cal = [date(2026, 7, 5), date(2026, 7, 12), date(2026, 7, 19)]
+        # Wed 8th: 3 days after the 5th (MD+3) vs 4 days before the 12th → MD+3.
+        self.assertEqual(microcycle_label(date(2026, 7, 8), cal), "MD+3")
+
+    def test_tie_prefers_upcoming_match(self):
+        # Equidistant (2 days) between a past and an upcoming match → MD-2.
+        cal = [date(2026, 7, 10), date(2026, 7, 14)]
+        self.assertEqual(microcycle_label(date(2026, 7, 12), cal), "MD-2")

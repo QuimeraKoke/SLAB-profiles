@@ -216,6 +216,13 @@ def run(
             ]
             ExamResult.objects.bulk_create(to_create, batch_size=400)
             created = len(to_create)
+
+            # Tag each fresh row with its microcycle day (§1.e) from the
+            # category's match calendar, so microcycle-scoped rules can fire.
+            from exams.microcycle import apply_md_labels
+            md_changed = apply_md_labels(to_create)
+            if md_changed:
+                ExamResult.objects.bulk_update(md_changed, ["result_data"], batch_size=400)
             if do_events:
                 for p in writable:
                     ev = events_by_date.get(p["date"])
