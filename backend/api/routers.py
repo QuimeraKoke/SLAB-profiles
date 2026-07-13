@@ -2579,6 +2579,17 @@ class PromoteChartIn(Schema):
     spec: dict
 
 
+class WidgetArrangeIn(Schema):
+    column_span: int | None = None
+    title: str | None = None
+    sort_order: int | None = None
+    section_id: str | None = None
+
+
+class WidgetReorderIn(Schema):
+    widget_ids: list[str]
+
+
 @api.post("/reports/{department_slug}/widgets")
 @require_perm("dashboards.add_teamreportwidget")
 def promote_chart(request, department_slug: str, payload: PromoteChartIn):
@@ -2604,6 +2615,83 @@ def promote_chart(request, department_slug: str, payload: PromoteChartIn):
     if result.get("error"):
         raise HttpError(400, result["error"])
     return result
+
+
+# ── Panel builder — arrange existing team-report widgets (§2.c) ──────────────
+# NOTE: the literal /reports/widgets/reorder MUST be registered before the
+# /reports/widgets/{widget_id} param route, or Django's pattern resolver
+# swallows "reorder" as a widget_id (405). Same lesson as /alert-rules/backtest.
+
+
+@api.post("/reports/widgets/reorder")
+@require_perm("dashboards.change_teamreportwidget")
+def reorder_team_widgets(request, payload: WidgetReorderIn):
+    """Bulk-assign sort_order from the given widget order (drag-reorder)."""
+    from dashboards.models import TeamReportWidget
+
+    widgets = list(
+        TeamReportWidget.objects
+        .select_related("section__layout__department__club")
+        .filter(pk__in=payload.widget_ids)
+    )
+    for w in widgets:
+        _club_access_or_403(request, w.section.layout.department.club)
+    order = {wid: i for i, wid in enumerate(payload.widget_ids)}
+    for w in widgets:
+        w.sort_order = order.get(str(w.id), w.sort_order)
+    TeamReportWidget.objects.bulk_update(widgets, ["sort_order"])
+    return {"ok": True, "updated": len(widgets)}
+
+
+@api.patch("/reports/widgets/{widget_id}")
+@require_perm("dashboards.change_teamreportwidget")
+def update_team_widget(request, widget_id: str, payload: WidgetArrangeIn):
+    """Resize (column_span 1–12), rename, reorder or move a widget between
+    sections of the same layout."""
+    from dashboards.models import TeamReportSection, TeamReportWidget
+
+    w = (
+        TeamReportWidget.objects
+        .select_related("section__layout__department__club")
+        .filter(pk=widget_id).first()
+    )
+    if w is None:
+        raise HttpError(404, "Widget no encontrado.")
+    _club_access_or_403(request, w.section.layout.department.club)
+
+    data = payload.dict(exclude_unset=True)
+    if data.get("column_span") is not None:
+        w.column_span = max(1, min(int(data["column_span"]), 12))
+    if data.get("title") is not None:
+        w.title = str(data["title"])[:160]
+    if data.get("sort_order") is not None:
+        w.sort_order = max(0, int(data["sort_order"]))
+    if data.get("section_id"):
+        sec = TeamReportSection.objects.filter(
+            pk=data["section_id"], layout=w.section.layout,
+        ).first()
+        if sec is None:
+            raise HttpError(404, "Sección no encontrada.")
+        w.section = sec
+    w.save()
+    return {"ok": True, "id": str(w.id), "column_span": w.column_span, "sort_order": w.sort_order}
+
+
+@api.delete("/reports/widgets/{widget_id}")
+@require_perm("dashboards.delete_teamreportwidget")
+def delete_team_widget(request, widget_id: str):
+    from dashboards.models import TeamReportWidget
+
+    w = (
+        TeamReportWidget.objects
+        .select_related("section__layout__department__club")
+        .filter(pk=widget_id).first()
+    )
+    if w is None:
+        raise HttpError(404, "Widget no encontrado.")
+    _club_access_or_403(request, w.section.layout.department.club)
+    w.delete()
+    return {"ok": True}
 
 
 class PromotePlayerChartIn(Schema):

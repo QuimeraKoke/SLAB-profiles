@@ -143,3 +143,62 @@ class StatsTests(SimpleTestCase):
         d = stats.deviation(10, [2, 4, 6], method="ewma", span=1)
         self.assertEqual(d["centre"], 6.0)   # span-1 EWMA = latest prior
         self.assertEqual(d["z"], 2.0)        # (10-6)/sd(=2)
+
+
+from django.contrib.auth import get_user_model  # noqa: E402
+from django.test import RequestFactory, TestCase  # noqa: E402
+
+
+class TeamWidgetArrangeTests(TestCase):
+    """§2.c panel-builder arrange endpoints (called directly with a superuser
+    request — bypasses ninja auth but exercises require_perm + the logic)."""
+
+    def setUp(self):
+        from core.models import Category, Club, Department
+        from dashboards.models import (
+            ChartType, TeamReportLayout, TeamReportSection, TeamReportWidget,
+        )
+        self.rf = RequestFactory()
+        self.su = get_user_model().objects.create_superuser("su", "su@x.com", "x")
+        self.club = Club.objects.create(name="FC")
+        self.dept = Department.objects.create(club=self.club, name="Med", slug="med")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.dept)
+        self.layout = TeamReportLayout.objects.create(department=self.dept, category=self.cat)
+        self.section = TeamReportSection.objects.create(layout=self.layout)
+        self.w1 = TeamReportWidget.objects.create(
+            section=self.section, chart_type=ChartType.TEAM_LEADERBOARD.value,
+            title="A", sort_order=0, column_span=6,
+        )
+        self.w2 = TeamReportWidget.objects.create(
+            section=self.section, chart_type=ChartType.TEAM_LEADERBOARD.value,
+            title="B", sort_order=1, column_span=6,
+        )
+
+    def _req(self, method):
+        r = getattr(self.rf, method)("/x")
+        r.user = self.su
+        return r
+
+    def test_resize_clamps_span(self):
+        from api.routers import WidgetArrangeIn, update_team_widget
+        update_team_widget(self._req("patch"), str(self.w1.id), WidgetArrangeIn(column_span=99))
+        self.w1.refresh_from_db()
+        self.assertEqual(self.w1.column_span, 12)
+
+    def test_reorder_reassigns_sort_order(self):
+        from api.routers import WidgetReorderIn, reorder_team_widgets
+        reorder_team_widgets(
+            self._req("post"),
+            WidgetReorderIn(widget_ids=[str(self.w2.id), str(self.w1.id)]),
+        )
+        self.w1.refresh_from_db()
+        self.w2.refresh_from_db()
+        self.assertEqual(self.w2.sort_order, 0)
+        self.assertEqual(self.w1.sort_order, 1)
+
+    def test_delete_removes_widget(self):
+        from api.routers import delete_team_widget
+        from dashboards.models import TeamReportWidget
+        delete_team_widget(self._req("delete"), str(self.w1.id))
+        self.assertFalse(TeamReportWidget.objects.filter(id=self.w1.id).exists())
