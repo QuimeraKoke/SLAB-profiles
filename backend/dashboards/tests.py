@@ -2451,3 +2451,53 @@ class TeamLeaderboardDeviationTests(TestCase):
         spike = {r["player_name"]: r for r in payload["rows"]}["Spike S"]
         self.assertEqual(spike["tone"], "ok")
         self.assertEqual(spike["bar"], 0.0)
+
+
+class LineSelectorSdBandTests(TestCase):
+    """§4 profile line: opt-in mean±SD envelope on line_with_selector."""
+
+    def setUp(self):
+        self.club = Club.objects.create(name="Test FC")
+        self.dept = Department.objects.create(club=self.club, name="Med", slug="med")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.dept)
+        self.player = Player.objects.create(category=self.cat, first_name="A", last_name="B")
+        self.template = ExamTemplate.objects.create(
+            name="CK", slug="ck", department=self.dept,
+            config_schema={"fields": [{"key": "valor", "type": "number", "label": "CK", "unit": "U/L"}]},
+        )
+        self.template.applicable_categories.add(self.cat)
+        for i, v in enumerate([10, 12, 14, 16, 18]):
+            ExamResult.objects.create(
+                player=self.player, template=self.template,
+                recorded_at=timezone.now() - timedelta(days=30 - i * 5),
+                result_data={"valor": v},
+            )
+
+    def _widget(self, cfg):
+        layout = DepartmentLayout.objects.create(department=self.dept, category=self.cat)
+        section = LayoutSection.objects.create(layout=layout)
+        widget = Widget.objects.create(
+            section=section, chart_type=ChartType.LINE_WITH_SELECTOR.value,
+            title="CK", display_config=cfg,
+        )
+        src = WidgetDataSource.objects.create(
+            widget=widget, template=self.template, field_keys=["valor"],
+            aggregation=Aggregation.ALL,
+        )
+        return widget, src
+
+    def test_sd_band_emitted_when_enabled(self):
+        widget, src = self._widget({"sd_band": True})
+        payload = resolve_widget(widget, self.player.id)
+        band = payload["bands"][f"{src.id}::valor"]
+        # mean 14; sample SD (n-1) of [10,12,14,16,18] = sqrt(10) ≈ 3.162.
+        self.assertEqual(band["mean"], 14.0)
+        self.assertAlmostEqual(band["sd"], 3.162, places=2)
+        self.assertAlmostEqual(band["lower"], 10.838, places=2)
+        self.assertAlmostEqual(band["upper"], 17.162, places=2)
+
+    def test_no_band_without_flag(self):
+        widget, _ = self._widget({})
+        payload = resolve_widget(widget, self.player.id)
+        self.assertEqual(payload["bands"], {})

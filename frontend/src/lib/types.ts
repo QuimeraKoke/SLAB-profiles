@@ -738,6 +738,9 @@ export interface LineWithSelectorPayload {
   series: Record<string, { recorded_at: string; value: number | null }[]>;
   /** Per-field reference lines, keyed by the same composite field key as `series`. */
   reference_lines?: Record<string, ChartReferenceLine[]>;
+  /** §4 opt-in mean±SD envelope per field (the player's own "normal range"),
+   *  keyed by the composite field key. Present only when `sd_band` is set. */
+  bands?: Record<string, { mean: number; sd: number; lower: number; upper: number }>;
   /** Match events linked to plotted results, keyed by match date (YYYY-MM-DD). */
   matches?: Record<string, CrossExamMatchInfo>;
 }

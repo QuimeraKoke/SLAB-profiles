@@ -6,6 +6,7 @@ import {
   Legend,
   Line,
   LineChart,
+  ReferenceArea,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -107,6 +108,9 @@ export default function LineWithSelector({ widget, playerId }: LineWithSelectorP
 
   // Acute / chronic match-load reference lines for the active variable.
   const refLines = (activeField && data.reference_lines?.[activeField.key]) || [];
+
+  // §4 opt-in mean±SD envelope for the active variable ("su rango normal").
+  const band = activeField ? data.bands?.[activeField.key] : undefined;
 
   // ---- Same-position comparison (on-demand) -------------------------------
   const [compareMode, setCompareMode] = useState<CompareMode>("none");
@@ -273,8 +277,35 @@ export default function LineWithSelector({ widget, playerId }: LineWithSelectorP
         <ChartWindowNav window={window} label={windowRangeLabel(window.visible)} />
         <div className={styles.chartArea} style={{ height: widget.chart_height ?? 360 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartRows} margin={{ top: 8, right: refLines.length ? 70 : 16, left: 8, bottom: 8 }}>
+            <LineChart data={chartRows} margin={{ top: 8, right: refLines.length || band ? 70 : 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              {/* Mean±SD envelope behind everything: "this player's normal
+                  range". Shaded area + a dashed centre line at the mean. */}
+              {band && (
+                <ReferenceArea
+                  y1={band.lower}
+                  y2={band.upper}
+                  fill="#3b82f6"
+                  fillOpacity={0.08}
+                  ifOverflow="extendDomain"
+                />
+              )}
+              {band && (
+                <ReferenceLine
+                  y={band.mean}
+                  stroke="#3b82f6"
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.5}
+                  ifOverflow="extendDomain"
+                  label={{
+                    value: `media ${fmtRef(band.mean)}`,
+                    position: "right",
+                    fill: "#3b82f6",
+                    fontSize: 10,
+                    fontWeight: 600,
+                  }}
+                />
+              )}
               {/* Numeric idx axis: the viewport (domain) pans smoothly over
                   the full dataset. Explicit height keeps the title INSIDE
                   the axis band, clear of the legend row. */}

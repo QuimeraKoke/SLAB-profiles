@@ -27,6 +27,7 @@ from .models import (
     iter_template_fields,
 )
 from .player_state import _GPS_TRAIN_SLUG, match_load_refs
+from .stats import mean as _stats_mean, stdev as _stats_stdev
 
 
 # ---------- helpers ----------
@@ -407,11 +408,27 @@ def _resolve_line_with_selector(
     for key, lines in _peer_average_lines(player, sources).items():
         reference_lines.setdefault(key, []).extend(lines)
 
+    # Opt-in mean±SD envelope (§4). When the widget sets `sd_band: true`, emit
+    # each series' own mean ± 1 SD so the frontend can shade "this player's
+    # normal range" behind the line — reusing dashboards.stats.
+    bands: dict[str, dict[str, float]] = {}
+    if (widget.display_config or {}).get("sd_band"):
+        for key, points in series.items():
+            vals = [p["value"] for p in points if p["value"] is not None]
+            m = _stats_mean(vals)
+            sd = _stats_stdev(vals)
+            if m is not None and sd is not None:
+                bands[key] = {
+                    "mean": round(m, 3), "sd": round(sd, 3),
+                    "lower": round(m - sd, 3), "upper": round(m + sd, 3),
+                }
+
     return {
         "chart_type": ChartType.LINE_WITH_SELECTOR.value,
         "available_fields": available_fields,
         "series": series,
         "reference_lines": reference_lines,
+        "bands": bands,
         # Rival names for tooltip rows whose date is a match date (e.g. the
         # per-match GPS charts, where every point IS a match).
         "matches": _matches_for([(all_results, timedelta(0))]),
