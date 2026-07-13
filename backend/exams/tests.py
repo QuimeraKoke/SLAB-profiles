@@ -510,10 +510,12 @@ class GpsSessionParsingTests(SimpleTestCase):
     def test_classify_session(self):
         self.assertEqual(G.classify_session("F8 vs La Serena", is_match_file=True), "partido")
         self.assertEqual(G.classify_session("Reintegro 01-04-26", is_match_file=False), "reintegro")
-        self.assertEqual(G.classify_session("Amistoso vs San Luis", is_match_file=False), "amistoso")
-        self.assertEqual(G.classify_session("Tareas F5 vs Colo Colo", is_match_file=False), "tareas")
         self.assertEqual(G.classify_session("Sesión 04-01-26", is_match_file=False), "entrenamiento")
-        self.assertEqual(G.classify_session("Sub20 vs UDEC", is_match_file=False), "otro")
+        # Simplified taxonomy: friendlies / tactical / youth all fold into
+        # "entrenamiento" — only reintegro is split out.
+        self.assertEqual(G.classify_session("Amistoso vs San Luis", is_match_file=False), "entrenamiento")
+        self.assertEqual(G.classify_session("Tareas F5 vs Colo Colo", is_match_file=False), "entrenamiento")
+        self.assertEqual(G.classify_session("Sub20 vs UDEC", is_match_file=False), "entrenamiento")
 
     def test_parse_match_parts(self):
         self.assertEqual(G.parse_match_parts("F8 vs La Serena"), ("F8", "La Serena"))

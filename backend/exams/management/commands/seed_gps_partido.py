@@ -28,14 +28,11 @@ from exams.management.commands.seed_gps_session import CONFIG_SCHEMA as _SESSION
 
 
 def build_config_schema() -> dict:
-    """The training schema with match-only session types (and no RPE —
-    subjective effort is logged on trainings, not matches)."""
+    """The training schema minus the fields that don't apply to matches:
+    `rpe` (subjective effort is logged on trainings) and `tipo_sesion` (every
+    row here IS a match, so the type is redundant — client, 2026-07-13)."""
     schema = copy.deepcopy(_SESSION_SCHEMA)
-    schema["fields"] = [f for f in schema["fields"] if f["key"] != "rpe"]
-    for field in schema["fields"]:
-        if field["key"] == "tipo_sesion":
-            field["options"] = ["partido", "amistoso"]
-            field["option_labels"] = {"partido": "Partido", "amistoso": "Amistoso"}
+    schema["fields"] = [f for f in schema["fields"] if f["key"] not in ("rpe", "tipo_sesion")]
     return schema
 
 

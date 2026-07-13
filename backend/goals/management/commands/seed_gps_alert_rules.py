@@ -7,7 +7,7 @@ club-specific configuration:
   * `zscore` vs. a 28-day rolling basal (spike detection) on the *per-minute*
     intensity rates (hsr_min / sprint_dist_min / acc_dec_min) — duration-
     normalized so a short session isn't judged on raw volume — scoped to
-    training sessions (entrenamiento / tareas).
+    regular training sessions (entrenamiento).
   * `pct_match` on HSR *volume* — training HSR ≥ 85 % of the player's own
     match demand.
 
@@ -27,7 +27,7 @@ from django.db import transaction
 
 from goals.models import AlertRule, AlertRuleKind, AlertSeverity
 
-_TRAINING = ["entrenamiento", "tareas"]
+_TRAINING = ["entrenamiento"]
 
 _ZSCORE_CFG = {"window": {"kind": "timedelta", "days": 28}, "threshold_z": 2,
                "direction": "increase", "method": "moving_avg"}

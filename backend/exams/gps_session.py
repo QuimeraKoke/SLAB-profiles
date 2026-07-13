@@ -196,21 +196,16 @@ def resolve_date(row: GpsRow, default_year: int = DEFAULT_YEAR) -> Optional[date
 
 
 def classify_session(label: str, *, is_match_file: bool) -> str:
-    """Derive the `tipo_sesion` categorical value from the session label."""
+    """Derive the `tipo_sesion` categorical value from the session label.
+
+    Simplified taxonomy (client, 2026-07-13): training rows are either
+    `reintegro` (return-to-play) or `entrenamiento` (everything else —
+    friendlies, tactical work and youth sessions all count as training).
+    Match files stay `partido` (the gps_partido template no longer keeps the
+    field, so this is just a marker on the row's data)."""
     if is_match_file:
         return "partido"
-    n = normalize(label)
-    if "reintegro" in n:
-        return "reintegro"
-    if "amistoso" in n:
-        return "amistoso"
-    if "tarea" in n:
-        return "tareas"
-    if "sub 20" in n or "sub20" in n or "juvenil" in n:
-        return "otro"
-    if "sesion" in n:
-        return "entrenamiento"
-    return "otro"
+    return "reintegro" if "reintegro" in normalize(label) else "entrenamiento"
 
 
 def parse_match_parts(label: str) -> tuple[Optional[str], Optional[str]]:

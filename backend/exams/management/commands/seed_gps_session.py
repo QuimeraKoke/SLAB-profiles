@@ -43,15 +43,14 @@ CONFIG_SCHEMA: dict = {
         {
             "key": "tipo_sesion", "label": "Tipo de sesión",
             "type": "categorical", "group": "Sesión",
-            # "partido" lives on the gps_partido template; an unlinked friendly
-            # logged here keeps "amistoso".
-            "options": ["amistoso", "tareas", "entrenamiento", "reintegro", "otro"],
+            # Simplified taxonomy (client, 2026-07-13): only regular training
+            # vs return-to-play. Friendlies / tactical work / other collapse
+            # into "entrenamiento"; matches live on gps_partido, which drops
+            # this field entirely.
+            "options": ["entrenamiento", "reintegro"],
             "option_labels": {
-                "amistoso": "Amistoso",
-                "tareas": "Tareas tácticas",
                 "entrenamiento": "Entrenamiento",
                 "reintegro": "Reintegro",
-                "otro": "Otro",
             },
         },
         # --- Load / volume ---
