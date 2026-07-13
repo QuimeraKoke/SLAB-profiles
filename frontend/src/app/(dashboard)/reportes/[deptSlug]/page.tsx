@@ -13,6 +13,7 @@ import TeamReportDashboard from "@/components/reports/TeamReportDashboard";
 import DashboardAssistant from "@/components/reports/DashboardAssistant";
 import { useBreadcrumbLabel } from "@/components/layout/Breadcrumbs";
 import { api, ApiError } from "@/lib/api";
+import { usePermission } from "@/lib/permissions";
 import { useAuth } from "@/context/AuthContext";
 import { useCategoryContext } from "@/context/CategoryContext";
 import type {
@@ -51,6 +52,8 @@ export default function ReportePage({ params }: PageProps) {
   const [error, setError] = useState<string | null>(null);
   // Bumped after a chart is promoted, so the layout refetches and shows it.
   const [reloadKey, setReloadKey] = useState(0);
+  const [editMode, setEditMode] = useState(false);
+  const canEditPanel = usePermission("dashboards.change_teamreportwidget");
 
   const updateUrl = (next: {
     match?: string | null;
@@ -244,6 +247,15 @@ export default function ReportePage({ params }: PageProps) {
               filename={`reporte-${department.slug}-${layout.category.name}.docx`.replace(/\s+/g, "_")}
             />
           )}
+          {layout && canEditPanel && (
+            <button
+              type="button"
+              className={editMode ? styles.editOn : styles.editToggle}
+              onClick={() => setEditMode((e) => !e)}
+            >
+              {editMode ? "Listo" : "Editar panel"}
+            </button>
+          )}
         </div>
       </header>
 
@@ -281,7 +293,11 @@ export default function ReportePage({ params }: PageProps) {
         )
       )}
       {layout ? (
-        <TeamReportDashboard sections={layout.sections} />
+        <TeamReportDashboard
+          sections={layout.sections}
+          editMode={editMode}
+          onChanged={() => setReloadKey((k) => k + 1)}
+        />
       ) : (
         layoutFetched && !error && <Placeholder departmentName={department.name} />
       )}

@@ -8,14 +8,18 @@ import styles from "./TeamReportDashboard.module.css";
 
 interface Props {
   sections: TeamReportSectionType[];
+  /** Panel-builder edit mode (§2.c) — threads to per-widget arrange controls. */
+  editMode?: boolean;
+  /** Refetch trigger after a successful arrange mutation. */
+  onChanged?: () => void;
 }
 
-export default function TeamReportDashboard({ sections }: Props) {
+export default function TeamReportDashboard({ sections, editMode = false, onChanged }: Props) {
   if (sections.length === 0) {
     return (
       <div className={styles.empty}>
-        Este reporte no tiene secciones todavía. Configúralo desde el panel de
-        administración (Dashboards → Team Report Layouts).
+        Este reporte no tiene secciones todavía. Agregá tu primer widget con
+        “Agregar widget”, o configuralo desde administración.
       </div>
     );
   }
@@ -23,7 +27,12 @@ export default function TeamReportDashboard({ sections }: Props) {
   return (
     <div className={styles.dashboard}>
       {sections.map((section) => (
-        <TeamReportSection key={section.id} section={section} />
+        <TeamReportSection
+          key={section.id}
+          section={section}
+          editMode={editMode}
+          onChanged={onChanged}
+        />
       ))}
     </div>
   );
