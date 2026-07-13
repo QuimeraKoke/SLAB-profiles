@@ -34,6 +34,13 @@ app.conf.beat_schedule = {
         "task": "dashboards.tasks.snapshot_player_states",
         "schedule": crontab(hour=4, minute=0, day_of_week=1),
     },
+    # Daily player-state refresh (04:30) so the weekly chronic-load window ends
+    # *today* even with no new ExamResult — fixes the stale "over-ceiling"
+    # (sobreentrenamiento) flag lingering after rest days. Recompute only.
+    "rebuild-player-states-daily": {
+        "task": "dashboards.tasks.rebuild_player_states",
+        "schedule": crontab(hour=4, minute=30),
+    },
     # Match calendar + results sync from API-Football (every 6h). No-op
     # unless API_FOOTBALL_KEY is set and categories are bound.
     "sync-api-football-fixtures": {

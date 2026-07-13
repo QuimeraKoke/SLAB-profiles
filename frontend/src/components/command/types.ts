@@ -131,6 +131,20 @@ export interface BriefingItem {
   players: string[];
 }
 
+export interface CCCheckinNonResponder {
+  player_id: string;
+  name: string;
+  position: string | null;
+  injured: boolean;
+}
+
+export interface CCCheckinAdherence {
+  responded: number;
+  expected: number;
+  pct: number | null;
+  no_respondieron: CCCheckinNonResponder[];
+}
+
 export interface CommandCenter {
   category: string;
   generated_at: string;
@@ -139,5 +153,6 @@ export interface CommandCenter {
   squad: CCSquad;
   decisions: CCDecision[];
   data_quality: CCDataQualityRow[];
+  checkin_adherence: CCCheckinAdherence;
   recent: CCRecentItem[];
 }

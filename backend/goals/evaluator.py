@@ -109,7 +109,8 @@ def _fire_alert(goal: Goal, *, severity: str, message: str) -> Alert:
     )
 
 
-def _upsert_alert(*, player, source_type: str, source_id, severity: str, message: str) -> Alert:
+def _upsert_alert(*, player, source_type: str, source_id, severity: str, message: str,
+                  source_recorded_at=None) -> Alert:
     """Generic upsert: refresh an active alert by (source_type, source_id, player), or create one.
 
     Used by both the goal evaluator and the threshold evaluator (§ AlertRule).
@@ -135,9 +136,11 @@ def _upsert_alert(*, player, source_type: str, source_id, severity: str, message
         existing.trigger_count = (existing.trigger_count or 1) + 1
         existing.message = message
         existing.severity = severity
-        existing.save(update_fields=[
-            "last_fired_at", "trigger_count", "message", "severity",
-        ])
+        fields = ["last_fired_at", "trigger_count", "message", "severity"]
+        if source_recorded_at is not None:
+            existing.source_recorded_at = source_recorded_at
+            fields.append("source_recorded_at")
+        existing.save(update_fields=fields)
         return existing
     alert = Alert.objects.create(
         player=player,
@@ -148,6 +151,7 @@ def _upsert_alert(*, player, source_type: str, source_id, severity: str, message
         message=message,
         last_fired_at=now,
         trigger_count=1,
+        source_recorded_at=source_recorded_at,
     )
     # Fire-and-forget email dispatch. Wrapped in a try because the broker
     # may be unavailable in test/standalone contexts and we don't want to
@@ -205,7 +209,7 @@ def evaluate_molestia_alert(*, player, template, estado: str, codes: list[str],
 
     _upsert_alert(
         player=player, source_type=AlertSource.MOLESTIA, source_id=source_id,
-        severity=severity, message=message,
+        severity=severity, message=message, source_recorded_at=recorded_at,
     )
     return True
 
@@ -266,6 +270,10 @@ resolve_stale_molestia_alerts = resolve_stale_checkin_alerts
 # above; goals follow their own due-date lifecycle and are exempt.)
 ALERT_STALE_DAYS = 30
 
+# GPS / training-load alerts anchor on a session; the doctor's ask is to
+# suppress them when there's been no recent exposure — 72h without a session.
+GPS_LOAD_STALE_HOURS = 72
+
 
 def expire_stale_alerts(max_age_days: int = ALERT_STALE_DAYS) -> dict:
     """Resolve ACTIVE alerts whose anchoring data is older than `max_age_days`.
@@ -315,15 +323,20 @@ def expire_stale_alerts(max_age_days: int = ALERT_STALE_DAYS) -> dict:
             a.save(update_fields=["status"])
             out["threshold"] += 1
 
-    # MEDICATION + TRAINING_LOAD — source_id IS the result id.
-    for source_type, key in ((AlertSource.MEDICATION, "medication"),
-                             (AlertSource.TRAINING_LOAD, "training_load")):
+    # MEDICATION + TRAINING_LOAD — anchored on the source reading
+    # (source_recorded_at, falling back to the source ExamResult). Training-load
+    # uses the tighter GPS 72h window; medication keeps the 30-day policy.
+    gps_cutoff = timezone.now() - timedelta(hours=GPS_LOAD_STALE_HOURS)
+    for source_type, key, type_cutoff in (
+        (AlertSource.MEDICATION, "medication", cutoff),
+        (AlertSource.TRAINING_LOAD, "training_load", gps_cutoff),
+    ):
         for a in Alert.objects.filter(status=AlertStatus.ACTIVE, source_type=source_type):
-            rec = (
+            rec = a.source_recorded_at or (
                 ExamResult.objects.filter(id=a.source_id)
                 .values_list("recorded_at", flat=True).first()
             )
-            if rec is None or rec < cutoff:
+            if rec is None or rec < type_cutoff:
                 a.status = AlertStatus.RESOLVED
                 a.save(update_fields=["status"])
                 out[key] += 1
@@ -732,6 +745,7 @@ def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
             source_id=rule.id,
             severity=severity,
             message=msg,
+            source_recorded_at=result.recorded_at,
         )
         fired.append(alert)
     return fired

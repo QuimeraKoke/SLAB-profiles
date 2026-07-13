@@ -17,7 +17,12 @@ import KpiStrip from "@/components/command/KpiStrip";
 import SquadStatus from "@/components/command/SquadStatus";
 import DecisionTable from "@/components/command/DecisionTable";
 import BriefingPanel from "@/components/command/BriefingPanel";
-import type { CommandCenter, CCDataQualityRow, CCRecentItem } from "@/components/command/types";
+import type {
+  CommandCenter,
+  CCDataQualityRow,
+  CCRecentItem,
+  CCCheckinAdherence,
+} from "@/components/command/types";
 import styles from "./page.module.css";
 
 export default function CommandCenterPage() {
@@ -78,6 +83,7 @@ export default function CommandCenterPage() {
 
           <aside className={styles.rail}>
             <SquadStatus squad={data.squad} />
+            <CheckinAdherence data={data.checkin_adherence} />
             <DataQuality rows={data.data_quality} />
             <QuickActions />
             <RecentActivity items={data.recent} />
@@ -108,6 +114,40 @@ function DataQuality({ rows }: { rows: CCDataQualityRow[] }) {
           </span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function CheckinAdherence({ data }: { data: CCCheckinAdherence }) {
+  const { responded, expected, pct, no_respondieron } = data;
+  const tone = pct == null ? "muted" : pct >= 90 ? "ok" : pct >= 60 ? "warn" : "crit";
+  return (
+    <div className={styles.railCard}>
+      <div className={styles.railHead}>
+        <HeartPulse size={15} aria-hidden="true" />
+        Adherencia check-in
+      </div>
+      <div className={styles.adhStat}>
+        <span className={`${styles.adhPct} ${styles[`adh_${tone}`]}`}>
+          {pct == null ? "—" : `${pct}%`}
+        </span>
+        <span className={styles.adhCount}>
+          {responded}/{expected} respondieron hoy
+        </span>
+      </div>
+      {no_respondieron.length === 0 ? (
+        <p className={styles.muted}>Todos respondieron el check-in ✓</p>
+      ) : (
+        <div className={styles.adhList}>
+          {no_respondieron.map((p) => (
+            <a key={p.player_id} href={`/perfil/${p.player_id}`} className={styles.adhRow}>
+              <span className={styles.adhName}>{p.name}</span>
+              {p.position && <span className={styles.adhPos}>{p.position}</span>}
+              {p.injured && <span className={styles.adhChip}>lesionado</span>}
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

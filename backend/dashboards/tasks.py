@@ -51,6 +51,27 @@ def snapshot_player_states() -> dict:
     return {"snapshotted": n, "date": str(today)}
 
 
+@shared_task(name="dashboards.tasks.rebuild_player_states")
+def rebuild_player_states() -> dict:
+    """Daily refresh of every active player's materialized state so
+    time-sensitive derivations (the weekly chronic-load window, which now ends
+    *today*) stay current on days with no new ExamResult — otherwise a stale
+    "over-ceiling" verdict would linger after a rest block. Recompute only; the
+    weekly PlayerStateSnapshot is captured separately."""
+    from core.models import Player
+    from .player_state import upsert_player_state
+
+    n = 0
+    for player in (
+        Player.objects.filter(is_active=True)
+        .select_related("category", "position").iterator()
+    ):
+        upsert_player_state(player)
+        n += 1
+    logger.info("rebuild_player_states: recomputed %s player states", n)
+    return {"recomputed": n}
+
+
 @shared_task(name="dashboards.tasks.recompute_readiness")
 def recompute_readiness(player_id: str) -> dict | None:
     """Recompute + cache a player's agent-refined readiness (signature-gated,

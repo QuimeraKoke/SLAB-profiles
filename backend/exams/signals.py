@@ -26,10 +26,11 @@ from django.utils import timezone
 from .models import ExamResult
 
 # A training-load breach is a "right now" signal — only sessions within this
-# window create an active alert. Live entries are always recent (so real-time
-# behavior is unchanged); this just stops a backfill/seed from raising stale
-# alerts for sessions logged weeks ago.
-_TRAINING_LOAD_ALERT_WINDOW = timedelta(days=10)
+# window create an active alert (the doctor's 72h "sin exposición reciente"
+# rule). Live entries are always recent (so real-time behavior is unchanged);
+# this stops a backfill/seed from raising stale alerts for older sessions, and
+# the 72h sweep (goals.evaluator.expire_stale_alerts) retires them symmetrically.
+_TRAINING_LOAD_ALERT_WINDOW = timedelta(hours=72)
 
 
 @receiver(post_save, sender=ExamResult)
@@ -174,6 +175,7 @@ def medication_wada_alert_on_result_save(sender, instance, created, **kwargs):
         source_id=instance.id,
         severity=severity,
         message=message,
+        source_recorded_at=instance.recorded_at,
     )
 
 
@@ -305,6 +307,7 @@ def check_training_load_alert(instance) -> None:
             source_id=instance.id,
             severity=severity,
             message=message,
+            source_recorded_at=instance.recorded_at,
         )
     except Exception:  # noqa: BLE001 — alert eval must never break a result save
         import logging

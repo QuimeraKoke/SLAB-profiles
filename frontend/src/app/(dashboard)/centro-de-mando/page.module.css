@@ -183,6 +183,44 @@
   padding: 12px 14px;
 }
 
+/* ── Adherencia check-in card ── */
+.adhStat {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.adhPct { font-size: 22px; font-weight: 700; }
+.adh_ok { color: #16a34a; }
+.adh_warn { color: #f59e0b; }
+.adh_crit { color: #dc2626; }
+.adh_muted { color: #98a2b3; }
+.adhCount { font-size: 12px; color: #667085; }
+
+.adhList { display: flex; flex-direction: column; }
+.adhRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid #f4f5f8;
+  text-decoration: none;
+  color: #344054;
+}
+.adhRow:last-child { border-bottom: none; }
+.adhRow:hover .adhName { color: #4f46e5; text-decoration: underline; }
+.adhName { font-size: 13px; font-weight: 600; flex: 1; }
+.adhPos { font-size: 11px; color: #98a2b3; }
+.adhChip {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #b42318;
+  background: #fde8e8;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
 @media (max-width: 1100px) {
   .grid {
     grid-template-columns: 1fr;

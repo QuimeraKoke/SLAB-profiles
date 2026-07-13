@@ -88,3 +88,91 @@ def _coerce(raw):
         return float(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_date(raw):
+    """ISO date or None (bad/blank input tolerated)."""
+    from datetime import date as _date
+
+    try:
+        return _date.fromisoformat(raw) if raw else None
+    except (TypeError, ValueError):
+        return None
+
+
+def build_adherence(category, date_from: str = "", date_to: str = "") -> dict:
+    """Check-in adherence over a window. **Informative only — no alerts.**
+
+    The denominator is self-calibrated = days on which *any* active player
+    logged a check-in (a proxy for "a response was expected that day"), so rest
+    days with no expected check-in don't drag the %. Injured players are
+    flagged so the UI can separate them. Default window: the last 4 weeks.
+    """
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from core.models import Player
+
+    today = timezone.localdate()
+    d_to = _parse_date(date_to) or today
+    d_from = _parse_date(date_from) or (d_to - timedelta(days=27))
+    if d_from > d_to:
+        d_from, d_to = d_to, d_from
+
+    players = list(
+        Player.objects.filter(category=category, is_active=True)
+        .select_related("position").order_by("last_name", "first_name")
+    )
+    pids = [p.id for p in players]
+    tids = list(
+        ExamTemplate.objects.filter(slug=WELLNESS_SLUG, applicable_categories=category)
+        .values_list("id", flat=True)
+    ) or list(ExamTemplate.objects.filter(slug=WELLNESS_SLUG).values_list("id", flat=True))
+
+    responded: dict = {}          # player_id -> set(date ISO)
+    activity_days: set = set()    # days ANY player responded → the denominator
+    if tids and pids:
+        rows = ExamResult.objects.filter(
+            player_id__in=pids, template_id__in=tids,
+            recorded_at__date__gte=d_from, recorded_at__date__lte=d_to,
+        ).values_list("player_id", "recorded_at")
+        for pid, rec in rows:
+            di = timezone.localtime(rec).date().isoformat()
+            responded.setdefault(pid, set()).add(di)
+            activity_days.add(di)
+
+    days = sorted(activity_days)
+    expected_days = len(days)
+
+    player_rows = []
+    total_responded = 0
+    for p in players:
+        got = responded.get(p.id, set())
+        k = len(got & activity_days)
+        total_responded += k
+        player_rows.append({
+            "player_id": str(p.id),
+            "name": f"{p.first_name} {p.last_name}".strip(),
+            "position": p.position.abbreviation if p.position else None,
+            "injured": p.status != Player.STATUS_AVAILABLE,
+            "responded_days": k,
+            "expected_days": expected_days,
+            "pct": round(k / expected_days * 100) if expected_days else None,
+            "grid": {d: (d in got) for d in days},
+        })
+
+    denom = expected_days * len(players)
+    return {
+        "date_from": d_from.isoformat(),
+        "date_to": d_to.isoformat(),
+        "activity_days": days,
+        "squad": {
+            "players": len(players),
+            "expected_days": expected_days,
+            "responded": total_responded,
+            "expected": denom,
+            "pct": round(total_responded / denom * 100) if denom else None,
+        },
+        "players": player_rows,
+    }

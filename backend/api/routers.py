@@ -1,15 +1,27 @@
+import logging
+import secrets
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.models import Group
 from django.shortcuts import get_object_or_404
 from ninja import File, Form, NinjaAPI, Query, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
-from core.models import Category, Contract, DailyNote, Department, Player, Position
+from core.models import (
+    Category,
+    Club,
+    Contract,
+    DailyNote,
+    Department,
+    Player,
+    Position,
+    StaffMembership,
+)
 from dashboards.aggregation import position_comparison, resolve_widget
 from dashboards.models import DepartmentLayout, TeamReportLayout, Widget
 from dashboards.team_aggregation import resolve_team_widget
@@ -32,6 +44,10 @@ from .scoping import (
     scope_templates,
 )
 from .schemas import (
+    AdminUserCreateIn,
+    AdminUserCreateOut,
+    AdminUserOut,
+    AdminUserUpdateIn,
     CategoryOut,
     DepartmentOut,
     EventIn,
@@ -65,6 +81,7 @@ from .schemas import (
     ResultOut,
     ResultPatchIn,
     MatchReportResponseOut,
+    ResetPasswordOut,
     RosterEntryOut,
     RosterReplaceIn,
     TeamReportResponseOut,
@@ -73,9 +90,12 @@ from .schemas import (
     TemplateOut,
     TriageOut,
     UserOut,
+    UsersMetaOut,
 )
 
 User = get_user_model()
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -239,6 +259,323 @@ def me(request):
         "user": _serialize_user(request.user),
         "membership": _serialize_membership(membership),
     }
+
+
+# ---------------------------------------------------------------------------
+# User management — Administración → Usuarios.
+#
+# A club "manager" (Administrador role group) can create staff users, assign
+# them a role + data scope, and reset their passwords — all scoped to their
+# own club. Guardrails (enforced below, not just in the UI):
+#   * managers only see/touch users in their own StaffMembership.club;
+#   * they can never grant a scope wider than their own, nor mint superusers;
+#   * assignable roles exclude "Administrador" for non-superusers.
+# Superusers (no membership) bypass the club filter and may target any club.
+# ---------------------------------------------------------------------------
+
+# Managed role groups, in priority order (a user's "role" is the first of
+# these they belong to). Seeded by `core/management/commands/seed_role_groups`.
+MANAGED_ROLE_GROUPS = ["Administrador", "Editor", "Solo Lectura"]
+
+
+def generate_temp_password() -> str:
+    """A short, URL-safe temporary password (~12 chars). Emailed to the new
+    user and returned once to the caller — never stored in plaintext."""
+    return secrets.token_urlsafe(9)
+
+
+def _assignable_roles(user) -> list[str]:
+    """Role groups this requester may assign. Only superusers can hand out
+    the "Administrador" (manager) role — a manager can't mint more managers."""
+    if user.is_superuser:
+        return list(MANAGED_ROLE_GROUPS)
+    return ["Editor", "Solo Lectura"]
+
+
+def _user_role(user) -> str:
+    names = set(user.groups.values_list("name", flat=True))
+    for role in MANAGED_ROLE_GROUPS:
+        if role in names:
+            return role
+    return ""
+
+
+def _membership_for(user) -> StaffMembership | None:
+    try:
+        return user.staff_membership
+    except StaffMembership.DoesNotExist:
+        return None
+
+
+def _serialize_admin_user(user) -> dict:
+    membership = _membership_for(user)
+    return {
+        "id": user.id,
+        "email": user.email,
+        "first_name": user.first_name or "",
+        "last_name": user.last_name or "",
+        "is_active": user.is_active,
+        "is_superuser": user.is_superuser,
+        "last_login": user.last_login,
+        "role": _user_role(user),
+        "club": membership.club if membership else None,
+        "all_categories": membership.all_categories if membership else False,
+        "categories": (
+            [{"id": c.id, "name": c.name} for c in membership.categories.all()]
+            if membership else []
+        ),
+        "all_departments": membership.all_departments if membership else False,
+        "departments": (
+            [{"id": d.id, "name": d.name} for d in membership.departments.all()]
+            if membership else []
+        ),
+    }
+
+
+def _get_managed_user(requester, membership, user_id: int):
+    """Fetch a user the requester is allowed to manage, or raise 404/403.
+
+    Club-scoped requesters only reach users in their own club; nobody but a
+    superuser can touch a superuser account."""
+    qs = User.objects.filter(pk=user_id)
+    if membership is not None:
+        qs = qs.filter(staff_membership__club=membership.club)
+    target = qs.first()
+    if target is None:
+        raise HttpError(404, "Usuario no encontrado.")
+    if target.is_superuser and not requester.is_superuser:
+        raise HttpError(403, "No puedes gestionar a un administrador de plataforma.")
+    return target
+
+
+def _resolve_scope_for_write(requester, membership, club_id, all_cats, cat_ids,
+                             all_deps, dep_ids):
+    """Validate a requested (club, categories, departments) scope against the
+    requester's own grantable scope. Returns
+    (club, all_cats, categories, all_deps, departments)."""
+    if membership is None:  # superuser / platform admin
+        if not club_id:
+            raise HttpError(400, "Selecciona un club.")
+        club = Club.objects.filter(id=club_id).first()
+        if club is None:
+            raise HttpError(404, "Club no encontrado.")
+        creator_all_cats = creator_all_deps = True
+        grantable_cats = grantable_deps = None
+    else:
+        club = membership.club
+        creator_all_cats = membership.all_categories
+        creator_all_deps = membership.all_departments
+        grantable_cats = (
+            None if creator_all_cats
+            else {str(x) for x in membership.categories.values_list("id", flat=True)}
+        )
+        grantable_deps = (
+            None if creator_all_deps
+            else {str(x) for x in membership.departments.values_list("id", flat=True)}
+        )
+
+    if all_cats and not creator_all_cats:
+        raise HttpError(403, "No puedes otorgar acceso a todas las categorías.")
+    if all_deps and not creator_all_deps:
+        raise HttpError(403, "No puedes otorgar acceso a todos los departamentos.")
+
+    categories: list = []
+    if not all_cats:
+        ids = [str(c) for c in (cat_ids or [])]
+        categories = list(Category.objects.filter(club=club, id__in=ids))
+        if len(categories) != len(set(ids)):
+            raise HttpError(400, "Alguna categoría no pertenece a este club.")
+        if grantable_cats is not None:
+            for c in categories:
+                if str(c.id) not in grantable_cats:
+                    raise HttpError(403, "No puedes otorgar una categoría fuera de tu alcance.")
+
+    departments: list = []
+    if not all_deps:
+        ids = [str(d) for d in (dep_ids or [])]
+        departments = list(Department.objects.filter(club=club, id__in=ids))
+        if len(departments) != len(set(ids)):
+            raise HttpError(400, "Algún departamento no pertenece a este club.")
+        if grantable_deps is not None:
+            for d in departments:
+                if str(d.id) not in grantable_deps:
+                    raise HttpError(403, "No puedes otorgar un departamento fuera de tu alcance.")
+
+    return club, all_cats, categories, all_deps, departments
+
+
+def _validate_role(requester, role: str) -> None:
+    if role not in _assignable_roles(requester):
+        raise HttpError(400, f"Rol inválido: {role}.")
+
+
+def _apply_role(user, role: str) -> None:
+    """Set the user's managed role group, replacing any existing one."""
+    user.groups.remove(*Group.objects.filter(name__in=MANAGED_ROLE_GROUPS))
+    grp = Group.objects.filter(name=role).first()
+    if grp is not None:
+        user.groups.add(grp)
+
+
+def _dispatch_welcome_email(user_id: int, password: str, reason: str) -> None:
+    """Fire-and-forget welcome/reset email. Wrapped so a down broker never
+    breaks the create/reset request (same posture as goals/evaluator.py)."""
+    try:
+        from core.tasks import send_welcome_email
+        send_welcome_email.delay(user_id, password, reason)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("welcome email dispatch failed for user %s: %s", user_id, exc)
+
+
+@api.get("/users/meta", response=UsersMetaOut)
+@require_perm("auth.view_user")
+def users_meta(request):
+    membership = get_membership(request.user)
+    clubs = list(Club.objects.order_by("name")) if membership is None else [membership.club]
+    return {"clubs": clubs, "assignable_roles": _assignable_roles(request.user)}
+
+
+@api.get("/users", response=list[AdminUserOut])
+@require_perm("auth.view_user")
+def list_users(request, club_id: str | None = None):
+    """Staff users the requester can manage. Club-scoped managers see only
+    their club; superusers see everyone (optionally filtered by `club_id`)."""
+    membership = get_membership(request.user)
+    qs = User.objects.all()
+    if membership is not None:
+        qs = qs.filter(staff_membership__club=membership.club)
+    elif club_id:
+        qs = qs.filter(staff_membership__club_id=club_id)
+    qs = qs.prefetch_related(
+        "groups",
+        "staff_membership__club",
+        "staff_membership__categories",
+        "staff_membership__departments",
+    ).order_by("first_name", "last_name", "email")
+    return [_serialize_admin_user(u) for u in qs]
+
+
+@api.post("/users", response=AdminUserCreateOut)
+@require_perm("auth.add_user")
+def create_user(request, payload: AdminUserCreateIn):
+    membership = get_membership(request.user)
+    _validate_role(request.user, payload.role)
+    club, all_cats, categories, all_deps, departments = _resolve_scope_for_write(
+        request.user, membership, payload.club_id,
+        payload.all_categories, payload.category_ids,
+        payload.all_departments, payload.department_ids,
+    )
+
+    email = payload.email.strip().lower()
+    if not email or "@" not in email:
+        raise HttpError(400, "Ingresá un email válido.")
+    if not payload.first_name.strip() or not payload.last_name.strip():
+        raise HttpError(400, "Nombre y apellido son requeridos.")
+    if User.objects.filter(email__iexact=email).exists() or \
+            User.objects.filter(username__iexact=email).exists():
+        raise HttpError(400, "Ya existe un usuario con ese email.")
+
+    password = generate_temp_password()
+    user = User.objects.create(
+        username=email,
+        email=email,
+        first_name=payload.first_name.strip(),
+        last_name=payload.last_name.strip(),
+        is_active=payload.is_active,
+        is_staff=False,
+    )
+    user.set_password(password)
+    user.save(update_fields=["password"])
+
+    membership_row = StaffMembership.objects.create(
+        user=user, club=club,
+        all_categories=all_cats, all_departments=all_deps,
+    )
+    if not all_cats:
+        membership_row.categories.set(categories)
+    if not all_deps:
+        membership_row.departments.set(departments)
+
+    _apply_role(user, payload.role)
+    _dispatch_welcome_email(user.id, password, "welcome")
+
+    result = _serialize_admin_user(user)
+    result["temp_password"] = password
+    return result
+
+
+@api.patch("/users/{user_id}", response=AdminUserOut)
+@require_perm("auth.change_user")
+def update_user(request, user_id: int, payload: AdminUserUpdateIn):
+    membership = get_membership(request.user)
+    target = _get_managed_user(request.user, membership, user_id)
+
+    if payload.email is not None:
+        email = payload.email.strip().lower()
+        if email and email != (target.email or "").lower():
+            if "@" not in email:
+                raise HttpError(400, "Ingresá un email válido.")
+            if User.objects.filter(email__iexact=email).exclude(pk=target.pk).exists() or \
+                    User.objects.filter(username__iexact=email).exclude(pk=target.pk).exists():
+                raise HttpError(400, "Ya existe un usuario con ese email.")
+            target.email = email
+            target.username = email
+    if payload.first_name is not None:
+        target.first_name = payload.first_name.strip()
+    if payload.last_name is not None:
+        target.last_name = payload.last_name.strip()
+    if payload.is_active is not None:
+        target.is_active = payload.is_active
+    target.save()
+
+    if payload.role is not None:
+        _validate_role(request.user, payload.role)
+        _apply_role(target, payload.role)
+
+    scope_touched = any(
+        f is not None for f in (
+            payload.all_categories, payload.category_ids,
+            payload.all_departments, payload.department_ids,
+        )
+    )
+    if scope_touched:
+        row = StaffMembership.objects.filter(user=target).select_related("club").first()
+        if row is not None:
+            all_cats = payload.all_categories if payload.all_categories is not None else row.all_categories
+            all_deps = payload.all_departments if payload.all_departments is not None else row.all_departments
+            cat_ids = (
+                payload.category_ids if payload.category_ids is not None
+                else list(row.categories.values_list("id", flat=True))
+            )
+            dep_ids = (
+                payload.department_ids if payload.department_ids is not None
+                else list(row.departments.values_list("id", flat=True))
+            )
+            _, all_cats, categories, all_deps, departments = _resolve_scope_for_write(
+                request.user, membership,
+                str(row.club_id) if membership is None else None,
+                all_cats, cat_ids, all_deps, dep_ids,
+            )
+            row.all_categories = all_cats
+            row.all_departments = all_deps
+            row.save(update_fields=["all_categories", "all_departments", "updated_at"])
+            row.categories.set([] if all_cats else categories)
+            row.departments.set([] if all_deps else departments)
+
+    target.refresh_from_db()
+    return _serialize_admin_user(target)
+
+
+@api.post("/users/{user_id}/reset-password", response=ResetPasswordOut)
+@require_perm("auth.change_user")
+def reset_user_password(request, user_id: int):
+    membership = get_membership(request.user)
+    target = _get_managed_user(request.user, membership, user_id)
+    password = generate_temp_password()
+    target.set_password(password)
+    target.save(update_fields=["password"])
+    _dispatch_welcome_email(target.id, password, "reset")
+    return {"temp_password": password}
 
 
 @api.get("/clubs/{club_id}/departments", response=list[DepartmentOut])
@@ -2430,6 +2767,22 @@ def daily_report(request, category_id: str, date: str = ""):
     if category is None:
         raise HttpError(404, "Category not found")
     return build_daily_report(category, parse_date(date), request.user)
+
+
+@api.get("/wellness-adherence")
+def wellness_adherence(request, category_id: str, date_from: str = "", date_to: str = ""):
+    """Check-in adherence over a window (informative, no alerts): per-player
+    responded/missed grid + compliance % (denominator = days with any check-in
+    activity in the category) + a squad roll-up. Default window: last 4 weeks."""
+    from api.wellness import build_adherence
+
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    return build_adherence(category, date_from, date_to)
 
 
 @api.get("/daily-report.pdf")

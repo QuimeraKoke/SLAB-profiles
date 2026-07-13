@@ -190,6 +190,30 @@ export default function DailyPage() {
         />
       </div>
 
+      {/* ── No respondieron el check-in (informativo — para ir a llamarlos) ── */}
+      {kpis.wellness_hoy.no_respondieron.length > 0 && (
+        <div className={styles.noResp}>
+          <span className={styles.noRespTitle}>
+            No respondieron el check-in
+            <span className={styles.noRespCount}>
+              {kpis.wellness_hoy.no_respondieron.length}
+            </span>
+          </span>
+          <div className={styles.noRespList}>
+            {kpis.wellness_hoy.no_respondieron.map((p) => (
+              <Link
+                key={p.player_id}
+                href={`/perfil/${p.player_id}`}
+                className={styles.noRespChip}
+              >
+                {p.name}
+                {p.injured && <span className={styles.noRespInjured}>lesionado</span>}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className={styles.grid}>
         <main className={styles.main}>
           {/* ── 1 · Lesionados ── */}

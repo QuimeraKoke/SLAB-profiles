@@ -142,6 +142,14 @@ class Alert(models.Model):
             "re-triggers while the alert is still active."
         ),
     )
+    source_recorded_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text=(
+            "recorded_at of the reading that fired this alert (the structured "
+            "'dato del …' date, not just embedded in the message). Null for "
+            "goal-lifecycle alerts. Drives the freshness badge + GPS 72h sweep."
+        ),
+    )
     trigger_count = models.PositiveIntegerField(
         default=1,
         help_text=(

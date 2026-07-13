@@ -48,6 +48,87 @@ class LoginOut(Schema):
     membership: MembershipOut | None = None
 
 
+# ---------- User management (Administración → Usuarios) ----------
+
+
+class ScopeRefOut(Schema):
+    """Minimal {id, name} pair for a category/department in a user's scope
+    summary — lighter than CategoryOut/DepartmentOut, which the Usuarios
+    table doesn't need."""
+
+    id: UUID
+    name: str
+
+
+class AdminUserOut(Schema):
+    """A staff user as seen by the Usuarios admin module. `role` is the
+    managed group name (Editor / Solo Lectura / Administrador) and the
+    scope fields mirror the user's StaffMembership."""
+
+    id: int
+    email: str
+    first_name: str = ""
+    last_name: str = ""
+    is_active: bool = True
+    is_superuser: bool = False
+    last_login: datetime | None = None
+    role: str = ""
+    club: "ClubOut | None" = None
+    all_categories: bool = False
+    categories: list[ScopeRefOut] = []
+    all_departments: bool = False
+    departments: list[ScopeRefOut] = []
+
+
+class AdminUserCreateIn(Schema):
+    first_name: str
+    last_name: str
+    email: str
+    role: str
+    all_categories: bool = False
+    category_ids: list[UUID] = []
+    all_departments: bool = False
+    department_ids: list[UUID] = []
+    is_active: bool = True
+    # Superuser-only: which club the new user belongs to. Ignored for
+    # club-scoped managers (they can only create users in their own club).
+    club_id: UUID | None = None
+
+
+class AdminUserUpdateIn(Schema):
+    """Partial update — only provided fields are written. Scope fields are
+    applied together (omitting them all leaves the membership untouched)."""
+
+    first_name: str | None = None
+    last_name: str | None = None
+    email: str | None = None
+    role: str | None = None
+    all_categories: bool | None = None
+    category_ids: list[UUID] | None = None
+    all_departments: bool | None = None
+    department_ids: list[UUID] | None = None
+    is_active: bool | None = None
+
+
+class AdminUserCreateOut(AdminUserOut):
+    # Plaintext temp password — returned ONCE so the UI can show it as a
+    # fallback (it's also emailed). Never stored/logged in plaintext.
+    temp_password: str
+
+
+class ResetPasswordOut(Schema):
+    temp_password: str
+
+
+class UsersMetaOut(Schema):
+    """Form-population data for the Usuarios page: which clubs the requester
+    can target (their own for a manager; all for a superuser) and which role
+    groups they're allowed to assign."""
+
+    clubs: list["ClubOut"] = []
+    assignable_roles: list[str] = []
+
+
 class ClubOut(Schema):
     id: UUID
     name: str
@@ -382,6 +463,7 @@ class AlertOut(Schema):
     message: str
     fired_at: datetime
     last_fired_at: datetime | None = None
+    source_recorded_at: datetime | None = None
     trigger_count: int = 1
     dismissed_at: datetime | None = None
 

@@ -143,9 +143,17 @@ def _kpis(players, alerts, wellness, target_date) -> dict:
     for a in alerts:
         if a.severity in sev:
             sev[a.severity] += 1
-    checked_today = sum(
-        1 for w in wellness.values() if w and w["date"] == target_date.isoformat()
-    )
+    tgt = target_date.isoformat()
+    responded_ids = {pid for pid, w in wellness.items() if w and w.get("date") == tgt}
+    no_respondieron = [
+        {
+            "player_id": str(p.id),
+            "name": f"{p.first_name} {p.last_name}".strip(),
+            "position": p.position.abbreviation if p.position else None,
+            "injured": p.status != Player.STATUS_AVAILABLE,
+        }
+        for p in players if p.id not in responded_ids
+    ]
     return {
         "disponibles": {
             "n": by_status.get(Player.STATUS_AVAILABLE, 0),
@@ -160,7 +168,11 @@ def _kpis(players, alerts, wellness, target_date) -> dict:
             ],
         },
         "alertas": {"critical": sev["critical"], "warning": sev["warning"]},
-        "wellness_hoy": {"n": checked_today, "expected": len(players)},
+        "wellness_hoy": {
+            "n": len(responded_ids),
+            "expected": len(players),
+            "no_respondieron": no_respondieron,
+        },
     }
 
 

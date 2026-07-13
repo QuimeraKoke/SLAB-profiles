@@ -10,7 +10,7 @@ Everything returned here is JSON-serializable (dates → isoformat).
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 from django.utils import timezone
@@ -67,11 +67,32 @@ def build_command_center(category) -> dict:
         "squad": _squad(players, crit_player_ids),
         "decisions": _decisions(players, alerts_by_player, states),
         "data_quality": _data_quality(category, player_ids, now),
+        "checkin_adherence": _checkin_adherence(category, players, now),
         "recent": _recent(alerts),
     }
 
 
 # ─── Context (next match + pre-match risk) ────────────────────────────
+
+# A weekly-load "over ceiling" verdict is only trusted when its window is
+# recent — otherwise a stale materialized state keeps flagging load after the
+# player stopped training (the "5 días libres → sobreentrenamiento" bug).
+_WEEKLY_LOAD_MAX_STALE_DAYS = 3
+
+
+def _weekly_load_over_ceiling(state, now) -> bool:
+    wl = (state or {}).get("weekly_load") or {}
+    metrics = wl.get("metrics") or []
+    if not any(c.get("status") == "over" for c in metrics):
+        return False
+    to = (wl.get("window") or {}).get("to")
+    try:
+        to_dt = datetime.fromisoformat(to) if to else None
+    except (ValueError, TypeError):
+        to_dt = None
+    if to_dt is None:
+        return False
+    return (now.date() - to_dt.date()).days <= _WEEKLY_LOAD_MAX_STALE_DAYS
 
 
 def _context(category, players, states, crit_player_ids, now) -> dict:
@@ -109,14 +130,9 @@ def _context(category, players, states, crit_player_ids, now) -> dict:
             "starts_at": last.starts_at.isoformat(),
         }
 
-    # Pre-match risk: players with any weekly-load concept over its ceiling.
-    over = [
-        p for p in players
-        if any(
-            c.get("status") == "over"
-            for c in (((states.get(p.id) or {}).get("weekly_load") or {}).get("metrics") or [])
-        )
-    ]
+    # Pre-match risk: players with any weekly-load concept over its ceiling
+    # (only when the load window is recent — see _weekly_load_over_ceiling).
+    over = [p for p in players if _weekly_load_over_ceiling(states.get(p.id), now)]
     risk = {
         "count": len(over),
         "headline": (
@@ -271,7 +287,9 @@ def _kpi_completitud(category, player_ids, now) -> dict:
         slug__in=[_GPS_MATCH_SLUG, _GPS_TRAIN_SLUG],
         applicable_categories=category,
     ).values_list("id", flat=True))
-    well_templates = list(ExamTemplate.objects.filter(slug="check_in").values_list("id", flat=True))
+    well_templates = list(ExamTemplate.objects.filter(
+        slug="checkin_fisico", applicable_categories=category,
+    ).values_list("id", flat=True))
 
     gps_n = (
         ExamResult.objects.filter(
@@ -303,6 +321,42 @@ def _kpi_completitud(category, player_ids, now) -> dict:
             {"label": "GPS", "n": gps_n, "expected": len(player_ids)},
             {"label": "wellness", "n": well_n, "expected": len(player_ids)},
         ],
+    }
+
+
+def _checkin_adherence(category, players, now) -> dict:
+    """Today's check-in adherence: responders vs. the active roster, with the
+    non-responders listed (each deep-linkable to its ficha). Informative — no
+    alert. Feeds the Centro de mando "quién no respondió hoy" card."""
+    from api.wellness import WELLNESS_SLUG
+
+    today = timezone.localdate()
+    tids = list(
+        ExamTemplate.objects.filter(slug=WELLNESS_SLUG, applicable_categories=category)
+        .values_list("id", flat=True)
+    ) or list(ExamTemplate.objects.filter(slug=WELLNESS_SLUG).values_list("id", flat=True))
+    responded_ids = set(
+        ExamResult.objects.filter(
+            player_id__in=[p.id for p in players],
+            template_id__in=tids, recorded_at__date=today,
+        ).values_list("player_id", flat=True)
+    ) if tids else set()
+    no_resp = [
+        {
+            "player_id": str(p.id),
+            "name": _short_name(p),
+            "position": p.position.abbreviation if p.position else None,
+            "injured": p.status != Player.STATUS_AVAILABLE,
+        }
+        for p in players if p.id not in responded_ids
+    ]
+    expected = len(players)
+    responded = expected - len(no_resp)
+    return {
+        "responded": responded,
+        "expected": expected,
+        "pct": round(responded / expected * 100) if expected else None,
+        "no_respondieron": no_resp,
     }
 
 

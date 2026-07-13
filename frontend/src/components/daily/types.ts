@@ -9,7 +9,16 @@ export interface DailyKpis {
     breakdown: { label: string; n: number; tone: Tone }[];
   };
   alertas: { critical: number; warning: number };
-  wellness_hoy: { n: number; expected: number };
+  wellness_hoy: {
+    n: number;
+    expected: number;
+    no_respondieron: {
+      player_id: string;
+      name: string;
+      position: string | null;
+      injured: boolean;
+    }[];
+  };
 }
 
 export interface DailyEpisode {

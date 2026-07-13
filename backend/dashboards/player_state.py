@@ -15,6 +15,8 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+from django.utils import timezone
+
 from .references import band_for_value
 
 logger = logging.getLogger(__name__)
@@ -64,9 +66,10 @@ WEEKLY_LOAD_METRICS: list[dict] = [
 
 def compute_weekly_load(player) -> dict | None:
     """Rolling 7-day chronic-load totals (matches + trainings) per concept,
-    classified vs the weekly thresholds. Window ends at the player's most
-    recent GPS reading (robust to stale data — "their latest week of load").
-    None if the player has no GPS readings."""
+    classified vs the weekly thresholds. Window ends **today** (`now`), so a
+    rest block correctly decays out of the window instead of freezing the
+    player's last training week as their current load. None if there are no
+    GPS readings in the last 7 days."""
     from exams.models import ExamResult
 
     results = list(
@@ -77,7 +80,7 @@ def compute_weekly_load(player) -> dict | None:
     if not results:
         return None
 
-    to = results[0].recorded_at
+    to = timezone.now()
     frm = to - timedelta(days=7)
     window = [r for r in results if frm < r.recorded_at <= to]
 
