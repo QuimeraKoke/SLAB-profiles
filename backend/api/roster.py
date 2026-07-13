@@ -13,8 +13,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from core.models import Player
-from exams.models import ExamResult, ExamTemplate
-from dashboards.player_state import _GPS_MATCH_SLUG, _GPS_TRAIN_SLUG
+from dashboards.acwr import compute_acwr, resolve_specs
 
 _STATUS_LABEL = {
     Player.STATUS_INJURED: "Lesionado",
@@ -133,55 +132,24 @@ def _wellness_and_forma(category, pids: list) -> tuple[dict, dict]:
 
 
 def _player_acwr(category, pids: list, with_detail: bool = False) -> dict:
-    """Per-player ACWR = acute (7d) ÷ chronic (28d-weekly) total distance,
-    matches + trainings. None when GPS is too sparse. With `with_detail=True`
-    each value is a dict {ratio, acute_km, chronic_week_km, last} for tooltips;
-    otherwise just the ratio float (what `_readiness` / player_analysis expect)."""
-    templates = list(
-        ExamTemplate.objects.filter(
-            slug__in=[_GPS_MATCH_SLUG, _GPS_TRAIN_SLUG],
-            applicable_categories=category, is_active_version=True,
-        ).distinct()
-    )
-    if not templates:
-        return {}
-    # Distance = external training load; both GPS templates share the key.
-    field_by_template = {t.id: "tot_dist" for t in templates}
-    now = timezone.now()
-    since, acute_cut = now - timedelta(days=28), now - timedelta(days=7)
-    rows = ExamResult.objects.filter(
-        player_id__in=pids, template__in=templates, recorded_at__gte=since,
-    ).values_list("player_id", "template_id", "recorded_at", "result_data")
-
-    acute: dict = {}
-    chronic: dict = {}
-    last: dict = {}
-    for pid, tid, recorded_at, data in rows:
-        v = _coerce((data or {}).get(field_by_template.get(tid)))
-        if v is None:
-            continue
-        chronic[pid] = chronic.get(pid, 0.0) + v
-        if recorded_at >= acute_cut:
-            acute[pid] = acute.get(pid, 0.0) + v
-        if pid not in last or recorded_at > last[pid]:
-            last[pid] = recorded_at
-
-    out = {}
-    for pid, ch in chronic.items():
-        weekly = ch / 4.0
-        if weekly <= 0:
-            continue
-        ratio = round(acute.get(pid, 0.0) / weekly, 2)
-        if with_detail:
-            out[pid] = {
-                "ratio": ratio,
-                "acute_km": round(acute.get(pid, 0.0) / 1000, 1),
-                "chronic_week_km": round(weekly / 1000, 1),
-                "last": timezone.localtime(last[pid]).date().isoformat() if pid in last else None,
-            }
-        else:
-            out[pid] = ratio
-    return out
+    """Per-player ACWR for the category's primary configured load variable
+    (default: total distance, 7d acute ÷ 28d chronic; see `dashboards.acwr`).
+    None when GPS is too sparse. With `with_detail=True` each value is a dict
+    {ratio, acute_km, chronic_week_km, last} for tooltips; otherwise just the
+    ratio float (what `_readiness` / player_analysis expect)."""
+    spec = resolve_specs(category)[0]
+    data = compute_acwr(pids, category, spec)
+    if not with_detail:
+        return {pid: d["ratio"] for pid, d in data.items()}
+    return {
+        pid: {
+            "ratio": d["ratio"],
+            "acute_km": round(d["acute"] / 1000, 1),
+            "chronic_week_km": round(d["chronic_week"] / 1000, 1),
+            "last": d["last"],
+        }
+        for pid, d in data.items()
+    }
 
 
 def _readiness(wellness, acwr, status) -> int | None:
@@ -213,12 +181,3 @@ def _score_tone(score_100: float) -> str:
 
 def _initials(p) -> str:
     return ((p.first_name or " ")[0] + (p.last_name or " ")[0]).upper()
-
-
-def _coerce(raw) -> float | None:
-    if raw is None or isinstance(raw, bool) or raw == "":
-        return None
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return None

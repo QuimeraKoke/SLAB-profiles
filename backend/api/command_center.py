@@ -184,58 +184,35 @@ def _kpi_riesgo(players, alerts, crit_player_ids) -> dict:
 
 
 def _kpi_carga(category, players, now) -> dict:
-    """Team ACWR = mean of per-player (acute 7d ÷ chronic 28d-weekly) total
-    distance, over matches + trainings. Defensive: None when GPS is sparse."""
-    templates = list(
-        ExamTemplate.objects.filter(
-            slug__in=[_GPS_MATCH_SLUG, _GPS_TRAIN_SLUG],
-            applicable_categories=category, is_active_version=True,
-        ).distinct()
-    )
+    """Team ACWR = mean of the per-player ratio for the category's primary
+    configured load variable (default: total distance, 7d ÷ 28d; see
+    `dashboards.acwr`). Defensive: None when GPS is sparse."""
+    from dashboards.acwr import compute_acwr, gps_templates, resolve_specs
+
+    templates = gps_templates(category)
     if not templates:
         return {"value": None, "status": "Sin datos", "tone": "muted",
                 "detail": "Sin plantillas GPS para esta categoría."}
 
-    field_by_template = {t.id: "tot_dist" for t in templates}
-    since = now - timedelta(days=28)
-    acute_cut = now - timedelta(days=7)
-    rows = ExamResult.objects.filter(
-        player__category=category, player__is_active=True,
-        template__in=templates, recorded_at__gte=since,
-    ).values_list("player_id", "template_id", "recorded_at", "result_data")
-
-    acute: dict[Any, float] = {}
-    chronic: dict[Any, float] = {}
-    for player_id, template_id, recorded_at, data in rows:
-        v = _coerce((data or {}).get(field_by_template.get(template_id)))
-        if v is None:
-            continue
-        chronic[player_id] = chronic.get(player_id, 0.0) + v
-        if recorded_at >= acute_cut:
-            acute[player_id] = acute.get(player_id, 0.0) + v
-
-    ratios = []
-    over = 0
-    for pid, ch in chronic.items():
-        weekly_chronic = ch / 4.0
-        if weekly_chronic <= 0:
-            continue
-        r = acute.get(pid, 0.0) / weekly_chronic
-        ratios.append(r)
-        if r > 1.3:
-            over += 1
+    spec = resolve_specs(category)[0]
+    pids = [p.id for p in players if getattr(p, "is_active", True)]
+    data = compute_acwr(pids, category, spec, now=now, templates=templates)
+    ratios = [d["ratio"] for d in data.values()]
+    over = sum(1 for d in data.values() if d["ratio"] > spec.sweet_high)
     if not ratios:
         return {"value": None, "status": "Sin datos", "tone": "muted",
                 "detail": "Datos GPS insuficientes para ACWR."}
 
     team = sum(ratios) / len(ratios)
-    tone = "crit" if over else ("warn" if team > 1.2 else "ok")
+    # Team warns as the mean nears the ceiling (default sweet_high 1.3 → 1.2).
+    tone = "crit" if over else ("warn" if team > spec.sweet_high - 0.1 else "ok")
     return {
         "value": round(team, 2),
         "status": (f"{over} sobre umbral" if over else "En rango"),
         "tone": tone,
         "over": over,
-        "detail": "ACWR agudo:crónico (7d vs 28d). Rango objetivo 0.8–1.3.",
+        "detail": (f"ACWR agudo:crónico ({spec.acute_days}d vs {spec.chronic_days}d). "
+                   f"Rango objetivo {spec.sweet_low}–{spec.sweet_high}."),
     }
 
 
@@ -530,12 +507,3 @@ def _initials(p) -> str:
 def _short_name(p) -> str:
     parts = (p.last_name or p.first_name or "").split()
     return parts[0] if parts else "—"
-
-
-def _coerce(raw) -> float | None:
-    if raw is None or isinstance(raw, bool) or raw == "":
-        return None
-    try:
-        return float(raw)
-    except (TypeError, ValueError):
-        return None

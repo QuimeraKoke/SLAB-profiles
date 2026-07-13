@@ -2195,3 +2195,90 @@ class EventIdFilterTests(TestCase):
         payload = resolve_team_widget(widget, self.cat, event_id=orphan.id)
         # Frontend renders "Sin datos" — empty=True when no rows have data.
         self.assertTrue(payload["empty"])
+
+
+# =============================================================================
+# Centralized ACWR (§1.f) — pure spec / config / ratio math
+# =============================================================================
+
+from types import SimpleNamespace  # noqa: E402
+
+from django.test import SimpleTestCase  # noqa: E402
+
+from .acwr import (  # noqa: E402
+    AcwrSpec,
+    ewma_ratio,
+    moving_avg_ratio,
+    resolve_specs,
+)
+
+
+class AcwrSpecTests(SimpleTestCase):
+    def test_from_dict_fills_defaults(self):
+        spec = AcwrSpec.from_dict({"field": "player_load"})
+        self.assertEqual(spec.field, "player_load")
+        self.assertEqual(spec.acute_days, 7)
+        self.assertEqual(spec.chronic_days, 28)
+        self.assertEqual(spec.method, "moving_avg")
+
+    def test_from_dict_none_is_all_defaults(self):
+        spec = AcwrSpec.from_dict(None)
+        self.assertEqual(spec.field, "tot_dist")
+        self.assertEqual(spec.sweet_low, 0.8)
+        self.assertEqual(spec.sweet_high, 1.3)
+
+    def test_band_thresholds(self):
+        spec = AcwrSpec.from_dict(None)  # danger <0.7 / sweet 0.8–1.3 / danger >1.5
+        self.assertEqual(spec.band(1.0), "ok")
+        self.assertEqual(spec.band(1.4), "watch")    # above sweet, below danger
+        self.assertEqual(spec.band(1.6), "danger")   # above danger_high
+        self.assertEqual(spec.band(0.75), "watch")   # below sweet, above danger
+        self.assertEqual(spec.band(0.65), "danger")  # below danger_low
+        self.assertIsNone(spec.band(None))
+
+
+class ResolveSpecsTests(SimpleTestCase):
+    def test_empty_config_is_system_default(self):
+        specs = resolve_specs(SimpleNamespace(load_config={}))
+        self.assertEqual(len(specs), 1)
+        self.assertEqual(specs[0].field, "tot_dist")
+
+    def test_missing_attr_is_system_default(self):
+        specs = resolve_specs(SimpleNamespace())
+        self.assertEqual(specs[0].field, "tot_dist")
+
+    def test_configured_variables_parsed(self):
+        cat = SimpleNamespace(load_config={"acwr": {"variables": [
+            {"field": "player_load", "method": "ewma"},
+            {"field": "hsr", "sweet_high": 1.25},
+        ]}})
+        specs = resolve_specs(cat)
+        self.assertEqual([s.field for s in specs], ["player_load", "hsr"])
+        self.assertEqual(specs[0].method, "ewma")
+        self.assertEqual(specs[1].sweet_high, 1.25)
+
+
+class AcwrRatioMathTests(SimpleTestCase):
+    def test_moving_avg_steady_load_is_one(self):
+        # acute 7d total 7000; chronic 28d total 28000 → weekly 7000 → 1.0
+        self.assertEqual(moving_avg_ratio(7000, 28000, 7, 28), 1.0)
+
+    def test_moving_avg_matches_legacy_formula(self):
+        acute, chronic = 10000.0, 28000.0
+        self.assertEqual(
+            moving_avg_ratio(acute, chronic, 7, 28),
+            round(acute / (chronic / 4.0), 2),   # legacy: acute ÷ (chronic/4)
+        )
+
+    def test_moving_avg_zero_chronic_is_none(self):
+        self.assertIsNone(moving_avg_ratio(5000, 0, 7, 28))
+
+    def test_ewma_steady_series_is_about_one(self):
+        self.assertAlmostEqual(ewma_ratio([100.0] * 28, 7, 28), 1.0, places=2)
+
+    def test_ewma_ramp_up_exceeds_one(self):
+        # Recent days heavier → acute EWMA > chronic EWMA.
+        self.assertGreater(ewma_ratio([float(i) for i in range(1, 29)], 7, 28), 1.0)
+
+    def test_ewma_all_zero_series_is_none(self):
+        self.assertIsNone(ewma_ratio([0.0] * 28, 7, 28))

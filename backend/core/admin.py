@@ -84,6 +84,23 @@ class CategoryAdmin(admin.ModelAdmin):
             ),
             "classes": ("collapse",),
         }),
+        ("Monitoreo de carga (ACWR)", {
+            "fields": ("load_config",),
+            "description": (
+                "Parámetros de ACWR editables por categoría. Vacío "
+                "(<code>{}</code>) = valores del sistema (distancia total, "
+                "media móvil 7:28, rango objetivo 0.8–1.3). Para personalizar: "
+                "<code>{\"acwr\": {\"variables\": [{\"field\": \"tot_dist\", "
+                "\"acute_days\": 7, \"chronic_days\": 28, \"method\": "
+                "\"moving_avg\", \"sweet_low\": 0.8, \"sweet_high\": 1.3, "
+                "\"danger_low\": 0.7, \"danger_high\": 1.5, \"label\": "
+                "\"Distancia total\"}]}}</code>. <code>method</code> = "
+                "<code>moving_avg</code> o <code>ewma</code>; agrega más "
+                "entradas para vigilar varias variables (p. ej. "
+                "<code>player_load</code>, <code>hsr</code>)."
+            ),
+            "classes": ("collapse",),
+        }),
     )
 
     def department_summary(self, obj: Category) -> str:

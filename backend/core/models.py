@@ -76,6 +76,20 @@ class Category(models.Model):
             "array restricts the sync to specific competitions."
         ),
     )
+    load_config = models.JSONField(
+        default=dict, blank=True,
+        help_text=(
+            "Load-monitoring parameters (ACWR, etc.), editable per category. "
+            "Empty = system defaults (tot_dist, 7:28 moving average, target "
+            "band 0.8–1.3). Shape: "
+            '<code>{"acwr": {"variables": [{"field": "tot_dist", '
+            '"acute_days": 7, "chronic_days": 28, "method": "moving_avg", '
+            '"sweet_low": 0.8, "sweet_high": 1.3, "danger_low": 0.7, '
+            '"danger_high": 1.5, "label": "Distancia total", "alert": false, '
+            '"severity": "warning"}]}}</code>. method = moving_avg | ewma; add '
+            "more entries to monitor several variables."
+        ),
+    )
 
     class Meta:
         unique_together = ("club", "name")
