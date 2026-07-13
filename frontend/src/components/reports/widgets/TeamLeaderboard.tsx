@@ -288,7 +288,6 @@ function VerticalBarsView({
   const effectiveHeight: "value" | "deviation" =
     pickedHeight ?? (data.height_mode === "deviation" ? "deviation" : "value");
   const isDev = effectiveHeight === "deviation" && deviationAvailable;
-  const semaforo = data.color_mode === "semaforo";
 
   // Deviation-mode bar scale: [0, max concern] across the visible rows.
   const barMax = React.useMemo(() => {
@@ -352,6 +351,17 @@ function VerticalBarsView({
   const hiddenCount = singleRows.length - visibleSingles.length;
   const hiddenByFilter =
     !showNoData && singleRows.length > 0 && visibleSingles.length === 0;
+
+  // The backend ranks by the widget's configured default; when the user
+  // toggles to Desviación client-side we must re-rank by concern here so the
+  // bar order matches the bar heights (most-deviating first, no-basal last).
+  const displayRows = isDev
+    ? [...visibleSingles].sort((a, b) => {
+        const ba = typeof a.bar === "number" ? a.bar : -1;
+        const bb = typeof b.bar === "number" ? b.bar : -1;
+        return bb - ba;
+      })
+    : visibleSingles;
 
   return (
     <div className={styles.widget}>
@@ -435,7 +445,7 @@ function VerticalBarsView({
               </div>
             );
           })}
-          {visibleSingles.map((row) => {
+          {displayRows.map((row) => {
             let heightPct: number;
             let aboveLabel: string;
             let barClass = styles.vBar;
@@ -449,7 +459,7 @@ function VerticalBarsView({
               // sits above the bar, with z + baseline in the tooltip.
               const bar = typeof row.bar === "number" ? row.bar : null;
               heightPct = bar && bar > 0 ? Math.max(2, (bar / barMax) * 100) : 0;
-              if (semaforo) barClass = `${styles.vBar} ${toneClass(row.tone)}`;
+              barClass = `${styles.vBar} ${toneClass(row.tone)}`;
               const raw = row.latest_value;
               aboveLabel = raw != null ? formatNumber(raw, decimals) : "—";
               tipValue = raw != null ? `${formatNumber(raw, decimals)}${unit}` : "Sin datos";
