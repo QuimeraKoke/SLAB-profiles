@@ -4334,6 +4334,7 @@ def _serialize_episode(episode: Episode) -> dict:
         "title": episode.title,
         "started_at": episode.started_at,
         "ended_at": episode.ended_at,
+        "available_at": episode.available_at,
         "metadata": episode.metadata or {},
         "result_count": ExamResult.objects.filter(episode=episode).count(),
         "latest_result_data": (latest.result_data if latest else {}) or {},
@@ -4451,6 +4452,26 @@ def update_episode(request, episode_id: str, payload: EpisodePatchIn):
         # Recompute player.status now that this episode is no longer open.
         from exams.episode_lifecycle import recompute_player_status
         recompute_player_status(episode.player)
+
+    if payload.available_at is not None:
+        from django.utils import timezone as _tz
+        from django.utils.dateparse import parse_date, parse_datetime
+        val = payload.available_at.strip()
+        if val.lower() == "clear" or val == "":
+            episode.available_at = None
+        else:
+            dt = parse_datetime(val)
+            if dt is None:
+                d = parse_date(val)
+                if d is None:
+                    raise HttpError(400, "available_at inválido (ISO date/datetime o 'clear').")
+                dt = datetime.combine(d, datetime.min.time())
+            if _tz.is_naive(dt):
+                dt = _tz.make_aware(dt, _tz.get_default_timezone())
+            episode.available_at = dt
+        # available_at is independent of status/stage, so Player.status
+        # (driven by open episodes' stages) is unaffected — no recompute.
+        episode.save(update_fields=["available_at", "updated_at"])
 
     return _serialize_episode(episode)
 

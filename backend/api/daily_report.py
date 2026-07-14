@@ -184,6 +184,14 @@ def _lesionado(p, episode, acwr_meta, wellness, player_alerts, player_notes,
         started = timezone.localtime(episode["started_at"]).date()
         diagnosed = _to_date(data.get("diagnosed_at")) or started
         expected = _to_date(data.get("expected_return_date"))
+        # Real availability date ('disponible para citar') wins over the
+        # per-result forecast. Days-out freezes once the player is available
+        # (or the episode closes); otherwise it counts to target_date.
+        avail_dt = episode.get("available_at")
+        available = timezone.localtime(avail_dt).date() if avail_dt else None
+        ended_dt = episode.get("ended_at")
+        ended = timezone.localtime(ended_dt).date() if ended_dt else None
+        end_anchor = available or ended or target_date
         ep = {
             "id": str(episode["id"]),
             "template_slug": episode["template_slug"],
@@ -193,9 +201,12 @@ def _lesionado(p, episode, acwr_meta, wellness, player_alerts, player_notes,
             "severity": data.get("severity") or None,
             "body_part": data.get("body_part") or None,
             "diagnosed_at": diagnosed.isoformat(),
-            "days_out": max(0, (target_date - diagnosed).days),
+            "days_out": max(0, (end_anchor - diagnosed).days),
+            "available_at": available.isoformat() if available else None,
             "expected_return": expected.isoformat() if expected else None,
-            "days_to_return": (expected - target_date).days if expected else None,
+            "days_to_return": (
+                None if available else ((expected - target_date).days if expected else None)
+            ),
             "plan": (data.get("notes") or "").strip() or None,
         }
 
@@ -403,6 +414,8 @@ def _open_episodes(player_ids: set) -> dict:
             "title": e.title,
             "stage": e.stage,
             "started_at": e.started_at,
+            "available_at": e.available_at,
+            "ended_at": e.ended_at,
             "latest_data": latest_data.get(e.id, {}),
         }
         for pid, e in chosen.items()

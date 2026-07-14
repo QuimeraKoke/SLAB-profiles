@@ -494,20 +494,26 @@ class EpisodeOut(Schema):
     title: str = ""
     started_at: datetime
     ended_at: datetime | None = None
+    available_at: datetime | None = None
     metadata: dict[str, Any] = {}
     result_count: int = 0
     latest_result_data: dict[str, Any] = {}
 
 
 class EpisodePatchIn(Schema):
-    """Manual episode patch — for now, only status closure is exposed.
+    """Manual episode patch. Two independent things:
 
-    Most lifecycle changes (stage, title, ended_at) are auto-derived from
-    linked results; this endpoint exists so admins can force-close an
-    abandoned episode without entering a final result.
+    - `status`: force-close an abandoned episode without a final result.
+    - `available_at`: mark when the player became available to be selected
+      ('disponible para ser citado'), independent of closure. Pass an ISO
+      date/datetime to set, or the string "clear" to unset.
+
+    Most other lifecycle fields (stage, title, ended_at) stay auto-derived
+    from linked results.
     """
 
     status: str | None = None  # "closed"
+    available_at: str | None = None  # ISO date/datetime, or "clear" to unset
 
 
 # ---------- Attachments ----------

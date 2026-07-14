@@ -202,3 +202,56 @@ class TeamWidgetArrangeTests(TestCase):
         from dashboards.models import TeamReportWidget
         delete_team_widget(self._req("delete"), str(self.w1.id))
         self.assertFalse(TeamReportWidget.objects.filter(id=self.w1.id).exists())
+
+
+class EpisodeAvailableAtTests(TestCase):
+    """§3.1 — Episode.available_at write path via PATCH /episodes/{id}."""
+
+    def setUp(self):
+        from django.utils import timezone
+        from core.models import Category, Club, Department, Player
+        from exams.models import Episode, ExamTemplate
+        self.rf = RequestFactory()
+        self.su = get_user_model().objects.create_superuser("su2", "su2@x.com", "x")
+        self.club = Club.objects.create(name="FC2")
+        self.dept = Department.objects.create(club=self.club, name="Med", slug="med")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.player = Player.objects.create(category=self.cat, first_name="A", last_name="B")
+        self.template = ExamTemplate.objects.create(
+            name="Lesiones", slug="lesiones", department=self.dept, is_episodic=True,
+            episode_config={"stage_field": "stage", "open_stages": ["injured"], "closed_stage": "closed"},
+            config_schema={"fields": [{"key": "stage", "type": "categorical", "options": ["injured", "closed"]}]},
+        )
+        self.ep = Episode.objects.create(
+            player=self.player, template=self.template, status="open",
+            stage="injured", started_at=timezone.now(),
+        )
+
+    def _req(self):
+        r = self.rf.patch("/x")
+        r.user = self.su
+        return r
+
+    def test_set_and_serialize_available_at(self):
+        from api.routers import update_episode
+        from api.schemas import EpisodePatchIn
+        out = update_episode(self._req(), str(self.ep.id), EpisodePatchIn(available_at="2026-06-01"))
+        self.ep.refresh_from_db()
+        self.assertIsNotNone(self.ep.available_at)
+        self.assertEqual(out["available_at"].date().isoformat(), "2026-06-01")
+
+    def test_clear_available_at(self):
+        from api.routers import update_episode
+        from api.schemas import EpisodePatchIn
+        update_episode(self._req(), str(self.ep.id), EpisodePatchIn(available_at="2026-06-01"))
+        update_episode(self._req(), str(self.ep.id), EpisodePatchIn(available_at="clear"))
+        self.ep.refresh_from_db()
+        self.assertIsNone(self.ep.available_at)
+
+    def test_setting_available_at_does_not_close_episode(self):
+        from api.routers import update_episode
+        from api.schemas import EpisodePatchIn
+        update_episode(self._req(), str(self.ep.id), EpisodePatchIn(available_at="2026-06-01"))
+        self.ep.refresh_from_db()
+        self.assertEqual(self.ep.status, "open")  # available ≠ closed
+        self.assertIsNone(self.ep.ended_at)

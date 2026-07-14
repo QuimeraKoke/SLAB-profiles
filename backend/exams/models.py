@@ -1064,6 +1064,16 @@ class Episode(models.Model):
         null=True, blank=True,
         help_text="Set when the episode transitions to 'closed' (= recorded_at of the closing result).",
     )
+    available_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text=(
+            "Date the player became available to be selected ('disponible para "
+            "ser citado') — independent of episode closure. A player can be "
+            "available (RTP) while the episode stays open for monitoring; "
+            "closing time-loss (ended_at) is a separate event. Set via "
+            "PATCH /episodes/{id}."
+        ),
+    )
     metadata = models.JSONField(default=dict, blank=True)
     legacy_raw = models.JSONField(
         default=dict, blank=True,
