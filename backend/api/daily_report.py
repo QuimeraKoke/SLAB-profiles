@@ -23,6 +23,7 @@ from typing import Any
 from django.utils import timezone
 
 from core.models import DailyNote, Player
+from exams.episode_lifecycle import stage_label as _stage_label
 from exams.models import Episode
 from goals.models import Alert, AlertStatus
 
@@ -197,7 +198,7 @@ def _lesionado(p, episode, acwr_meta, wellness, player_alerts, player_notes,
             "template_slug": episode["template_slug"],
             "title": episode["title"] or episode["template_name"],
             "stage": episode["stage"],
-            "stage_label": _STAGE_LABEL.get(episode["stage"], episode["stage"] or "—"),
+            "stage_label": episode.get("stage_label") or episode["stage"] or "—",
             "severity": data.get("severity") or None,
             "body_part": data.get("body_part") or None,
             "diagnosed_at": diagnosed.isoformat(),
@@ -413,6 +414,7 @@ def _open_episodes(player_ids: set) -> dict:
             "template_name": e.template.name,
             "title": e.title,
             "stage": e.stage,
+            "stage_label": _stage_label(e.template, e.stage),
             "started_at": e.started_at,
             "available_at": e.available_at,
             "ended_at": e.ended_at,

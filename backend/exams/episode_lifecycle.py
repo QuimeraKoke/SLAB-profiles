@@ -169,6 +169,19 @@ def recompute_player_status(player) -> None:
         player.save(update_fields=["status"])
 
 
+def stage_label(template, stage: str) -> str:
+    """Human label for a stage, read from the template's stage-field
+    `option_labels` (§3.1) — so any configured stage set displays correctly
+    without a hardcoded map. Falls back to the raw stage key."""
+    if not stage:
+        return ""
+    field_key = (template.episode_config or {}).get("stage_field")
+    for f in (template.config_schema or {}).get("fields", []) or []:
+        if isinstance(f, dict) and f.get("key") == field_key:
+            return (f.get("option_labels") or {}).get(stage) or stage
+    return stage
+
+
 def _map_stage_to_player_status(stage: str, config: dict | None = None) -> str:
     """Map an episode's stage onto the canonical Player.STATUS_* vocabulary.
 

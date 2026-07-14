@@ -4317,6 +4317,7 @@ from exams.models import Episode  # noqa: E402
 
 
 def _serialize_episode(episode: Episode) -> dict:
+    from exams.episode_lifecycle import stage_label as _episode_stage_label
     latest = (
         ExamResult.objects
         .filter(episode=episode)
@@ -4331,6 +4332,7 @@ def _serialize_episode(episode: Episode) -> dict:
         "template_name": episode.template.name,
         "status": episode.status,
         "stage": episode.stage,
+        "stage_label": _episode_stage_label(episode.template, episode.stage),
         "title": episode.title,
         "started_at": episode.started_at,
         "ended_at": episode.ended_at,

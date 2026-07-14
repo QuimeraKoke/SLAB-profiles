@@ -491,6 +491,7 @@ class EpisodeOut(Schema):
     template_name: str = ""
     status: str  # "open" | "closed"
     stage: str = ""
+    stage_label: str = ""
     title: str = ""
     started_at: datetime
     ended_at: datetime | None = None

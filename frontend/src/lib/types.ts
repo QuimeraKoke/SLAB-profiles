@@ -140,6 +140,8 @@ export interface Episode {
   template_name: string;
   status: "open" | "closed";
   stage: string;
+  /** Human label for `stage`, from the template's option_labels (§3.1). */
+  stage_label: string;
   title: string;
   started_at: string;
   ended_at: string | null;

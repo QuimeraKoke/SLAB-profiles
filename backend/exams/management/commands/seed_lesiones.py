@@ -150,16 +150,23 @@ LESIONES_SCHEMA: dict = {
         {
             "key": "stage", "label": "Etapa", "type": "categorical",
             "group": "Etapa", "required": True,
-            # Canonical keys stay English/stable (they drive the episode
-            # lifecycle + Player.status); the club's RTP-protocol labels
-            # are display-only: Lesionado → Recuperación → Return to
-            # Train → Return to Play (= episodio cerrado, vuelve a jugar).
-            "options": ["injured", "recovery", "reintegration", "closed"],
+            # Fine-grained RTP progression (§3.1). Keys are stable; labels are
+            # display-only. `stage_status_map` in episode_config maps each to a
+            # Player.status bucket. Legacy keys (injured/recovery/reintegration)
+            # stay in option_labels + the map so existing episodes keep working.
+            "options": ["aguda", "intermedia", "reintegro", "parcial", "rtt", "rtp", "closed"],
             "option_labels": {
+                "aguda": "Fase aguda",
+                "intermedia": "Fase intermedia",
+                "reintegro": "Reintegro deportivo",
+                "parcial": "Campo parcial",
+                "rtt": "Return to Train",
+                "rtp": "Return to Play",
+                "closed": "Alta médica",
+                # legacy (display of pre-existing results)
                 "injured": "Lesionado",
                 "recovery": "Recuperación",
                 "reintegration": "Return to Train",
-                "closed": "Return to Play",
             },
         },
 
@@ -246,13 +253,24 @@ LESIONES_SCHEMA: dict = {
 
 EPISODE_CONFIG = {
     "stage_field": "stage",
-    "open_stages": ["injured", "recovery", "reintegration"],
+    # 6 fine stages (worst→best) + legacy keys kept open so pre-existing
+    # episodes still count as open.
+    "open_stages": [
+        "aguda", "intermedia", "reintegro", "parcial", "rtt", "rtp",
+        "injured", "recovery", "reintegration",
+    ],
     "closed_stage": "closed",
     # Config-driven stage → Player.status map (§3.1) — editable in Django
-    # admin. Seeded with the historical mapping so behaviour is unchanged; a
-    # club can add fine-grained stages (aguda / intermedia / reintegro /
-    # parcial / RTT / RTP…) and their buckets here without a code change.
+    # admin. RTP maps to `available` (player can be selected) while the episode
+    # can stay open for monitoring; closing is the separate `closed` (alta).
     "stage_status_map": {
+        "aguda": "injured",
+        "intermedia": "recovery",
+        "reintegro": "reintegration",
+        "parcial": "reintegration",
+        "rtt": "reintegration",
+        "rtp": "available",
+        # legacy
         "injured": "injured",
         "recovery": "recovery",
         "reintegration": "reintegration",

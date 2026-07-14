@@ -72,7 +72,8 @@ export default function EpisodeCard({
   continueHref,
   onContinue,
 }: Props) {
-  const stageLabel = STAGE_LABEL[episode.stage] ?? episode.stage;
+  // Prefer the backend's config-driven label; fall back to the legacy map.
+  const stageLabel = episode.stage_label || STAGE_LABEL[episode.stage] || episode.stage;
   const isOpen = episode.status === "open";
 
   const [showTimeline, setShowTimeline] = useState(false);
@@ -241,7 +242,12 @@ export default function EpisodeCard({
           )}
           {results && template && results.map((r) => {
             const stage = String(r.result_data?.stage ?? "");
-            const stageLbl = STAGE_LABEL[stage] ?? stage;
+            // Labels from the loaded template's stage-field option_labels
+            // (covers any configured stage), legacy map as fallback.
+            const sf = template.episode_config?.stage_field;
+            const optLabels = (template.config_schema?.fields ?? [])
+              .find((f) => f.key === sf)?.option_labels as Record<string, string> | undefined;
+            const stageLbl = optLabels?.[stage] ?? STAGE_LABEL[stage] ?? stage;
             const noteSnippet = String(r.result_data?.notes ?? "")
               .trim().slice(0, 80);
             return (
