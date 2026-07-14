@@ -1,0 +1,89 @@
+.card {
+  background: #fff;
+  border: 1px solid #e8eaf0;
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+.header {
+  margin-bottom: 12px;
+}
+.title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0a2240;
+  margin: 0;
+}
+.sub {
+  font-size: 12px;
+  color: #667085;
+  margin: 2px 0 0;
+}
+.muted {
+  font-size: 13px;
+  color: #98a2b3;
+  padding: 6px 0;
+}
+
+.stats {
+  display: flex;
+  gap: 28px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.statValue {
+  font-size: 26px;
+  font-weight: 700;
+  color: #0a2240;
+  line-height: 1.1;
+}
+.unit {
+  font-size: 13px;
+  font-weight: 500;
+  color: #667085;
+}
+.statLabel {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #98a2b3;
+}
+.statNote {
+  font-size: 12px;
+  color: #667085;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.table th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #98a2b3;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-bottom: 1px solid #e8eaf0;
+}
+.table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f2f4f7;
+  color: #344054;
+}
+.right { text-align: right; }
+.player { font-weight: 600; color: #0a2240; }
+.epTitle { font-size: 11px; color: #98a2b3; }
+.late { color: #b42318; font-weight: 700; }
+.early { color: #16a34a; font-weight: 700; }

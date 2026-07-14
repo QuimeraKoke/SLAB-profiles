@@ -11,6 +11,7 @@ import ReportFilters, { defaultFilters, groupPlayersByPosition } from "@/compone
 import type { ReportFiltersValue } from "@/components/reports/ReportFilters";
 import TeamReportDashboard from "@/components/reports/TeamReportDashboard";
 import AddWidgetModal from "@/components/reports/AddWidgetModal";
+import ForecastAccuracyCard from "@/components/reports/ForecastAccuracyCard";
 import DashboardAssistant from "@/components/reports/DashboardAssistant";
 import { useBreadcrumbLabel } from "@/components/layout/Breadcrumbs";
 import { api, ApiError } from "@/lib/api";
@@ -302,6 +303,14 @@ export default function ReportePage({ params }: PageProps) {
             onChange={(id) => updateUrl({ match: id || null })}
           />
         )
+      )}
+      {department.slug === "medico" && categoryId && (
+        <ForecastAccuracyCard
+          deptSlug={department.slug}
+          categoryId={categoryId}
+          dateFrom={filters.date.from}
+          dateTo={filters.date.to}
+        />
       )}
       {layout ? (
         <TeamReportDashboard
