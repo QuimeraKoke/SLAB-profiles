@@ -75,11 +75,13 @@ export default function LesionadoCard({
           <span className={styles.timelineItem}>desde el {fmtDay(ep.diagnosed_at)}</span>
           <span className={styles.timelineItem}>
             <CalendarClock size={13} aria-hidden="true" />
-            {ep.expected_return
-              ? ep.days_to_return != null && ep.days_to_return >= 0
-                ? `Retorno estimado: ${fmtDay(ep.expected_return)} (en ${ep.days_to_return} días)`
-                : `Retorno estimado: ${fmtDay(ep.expected_return)} (vencido)`
-              : "Sin retorno estimado"}
+            {ep.available_at
+              ? `Disponible desde ${fmtDay(ep.available_at)}`
+              : ep.expected_return
+                ? ep.days_to_return != null && ep.days_to_return >= 0
+                  ? `Retorno estimado: ${fmtDay(ep.expected_return)} (en ${ep.days_to_return} días)`
+                  : `Retorno estimado: ${fmtDay(ep.expected_return)} (vencido)`
+                : "Sin retorno estimado"}
           </span>
         </div>
       )}

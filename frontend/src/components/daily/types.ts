@@ -31,6 +31,7 @@ export interface DailyEpisode {
   body_part: string | null;
   diagnosed_at: string;
   days_out: number;
+  available_at: string | null;
   expected_return: string | null;
   days_to_return: number | null;
   plan: string | null;

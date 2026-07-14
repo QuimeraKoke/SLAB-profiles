@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { api, ApiError } from "@/lib/api";
+import { usePermission } from "@/lib/permissions";
+import { useToast } from "@/components/ui/Toast/Toast";
 import type {
   Episode,
   ExamResult,
@@ -78,6 +80,32 @@ export default function EpisodeCard({
   const [template, setTemplate] = useState<ExamTemplate | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  // §3.1 — "disponible para ser citado": an availability date independent of
+  // closure, editable in place (Editor-gated).
+  const { toast } = useToast();
+  const canEditEpisode = usePermission("exams.change_episode");
+  const [availableAt, setAvailableAt] = useState<string | null>(episode.available_at);
+  const [editingAvail, setEditingAvail] = useState(false);
+  const [availDraft, setAvailDraft] = useState("");
+  const [savingAvail, setSavingAvail] = useState(false);
+
+  async function saveAvailable(clear: boolean) {
+    setSavingAvail(true);
+    try {
+      const res = await api<Episode>(`/episodes/${episode.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ available_at: clear ? "clear" : availDraft }),
+      });
+      setAvailableAt(res.available_at);
+      setEditingAvail(false);
+      toast.success(clear ? "Disponibilidad quitada." : "Marcado disponible para citar.");
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "No se pudo guardar.");
+    } finally {
+      setSavingAvail(false);
+    }
+  }
+
   useEffect(() => {
     if (!showTimeline || results !== null) return;
     let cancelled = false;
@@ -133,6 +161,58 @@ export default function EpisodeCard({
           <span className={styles.rowValue}>{formatDate(episode.ended_at)}</span>
         </div>
       )}
+      <div className={styles.row}>
+        <span className={styles.rowLabel}>Disponible p/ citar</span>
+        <span className={styles.rowValue}>
+          {editingAvail ? (
+            <span className={styles.availEdit}>
+              <input
+                type="date" value={availDraft}
+                onChange={(e) => setAvailDraft(e.target.value)}
+              />
+              <button
+                type="button" className={styles.tinyBtn}
+                disabled={savingAvail || !availDraft}
+                onClick={() => saveAvailable(false)}
+              >
+                Guardar
+              </button>
+              <button type="button" className={styles.tinyBtn} onClick={() => setEditingAvail(false)}>
+                Cancelar
+              </button>
+            </span>
+          ) : availableAt ? (
+            <span className={styles.availEdit}>
+              {formatDate(availableAt)}
+              {canEditEpisode && (
+                <>
+                  <button
+                    type="button" className={styles.tinyBtn}
+                    onClick={() => { setAvailDraft(availableAt.slice(0, 10)); setEditingAvail(true); }}
+                  >
+                    editar
+                  </button>
+                  <button
+                    type="button" className={styles.tinyBtn}
+                    disabled={savingAvail} onClick={() => saveAvailable(true)}
+                  >
+                    quitar
+                  </button>
+                </>
+              )}
+            </span>
+          ) : canEditEpisode ? (
+            <button
+              type="button" className={styles.tinyBtn}
+              onClick={() => { setAvailDraft(""); setEditingAvail(true); }}
+            >
+              Marcar disponible
+            </button>
+          ) : (
+            <span className={styles.muted}>—</span>
+          )}
+        </span>
+      </div>
       <div className={styles.row}>
         <span className={styles.rowLabel}>Resultados</span>
         <span className={styles.rowValue}>{episode.result_count}</span>

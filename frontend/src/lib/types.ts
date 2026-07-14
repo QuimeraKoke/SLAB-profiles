@@ -143,6 +143,8 @@ export interface Episode {
   title: string;
   started_at: string;
   ended_at: string | null;
+  /** "Disponible para ser citado" — independent of closure (§3.1). */
+  available_at: string | null;
   metadata: Record<string, unknown>;
   result_count: number;
   latest_result_data: Record<string, unknown>;

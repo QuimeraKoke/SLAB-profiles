@@ -241,3 +241,31 @@
   padding: 10px 14px;
   font-size: 0.88rem;
 }
+
+/* §3.1 — available_at inline edit control. */
+.availEdit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.availEdit input[type="date"] {
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+.tinyBtn {
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #475467;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tinyBtn:disabled { opacity: 0.5; cursor: default; }
+.tinyBtn:hover:not(:disabled) { background: #f6f8fc; }
+.muted { color: #98a2b3; }
