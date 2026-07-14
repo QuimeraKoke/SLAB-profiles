@@ -248,6 +248,15 @@ EPISODE_CONFIG = {
     "stage_field": "stage",
     "open_stages": ["injured", "recovery", "reintegration"],
     "closed_stage": "closed",
+    # Config-driven stage → Player.status map (§3.1) — editable in Django
+    # admin. Seeded with the historical mapping so behaviour is unchanged; a
+    # club can add fine-grained stages (aguda / intermedia / reintegro /
+    # parcial / RTT / RTP…) and their buckets here without a code change.
+    "stage_status_map": {
+        "injured": "injured",
+        "recovery": "recovery",
+        "reintegration": "reintegration",
+    },
     # Detail-first: "Bíceps femoral — Muslo" reads better on cards than the
     # long Fuller type strings. Falls back to just "— {region}" when the
     # detail is empty (formatter tolerates missing keys).

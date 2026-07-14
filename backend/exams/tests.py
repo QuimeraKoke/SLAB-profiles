@@ -631,3 +631,34 @@ class MicrocycleLabelTests(SimpleTestCase):
         # Equidistant (2 days) between a past and an upcoming match → MD-2.
         cal = [date(2026, 7, 10), date(2026, 7, 14)]
         self.assertEqual(microcycle_label(date(2026, 7, 12), cal), "MD-2")
+
+
+from .episode_lifecycle import _map_stage_to_player_status  # noqa: E402
+
+
+class StageStatusMapTests(SimpleTestCase):
+    """§3.1 — config-driven stage → Player.status mapping."""
+
+    def test_config_map_wins(self):
+        from core.models import Player
+        cfg = {"stage_status_map": {"rtp": "available", "aguda": "injured",
+                                    "parcial": "reintegration"}}
+        self.assertEqual(_map_stage_to_player_status("rtp", cfg), Player.STATUS_AVAILABLE)
+        self.assertEqual(_map_stage_to_player_status("aguda", cfg), Player.STATUS_INJURED)
+        self.assertEqual(_map_stage_to_player_status("parcial", cfg), Player.STATUS_REINTEGRATION)
+
+    def test_falls_back_to_legacy_default(self):
+        from core.models import Player
+        # No config → historical vocabulary still works.
+        self.assertEqual(_map_stage_to_player_status("recovery", None), Player.STATUS_RECOVERY)
+        self.assertEqual(_map_stage_to_player_status("reintegration", {}), Player.STATUS_REINTEGRATION)
+
+    def test_unknown_stage_is_worst_case(self):
+        from core.models import Player
+        self.assertEqual(_map_stage_to_player_status("weird", {}), Player.STATUS_INJURED)
+
+    def test_invalid_map_value_ignored(self):
+        from core.models import Player
+        # A bad status value in config falls through to the default, never crashes.
+        cfg = {"stage_status_map": {"recovery": "bogus"}}
+        self.assertEqual(_map_stage_to_player_status("recovery", cfg), Player.STATUS_RECOVERY)

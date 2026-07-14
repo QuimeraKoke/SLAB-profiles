@@ -154,8 +154,9 @@ def recompute_player_status(player) -> None:
         open_stages = cfg.get("open_stages") or []
         if ep.stage not in open_stages:
             continue
-        # Map the episode's stage to a canonical Player.STATUS_* value.
-        mapped = _map_stage_to_player_status(ep.stage)
+        # Map the episode's stage to a canonical Player.STATUS_* value,
+        # honoring the template's config-driven stage_status_map (§3.1).
+        mapped = _map_stage_to_player_status(ep.stage, cfg)
         rank = Player.STATUS_RANK.get(mapped)
         if rank is None:
             continue
@@ -168,19 +169,26 @@ def recompute_player_status(player) -> None:
         player.save(update_fields=["status"])
 
 
-def _map_stage_to_player_status(stage: str) -> str:
+def _map_stage_to_player_status(stage: str, config: dict | None = None) -> str:
     """Map an episode's stage onto the canonical Player.STATUS_* vocabulary.
 
-    For v1 we expect episodic templates to use the shared vocabulary
-    (`injured / recovery / reintegration / closed`). If a different stage
-    name shows up, we treat it as the worst case ('injured') so the player
-    isn't silently marked available while something is genuinely open.
+    Config-driven (§3.1): the template's `episode_config.stage_status_map`
+    ({stage_key: Player.STATUS_* value}) wins, so a club can define its own
+    fine-grained stages (aguda / intermedia / reintegro / parcial / RTT / RTP…)
+    and how each maps to the 4 availability buckets — editable in Django admin,
+    no code change. Falls back to the legacy shared vocabulary; an unknown
+    stage is treated as the worst case ('injured') so a player isn't silently
+    marked available while something is genuinely open.
     """
     from core.models import Player
 
-    canon = {
+    default = {
         "injured": Player.STATUS_INJURED,
         "recovery": Player.STATUS_RECOVERY,
         "reintegration": Player.STATUS_REINTEGRATION,
     }
-    return canon.get(stage, Player.STATUS_INJURED)
+    cfg_map = (config or {}).get("stage_status_map") or {}
+    valid = set(Player.STATUS_RANK.keys())
+    if stage in cfg_map and cfg_map[stage] in valid:
+        return cfg_map[stage]
+    return default.get(stage, Player.STATUS_INJURED)

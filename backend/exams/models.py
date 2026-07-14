@@ -276,6 +276,24 @@ class ExamTemplate(models.Model):
                 {"episode_config": "'closed_stage' must NOT be in 'open_stages'."}
             )
 
+        # Optional config-driven stage → Player.status map (§3.1): lets a club
+        # define fine-grained stages and how each maps to the availability
+        # buckets, editable here. Values must be canonical Player.STATUS_* keys.
+        status_map = cfg.get("stage_status_map")
+        if status_map is not None:
+            from core.models import Player
+            valid_status = set(Player.STATUS_RANK.keys())
+            if not isinstance(status_map, dict):
+                raise ValidationError(
+                    {"episode_config": "'stage_status_map' must be an object {stage: status}."}
+                )
+            for k, v in status_map.items():
+                if not isinstance(k, str) or v not in valid_status:
+                    raise ValidationError({"episode_config": (
+                        f"'stage_status_map' values must be one of {sorted(valid_status)}; "
+                        f"got {k!r}: {v!r}."
+                    )})
+
         # If the schema is already populated, validate stage_field references
         # exist and that the stage values declared overlap with the field's
         # categorical options.
