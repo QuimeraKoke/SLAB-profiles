@@ -89,6 +89,8 @@ def evaluate_goal(goal: Goal) -> tuple[bool | None, GoalReading | None]:
       - `met=None` when no reading is available — caller decides what to do
         (treat as missed on due date, ignore early on sync, etc.).
     """
+    if not goal.is_metric_goal:
+        return None, None  # free goal — nothing to auto-evaluate
     reading = _latest_reading(goal)
     if reading is None:
         return None, None
@@ -364,9 +366,15 @@ def apply_due_goals(today: date | None = None) -> dict:
     today = today or timezone.localdate()
     qs = Goal.objects.filter(status=GoalStatus.ACTIVE, due_date__lte=today)
 
-    summary = {"evaluated": 0, "met": 0, "missed": 0, "alerts_fired": 0}
+    summary = {"evaluated": 0, "met": 0, "missed": 0, "alerts_fired": 0, "overdue": 0}
     now = timezone.now()
     for goal in qs.iterator():
+        # Free goals (§7.3) don't auto-miss — they stay ACTIVE and nag with a
+        # persistent GOAL_OVERDUE alert until the user closes them by hand.
+        if not goal.is_metric_goal:
+            _fire_overdue_alert(goal)
+            summary["overdue"] += 1
+            continue
         summary["evaluated"] += 1
         met, reading = evaluate_goal(goal)
         goal.evaluated_at = now
@@ -419,6 +427,8 @@ def evaluate_goal_warnings(today: date | None = None) -> dict:
 
     summary = {"checked": 0, "warned": 0}
     for goal in qs.iterator():
+        if not goal.is_metric_goal:
+            continue  # free goals nag via GOAL_OVERDUE after the due date, not before
         summary["checked"] += 1
         delta_days = (goal.due_date - today).days
         if delta_days < 0 or delta_days > (goal.warn_days_before or 0):
@@ -472,6 +482,32 @@ def _dismiss_active_warning(goal: Goal) -> None:
         status=AlertStatus.RESOLVED,
         dismissed_at=timezone.now(),
     )
+
+
+def _fire_overdue_alert(goal: Goal) -> Alert:
+    """Persistent overdue alert for a free goal (§7.3): stays in the navbar
+    bell until the user closes the goal manually — NOT auto-missed, and exempt
+    from the staleness sweep (GOAL_OVERDUE isn't a swept source)."""
+    days = (timezone.localdate() - goal.due_date).days
+    when = "hoy" if days == 0 else f"hace {days} día{'s' if days != 1 else ''}"
+    label = (goal.title or "").strip() or "objetivo"
+    return _upsert_alert(
+        player=goal.player,
+        source_type=AlertSource.GOAL_OVERDUE,
+        source_id=goal.id,
+        severity=AlertSeverity.WARNING,
+        message=f"Objetivo vencido ({when}): «{label}». Marcá cumplido o no cumplido.",
+    )
+
+
+def _dismiss_overdue_alert(goal: Goal) -> None:
+    """Resolve any active GOAL_OVERDUE alert — called when a free goal is
+    closed manually (met / missed / cancelled)."""
+    Alert.objects.filter(
+        source_type=AlertSource.GOAL_OVERDUE,
+        source_id=goal.id,
+        status=AlertStatus.ACTIVE,
+    ).update(status=AlertStatus.RESOLVED, dismissed_at=timezone.now())
 
 
 def sync_evaluate_for_result(result: ExamResult) -> Iterable[Goal]:

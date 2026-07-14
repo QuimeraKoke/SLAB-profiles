@@ -40,15 +40,23 @@ class Goal(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="goals")
+    # Two kinds of goal (§7.3): a METRIC goal (template+field_key+operator+
+    # target_value, auto-evaluated) or a FREE goal (just `title` + due_date,
+    # closed manually). The metric fields are nullable so a free goal needs none.
+    title = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="Free-text objective (required for a goal without a metric).",
+    )
     template = models.ForeignKey(
-        ExamTemplate, on_delete=models.PROTECT, related_name="goals"
+        ExamTemplate, on_delete=models.PROTECT, related_name="goals",
+        null=True, blank=True,
     )
     field_key = models.CharField(
-        max_length=80,
+        max_length=80, blank=True, default="",
         help_text="The key from template.config_schema['fields'][].key to evaluate.",
     )
-    operator = models.CharField(max_length=2, choices=GoalOperator.choices)
-    target_value = models.FloatField()
+    operator = models.CharField(max_length=2, choices=GoalOperator.choices, blank=True, default="")
+    target_value = models.FloatField(null=True, blank=True)
     due_date = models.DateField()
     notes = models.TextField(blank=True)
 
@@ -85,11 +93,40 @@ class Goal(models.Model):
             models.Index(fields=["player", "status"]),
         ]
 
-    def __str__(self) -> str:
-        return (
-            f"{self.player} · {self.field_key} {self.operator} "
-            f"{self.target_value} by {self.due_date} ({self.get_status_display()})"
+    @property
+    def is_metric_goal(self) -> bool:
+        """A metric goal has the full (template, field_key, operator,
+        target_value) set and is auto-evaluated; otherwise it's a free goal
+        (title + due_date, closed manually)."""
+        return bool(
+            self.template_id and self.field_key and self.operator
+            and self.target_value is not None
         )
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.is_metric_goal:
+            return  # complete metric goal — fine
+        # Not a complete metric goal → must be a valid free goal.
+        partial = any([self.template_id, self.field_key, self.operator,
+                       self.target_value is not None])
+        if partial:
+            raise ValidationError(
+                "Un objetivo con métrica requiere examen, campo, operador y "
+                "valor objetivo completos; uno libre no debe tener ninguno."
+            )
+        if not (self.title or "").strip():
+            raise ValidationError(
+                "Un objetivo libre (sin métrica) requiere un título."
+            )
+
+    def __str__(self) -> str:
+        if self.is_metric_goal:
+            return (
+                f"{self.player} · {self.field_key} {self.operator} "
+                f"{self.target_value} by {self.due_date} ({self.get_status_display()})"
+            )
+        return f"{self.player} · {self.title} by {self.due_date} ({self.get_status_display()})"
 
 
 class AlertSeverity(models.TextChoices):
@@ -107,6 +144,7 @@ class AlertStatus(models.TextChoices):
 class AlertSource(models.TextChoices):
     GOAL = "goal", "Objetivo (vencimiento)"
     GOAL_WARNING = "goal_warning", "Objetivo (aviso pre-vencimiento)"
+    GOAL_OVERDUE = "goal_overdue", "Objetivo libre vencido (cierre manual)"
     THRESHOLD = "threshold", "Umbral"  # reserved for the alarms engine
     MEDICATION = "medication", "Medicación (WADA)"
     TRAINING_LOAD = "training_load", "Carga de entrenamiento"

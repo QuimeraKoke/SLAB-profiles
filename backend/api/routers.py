@@ -3889,19 +3889,25 @@ def _serialize_goal(goal: Goal) -> dict:
     compute the live current value + progress against the goal's target."""
     label = goal.field_key
     unit = ""
-    for field in (goal.template.config_schema or {}).get("fields", []):
-        if isinstance(field, dict) and field.get("key") == goal.field_key:
-            label = field.get("label") or goal.field_key
-            unit = field.get("unit") or ""
-            break
-    current_value, current_recorded_at = _resolve_goal_current_value(goal)
+    current_value = current_recorded_at = None
+    progress = None
+    if goal.is_metric_goal:
+        for field in (goal.template.config_schema or {}).get("fields", []):
+            if isinstance(field, dict) and field.get("key") == goal.field_key:
+                label = field.get("label") or goal.field_key
+                unit = field.get("unit") or ""
+                break
+        current_value, current_recorded_at = _resolve_goal_current_value(goal)
+        progress = _goal_progress(goal, current_value)
     return {
         "id": goal.id,
         "player_id": goal.player_id,
+        "is_metric_goal": goal.is_metric_goal,
+        "title": goal.title,
         "template_id": goal.template_id,
-        "template_name": goal.template.name,
+        "template_name": goal.template.name if goal.template_id else "",
         "field_key": goal.field_key,
-        "field_label": label,
+        "field_label": label if goal.is_metric_goal else "",
         "field_unit": unit,
         "operator": goal.operator,
         "target_value": goal.target_value,
@@ -3914,7 +3920,7 @@ def _serialize_goal(goal: Goal) -> dict:
         "created_at": goal.created_at,
         "current_value": current_value,
         "current_recorded_at": current_recorded_at,
-        "progress": _goal_progress(goal, current_value),
+        "progress": progress if progress is not None else {},
     }
 
 
@@ -3952,6 +3958,21 @@ def create_goal(request, payload: GoalIn):
     if player is None:
         raise HttpError(404, "Player not found")
 
+    creator = request.user if request.user.is_authenticated else None
+
+    # Free goal (§7.3): just a title + due_date, closed manually.
+    if not payload.template_id:
+        if not (payload.title or "").strip():
+            raise HttpError(400, "Un objetivo libre (sin métrica) requiere un título.")
+        goal = Goal.objects.create(
+            player=player, title=payload.title.strip(), due_date=payload.due_date,
+            notes=payload.notes or "",
+            warn_days_before=None,  # free goals nag via GOAL_OVERDUE, not pre-warnings
+            created_by=creator,
+        )
+        return _serialize_goal(goal)
+
+    # Metric goal — template + field + operator + target.
     template = scope_templates(
         ExamTemplate.objects.all(), membership
     ).filter(id=payload.template_id).first()
@@ -3975,17 +3996,20 @@ def create_goal(request, payload: GoalIn):
 
     if payload.operator not in {op for op, _ in GoalOperator.choices}:
         raise HttpError(400, "Invalid operator.")
+    if payload.target_value is None:
+        raise HttpError(400, "target_value es obligatorio para un objetivo con métrica.")
 
     goal = Goal.objects.create(
         player=player,
         template=template,
+        title=(payload.title or "").strip(),
         field_key=payload.field_key,
         operator=payload.operator,
         target_value=payload.target_value,
         due_date=payload.due_date,
         notes=payload.notes or "",
         warn_days_before=payload.warn_days_before,
-        created_by=request.user if request.user.is_authenticated else None,
+        created_by=creator,
     )
     return _serialize_goal(goal)
 
@@ -3999,6 +4023,9 @@ def update_goal(request, goal_id: UUID, payload: GoalPatchIn):
         raise HttpError(404, "Goal not found")
 
     fields_to_update = []
+    if payload.title is not None:
+        goal.title = payload.title.strip()
+        fields_to_update.append("title")
     if payload.operator is not None:
         if payload.operator not in {op for op, _ in GoalOperator.choices}:
             raise HttpError(400, "Invalid operator.")
@@ -4017,21 +4044,25 @@ def update_goal(request, goal_id: UUID, payload: GoalPatchIn):
         goal.warn_days_before = payload.warn_days_before or None
         fields_to_update.append("warn_days_before")
     if payload.status is not None:
-        # Only manual cancellation is exposed via API; met/missed are
-        # evaluator-driven so a human flipping them would corrupt the
-        # status timeline.
-        if payload.status != GoalStatus.CANCELLED:
-            raise HttpError(400, "Status can only be transitioned to 'cancelled' via API.")
-        goal.status = GoalStatus.CANCELLED
+        # Cancellation is allowed for any goal. FREE goals (§7.3) also close
+        # manually to met / missed — a metric goal's met/missed stays
+        # evaluator-driven so a human flip can't corrupt its status timeline.
+        allowed = {GoalStatus.CANCELLED}
+        if not goal.is_metric_goal:
+            allowed |= {GoalStatus.MET, GoalStatus.MISSED}
+        if payload.status not in allowed:
+            raise HttpError(400, "Transición de estado no permitida para este objetivo.")
+        goal.status = payload.status
         fields_to_update.append("status")
 
     if fields_to_update:
         fields_to_update.append("updated_at")
         goal.save(update_fields=fields_to_update)
-        # Cancellation should clean up any pending warning alert.
-        if "status" in fields_to_update and goal.status == GoalStatus.CANCELLED:
-            from goals.evaluator import _dismiss_active_warning
+        # Closing a goal clears its pending warning + overdue nags.
+        if "status" in fields_to_update and goal.status != GoalStatus.ACTIVE:
+            from goals.evaluator import _dismiss_active_warning, _dismiss_overdue_alert
             _dismiss_active_warning(goal)
+            _dismiss_overdue_alert(goal)
     return _serialize_goal(goal)
 
 

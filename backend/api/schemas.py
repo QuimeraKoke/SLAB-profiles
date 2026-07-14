@@ -394,25 +394,33 @@ class TeamResultsOut(Schema):
 
 class GoalIn(Schema):
     player_id: UUID
-    template_id: UUID
-    field_key: str
-    operator: str
-    target_value: float
     due_date: date
+    # Metric goal → template_id+field_key+operator+target_value all set.
+    # Free goal → just `title` (the others stay empty/null). §7.3.
+    title: str = ""
+    template_id: UUID | None = None
+    field_key: str = ""
+    operator: str = ""
+    target_value: float | None = None
     notes: str = ""
-    # Days before due_date to start firing pre-deadline warning alerts.
-    # null/0 disables warnings for this goal.
+    # Days before due_date to start firing pre-deadline warning alerts
+    # (metric goals only). null/0 disables warnings for this goal.
     warn_days_before: int | None = 7
 
 
 class GoalPatchIn(Schema):
-    """Partial update — only the fields a doctor can change post-creation."""
+    """Partial update — fields a doctor can change post-creation.
 
+    `status` accepts "cancelled" for any goal, plus "met"/"missed" to
+    manually close a FREE goal (§7.3); metric goals close via the evaluator.
+    """
+
+    title: str | None = None
     operator: str | None = None
     target_value: float | None = None
     due_date: date | None = None
     notes: str | None = None
-    status: str | None = None  # only "cancelled" is allowed via API
+    status: str | None = None  # "cancelled" | "met" | "missed" (free goals)
     warn_days_before: int | None = None
 
 
@@ -432,13 +440,15 @@ class GoalProgressOut(Schema):
 class GoalOut(Schema):
     id: UUID
     player_id: UUID
-    template_id: UUID
-    template_name: str
-    field_key: str
-    field_label: str
-    field_unit: str
-    operator: str
-    target_value: float
+    is_metric_goal: bool = True
+    title: str = ""
+    template_id: UUID | None = None
+    template_name: str = ""
+    field_key: str = ""
+    field_label: str = ""
+    field_unit: str = ""
+    operator: str = ""
+    target_value: float | None = None
     due_date: date
     notes: str = ""
     status: str

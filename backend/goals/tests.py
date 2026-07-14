@@ -1145,3 +1145,62 @@ class BacktestRuleTests(TestCase):
         )
         with self.assertRaises(ValidationError):
             run_backtest(template=self.template, category=self.cat, payload=payload)
+
+
+class TwoTypeGoalTests(TestCase):
+    """§7.3 — free (title-only) goals vs metric goals + GOAL_OVERDUE."""
+
+    def setUp(self):
+        self.club = Club.objects.create(name="Test FC")
+        self.dept = Department.objects.create(club=self.club, name="Med", slug="med")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.cat.departments.add(self.dept)
+        self.player = Player.objects.create(category=self.cat, first_name="A", last_name="B")
+        self.template = _make_template(self.dept, name="CK", field_key="valor")
+        self.template.applicable_categories.add(self.cat)
+
+    def _overdue(self, days=2):
+        return date.today() - timedelta(days=days)
+
+    def test_free_goal_has_no_metric(self):
+        g = Goal.objects.create(player=self.player, title="Volver a correr", due_date=date.today())
+        self.assertFalse(g.is_metric_goal)
+
+    def test_free_overdue_fires_persistent_alert_not_missed(self):
+        from goals.evaluator import apply_due_goals
+        g = Goal.objects.create(player=self.player, title="Reintegro total", due_date=self._overdue())
+        summary = apply_due_goals(today=date.today())
+        g.refresh_from_db()
+        self.assertEqual(g.status, GoalStatus.ACTIVE)   # NOT auto-missed
+        self.assertEqual(summary["overdue"], 1)
+        self.assertTrue(Alert.objects.filter(
+            source_type=AlertSource.GOAL_OVERDUE, source_id=g.id, status=AlertStatus.ACTIVE,
+        ).exists())
+
+    def test_manual_close_dismisses_overdue_alert(self):
+        from goals.evaluator import _dismiss_overdue_alert, _fire_overdue_alert
+        g = Goal.objects.create(player=self.player, title="X", due_date=self._overdue())
+        _fire_overdue_alert(g)
+        g.status = GoalStatus.MET
+        _dismiss_overdue_alert(g)
+        self.assertFalse(Alert.objects.filter(
+            source_type=AlertSource.GOAL_OVERDUE, source_id=g.id, status=AlertStatus.ACTIVE,
+        ).exists())
+
+    def test_metric_goal_still_auto_missed(self):
+        from goals.evaluator import apply_due_goals
+        g = Goal.objects.create(
+            player=self.player, template=self.template, field_key="valor",
+            operator=GoalOperator.LTE, target_value=100, due_date=self._overdue(),
+        )
+        apply_due_goals(today=date.today())
+        g.refresh_from_db()
+        self.assertEqual(g.status, GoalStatus.MISSED)   # metric goals still close
+
+    def test_clean_rejects_partial_metric_and_titleless_free(self):
+        from django.core.exceptions import ValidationError
+        with self.assertRaises(ValidationError):
+            Goal(player=self.player, due_date=date.today()).clean()  # free, no title
+        with self.assertRaises(ValidationError):
+            # partial metric (template but no operator/target)
+            Goal(player=self.player, template=self.template, due_date=date.today()).clean()
