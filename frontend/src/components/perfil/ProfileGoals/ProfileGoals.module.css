@@ -278,32 +278,61 @@
   font-weight: 400;
 }
 
-/* §7.3 — metric/free mode toggle + free-goal close actions. */
-.modeToggle {
-  display: inline-flex;
-  border: 1px solid #d0d5dd;
-  border-radius: 8px;
-  overflow: hidden;
-  margin-bottom: 14px;
+/* §7.3 — goal-type chooser (step 1) + form heading + free-goal actions. */
+.chooser {
+  background: #f9fafb;
+  border: 1px solid #e8eaf0;
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
 }
-.modeBtn,
-.modeOn {
-  border: none;
+.chooserPrompt {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0a2240;
+  margin-bottom: 12px;
+}
+.chooserOptions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.chooserOption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
   background: #fff;
-  color: #475467;
-  font-size: 13px;
-  font-weight: 600;
-  padding: 7px 16px;
+  border: 1px solid #d0d5dd;
+  border-radius: 12px;
+  padding: 14px 16px;
   cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
 }
-.modeBtn + .modeBtn,
-.modeBtn + .modeOn,
-.modeOn + .modeBtn {
-  border-left: 1px solid #d0d5dd;
+.chooserOption:hover {
+  border-color: #0a2240;
+  box-shadow: 0 2px 10px rgba(16, 24, 40, 0.08);
 }
-.modeOn {
-  background: #0a2240;
-  color: #fff;
+.chooserTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0a2240;
+}
+.chooserDesc {
+  font-size: 12px;
+  color: #667085;
+  line-height: 1.45;
+}
+.chooserFooter {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+.formHeading {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0a2240;
+  margin-bottom: 12px;
 }
 .linkBtnGood {
   background: none;

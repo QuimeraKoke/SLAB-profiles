@@ -37,7 +37,8 @@ function formatDate(iso: string): string {
 export default function ProfileGoals({ player }: Props) {
   const [goals, setGoals] = useState<Goal[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  // Creation flow: null (idle) → "choose" (pick type) → "metric" | "free" (form).
+  const [flow, setFlow] = useState<null | "choose" | "metric" | "free">(null);
   const { confirm } = useConfirm();
   const canAdd = usePermission("goals.add_goal");
   const canChange = usePermission("goals.change_goal");
@@ -60,7 +61,7 @@ export default function ProfileGoals({ player }: Props) {
 
   const handleCreated = (goal: Goal) => {
     setGoals((prev) => (prev ? [goal, ...prev] : [goal]));
-    setShowForm(false);
+    setFlow(null);
   };
 
   const handleCancel = async (goal: Goal) => {
@@ -97,22 +98,27 @@ export default function ProfileGoals({ player }: Props) {
 
       <div className={styles.toolbar}>
         <h3 className={styles.title}>Objetivos · {goals.length}</h3>
-        {!showForm && canAdd && (
+        {flow === null && canAdd && (
           <button
             type="button"
             className={styles.newBtn}
-            onClick={() => setShowForm(true)}
+            onClick={() => setFlow("choose")}
           >
             + Crear objetivo
           </button>
         )}
       </div>
 
-      {showForm && canAdd && (
+      {flow === "choose" && canAdd && (
+        <GoalTypeChooser onPick={(m) => setFlow(m)} onCancel={() => setFlow(null)} />
+      )}
+
+      {(flow === "metric" || flow === "free") && canAdd && (
         <GoalForm
           player={player}
+          mode={flow}
           onCreated={handleCreated}
-          onCancel={() => setShowForm(false)}
+          onCancel={() => setFlow(null)}
         />
       )}
 
@@ -250,18 +256,56 @@ function GoalCard({
 }
 
 // ---------------------------------------------------------------------------
-// Goal-creation form
+// Step 1 — choose the goal type (§7.3)
+// ---------------------------------------------------------------------------
+
+function GoalTypeChooser({
+  onPick, onCancel,
+}: {
+  onPick: (mode: "metric" | "free") => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className={styles.chooser}>
+      <div className={styles.chooserPrompt}>¿El objetivo se mide con una métrica?</div>
+      <div className={styles.chooserOptions}>
+        <button type="button" className={styles.chooserOption} onClick={() => onPick("metric")}>
+          <span className={styles.chooserTitle}>Con una métrica</span>
+          <span className={styles.chooserDesc}>
+            Se evalúa contra una medición (p. ej. Peso ≤ 78 kg) y se marca
+            cumplido / no cumplido automáticamente.
+          </span>
+        </button>
+        <button type="button" className={styles.chooserOption} onClick={() => onPick("free")}>
+          <span className={styles.chooserTitle}>Objetivo libre</span>
+          <span className={styles.chooserDesc}>
+            Solo un texto y una fecha (p. ej. “Completar el reintegro”). Lo
+            cerrás vos manualmente.
+          </span>
+        </button>
+      </div>
+      <div className={styles.chooserFooter}>
+        <button type="button" className={styles.cancelBtn} onClick={onCancel}>
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Step 2 — goal-creation form
 // ---------------------------------------------------------------------------
 
 interface FormProps {
   player: PlayerDetail;
+  /** §7.3 — fixed by the chooser step; the form no longer toggles it. */
+  mode: "metric" | "free";
   onCreated: (goal: Goal) => void;
   onCancel: () => void;
 }
 
-function GoalForm({ player, onCreated, onCancel }: FormProps) {
-  // §7.3 — "metric" (auto-evaluated) vs "free" (title + date, closed manually).
-  const [mode, setMode] = useState<"metric" | "free">("metric");
+function GoalForm({ player, mode, onCreated, onCancel }: FormProps) {
   const [title, setTitle] = useState("");
   const [templates, setTemplates] = useState<ExamTemplate[] | null>(null);
   const [templateId, setTemplateId] = useState<string>("");
@@ -377,21 +421,8 @@ function GoalForm({ player, onCreated, onCancel }: FormProps) {
 
   return (
     <form className={styles.formCard} onSubmit={handleSubmit}>
-      <div className={styles.modeToggle} role="group" aria-label="Tipo de objetivo">
-        <button
-          type="button"
-          className={mode === "metric" ? styles.modeOn : styles.modeBtn}
-          onClick={() => setMode("metric")}
-        >
-          Con métrica
-        </button>
-        <button
-          type="button"
-          className={mode === "free" ? styles.modeOn : styles.modeBtn}
-          onClick={() => setMode("free")}
-        >
-          Libre
-        </button>
+      <div className={styles.formHeading}>
+        {mode === "free" ? "Nuevo objetivo libre" : "Nuevo objetivo con métrica"}
       </div>
       <div className={styles.formGrid}>
         {mode === "free" && (
