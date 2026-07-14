@@ -277,3 +277,49 @@
   color: #6b7280;
   font-weight: 400;
 }
+
+/* §7.3 — metric/free mode toggle + free-goal close actions. */
+.modeToggle {
+  display: inline-flex;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.modeBtn,
+.modeOn {
+  border: none;
+  background: #fff;
+  color: #475467;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 16px;
+  cursor: pointer;
+}
+.modeBtn + .modeBtn,
+.modeBtn + .modeOn,
+.modeOn + .modeBtn {
+  border-left: 1px solid #d0d5dd;
+}
+.modeOn {
+  background: #0a2240;
+  color: #fff;
+}
+.linkBtnGood {
+  background: none;
+  border: none;
+  color: #16a34a;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+}
+.linkBtnBad {
+  background: none;
+  border: none;
+  color: #b42318;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+}

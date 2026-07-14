@@ -70,14 +70,20 @@ export default function ProfileGoals({ player }: Props) {
       confirmLabel: "Sí, cancelar",
     });
     if (!ok) return;
+    await handleSetStatus(goal, "cancelled");
+  };
+
+  // §7.3 — manual close of a FREE goal (or cancel of any). Metric goals
+  // only accept "cancelled"; the backend rejects a bad transition.
+  const handleSetStatus = async (goal: Goal, status: "met" | "missed" | "cancelled") => {
     try {
       const updated = await api<Goal>(`/goals/${goal.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: "cancelled" }),
+        body: JSON.stringify({ status }),
       });
       setGoals((prev) => (prev ?? []).map((g) => (g.id === goal.id ? updated : g)));
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Error al cancelar");
+      setError(err instanceof ApiError ? err.message : "No se pudo actualizar el objetivo");
     }
   };
 
@@ -121,7 +127,8 @@ export default function ProfileGoals({ player }: Props) {
               key={g.id}
               goal={g}
               onCancel={handleCancel}
-              canCancel={canChange}
+              onSetStatus={handleSetStatus}
+              canChange={canChange}
             />
           ))}
         </div>
@@ -135,13 +142,14 @@ export default function ProfileGoals({ player }: Props) {
 // ---------------------------------------------------------------------------
 
 function GoalCard({
-  goal, onCancel, canCancel,
+  goal, onCancel, onSetStatus, canChange,
 }: {
   goal: Goal;
   onCancel: (g: Goal) => void;
-  canCancel: boolean;
+  onSetStatus: (g: Goal, status: "met" | "missed" | "cancelled") => void;
+  canChange: boolean;
 }) {
-  const op = OPERATOR_LABELS[goal.operator];
+  const op = goal.operator ? OPERATOR_LABELS[goal.operator] : "";
   const statusClass =
     goal.status === "met"
       ? styles.statusMet
@@ -184,9 +192,11 @@ function GoalCard({
       <div className={styles.cardHeader}>
         <div>
           <div className={styles.cardTitle}>
-            {goal.field_label} {op} {targetStr}
+            {goal.is_metric_goal ? `${goal.field_label} ${op} ${targetStr}` : goal.title}
           </div>
-          <div className={styles.cardSubtitle}>{goal.template_name}</div>
+          <div className={styles.cardSubtitle}>
+            {goal.is_metric_goal ? goal.template_name : "Objetivo libre"}
+          </div>
         </div>
         <span className={`${styles.statusPill} ${statusClass}`}>{statusLabel}</span>
       </div>
@@ -194,20 +204,22 @@ function GoalCard({
         <span className={styles.rowLabel}>Fecha objetivo</span>
         <span className={styles.rowValue}>{formatDate(goal.due_date)}</span>
       </div>
-      <div className={styles.row}>
-        <span className={styles.rowLabel}>Valor actual</span>
-        <span className={`${styles.rowValue} ${currentValueClass}`}>
-          {currentStr}
-          {currentValue !== null && distance !== null && distance !== 0 && (
-            <span className={styles.deltaInline}>
-              {" "}({distance > 0 ? "+" : ""}{distance}
-              {distancePct !== null ? `, ${distancePct > 0 ? "+" : ""}${distancePct.toFixed(1)}%` : ""}
-              {" "}vs objetivo)
-            </span>
-          )}
-        </span>
-      </div>
-      {goal.current_recorded_at && (
+      {goal.is_metric_goal && (
+        <div className={styles.row}>
+          <span className={styles.rowLabel}>Valor actual</span>
+          <span className={`${styles.rowValue} ${currentValueClass}`}>
+            {currentStr}
+            {currentValue !== null && distance !== null && distance !== 0 && (
+              <span className={styles.deltaInline}>
+                {" "}({distance > 0 ? "+" : ""}{distance}
+                {distancePct !== null ? `, ${distancePct > 0 ? "+" : ""}${distancePct.toFixed(1)}%` : ""}
+                {" "}vs objetivo)
+              </span>
+            )}
+          </span>
+        </div>
+      )}
+      {goal.is_metric_goal && goal.current_recorded_at && (
         <div className={styles.row}>
           <span className={styles.rowLabel}>Medido el</span>
           <span className={styles.rowValueMuted}>
@@ -216,8 +228,18 @@ function GoalCard({
         </div>
       )}
       {goal.notes && <div className={styles.notes}>{goal.notes}</div>}
-      {goal.status === "active" && canCancel && (
+      {goal.status === "active" && canChange && (
         <div className={styles.cardActions}>
+          {!goal.is_metric_goal && (
+            <>
+              <button type="button" className={styles.linkBtnGood} onClick={() => onSetStatus(goal, "met")}>
+                Marcar cumplido
+              </button>
+              <button type="button" className={styles.linkBtnBad} onClick={() => onSetStatus(goal, "missed")}>
+                Marcar no cumplido
+              </button>
+            </>
+          )}
           <button type="button" className={styles.linkBtn} onClick={() => onCancel(goal)}>
             Cancelar
           </button>
@@ -238,6 +260,9 @@ interface FormProps {
 }
 
 function GoalForm({ player, onCreated, onCancel }: FormProps) {
+  // §7.3 — "metric" (auto-evaluated) vs "free" (title + date, closed manually).
+  const [mode, setMode] = useState<"metric" | "free">("metric");
+  const [title, setTitle] = useState("");
   const [templates, setTemplates] = useState<ExamTemplate[] | null>(null);
   const [templateId, setTemplateId] = useState<string>("");
   const [fieldKey, setFieldKey] = useState<string>("");
@@ -292,36 +317,50 @@ function GoalForm({ player, onCreated, onCancel }: FormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!templateId || !fieldKey || !targetValue) {
-      setError("Completa plantilla, campo y valor objetivo.");
-      return;
-    }
-    const target = Number(targetValue);
-    if (Number.isNaN(target)) {
-      setError("Valor objetivo inválido.");
-      return;
-    }
-    // Empty input or 0 disables warnings; otherwise pass through as a number.
-    let warnDays: number | null = null;
-    if (warnDaysBefore.trim() !== "") {
-      const parsed = Number(warnDaysBefore);
-      if (Number.isNaN(parsed) || parsed < 0) {
-        setError("Días de aviso inválidos.");
+
+    let payload: GoalCreateIn;
+    if (mode === "free") {
+      if (!title.trim()) {
+        setError("Ingresá un título para el objetivo.");
         return;
       }
-      warnDays = parsed === 0 ? null : Math.floor(parsed);
+      payload = {
+        player_id: player.id,
+        title: title.trim(),
+        due_date: dueDate,
+        notes: notes || undefined,
+      };
+    } else {
+      if (!templateId || !fieldKey || !targetValue) {
+        setError("Completa plantilla, campo y valor objetivo.");
+        return;
+      }
+      const target = Number(targetValue);
+      if (Number.isNaN(target)) {
+        setError("Valor objetivo inválido.");
+        return;
+      }
+      // Empty input or 0 disables warnings; otherwise pass through as a number.
+      let warnDays: number | null = null;
+      if (warnDaysBefore.trim() !== "") {
+        const parsed = Number(warnDaysBefore);
+        if (Number.isNaN(parsed) || parsed < 0) {
+          setError("Días de aviso inválidos.");
+          return;
+        }
+        warnDays = parsed === 0 ? null : Math.floor(parsed);
+      }
+      payload = {
+        player_id: player.id,
+        template_id: templateId,
+        field_key: fieldKey,
+        operator,
+        target_value: target,
+        due_date: dueDate,
+        notes: notes || undefined,
+        warn_days_before: warnDays,
+      };
     }
-
-    const payload: GoalCreateIn = {
-      player_id: player.id,
-      template_id: templateId,
-      field_key: fieldKey,
-      operator,
-      target_value: target,
-      due_date: dueDate,
-      notes: notes || undefined,
-      warn_days_before: warnDays,
-    };
     setSubmitting(true);
     try {
       const created = await api<Goal>("/goals", {
@@ -338,7 +377,36 @@ function GoalForm({ player, onCreated, onCancel }: FormProps) {
 
   return (
     <form className={styles.formCard} onSubmit={handleSubmit}>
+      <div className={styles.modeToggle} role="group" aria-label="Tipo de objetivo">
+        <button
+          type="button"
+          className={mode === "metric" ? styles.modeOn : styles.modeBtn}
+          onClick={() => setMode("metric")}
+        >
+          Con métrica
+        </button>
+        <button
+          type="button"
+          className={mode === "free" ? styles.modeOn : styles.modeBtn}
+          onClick={() => setMode("free")}
+        >
+          Libre
+        </button>
+      </div>
       <div className={styles.formGrid}>
+        {mode === "free" && (
+          <label className={`${styles.field} ${styles.fullWidth}`}>
+            <span className={styles.label}>Título del objetivo</span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="p. ej. Completar el reintegro deportivo"
+              required
+            />
+          </label>
+        )}
+        {mode === "metric" && (
+        <>
         <label className={styles.field}>
           <span className={styles.label}>Plantilla</span>
           <select
@@ -400,6 +468,8 @@ function GoalForm({ player, onCreated, onCancel }: FormProps) {
             required
           />
         </label>
+        </>
+        )}
 
         <label className={styles.field}>
           <span className={styles.label}>Fecha objetivo</span>
@@ -411,20 +481,22 @@ function GoalForm({ player, onCreated, onCancel }: FormProps) {
           />
         </label>
 
-        <label className={styles.field}>
-          <span className={styles.label}>
-            Avisar días antes
-            <span className={styles.hint}> · 0 o vacío desactiva</span>
-          </span>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={warnDaysBefore}
-            onChange={(e) => setWarnDaysBefore(e.target.value)}
-            placeholder="7"
-          />
-        </label>
+        {mode === "metric" && (
+          <label className={styles.field}>
+            <span className={styles.label}>
+              Avisar días antes
+              <span className={styles.hint}> · 0 o vacío desactiva</span>
+            </span>
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={warnDaysBefore}
+              onChange={(e) => setWarnDaysBefore(e.target.value)}
+              placeholder="7"
+            />
+          </label>
+        )}
 
         <label className={`${styles.field} ${styles.fullWidth}`}>
           <span className={styles.label}>Notas (opcional)</span>

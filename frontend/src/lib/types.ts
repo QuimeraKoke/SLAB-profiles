@@ -445,13 +445,16 @@ export interface GoalProgress {
 export interface Goal {
   id: string;
   player_id: string;
-  template_id: string;
+  /** §7.3 — false for a free (title-only) goal, closed manually. */
+  is_metric_goal: boolean;
+  title: string;
+  template_id: string | null;
   template_name: string;
   field_key: string;
   field_label: string;
   field_unit: string;
-  operator: GoalOperator;
-  target_value: number;
+  operator: GoalOperator | "";
+  target_value: number | null;
   due_date: string; // YYYY-MM-DD
   notes: string;
   status: GoalStatus;
@@ -493,11 +496,13 @@ export interface GoalCardPayload {
 
 export interface GoalCreateIn {
   player_id: string;
-  template_id: string;
-  field_key: string;
-  operator: GoalOperator;
-  target_value: number;
   due_date: string;
+  // Free goal (§7.3): just `title`. Metric goal: the rest.
+  title?: string;
+  template_id?: string;
+  field_key?: string;
+  operator?: GoalOperator;
+  target_value?: number;
   notes?: string;
   warn_days_before?: number | null;
 }
