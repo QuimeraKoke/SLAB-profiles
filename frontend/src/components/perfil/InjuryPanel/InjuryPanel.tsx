@@ -24,6 +24,20 @@ interface Props {
   player: PlayerDetail;
 }
 
+/** Drop the prognosis dates from the "continue" prefill (§3.2). Carrying the
+ *  previous expected_return_date forward silently re-saves the same forecast
+ *  on every stage update, corrupting the forecast-accuracy trail — the doctor
+ *  should re-enter it only to *change* the prognosis. */
+function stripForecastFields(
+  data: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!data) return data;
+  const rest = { ...data };
+  delete rest.expected_return_date;
+  delete rest.actual_return_date;
+  return rest;
+}
+
 /**
  * Active modal state. Three flows live in this panel:
  *   - "new"      → create a brand-new injury (DynamicUploader, no episode)
@@ -97,7 +111,7 @@ export default function InjuryPanel({ player }: Props) {
           template={injuryTemplate}
           playerId={player.id}
           episodeId={modal.episode.id}
-          initialValues={modal.episode.latest_result_data}
+          initialValues={stripForecastFields(modal.episode.latest_result_data)}
           onSaved={handleSaved}
           onCancel={closeModal}
         />

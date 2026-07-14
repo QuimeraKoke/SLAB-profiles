@@ -174,11 +174,22 @@ LESIONES_SCHEMA: dict = {
         {
             "key": "expected_return_date", "label": "Retorno estimado",
             "type": "date", "group": "Pronóstico",
+            "help_text": (
+                "Pronóstico de disponibilidad al momento del diagnóstico. "
+                "Complétalo solo cuando estimás (o cambiás) la fecha; el "
+                "retorno REAL se registra en 'Disponible para ser citado' del "
+                "episodio, y la diferencia alimenta el KPI de precisión de "
+                "pronóstico."
+            ),
         },
         {
             "key": "actual_return_date", "label": "Retorno efectivo",
             "type": "date", "group": "Pronóstico",
             "placeholder": "Completar al cerrar el episodio",
+            "help_text": (
+                "Retorno efectivo a la práctica. La disponibilidad para ser "
+                "citado se marca a nivel del episodio ('Disponible para citar')."
+            ),
         },
 
         # === Contexto (Fuller: dónde y cómo ocurrió) ===

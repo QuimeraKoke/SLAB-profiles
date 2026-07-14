@@ -147,6 +147,7 @@ class StatsTests(SimpleTestCase):
 
 from django.contrib.auth import get_user_model  # noqa: E402
 from django.test import RequestFactory, TestCase  # noqa: E402
+from django.utils import timezone  # noqa: E402
 
 
 class TeamWidgetArrangeTests(TestCase):
@@ -255,3 +256,59 @@ class EpisodeAvailableAtTests(TestCase):
         self.ep.refresh_from_db()
         self.assertEqual(self.ep.status, "open")  # available ≠ closed
         self.assertIsNone(self.ep.ended_at)
+
+
+class ForecastAccuracyTests(TestCase):
+    """§3.2 — return-prognosis accuracy: error = actual − first forecast."""
+
+    def _episode(self, first_expected, actual_iso):
+        from datetime import datetime, timezone as _tzc
+        from exams.models import Episode, ExamResult
+        ep = Episode.objects.create(
+            player=self.player, template=self.template, status="closed",
+            stage="closed", started_at=timezone.now(),
+            available_at=datetime.fromisoformat(f"{actual_iso}T12:00:00+00:00"),
+        )
+        ExamResult.objects.create(
+            player=self.player, template=self.template, episode=ep,
+            recorded_at=timezone.now(),
+            result_data={"expected_return_date": first_expected},
+        )
+        return ep
+
+    def setUp(self):
+        from django.utils import timezone as _tz
+        from core.models import Category, Club, Department, Player
+        from exams.models import ExamTemplate
+        self.club = Club.objects.create(name="FC3")
+        self.dept = Department.objects.create(club=self.club, name="Med", slug="med")
+        self.cat = Category.objects.create(club=self.club, name="A")
+        self.player = Player.objects.create(category=self.cat, first_name="A", last_name="B")
+        self.template = ExamTemplate.objects.create(
+            name="Lesiones", slug="lesiones", department=self.dept, is_episodic=True,
+            episode_config={"stage_field": "stage", "open_stages": ["injured"], "closed_stage": "closed"},
+            config_schema={"fields": [{"key": "stage", "type": "categorical", "options": ["injured", "closed"]}]},
+        )
+        self.template.applicable_categories.add(self.cat)
+
+    def test_bias_and_mae(self):
+        from api.injury_forecast import forecast_accuracy
+        self._episode("2026-06-30", "2026-07-10")   # +10 (late)
+        self._episode("2026-06-20", "2026-06-15")   # −5 (early)
+        out = forecast_accuracy(category=self.cat, department=self.dept)
+        self.assertEqual(out["episodes"], 2)
+        self.assertEqual(out["bias_days"], 2.5)      # (10 + −5) / 2
+        self.assertEqual(out["mae_days"], 7.5)       # (10 + 5) / 2
+        # worst-first ordering
+        self.assertEqual(out["samples"][0]["error_days"], 10)
+
+    def test_episode_without_forecast_is_skipped(self):
+        from exams.models import Episode
+        from api.injury_forecast import forecast_accuracy
+        # available but no expected_return_date ever recorded → not scored.
+        Episode.objects.create(
+            player=self.player, template=self.template, status="closed",
+            stage="closed", started_at=timezone.now(),
+            available_at=timezone.now(),
+        )
+        self.assertEqual(forecast_accuracy(category=self.cat)["episodes"], 0)

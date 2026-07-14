@@ -2736,6 +2736,34 @@ def team_widget_options(request, department_slug: str, category_id: str):
     return {"templates": templates, "chart_types": chart_types}
 
 
+@api.get("/reports/{department_slug}/forecast-accuracy")
+def report_forecast_accuracy(
+    request, department_slug: str, category_id: str,
+    date_from: str = "", date_to: str = "",
+):
+    """§3.2 — injury return-prognosis accuracy (bias + MAE) for the department's
+    category, over an optional period (filters on the real availability date)."""
+    from api.injury_forecast import _to_date, forecast_accuracy
+
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    dept = scope_departments(
+        Department.objects.filter(club_id=category.club_id), membership,
+    ).filter(slug=department_slug).first()
+    if dept is None:
+        raise HttpError(404, "Department not found")
+
+    return forecast_accuracy(
+        category=category, department=dept,
+        date_from=_to_date(date_from) if date_from else None,
+        date_to=_to_date(date_to) if date_to else None,
+    )
+
+
 class PromotePlayerChartIn(Schema):
     department_slug: str
     spec: dict

@@ -134,7 +134,12 @@ export default function RegistrarExamPage({ params }: PageProps) {
     api<Episode>(`/episodes/${episodeChoice}`)
       .then((ep) => {
         if (cancelled) return;
-        setContinueInitial(ep.latest_result_data ?? {});
+        // Don't carry the previous prognosis forward (§3.2) — the doctor
+        // re-enters expected_return_date only to change it.
+        const prefill = { ...(ep.latest_result_data ?? {}) };
+        delete prefill.expected_return_date;
+        delete prefill.actual_return_date;
+        setContinueInitial(prefill);
       })
       .catch(() => {
         if (!cancelled) setContinueInitial({});
