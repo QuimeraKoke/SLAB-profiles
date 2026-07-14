@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ArrowLeft, ArrowRight, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Pencil, Trash2 } from "lucide-react";
 
 import type { TeamReportSection as TeamReportSectionType } from "@/lib/types";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
@@ -17,9 +17,11 @@ interface Props {
   editMode?: boolean;
   /** Called after a successful arrange mutation so the page can refetch. */
   onChanged?: () => void;
+  /** Open the edit modal for a widget (§5) — owned by the page. */
+  onEditWidget?: (widgetId: string) => void;
 }
 
-export default function TeamReportSection({ section, editMode = false, onChanged }: Props) {
+export default function TeamReportSection({ section, editMode = false, onChanged, onEditWidget }: Props) {
   const [collapsed, setCollapsed] = useState(section.default_collapsed);
   const [busy, setBusy] = useState(false);
   const { confirm } = useConfirm();
@@ -141,6 +143,15 @@ export default function TeamReportSection({ section, editMode = false, onChanged
                       </button>
                     ))}
                   </div>
+                  {onEditWidget && (
+                    <button
+                      type="button" className={styles.editIconBtn} disabled={busy}
+                      onClick={() => onEditWidget(widget.id)}
+                      aria-label="Editar widget" title="Editar"
+                    >
+                      <Pencil size={15} />
+                    </button>
+                  )}
                   <button
                     type="button" className={styles.removeBtn} disabled={busy}
                     onClick={() => remove(widget.id, widget.title)}

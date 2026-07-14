@@ -2590,6 +2590,11 @@ class WidgetReorderIn(Schema):
     widget_ids: list[str]
 
 
+class WidgetConfigIn(Schema):
+    """Edit a widget's config in place (§5) — same spec shape as promote."""
+    spec: dict
+
+
 @api.post("/reports/{department_slug}/widgets")
 @require_perm("dashboards.add_teamreportwidget")
 def promote_chart(request, department_slug: str, payload: PromoteChartIn):
@@ -2692,6 +2697,46 @@ def delete_team_widget(request, widget_id: str):
     _club_access_or_403(request, w.section.layout.department.club)
     w.delete()
     return {"ok": True}
+
+
+@api.get("/reports/widgets/{widget_id}/config")
+@require_perm("dashboards.change_teamreportwidget")
+def get_team_widget_config(request, widget_id: str):
+    """Read a widget's editable config to pre-fill the edit modal (§5)."""
+    from dashboards.chart_spec import widget_config
+    from dashboards.models import TeamReportWidget
+
+    w = (
+        TeamReportWidget.objects
+        .select_related("section__layout__department__club")
+        .filter(pk=widget_id).first()
+    )
+    if w is None:
+        raise HttpError(404, "Widget no encontrado.")
+    _club_access_or_403(request, w.section.layout.department.club)
+    return widget_config(w)
+
+
+@api.patch("/reports/widgets/{widget_id}/config")
+@require_perm("dashboards.change_teamreportwidget")
+def update_team_widget_config(request, widget_id: str, payload: WidgetConfigIn):
+    """Apply a new spec (chart type / metric(s) / title) to an existing widget,
+    preserving its layout position (§5)."""
+    from dashboards.chart_spec import edit_chart_spec
+    from dashboards.models import TeamReportWidget
+
+    w = (
+        TeamReportWidget.objects
+        .select_related("section__layout__department__club", "section__layout__category")
+        .filter(pk=widget_id).first()
+    )
+    if w is None:
+        raise HttpError(404, "Widget no encontrado.")
+    _club_access_or_403(request, w.section.layout.department.club)
+    result = edit_chart_spec(widget=w, category=w.section.layout.category, spec=payload.spec)
+    if result.get("error"):
+        raise HttpError(400, result["error"])
+    return result
 
 
 @api.get("/reports/{department_slug}/widget-options")

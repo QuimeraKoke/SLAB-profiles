@@ -12,9 +12,11 @@ interface Props {
   editMode?: boolean;
   /** Refetch trigger after a successful arrange mutation. */
   onChanged?: () => void;
+  /** Open the edit modal for a widget (§5). */
+  onEditWidget?: (widgetId: string) => void;
 }
 
-export default function TeamReportDashboard({ sections, editMode = false, onChanged }: Props) {
+export default function TeamReportDashboard({ sections, editMode = false, onChanged, onEditWidget }: Props) {
   if (sections.length === 0) {
     return (
       <div className={styles.empty}>
@@ -32,6 +34,7 @@ export default function TeamReportDashboard({ sections, editMode = false, onChan
           section={section}
           editMode={editMode}
           onChanged={onChanged}
+          onEditWidget={onEditWidget}
         />
       ))}
     </div>

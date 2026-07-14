@@ -76,3 +76,25 @@ export function addWidget(deptSlug: string, categoryId: string, spec: WidgetSpec
     body: JSON.stringify({ category_id: categoryId, spec }),
   });
 }
+
+// ── Edit an existing widget's config in place (§5 / Fase 5) ──────────────────
+
+export interface WidgetConfig {
+  chart_type: string;
+  title: string;
+  template_slug: string;
+  field_keys: string[];
+  aggregation: string;
+  display_config: Record<string, unknown>;
+}
+
+export function fetchWidgetConfig(widgetId: string): Promise<WidgetConfig> {
+  return api<WidgetConfig>(`/reports/widgets/${widgetId}/config`);
+}
+
+export function editWidget(widgetId: string, spec: WidgetSpec): Promise<unknown> {
+  return api(`/reports/widgets/${widgetId}/config`, {
+    method: "PATCH",
+    body: JSON.stringify({ spec }),
+  });
+}

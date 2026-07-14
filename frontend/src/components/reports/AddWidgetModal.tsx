@@ -7,6 +7,8 @@ import { useToast } from "@/components/ui/Toast/Toast";
 import { ApiError } from "@/lib/api";
 import {
   addWidget,
+  editWidget,
+  fetchWidgetConfig,
   fetchWidgetOptions,
   type WidgetOptions,
   type WidgetSpec,
@@ -17,20 +19,28 @@ interface Props {
   open: boolean;
   deptSlug: string;
   categoryId: string;
+  /** When set, the modal edits that widget in place (pre-filled) instead of
+   *  creating a new one; its display_config is preserved on save (§5). */
+  editWidgetId?: string | null;
   onClose: () => void;
   onAdded: () => void;
 }
 
-/** Add a team-report widget from a picked exam + metric(s) + chart type,
- *  reusing the promote-from-spec endpoint. New widgets land in the auto
- *  "Mis gráficos" section (§2.c). */
-export default function AddWidgetModal({ open, deptSlug, categoryId, onClose, onAdded }: Props) {
+/** Add OR edit a team-report widget from a picked exam + metric(s) + chart
+ *  type. Create reuses the promote-from-spec endpoint (new widgets land in
+ *  "Mis gráficos"); edit PATCHes the widget's config in place (§2.c / §5). */
+export default function AddWidgetModal({
+  open, deptSlug, categoryId, editWidgetId, onClose, onAdded,
+}: Props) {
   const { toast } = useToast();
+  const isEdit = !!editWidgetId;
   const [opts, setOpts] = useState<WidgetOptions | null>(null);
   const [chartType, setChartType] = useState("team_leaderboard");
   const [templateSlug, setTemplateSlug] = useState("");
   const [fields, setFields] = useState<string[]>([]);
   const [title, setTitle] = useState("");
+  // Preserved on edit so we don't clobber the club's reference lines / coloring.
+  const [existingDisplayConfig, setExistingDisplayConfig] = useState<Record<string, unknown> | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,8 +50,27 @@ export default function AddWidgetModal({ open, deptSlug, categoryId, onClose, on
     fetchWidgetOptions(deptSlug, categoryId)
       .then((o) => { if (!cancelled) setOpts(o); })
       .catch(() => { if (!cancelled) setError("No se pudieron cargar las opciones."); });
+    if (editWidgetId) {
+      fetchWidgetConfig(editWidgetId)
+        .then((cfg) => {
+          if (cancelled) return;
+          setChartType(cfg.chart_type);
+          setTemplateSlug(cfg.template_slug);
+          setFields(cfg.field_keys);
+          setTitle(cfg.title);
+          setExistingDisplayConfig(cfg.display_config);
+        })
+        .catch(() => { if (!cancelled) setError("No se pudo cargar el widget."); });
+    } else {
+      // Fresh create — reset to defaults.
+      setChartType("team_leaderboard");
+      setTemplateSlug("");
+      setFields([]);
+      setTitle("");
+      setExistingDisplayConfig(null);
+    }
     return () => { cancelled = true; };
-  }, [open, deptSlug, categoryId]);
+  }, [open, deptSlug, categoryId, editWidgetId]);
 
   const template = useMemo(
     () => opts?.templates.find((t) => t.slug === templateSlug),
@@ -71,9 +100,13 @@ export default function AddWidgetModal({ open, deptSlug, categoryId, onClose, on
       aggregation: chartType === "team_horizontal_comparison" ? "last_n" : "latest",
       aggregation_param: 5,
     };
-    const display_config = isLeaderboard
-      ? { style: "vertical_bars", aggregator: "latest" }
-      : {};
+    // On edit, keep the widget's existing display_config (reference lines,
+    // coloring, deviation mode…) — the builder only changes type/metric/title.
+    const display_config = isEdit && existingDisplayConfig
+      ? existingDisplayConfig
+      : isLeaderboard
+        ? { style: "vertical_bars", aggregator: "latest" }
+        : {};
     const firstLabel = numericFields.find((f) => f.key === fields[0])?.label ?? "";
     const defaultTitle = template
       ? `${template.name}${fields.length === 1 && firstLabel ? ` · ${firstLabel}` : ""}`
@@ -85,21 +118,26 @@ export default function AddWidgetModal({ open, deptSlug, categoryId, onClose, on
       display_config,
     };
     try {
-      await addWidget(deptSlug, categoryId, spec);
-      toast.success("Widget agregado.");
+      if (isEdit && editWidgetId) {
+        await editWidget(editWidgetId, spec);
+        toast.success("Widget actualizado.");
+      } else {
+        await addWidget(deptSlug, categoryId, spec);
+        toast.success("Widget agregado.");
+      }
       setFields([]);
       setTitle("");
       onAdded();
       onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "No se pudo agregar el widget.");
+      setError(e instanceof ApiError ? e.message : "No se pudo guardar el widget.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Modal open={open} title="Agregar widget" onClose={onClose}>
+    <Modal open={open} title={isEdit ? "Editar widget" : "Agregar widget"} onClose={onClose}>
       {error && <div className={styles.error} role="alert">{error}</div>}
       <div className={styles.form}>
         <label className={styles.field}>
@@ -168,7 +206,7 @@ export default function AddWidgetModal({ open, deptSlug, categoryId, onClose, on
           type="button" className={styles.primaryBtn} onClick={submit}
           disabled={busy || !templateSlug || fields.length === 0}
         >
-          {busy ? "Agregando…" : "Agregar"}
+          {busy ? "Guardando…" : isEdit ? "Guardar" : "Agregar"}
         </button>
       </div>
     </Modal>

@@ -56,6 +56,7 @@ export default function ReportePage({ params }: PageProps) {
   const [reloadKey, setReloadKey] = useState(0);
   const [editMode, setEditMode] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [editWidgetId, setEditWidgetId] = useState<string | null>(null);
   const canEditPanel = usePermission("dashboards.change_teamreportwidget");
 
   const updateUrl = (next: {
@@ -317,6 +318,7 @@ export default function ReportePage({ params }: PageProps) {
           sections={layout.sections}
           editMode={editMode}
           onChanged={() => setReloadKey((k) => k + 1)}
+          onEditWidget={(id) => { setEditWidgetId(id); setAddOpen(true); }}
         />
       ) : (
         layoutFetched && !error && <Placeholder departmentName={department.name} />
@@ -327,7 +329,8 @@ export default function ReportePage({ params }: PageProps) {
           open={addOpen}
           deptSlug={department.slug}
           categoryId={categoryId}
-          onClose={() => setAddOpen(false)}
+          editWidgetId={editWidgetId}
+          onClose={() => { setAddOpen(false); setEditWidgetId(null); }}
           onAdded={() => setReloadKey((k) => k + 1)}
         />
       )}

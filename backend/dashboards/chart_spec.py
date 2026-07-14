@@ -297,6 +297,47 @@ def promote_chart_spec(
     }
 
 
+def widget_config(widget) -> dict[str, Any]:
+    """A team widget's editable config, for the in-place edit modal (§5/Fase5).
+    Single-source shape (what the builder authors)."""
+    src = widget.data_sources.select_related("template").order_by("sort_order", "id").first()
+    return {
+        "chart_type": widget.chart_type,
+        "title": widget.title,
+        "display_config": widget.display_config or {},
+        "template_slug": src.template.slug if src else "",
+        "field_keys": list(src.field_keys) if src else [],
+        "aggregation": src.aggregation if src else "",
+    }
+
+
+def edit_chart_spec(*, widget, category: Category, spec: dict[str, Any]) -> dict[str, Any]:
+    """Apply a spec to an EXISTING TeamReportWidget: update chart_type / title /
+    display_config and replace its data sources, preserving layout position
+    (section, column_span, sort_order). Returns {widget_id, title} or {error}."""
+    try:
+        chart_type, title, display_config, resolved_sources = _normalize_spec(
+            category, spec, VALID_CHART_TYPES
+        )
+    except _SpecError as e:
+        return {"error": str(e)}
+
+    with transaction.atomic():
+        widget.chart_type = chart_type
+        widget.title = title or widget.title or "Gráfico"
+        widget.display_config = display_config
+        widget.save(update_fields=["chart_type", "title", "display_config"])
+        widget.data_sources.all().delete()
+        for i, rs in enumerate(resolved_sources):
+            TeamReportWidgetDataSource.objects.create(
+                widget=widget, template=rs["template"],
+                field_keys=rs["field_keys"], aggregation=rs["aggregation"],
+                aggregation_param=rs["aggregation_param"],
+                label=rs["label"], color=rs["color"], sort_order=i,
+            )
+    return {"widget_id": str(widget.id), "title": widget.title}
+
+
 def promote_player_chart_spec(
     *,
     category: Category,

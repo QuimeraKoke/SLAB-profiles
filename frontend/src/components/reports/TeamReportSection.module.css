@@ -122,3 +122,17 @@
   display: inline-flex;
   align-items: center;
 }
+
+/* §5 — standalone edit (pencil) button (sits with the arrange controls;
+   remove stays pushed far-right by its own margin-left:auto). */
+.editIconBtn {
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4f46e5;
+  border-radius: 6px;
+  padding: 5px 9px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.editIconBtn:disabled { opacity: 0.45; cursor: default; }
