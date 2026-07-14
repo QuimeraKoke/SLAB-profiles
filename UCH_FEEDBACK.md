@@ -823,6 +823,30 @@ a campos numéricos. · **Fase 3.**
 - [ ] Simetría con "Exportar datos" (§5): árbol Departamento → Template
       compartido; considerar construir el par junto. (7.1)
 
+## Fase 5 — Completar el constructor de paneles
+
+> Solicitado por el usuario el 2026-07-13, tras probar la v1 del constructor
+> ("Arrange + add"). Son las dos piezas que quedaron fuera del alcance elegido.
+
+- [ ] **Edición in-place de widgets** (equipo + jugador): botón ✏️ por widget en
+      modo edición que abre una versión **pre-cargada** del modal de "Agregar
+      widget" para cambiar **tipo de gráfico, métrica(s) y título** sin borrar y
+      recrear. Backend: extender el `PATCH /reports/widgets/{id}` (hoy solo
+      column_span/title/sort_order/section) para actualizar también el data source
+      (template + field_keys) + chart_type; equivalente para `Widget` de jugador.
+      Considerar multi-source (métricas de varios exámenes en un mismo widget) acá.
+      *(Era el alcance "Full builder" diferido de §2.c.)*
+- [ ] **Paridad del constructor en la vista de layout del jugador**: llevar el modo
+      edición in-context (reordenar / redimensionar / quitar + agregar + editar) a
+      las pestañas de departamento del perfil del jugador
+      (`DepartmentLayout`/`Widget`). Backend: endpoints de arrange por-jugador
+      (`PATCH/DELETE/reorder` de `Widget` — hoy solo existen los de equipo);
+      *agregar* ya existe vía `promote_player_chart_spec`; `GET /players/{id}/view`
+      ya devuelve `display_config`. Frontend: toggle de edición en la pestaña,
+      reusando los controles de `TeamReportSection` + `AddWidgetModal`. Nota:
+      `DepartmentLayout` es por depto+categoría → las ediciones aplican a todos los
+      jugadores de esa categoría (mismo modelo que equipo).
+
 ## Decisiones — estado
 
 ### ✅ Resueltas
