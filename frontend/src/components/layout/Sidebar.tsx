@@ -110,7 +110,10 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   // mid-session relies on a manual toggle (acceptable).
   const [expandedItems, setExpandedItems] = useState<string[]>(() => {
     if (pathname.startsWith("/reportes")) return ["Dashboard"];
-    if (pathname.startsWith("/exportar") || pathname.startsWith("/uso")) return ["Datos"];
+    if (
+      pathname.startsWith("/exportar") || pathname.startsWith("/uso")
+      || pathname.startsWith("/subir-datos")
+    ) return ["Datos"];
     if (pathname.startsWith("/configuraciones")) return ["Administración"];
     return [];
   });
@@ -151,13 +154,16 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
         }
       : null;
 
-  // "Datos" — el hogar de datos del sidebar (§5): Exportar datos (todo el staff
-  // — el dato pertenece al club) + Uso (solo superuser, movido aquí desde
-  // Administración). "Subir datos" (§7.1) se suma en Fase 4.
+  // "Datos" — el hogar de datos del sidebar (§5/§7.1): Subir datos (carga por
+  // equipo, rol con permiso de captura) + Exportar datos (todo el staff) + Uso
+  // (solo superuser, movido aquí desde Administración).
   const datosGroup: NavGroup = {
     label: "Datos",
     icon: Database,
     subItems: [
+      ...(hasPermission(user, "exams.add_examresult")
+        ? [{ label: "Subir datos", href: "/subir-datos" }]
+        : []),
       { label: "Exportar datos", href: "/exportar" },
       ...(user?.is_superuser ? [{ label: "Uso", href: "/uso" }] : []),
     ],
