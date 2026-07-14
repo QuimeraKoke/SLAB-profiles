@@ -403,7 +403,7 @@ def answer_player_resumen_question(
     agent = resolve_insight_agent("assistant")
     model = (
         ((agent.model or "").strip() if agent else "")
-        or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+        or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
     )
     player_name = f"{player.first_name} {player.last_name}".strip()
     system = _PLAYER_RESUMEN_PROMPT.format(
@@ -456,7 +456,7 @@ def answer_team_question(category, messages: list[dict]) -> str:
     agent = resolve_insight_agent("assistant")
     model = (
         ((agent.model or "").strip() if agent else "")
-        or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+        or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
     )
     role = (agent.system_prompt.strip() if agent and agent.system_prompt else "") or _ASSISTANT_PROMPT
 
@@ -511,7 +511,7 @@ def answer_dashboard_question(
     agent = resolve_insight_agent(getattr(department, "slug", ""))
     model = (
         ((agent.model or "").strip() if agent else "")
-        or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+        or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
     )
     system = _DASHBOARD_PROMPT.format(
         department=getattr(department, "name", ""),
@@ -570,7 +570,7 @@ def answer_player_question(
     agent = resolve_insight_agent(getattr(department, "slug", ""))
     model = (
         ((agent.model or "").strip() if agent else "")
-        or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+        or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
     )
     player_name = f"{player.first_name} {player.last_name}".strip()
     system = _PLAYER_DASHBOARD_PROMPT.format(

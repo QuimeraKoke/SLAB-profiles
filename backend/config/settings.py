@@ -20,7 +20,7 @@ ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["*"])
 # Optional: when the key is blank the PDF renders tables-only (no narrative).
 # Player metric/clinical data is sent to the Anthropic API when enabled.
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
-ANTHROPIC_MODEL = env("ANTHROPIC_MODEL", default="claude-opus-4-7")
+ANTHROPIC_MODEL = env("ANTHROPIC_MODEL", default="claude-opus-4-8")
 # (Dedup is handled durably by dashboards.pdf.report_cache — content-addressed
 # PDF snapshots in S3 keyed on a stable data + agent-config hash — so there's
 # no narrative-level TTL cache to configure.)

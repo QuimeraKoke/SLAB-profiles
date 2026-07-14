@@ -87,7 +87,7 @@ def report_inputs(player: Player):
     agent = resolve_insight_agent(_ANALYSIS_KIND) or resolve_insight_agent(_REPORT_KIND)
     model = (
         (agent.model or "").strip() if agent else ""
-    ) or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+    ) or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
     fingerprint = agent.config_fingerprint() if agent else "builtin"
 
     triage = build_triage_payload(player)
@@ -149,7 +149,7 @@ def get_or_build_triage_narrative(player: Player) -> dict | None:
     agent = resolve_insight_agent(_REPORT_KIND)
     model = (
         (agent.model or "").strip() if agent else ""
-    ) or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+    ) or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
     fingerprint = agent.config_fingerprint() if agent else "builtin"
 
     payload = build_triage_payload(player)

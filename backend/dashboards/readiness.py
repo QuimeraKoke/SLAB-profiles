@@ -123,7 +123,7 @@ def compute_readiness(player, *, force: bool = False):
 
     inp = build_inputs(player)
     det = deterministic(inp)
-    model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+    model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
     sig = _signature(inp, det, model)
 
     existing = PlayerReadiness.objects.filter(player=player).first()
@@ -169,7 +169,7 @@ def _agent_readiness(inp: dict, det: int) -> dict | None:
     try:
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
-            model=getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7"),
+            model=getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8"),
             max_tokens=900,
             thinking={"type": "adaptive"},
             output_config={"effort": "low"},

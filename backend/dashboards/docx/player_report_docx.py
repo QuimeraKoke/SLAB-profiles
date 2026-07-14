@@ -47,7 +47,7 @@ def render_or_get_player_docx(
 
     agent = resolve_insight_agent(department.slug)
     model = ((agent.model or "").strip() if agent else "") or getattr(
-        settings, "ANTHROPIC_MODEL", "claude-opus-4-7"
+        settings, "ANTHROPIC_MODEL", "claude-opus-4-8"
     )
     fingerprint = agent.config_fingerprint() if agent else "builtin"
 

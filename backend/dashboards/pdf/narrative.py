@@ -138,11 +138,11 @@ def generate_player_narrative(payload: dict, *, agent=None) -> dict | None:
 
     if agent is not None:
         model = (agent.model or "").strip() or getattr(
-            settings, "ANTHROPIC_MODEL", "claude-opus-4-7"
+            settings, "ANTHROPIC_MODEL", "claude-opus-4-8"
         )
         system = _build_system(agent.system_prompt, agent.knowledge)
     else:
-        model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+        model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
         system = _build_system(_DEFAULT_ROLE_PROMPT, "")
 
     return _call_model(api_key, model, system, stable_json(payload))
@@ -211,11 +211,11 @@ def generate_player_analysis_narrative(payload: dict, *, agent=None) -> dict | N
 
     if agent is not None:
         model = (agent.model or "").strip() or getattr(
-            settings, "ANTHROPIC_MODEL", "claude-opus-4-7"
+            settings, "ANTHROPIC_MODEL", "claude-opus-4-8"
         )
         knowledge = agent.knowledge
     else:
-        model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+        model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
         knowledge = ""
 
     parts = [_ANALYSIS_ROLE_PROMPT.strip()]

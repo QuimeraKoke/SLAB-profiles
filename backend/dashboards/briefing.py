@@ -78,7 +78,7 @@ def generate_briefing(category) -> list[dict]:
     agents = list(
         InsightAgent.objects.filter(is_active=True, key__in=_DEPT_LABEL.keys())
     )
-    model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-7")
+    model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
     signature = _signature(context, agents, model)
 
     cached = (
