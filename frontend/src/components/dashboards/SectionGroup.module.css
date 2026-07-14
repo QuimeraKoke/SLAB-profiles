@@ -62,3 +62,64 @@
     grid-column: span 12;
   }
 }
+
+/* §5b — panel builder edit mode (mirror of TeamReportSection). */
+.cellEditing {
+  outline: 1px dashed #c7d2fe;
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+.editBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  background: #f8fafc;
+  border: 1px solid #e8eaf0;
+  border-radius: 8px;
+}
+.editGroup {
+  display: inline-flex;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.editBtn,
+.spanBtn,
+.spanOn {
+  border: none;
+  background: #fff;
+  color: #475467;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 9px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+.editGroup > * + * {
+  border-left: 1px solid #d0d5dd;
+}
+.spanOn {
+  background: #0a2240;
+  color: #fff;
+}
+.editBtn:disabled,
+.spanBtn:disabled,
+.removeBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.removeBtn {
+  margin-left: auto;
+  border: 1px solid #fecdca;
+  background: #fff;
+  color: #b42318;
+  border-radius: 6px;
+  padding: 5px 9px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}

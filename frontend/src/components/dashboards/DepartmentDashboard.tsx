@@ -11,9 +11,12 @@ interface DepartmentDashboardProps {
   /** Player whose profile hosts this dashboard — enables per-player
    *  widget features like the position-comparison toggle. */
   playerId?: string;
+  /** §5b — panel-builder edit mode + refetch trigger. */
+  editMode?: boolean;
+  onChanged?: () => void;
 }
 
-export default function DepartmentDashboard({ sections, playerId }: DepartmentDashboardProps) {
+export default function DepartmentDashboard({ sections, playerId, editMode = false, onChanged }: DepartmentDashboardProps) {
   if (sections.length === 0) {
     return (
       <div className={styles.empty}>
@@ -25,7 +28,13 @@ export default function DepartmentDashboard({ sections, playerId }: DepartmentDa
   return (
     <div className={styles.dashboard}>
       {sections.map((section) => (
-        <SectionGroup key={section.id} section={section} playerId={playerId} />
+        <SectionGroup
+          key={section.id}
+          section={section}
+          playerId={playerId}
+          editMode={editMode}
+          onChanged={onChanged}
+        />
       ))}
     </div>
   );

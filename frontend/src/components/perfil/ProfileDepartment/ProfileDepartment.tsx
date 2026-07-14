@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import DownloadPlayerExcelButton from "@/components/perfil/ProfileDepartment/DownloadPlayerExcelButton";
 import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
 import { api, ApiError } from "@/lib/api";
+import { usePermission } from "@/lib/permissions";
 import type {
   DepartmentLayoutResponse,
   Department,
@@ -36,6 +37,8 @@ export default function ProfileDepartment({
   const [error, setError] = useState<string | null>(null);
   // Bumped after a chart is promoted, so the layout refetches and shows it.
   const [reloadKey, setReloadKey] = useState(0);
+  const [editMode, setEditMode] = useState(false);
+  const canEditPanel = usePermission("dashboards.change_widget");
 
   // Refetch only the results list. Used after a row is edited or deleted in
   // a child DepartmentCard so the table re-renders without thrashing the
@@ -122,7 +125,12 @@ export default function ProfileDepartment({
             playerId={playerId}
             departmentSlug={department.slug}
           />
-          <DepartmentDashboard sections={layout.sections} playerId={playerId} />
+          <DepartmentDashboard
+            sections={layout.sections}
+            playerId={playerId}
+            editMode={editMode}
+            onChanged={() => setReloadKey((k) => k + 1)}
+          />
         </>
       );
     }
@@ -189,6 +197,15 @@ export default function ProfileDepartment({
               endpoint={playerDeptDocxEndpoint(playerId, department.slug, "", "")}
               filename={`reporte-${playerName}-${department.slug}.docx`.replace(/\s+/g, "_")}
             />
+          )}
+          {layout && canEditPanel && (
+            <button
+              type="button"
+              className={editMode ? styles.editOn : styles.editToggle}
+              onClick={() => setEditMode((e) => !e)}
+            >
+              {editMode ? "Listo" : "Editar panel"}
+            </button>
           )}
         </div>
       </header>

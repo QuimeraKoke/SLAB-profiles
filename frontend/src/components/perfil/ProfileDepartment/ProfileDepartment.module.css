@@ -80,3 +80,24 @@
   gap: 16px;
   align-items: stretch;
 }
+
+/* §5b — panel-builder edit toggle. */
+.editToggle,
+.editOn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #344054;
+}
+.editOn {
+  background: #0a2240;
+  border-color: #0a2240;
+  color: #fff;
+}

@@ -2809,6 +2809,70 @@ def report_forecast_accuracy(
     )
 
 
+# ── Panel builder — arrange per-player profile widgets (§5b) ─────────────────
+# Mirror of the team arrange endpoints for the Widget model. Same 405 lesson:
+# /players/widgets/reorder is registered before /players/widgets/{widget_id}.
+
+
+def _player_widget_or_404(request, widget_id):
+    from dashboards.models import Widget
+    w = (
+        Widget.objects
+        .select_related("section__layout__department__club", "section__layout__category")
+        .filter(pk=widget_id).first()
+    )
+    if w is None:
+        raise HttpError(404, "Widget no encontrado.")
+    _club_access_or_403(request, w.section.layout.department.club)
+    return w
+
+
+@api.post("/players/widgets/reorder")
+@require_perm("dashboards.change_widget")
+def reorder_player_widgets(request, payload: WidgetReorderIn):
+    from dashboards.models import Widget
+    widgets = list(
+        Widget.objects.select_related("section__layout__department__club")
+        .filter(pk__in=payload.widget_ids)
+    )
+    for w in widgets:
+        _club_access_or_403(request, w.section.layout.department.club)
+    order = {wid: i for i, wid in enumerate(payload.widget_ids)}
+    for w in widgets:
+        w.sort_order = order.get(str(w.id), w.sort_order)
+    Widget.objects.bulk_update(widgets, ["sort_order"])
+    return {"ok": True, "updated": len(widgets)}
+
+
+@api.patch("/players/widgets/{widget_id}")
+@require_perm("dashboards.change_widget")
+def update_player_widget(request, widget_id: str, payload: WidgetArrangeIn):
+    from dashboards.models import LayoutSection
+    w = _player_widget_or_404(request, widget_id)
+    data = payload.dict(exclude_unset=True)
+    if data.get("column_span") is not None:
+        w.column_span = max(1, min(int(data["column_span"]), 12))
+    if data.get("title") is not None:
+        w.title = str(data["title"])[:160]
+    if data.get("sort_order") is not None:
+        w.sort_order = max(0, int(data["sort_order"]))
+    if data.get("section_id"):
+        sec = LayoutSection.objects.filter(pk=data["section_id"], layout=w.section.layout).first()
+        if sec is None:
+            raise HttpError(404, "Sección no encontrada.")
+        w.section = sec
+    w.save()
+    return {"ok": True, "id": str(w.id), "column_span": w.column_span, "sort_order": w.sort_order}
+
+
+@api.delete("/players/widgets/{widget_id}")
+@require_perm("dashboards.delete_widget")
+def delete_player_widget(request, widget_id: str):
+    w = _player_widget_or_404(request, widget_id)
+    w.delete()
+    return {"ok": True}
+
+
 class PromotePlayerChartIn(Schema):
     department_slug: str
     spec: dict

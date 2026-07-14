@@ -28,6 +28,21 @@ export function reorderWidgets(widgetIds: string[]): Promise<unknown> {
   });
 }
 
+// ── Per-player profile-layout arrange (§5b) — mirror of the team endpoints ──
+
+export function updatePlayerWidget(id: string, patch: WidgetPatch): Promise<unknown> {
+  return api(`/players/widgets/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+export function deletePlayerWidget(id: string): Promise<unknown> {
+  return api(`/players/widgets/${id}`, { method: "DELETE" });
+}
+export function reorderPlayerWidgets(widgetIds: string[]): Promise<unknown> {
+  return api(`/players/widgets/reorder`, {
+    method: "POST",
+    body: JSON.stringify({ widget_ids: widgetIds }),
+  });
+}
+
 /** Column-span presets offered by the resize control (12-col grid). */
 export const SPAN_PRESETS: { value: number; label: string }[] = [
   { value: 3, label: "¼" },
