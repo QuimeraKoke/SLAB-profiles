@@ -348,6 +348,61 @@ def _index_slide(data: dict, s: dict) -> list:
     return out
 
 
+def _kine_slide(data: dict, s: dict) -> list:
+    """The kinesiology daily table ('Plan kinésico') — injured players first
+    (always shown), then any optionally-added player with a record."""
+    kine_by_player = {e["player_id"]: e for e in data.get("kine", [])}
+    injured_ids = {l["player_id"] for l in data["lesionados"]}
+    merged: list[tuple[str, dict]] = [
+        (l["name"], kine_by_player.get(l["player_id"]) or {}) for l in data["lesionados"]
+    ]
+    merged += [
+        (e["player_name"], e)
+        for e in data.get("kine", [])
+        if e["player_id"] not in injured_ids
+    ]
+
+    out: list = list(_slide_header(
+        "PLAN KINÉSICO", "Plan kinésico",
+        "Registro diario de kinesiología — clínica, gimnasio, cancha y objetivo.",
+        f"{len(merged)} JUGADOR{'ES' if len(merged) != 1 else ''}", COLOR_FICHA_NAVY, s,
+    ))
+    if not merged:
+        out.append(Paragraph("Sin registros kinésicos para esta fecha.", s["muted"]))
+        out.append(PageBreak())
+        return out
+
+    head_style = ParagraphStyle("th_kine", fontName="Helvetica-Bold", fontSize=10.5,
+                                textColor=colors.white)
+    headers = ["Jugador", "Clínica", "Gimnasio", "Cancha",
+               "Objetivo Diario Kinésico", "Kinesiólogo"]
+    rows = [[Paragraph(h, head_style) for h in headers]]
+    for name, e in merged:
+        rows.append([
+            Paragraph(f"<b>{name}</b>", s["body"]),
+            Paragraph(e.get("clinica") or "—", s["body"]),
+            Paragraph(e.get("gimnasio") or "—", s["body"]),
+            Paragraph(e.get("cancha") or "—", s["body"]),
+            Paragraph(e.get("objetivo") or "—", s["body"]),
+            Paragraph(e.get("kinesiologo") or "—", s["body"]),
+        ])
+    frac = [0.17, 0.17, 0.14, 0.16, 0.24, 0.12]
+    out.append(Table(
+        rows,
+        colWidths=[f * _CONTENT_W for f in frac],
+        repeatRows=1,
+        style=TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), COLOR_FICHA_NAVY),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("LINEBELOW", (0, 1), (-1, -1), 0.4, COLOR_RULE),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ]),
+    ))
+    out.append(PageBreak())
+    return out
+
+
 def _lesionado_slide(l: dict, s: dict) -> list:
     ep = l.get("episode") or {}
     meta_bits = [l["position"]]
@@ -482,6 +537,9 @@ def render_daily_deck(category, target_date: date_cls, user=None) -> bytes:
     story.extend(_index_slide(data, s))
     for l in data["lesionados"]:
         story.extend(_lesionado_slide(l, s))
+
+    # Kinesiology daily table — the physios' plan for the injured (+ optional).
+    story.extend(_kine_slide(data, s))
 
     alert_rows = data["alertas"]
     story.extend(_divider_slide("SEGUNDA PARTE", "Alertas",

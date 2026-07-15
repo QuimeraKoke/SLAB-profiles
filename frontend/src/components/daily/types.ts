@@ -109,6 +109,17 @@ export interface DailyAlertRow {
   alerts: DailyAlert[];
 }
 
+export interface KineEntry {
+  id: string;
+  player_id: string;
+  player_name: string;
+  clinica: string;
+  gimnasio: string;
+  cancha: string;
+  objetivo: string;
+  kinesiologo: string;
+}
+
 export interface DailyReport {
   date: string;
   generated_at: string;
@@ -116,6 +127,7 @@ export interface DailyReport {
   kpis: DailyKpis;
   lesionados: DailyLesionado[];
   alertas: DailyAlertRow[];
+  kine: KineEntry[];
   notes: DailyNote[];
   players: { id: string; name: string }[];
   departments: { id: string; name: string; slug: string }[];

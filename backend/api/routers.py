@@ -76,8 +76,14 @@ from .schemas import (
     ContractPatchIn,
     DailyNoteIn,
     DailyNoteOut,
+    KineEntryIn,
+    KineEntryOut,
     EpisodeOut,
     EpisodePatchIn,
+    EpisodeNoteIn,
+    EpisodeNoteOut,
+    EpisodeNotePatchIn,
+    StageAdvanceIn,
     GoalIn,
     GoalOut,
     GoalPatchIn,
@@ -2873,6 +2879,78 @@ def delete_player_widget(request, widget_id: str):
     return {"ok": True}
 
 
+@api.get("/players/widgets/{widget_id}/config")
+@require_perm("dashboards.change_widget")
+def get_player_widget_config(request, widget_id: str):
+    """Read a per-player widget's editable config to pre-fill the edit modal
+    (§5b). Single-source shape — same as the team widget config."""
+    from dashboards.chart_spec import widget_config
+    w = _player_widget_or_404(request, widget_id)
+    return widget_config(w)
+
+
+@api.patch("/players/widgets/{widget_id}/config")
+@require_perm("dashboards.change_widget")
+def update_player_widget_config(request, widget_id: str, payload: WidgetConfigIn):
+    """Apply a new spec (chart type / metric(s) / title) to an existing
+    per-player widget, preserving its layout position (§5b)."""
+    from dashboards.chart_spec import edit_player_chart_spec
+    w = _player_widget_or_404(request, widget_id)
+    result = edit_player_chart_spec(
+        widget=w, category=w.section.layout.category, spec=payload.spec,
+    )
+    if result.get("error"):
+        raise HttpError(400, result["error"])
+    return result
+
+
+@api.get("/reports/{department_slug}/player-widget-options")
+@require_perm("dashboards.add_widget")
+def player_widget_options(request, department_slug: str, category_id: str):
+    """Form vocab for adding/editing a PER-PLAYER widget: the category's
+    templates + numeric fields, plus the per-player chart types the builder
+    offers. Mirrors team_widget_options with player chart types."""
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    dept = scope_departments(
+        Department.objects.filter(club_id=category.club_id), membership,
+    ).filter(slug=department_slug).first()
+    if dept is None:
+        raise HttpError(404, "Department not found")
+
+    numeric_types = {"number", "calculated"}
+    templates = []
+    for t in (
+        ExamTemplate.objects.filter(applicable_categories=category, is_active_version=True)
+        .select_related("department").order_by("department__name", "name").distinct()
+    ):
+        fields = (t.config_schema or {}).get("fields", []) or []
+        numeric = [
+            {"key": f["key"], "label": f.get("label") or f["key"], "unit": f.get("unit", "")}
+            for f in fields
+            if isinstance(f, dict) and f.get("type") in numeric_types and f.get("key")
+        ]
+        if numeric:
+            templates.append({
+                "slug": t.slug, "name": t.name, "department": t.department.name,
+                "numeric_fields": numeric,
+            })
+    # Per-player chart types the simple builder can author (single template
+    # source + numeric field(s)). Richer types (radar, body map, cross-exam)
+    # are seeded/promoted, not built here.
+    chart_types = [
+        {"value": "line_with_selector", "label": "Línea (con selector de métrica)", "multi_field": True},
+        {"value": "multi_line", "label": "Líneas múltiples", "multi_field": True},
+        {"value": "grouped_bar", "label": "Barras agrupadas", "multi_field": True},
+        {"value": "comparison_table", "label": "Tabla comparativa (últimas N)", "multi_field": True},
+    ]
+    return {"templates": templates, "chart_types": chart_types}
+
+
 class PromotePlayerChartIn(Schema):
     department_slug: str
     spec: dict
@@ -3410,6 +3488,63 @@ def delete_daily_note(request, note_id: str):
     ):
         raise HttpError(403, "Solo el autor puede eliminar esta nota.")
     note.delete()
+    return {"ok": True}
+
+
+# ── Kinesiology daily table ("Plan kinésico") ───────────────────────────────
+# One editable row per (player, day): Clínica / Gimnasio / Cancha / Objetivo /
+# Kinesiólogo a cargo. Injured players surface automatically in the Daily;
+# other players can be added optionally. Gated with the daily-note perm so the
+# staff who run the morning meeting can fill it without extra group config.
+
+
+@api.post("/daily/kine", response=KineEntryOut)
+@require_perm("core.add_dailynote")
+def upsert_kine_entry(request, payload: KineEntryIn):
+    """Create or update a player's kinesiology row for a day (upsert by
+    date + player)."""
+    from core.models import KineDailyEntry
+    from api.daily_report import parse_date, serialize_kine
+
+    membership = get_membership(request.user)
+    player = (
+        scope_players(Player.objects.select_related("category"), membership)
+        .filter(pk=payload.player_id)
+        .first()
+    )
+    if player is None:
+        raise HttpError(404, "Jugador no encontrado.")
+
+    d = parse_date(payload.date)
+    entry, _created = KineDailyEntry.objects.get_or_create(
+        player=player, date=d,
+        defaults={"created_by": request.user if request.user.is_authenticated else None},
+    )
+    entry.clinica = (payload.clinica or "").strip()[:200]
+    entry.gimnasio = (payload.gimnasio or "").strip()[:200]
+    entry.cancha = (payload.cancha or "").strip()[:200]
+    entry.objetivo = (payload.objetivo or "").strip()[:300]
+    entry.kinesiologo = (payload.kinesiologo or "").strip()[:120]
+    entry.save()
+    entry.player = player  # ensure select_related name is populated for serialize
+    return serialize_kine(entry)
+
+
+@api.delete("/daily/kine/{entry_id}")
+@require_perm("core.add_dailynote")
+def delete_kine_entry(request, entry_id: UUID):
+    """Remove a kinesiology row (used to drop an optionally-added player)."""
+    from core.models import KineDailyEntry
+
+    membership = get_membership(request.user)
+    entry = (
+        KineDailyEntry.objects
+        .filter(pk=entry_id, player__in=scope_players(Player.objects.all(), membership))
+        .first()
+    )
+    if entry is None:
+        raise HttpError(404, "Entrada no encontrada.")
+    entry.delete()
     return {"ok": True}
 
 
@@ -4330,6 +4465,22 @@ def _check_attachment_source_access(
             raise HttpError(404, "Source event not found.")
         return
 
+    if source_type == AttachmentSource.EPISODE_NOTE:
+        from exams.models import EpisodeNote
+
+        if mutate and not _has_perm(request.user, "exams.change_episode"):
+            raise HttpError(403, "No tienes permiso para modificar lesiones.")
+        note = (
+            EpisodeNote.objects
+            .filter(episode__player__in=scope_players(Player.objects.all(), membership))
+            .filter(episode__template__in=scope_templates(ExamTemplate.objects.all(), membership))
+            .filter(pk=source_id)
+            .first()
+        )
+        if note is None:
+            raise HttpError(404, "Source episode note not found.")
+        return
+
     raise HttpError(400, f"Unsupported source_type: {source_type}.")
 
 
@@ -4460,6 +4611,29 @@ def download_attachment(request, attachment_id: UUID):
 
     from django.http import HttpResponseRedirect
     return HttpResponseRedirect(signed)
+
+
+@api.get("/attachments/{attachment_id}/signed-url")
+def attachment_signed_url(request, attachment_id: UUID):
+    """Return a short-lived signed S3 URL as JSON (not a redirect).
+
+    Used for INLINE rendering — an `<img src>` / `<iframe src>` can't carry a
+    Bearer header, so the frontend asks for the signed URL here (auth'd) and
+    then points the element at the self-authenticating query-string URL. The
+    URL expires (AWS_QUERYSTRING_EXPIRE); callers re-fetch on demand (e.g.
+    when opening the lightbox) so a long-open page never shows a broken image.
+    """
+    attachment = Attachment.objects.filter(pk=attachment_id).first()
+    if attachment is None:
+        raise HttpError(404, "Attachment not found.")
+    _check_attachment_source_access(
+        request, attachment.source_type, attachment.source_id, mutate=False,
+    )
+    return {
+        "url": _public_signed_get_url(attachment.file.name),
+        "mime_type": attachment.mime_type,
+        "filename": attachment.filename,
+    }
 
 
 @api.delete("/attachments/{attachment_id}")
@@ -4644,6 +4818,229 @@ def update_episode(request, episode_id: str, payload: EpisodePatchIn):
         episode.save(update_fields=["available_at", "updated_at"])
 
     return _serialize_episode(episode)
+
+
+@api.post("/episodes/{episode_id}/stage", response=EpisodeOut)
+@require_perm("exams.change_episode")
+def advance_episode_stage(request, episode_id: str, payload: StageAdvanceIn):
+    """Change ONLY the injury stage (RTT → RTP, …).
+
+    The rest of the definition (region, type, prognosis…) is carried forward
+    from the latest result, so a new stamped result keeps the episode's title
+    and reportable fields intact while the doctor only picks the stage. All
+    narrative + documents live in the bitácora, not here.
+    """
+    episode = _scoped_episode_or_404(request, episode_id)
+    template = episode.template
+    cfg = template.episode_config or {}
+    stage_field = cfg.get("stage_field")
+    if not stage_field:
+        raise HttpError(400, "Esta plantilla no define un campo de etapa.")
+
+    field = next(
+        (f for f in (template.config_schema or {}).get("fields", []) if f.get("key") == stage_field),
+        None,
+    )
+    valid = set((field or {}).get("options", []))
+    new_stage = (payload.stage or "").strip()
+    if valid and new_stage not in valid:
+        raise HttpError(400, f"Etapa inválida: {new_stage}.")
+
+    latest = (
+        ExamResult.objects.filter(episode=episode).order_by("-recorded_at").first()
+    )
+    base = dict((latest.inputs_snapshot or latest.result_data) if latest else {})
+    base[stage_field] = new_stage
+
+    from django.utils import timezone as _tz
+    from django.utils.dateparse import parse_date
+    if payload.effective_date:
+        d = parse_date(payload.effective_date.strip())
+        if d is None:
+            raise HttpError(400, "effective_date inválido (YYYY-MM-DD).")
+        recorded_at = _tz.make_aware(
+            datetime.combine(d, datetime.min.time()), _tz.get_default_timezone()
+        )
+    else:
+        recorded_at = _tz.now()
+
+    result_data, inputs_snapshot = compute_result_data(template, base, player=episode.player)
+    ExamResult.objects.create(
+        player=episode.player,
+        template=template,
+        recorded_at=recorded_at,
+        result_data=result_data,
+        inputs_snapshot=inputs_snapshot,
+        episode=episode,
+    )
+    from exams.episode_lifecycle import recompute_player_status, refresh_episode_from_results
+    refresh_episode_from_results(episode)
+    recompute_player_status(episode.player)
+    episode.refresh_from_db()
+    return _serialize_episode(episode)
+
+
+# --- Episode notes (injury "bitácora") -------------------------------------
+
+_RENDERABLE_INLINE_MIME_PREFIXES = ("image/",)
+_RENDERABLE_INLINE_MIME_EXACT = ("application/pdf",)
+
+
+def _note_attachments(note_id: UUID) -> list[dict]:
+    """Attachments for a note, with signed URLs for inline-renderable types.
+
+    `generate_presigned_url` signs locally (no network round-trip), so
+    populating every renderable attachment's URL here is cheap.
+    """
+    atts = Attachment.objects.filter(
+        source_type=AttachmentSource.EPISODE_NOTE, source_id=note_id
+    ).order_by("uploaded_at")
+    out = []
+    for a in atts:
+        mime = (a.mime_type or "").lower()
+        renderable = mime in _RENDERABLE_INLINE_MIME_EXACT or mime.startswith(
+            _RENDERABLE_INLINE_MIME_PREFIXES
+        )
+        out.append(
+            {
+                "id": a.id,
+                "filename": a.filename,
+                "mime_type": a.mime_type,
+                "size_bytes": a.size_bytes,
+                "signed_url": _public_signed_get_url(a.file.name) if renderable else None,
+            }
+        )
+    return out
+
+
+def _clean_note_metrics(metrics: dict | None) -> dict:
+    """Validate structured registers on a note. Currently guards EVA (0–10);
+    other keys pass through so the schema can grow without code changes."""
+    if not metrics:
+        return {}
+    out = dict(metrics)
+    if "eva" in out and out["eva"] is not None:
+        try:
+            eva = int(out["eva"])
+        except (TypeError, ValueError):
+            raise HttpError(400, "EVA debe ser un número entre 0 y 10.")
+        if not (0 <= eva <= 10):
+            raise HttpError(400, "EVA debe estar entre 0 y 10.")
+        out["eva"] = eva
+    return out
+
+
+def _serialize_episode_note(note) -> dict:
+    return {
+        "id": note.id,
+        "episode_id": note.episode_id,
+        "entry_date": note.entry_date,
+        "title": note.title,
+        "note": note.note,
+        "metrics": note.metrics or {},
+        "created_by_name": (
+            note.created_by.get_full_name() or note.created_by.username
+            if note.created_by_id
+            else ""
+        ),
+        "created_at": note.created_at,
+        "updated_at": note.updated_at,
+        "attachments": _note_attachments(note.id),
+    }
+
+
+def _scoped_episode_or_404(request, episode_id: str):
+    membership = get_membership(request.user)
+    episode = (
+        Episode.objects
+        .filter(template__in=scope_templates(ExamTemplate.objects.all(), membership))
+        .filter(player__in=scope_players(Player.objects.all(), membership))
+        .filter(pk=episode_id)
+        .select_related("template", "player")
+        .first()
+    )
+    if episode is None:
+        raise HttpError(404, "Episode not found")
+    return episode
+
+
+def _parse_entry_date(val: str):
+    from django.utils.dateparse import parse_date
+    d = parse_date((val or "").strip())
+    if d is None:
+        raise HttpError(400, "entry_date inválido (formato YYYY-MM-DD).")
+    return d
+
+
+@api.get("/episodes/{episode_id}/notes", response=list[EpisodeNoteOut])
+def list_episode_notes(request, episode_id: str):
+    """Progression log for an injury — newest first, with inline attachments."""
+    from exams.models import EpisodeNote
+    episode = _scoped_episode_or_404(request, episode_id)
+    notes = EpisodeNote.objects.filter(episode=episode).select_related("created_by")
+    return [_serialize_episode_note(n) for n in notes]
+
+
+@api.post("/episodes/{episode_id}/notes", response=EpisodeNoteOut)
+@require_perm("exams.change_episode")
+def create_episode_note(request, episode_id: str, payload: EpisodeNoteIn):
+    from exams.models import EpisodeNote
+    episode = _scoped_episode_or_404(request, episode_id)
+    note = EpisodeNote.objects.create(
+        episode=episode,
+        entry_date=_parse_entry_date(payload.entry_date),
+        title=(payload.title or "").strip()[:200],
+        note=(payload.note or "").strip(),
+        metrics=_clean_note_metrics(payload.metrics),
+        created_by=request.user if request.user.is_authenticated else None,
+    )
+    return _serialize_episode_note(note)
+
+
+@api.patch("/episodes/{episode_id}/notes/{note_id}", response=EpisodeNoteOut)
+@require_perm("exams.change_episode")
+def update_episode_note(request, episode_id: str, note_id: UUID, payload: EpisodeNotePatchIn):
+    from exams.models import EpisodeNote
+    episode = _scoped_episode_or_404(request, episode_id)
+    note = EpisodeNote.objects.filter(episode=episode, pk=note_id).first()
+    if note is None:
+        raise HttpError(404, "Note not found")
+    fields = []
+    if payload.entry_date is not None:
+        note.entry_date = _parse_entry_date(payload.entry_date)
+        fields.append("entry_date")
+    if payload.title is not None:
+        note.title = payload.title.strip()[:200]
+        fields.append("title")
+    if payload.note is not None:
+        note.note = payload.note.strip()
+        fields.append("note")
+    if payload.metrics is not None:
+        note.metrics = _clean_note_metrics(payload.metrics)
+        fields.append("metrics")
+    if fields:
+        fields.append("updated_at")
+        note.save(update_fields=fields)
+    return _serialize_episode_note(note)
+
+
+@api.delete("/episodes/{episode_id}/notes/{note_id}")
+@require_perm("exams.change_episode")
+def delete_episode_note(request, episode_id: str, note_id: UUID):
+    """Delete a note and purge its attachments' S3 objects."""
+    from exams.models import EpisodeNote
+    episode = _scoped_episode_or_404(request, episode_id)
+    note = EpisodeNote.objects.filter(episode=episode, pk=note_id).first()
+    if note is None:
+        raise HttpError(404, "Note not found")
+    # Attachments are polymorphic (no FK cascade), so purge them explicitly.
+    for att in Attachment.objects.filter(
+        source_type=AttachmentSource.EPISODE_NOTE, source_id=note.id
+    ):
+        att.file.delete(save=False)
+        att.delete()
+    note.delete()
+    return {"deleted": True}
 
 
 # --- App usage analytics ---------------------------------------------------

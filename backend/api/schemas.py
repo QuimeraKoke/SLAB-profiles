@@ -527,6 +527,61 @@ class EpisodePatchIn(Schema):
     available_at: str | None = None  # ISO date/datetime, or "clear" to unset
 
 
+class StageAdvanceIn(Schema):
+    """Lightweight injury stage change — the only thing edited on the ficha
+    day-to-day. The definition (region, type, prognosis…) is carried forward
+    from the last result server-side, so the doctor only picks the new stage.
+    """
+
+    stage: str
+    effective_date: str | None = None  # ISO date (YYYY-MM-DD); defaults to now
+
+
+# ---------- Episode notes (injury "bitácora") ----------
+
+class EpisodeNoteAttachmentOut(Schema):
+    """An attachment on a note, with an inline-render URL for images/PDFs.
+
+    `signed_url` is a short-lived S3 GET URL, populated only for renderable
+    types (image/*, application/pdf). Non-renderable docs leave it null and
+    are opened via the /attachments/{id}/download flow instead.
+    """
+
+    id: UUID
+    filename: str
+    mime_type: str = ""
+    size_bytes: int = 0
+    signed_url: str | None = None
+
+
+class EpisodeNoteOut(Schema):
+    id: UUID
+    episode_id: UUID
+    entry_date: date
+    title: str = ""
+    note: str = ""
+    # Structured registers, e.g. {"eva": 6} for the EVA pain scale (0–10).
+    metrics: dict[str, Any] = {}
+    created_by_name: str = ""
+    created_at: datetime
+    updated_at: datetime
+    attachments: list[EpisodeNoteAttachmentOut] = []
+
+
+class EpisodeNoteIn(Schema):
+    entry_date: str  # ISO date (YYYY-MM-DD)
+    title: str = ""
+    note: str = ""
+    metrics: dict[str, Any] = {}
+
+
+class EpisodeNotePatchIn(Schema):
+    entry_date: str | None = None
+    title: str | None = None
+    note: str | None = None
+    metrics: dict[str, Any] | None = None
+
+
 # ---------- Attachments ----------
 
 class AttachmentOut(Schema):
@@ -869,6 +924,29 @@ class DailyNoteOut(Schema):
     author: str = ""
     mine: bool = False
     created_at: datetime
+
+
+# ---------- Kinesiology daily table ("Plan kinésico") ----------
+
+class KineEntryOut(Schema):
+    id: str
+    player_id: str
+    player_name: str = ""
+    clinica: str = ""
+    gimnasio: str = ""
+    cancha: str = ""
+    objetivo: str = ""
+    kinesiologo: str = ""
+
+
+class KineEntryIn(Schema):
+    player_id: UUID
+    date: str  # ISO date (YYYY-MM-DD)
+    clinica: str = ""
+    gimnasio: str = ""
+    cancha: str = ""
+    objetivo: str = ""
+    kinesiologo: str = ""
 
 
 # ---------- Widget position comparison ----------

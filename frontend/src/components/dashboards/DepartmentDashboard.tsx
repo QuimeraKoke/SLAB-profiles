@@ -14,9 +14,11 @@ interface DepartmentDashboardProps {
   /** §5b — panel-builder edit mode + refetch trigger. */
   editMode?: boolean;
   onChanged?: () => void;
+  /** §5b — opens the config editor for a widget. */
+  onEditWidget?: (widgetId: string) => void;
 }
 
-export default function DepartmentDashboard({ sections, playerId, editMode = false, onChanged }: DepartmentDashboardProps) {
+export default function DepartmentDashboard({ sections, playerId, editMode = false, onChanged, onEditWidget }: DepartmentDashboardProps) {
   if (sections.length === 0) {
     return (
       <div className={styles.empty}>
@@ -34,6 +36,7 @@ export default function DepartmentDashboard({ sections, playerId, editMode = fal
           playerId={playerId}
           editMode={editMode}
           onChanged={onChanged}
+          onEditWidget={onEditWidget}
         />
       ))}
     </div>

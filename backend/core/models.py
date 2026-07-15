@@ -549,3 +549,47 @@ class DailyNote(models.Model):
     def __str__(self) -> str:
         area = self.department.name if self.department else "General"
         return f"{self.date} · {self.player} · {area}: {self.text[:40]}"
+
+
+class KineDailyEntry(models.Model):
+    """A kinesiology daily-tracking row for a player (the "Plan kinésico").
+
+    Mirrors the physios' spreadsheet ("JUGADORES ALERTA/LESIONADOS"): one row
+    per (player, day) capturing what the player did — Clínica, Gimnasio,
+    Cancha — plus the day's kinesic objective and which physio is in charge.
+    Surfaced + edited inline in the Daily view. Injured players are shown
+    automatically (a must); other players can be added optionally.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.ForeignKey(
+        Player, on_delete=models.CASCADE, related_name="kine_daily_entries",
+    )
+    date = models.DateField(db_index=True, help_text="Day this plan belongs to.")
+    clinica = models.CharField(max_length=200, blank=True)
+    gimnasio = models.CharField(max_length=200, blank=True)
+    cancha = models.CharField(max_length=200, blank=True)
+    # "Objetivo Diario Kinésico"
+    objetivo = models.CharField(max_length=300, blank=True)
+    # "Kinesiólogo a cargo" — free-form initials (e.g. "NP/JC").
+    kinesiologo = models.CharField(max_length=120, blank=True)
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="kine_daily_entries",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("date", "player__last_name")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["date", "player"], name="uniq_kine_entry_per_player_day",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["date", "player"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.date} · {self.player} · kinésico"

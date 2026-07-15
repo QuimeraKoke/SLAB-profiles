@@ -513,7 +513,8 @@ export type AttachmentSourceType =
   | "contract"
   | "exam_field"
   | "exam_result"
-  | "event";
+  | "event"
+  | "episode_note";
 
 export interface Attachment {
   id: string;
@@ -525,6 +526,38 @@ export interface Attachment {
   size_bytes: number;
   label: string;
   uploaded_at: string;
+}
+
+// ---------- Injury progression log ("bitácora") ----------
+
+export interface EpisodeNoteAttachment {
+  id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  /** Short-lived S3 URL for inline rendering; null for non-renderable types. */
+  signed_url: string | null;
+}
+
+export interface EpisodeNoteMetrics {
+  /** EVA pain scale, 0–10. */
+  eva?: number;
+  [key: string]: number | undefined;
+}
+
+export interface EpisodeNote {
+  id: string;
+  episode_id: string;
+  /** Clinical date of the entry (YYYY-MM-DD). */
+  entry_date: string;
+  title: string;
+  note: string;
+  /** Structured registers captured with the entry (e.g. EVA pain). */
+  metrics: EpisodeNoteMetrics;
+  created_by_name: string;
+  created_at: string;
+  updated_at: string;
+  attachments: EpisodeNoteAttachment[];
 }
 
 export type AlertSeverity = "info" | "warning" | "critical";

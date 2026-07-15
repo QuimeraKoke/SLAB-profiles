@@ -18,6 +18,7 @@ import { usePermission } from "@/lib/permissions";
 import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
 import RosterTable, { RosterRow } from "@/components/equipo/RosterTable";
 import LesionadoCard from "@/components/daily/LesionadoCard";
+import KineTable from "@/components/daily/KineTable";
 import NoteModal from "@/components/daily/NoteModal";
 import NotesPanel from "@/components/daily/NotesPanel";
 import type { DailyAlertRow, DailyReport } from "@/components/daily/types";
@@ -240,10 +241,24 @@ export default function DailyPage() {
             )}
           </section>
 
-          {/* ── 2 · Alertas ── */}
+          {/* ── 2 · Plan kinésico ── */}
+          <section aria-labelledby="daily-kine">
+            <h2 id="daily-kine" className={styles.sectionTitle}>
+              <span className={styles.sectionNum}>2</span>
+              Plan kinésico
+            </h2>
+            <KineTable
+              date={date}
+              injured={data.lesionados}
+              entries={data.kine}
+              players={data.players}
+            />
+          </section>
+
+          {/* ── 3 · Alertas ── */}
           <section aria-labelledby="daily-alertas">
             <h2 id="daily-alertas" className={styles.sectionTitle}>
-              <span className={styles.sectionNum}>2</span>
+              <span className={styles.sectionNum}>3</span>
               Alertas en disponibles
               <span className={styles.count}>{data.alertas.length}</span>
             </h2>
@@ -258,10 +273,10 @@ export default function DailyPage() {
             )}
           </section>
 
-          {/* ── 3 · Disponibles (anexo) ── */}
+          {/* ── 4 · Disponibles (anexo) ── */}
           <section aria-labelledby="daily-disponibles">
             <h2 id="daily-disponibles" className={styles.sectionTitle}>
-              <span className={styles.sectionNum}>3</span>
+              <span className={styles.sectionNum}>4</span>
               Disponibles
               <span className={styles.count}>{disponibles.length}</span>
             </h2>

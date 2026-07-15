@@ -180,6 +180,7 @@ export default function PerfilPlayerPage({ params }: PageProps) {
           <ProfileDepartment
             playerId={player.id}
             playerName={`${player.first_name} ${player.last_name}`}
+            categoryId={player.category.id}
             department={activeDepartment}
           />
         )}

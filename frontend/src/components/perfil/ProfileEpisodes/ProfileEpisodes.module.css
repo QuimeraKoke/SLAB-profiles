@@ -4,6 +4,68 @@
   gap: 20px;
 }
 
+/* ── Stage-change modal (lesiones variant) ─────────────────────── */
+
+.stageForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-width: 18rem;
+}
+
+.stageField {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stageFieldLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.stageSelect {
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: #0f172a;
+  background: #fff;
+  width: 100%;
+}
+
+.stageHint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: #6b7280;
+  line-height: 1.4;
+}
+
+.stageActions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.primaryBtn {
+  background: #6d28d9;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primaryBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -63,6 +125,12 @@
   flex-direction: column;
   gap: 8px;
   color: #111827;
+}
+
+/* When the bitácora is open, the injury takes the full row so the entry
+   form + inline documents get real room to work in. */
+.cardExpanded {
+  grid-column: 1 / -1;
 }
 
 .card.closed {
@@ -155,6 +223,23 @@
 .ghostBtn:hover {
   border-color: #6d28d9;
   color: #6d28d9;
+}
+
+.ghostBtnOn {
+  background: #6d28d9;
+  color: #fff;
+  border: 1px solid #6d28d9;
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.logSection {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed #e5e7eb;
 }
 
 .timeline {

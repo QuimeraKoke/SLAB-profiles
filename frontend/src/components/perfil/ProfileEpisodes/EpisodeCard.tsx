@@ -6,11 +6,14 @@ import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import { usePermission } from "@/lib/permissions";
 import { useToast } from "@/components/ui/Toast/Toast";
+import Modal from "@/components/ui/Modal/Modal";
 import type {
   Episode,
   ExamResult,
   ExamTemplate,
 } from "@/lib/types";
+import { advanceEpisodeStage } from "@/lib/injuryLog";
+import InjuryLog from "./InjuryLog";
 import styles from "./ProfileEpisodes.module.css";
 
 const STAGE_LABEL: Record<string, string> = {
@@ -44,51 +47,83 @@ function stageClass(stage: string): string {
   }
 }
 
+/** Look up the display label for a categorical value from the template. */
+function labelFor(template: ExamTemplate | null, key: string, value: unknown): string {
+  const v = String(value ?? "").trim();
+  if (!v || !template) return v;
+  const f = (template.config_schema?.fields ?? []).find((f) => f.key === key);
+  return (f?.option_labels as Record<string, string> | undefined)?.[v] ?? v;
+}
+
+/** Today as YYYY-MM-DD. */
+function todayStr(): string {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(
+    n.getDate(),
+  ).padStart(2, "0")}`;
+}
+
 interface Props {
   episode: Episode;
-  /** Required: handler for clicking Editar on a timeline row. The parent
-   *  owns the edit modal so the same Modal component can be reused across
-   *  consumers (Lesiones tab, InjuryPanel inside a registrar form, etc.). */
-  onEdit: (result: ExamResult, template: ExamTemplate) => void;
-  /** Optional — when set, "Actualizar etapa" renders as a `<Link>` (preserves
-   *  right-click / ctrl-click semantics for the Lesiones tab). */
+  /** Panel variant: handler for clicking Editar on a timeline row. */
+  onEdit?: (result: ExamResult, template: ExamTemplate) => void;
+  /** When set, "Editar datos" / "Actualizar etapa" (panel) renders as a link. */
   continueHref?: string;
-  /** Optional — when set (and `continueHref` isn't), "Actualizar etapa"
-   *  renders as a button and fires this callback. Used by the InjuryPanel
-   *  to open a modal instead of navigating away. */
+  /** Panel variant: "Actualizar etapa" fires this callback (opens a modal). */
   onContinue?: () => void;
+  /** "panel" (default, InjuryPanel) keeps the legacy result timeline. "lesiones"
+   *  (Lesiones tab) shows the structured ficha + a single bitácora timeline and
+   *  a lightweight stage-only update. */
+  variant?: "panel" | "lesiones";
+  /** lesiones variant: called after a stage change so the parent refetches. */
+  onChanged?: () => void;
 }
 
 /**
- * Episode summary card used by the Lesiones tab AND the in-form InjuryPanel.
- *
- * Renders the episode header + key dates + stage pill, an "Actualizar etapa"
- * action (if open) that's either a navigation link or an in-place callback,
- * and a collapsible timeline of every linked result with per-row Editar.
+ * Episode summary card. Two variants:
+ * - "panel" (InjuryPanel, registration sidebar): legacy behaviour — collapsible
+ *   timeline of every linked result with per-row Editar + "Actualizar etapa".
+ * - "lesiones" (Lesiones tab): structured ficha (definition + stage) whose ONLY
+ *   routine edit is the stage; all evolution + documents live in the bitácora
+ *   (one merged timeline with stage-transition markers).
  */
 export default function EpisodeCard({
   episode,
   onEdit,
   continueHref,
   onContinue,
+  variant = "panel",
+  onChanged,
 }: Props) {
-  // Prefer the backend's config-driven label; fall back to the legacy map.
   const stageLabel = episode.stage_label || STAGE_LABEL[episode.stage] || episode.stage;
   const isOpen = episode.status === "open";
+  const isLesiones = variant === "lesiones";
 
-  const [showTimeline, setShowTimeline] = useState(false);
-  const [results, setResults] = useState<ExamResult[] | null>(null);
-  const [template, setTemplate] = useState<ExamTemplate | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  // §3.1 — "disponible para ser citado": an availability date independent of
-  // closure, editable in place (Editor-gated).
   const { toast } = useToast();
   const canEditEpisode = usePermission("exams.change_episode");
+
+  // ── Legacy panel timeline ──────────────────────────────────────────────
+  const [showTimeline, setShowTimeline] = useState(false);
+  const [results, setResults] = useState<ExamResult[] | null>(null);
+  const [panelTemplate, setPanelTemplate] = useState<ExamTemplate | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // ── Lesiones variant: template (for labels + stage options) + bitácora ──
+  const [template, setTemplate] = useState<ExamTemplate | null>(null);
+  const [showLog, setShowLog] = useState(false);
+  const [logRefresh, setLogRefresh] = useState(0);
+
+  // ── availability ("disponible para ser citado") ────────────────────────
   const [availableAt, setAvailableAt] = useState<string | null>(episode.available_at);
   const [editingAvail, setEditingAvail] = useState(false);
   const [availDraft, setAvailDraft] = useState("");
   const [savingAvail, setSavingAvail] = useState(false);
+
+  // ── Stage-change modal (lesiones variant) ──────────────────────────────
+  const [stageOpen, setStageOpen] = useState(false);
+  const [stageDraft, setStageDraft] = useState(episode.stage);
+  const [stageDate, setStageDate] = useState(todayStr());
+  const [savingStage, setSavingStage] = useState(false);
 
   async function saveAvailable(clear: boolean) {
     setSavingAvail(true);
@@ -107,8 +142,25 @@ export default function EpisodeCard({
     }
   }
 
+  // Load template for the lesiones variant (labels + stage options + bitácora).
   useEffect(() => {
-    if (!showTimeline || results !== null) return;
+    if (!isLesiones) return;
+    let cancelled = false;
+    api<ExamTemplate>(`/templates/${episode.template_id}`)
+      .then((tpl) => {
+        if (!cancelled) setTemplate(tpl);
+      })
+      .catch(() => {
+        /* non-fatal: the ficha still renders raw values */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLesiones, episode.template_id]);
+
+  // Panel-variant lazy timeline load.
+  useEffect(() => {
+    if (isLesiones || !showTimeline || results !== null) return;
     let cancelled = false;
     Promise.all([
       api<ExamResult[]>(`/episodes/${episode.id}/results`),
@@ -116,9 +168,8 @@ export default function EpisodeCard({
     ])
       .then(([rs, tpl]) => {
         if (cancelled) return;
-        // Server returns oldest-first; flip so newest is on top.
         setResults([...rs].reverse());
-        setTemplate(tpl);
+        setPanelTemplate(tpl);
       })
       .catch((err) => {
         if (cancelled) return;
@@ -127,17 +178,223 @@ export default function EpisodeCard({
     return () => {
       cancelled = true;
     };
-  }, [showTimeline, results, episode.id, episode.template_id]);
+  }, [isLesiones, showTimeline, results, episode.id, episode.template_id]);
 
+  async function saveStage() {
+    if (savingStage || !stageDraft) return;
+    setSavingStage(true);
+    try {
+      await advanceEpisodeStage(episode.id, stageDraft, stageDate);
+      setStageOpen(false);
+      setLogRefresh((n) => n + 1);
+      toast.success("Etapa actualizada.");
+      onChanged?.();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "No se pudo actualizar la etapa.");
+    } finally {
+      setSavingStage(false);
+    }
+  }
+
+  // Stage options for the modal (drop legacy keys not in the field's options).
+  const stageField = template?.episode_config?.stage_field;
+  const stageOptions: { value: string; label: string }[] = (() => {
+    if (!template || !stageField) return [];
+    const f = (template.config_schema?.fields ?? []).find((f) => f.key === stageField);
+    const opts = (f?.options ?? []) as string[];
+    const labels = (f?.option_labels ?? {}) as Record<string, string>;
+    return opts.map((o) => ({ value: o, label: labels[o] ?? o }));
+  })();
+
+  const availabilityRow = (
+    <div className={styles.row}>
+      <span className={styles.rowLabel}>Disponible p/ citar</span>
+      <span className={styles.rowValue}>
+        {editingAvail ? (
+          <span className={styles.availEdit}>
+            <input type="date" value={availDraft} onChange={(e) => setAvailDraft(e.target.value)} />
+            <button
+              type="button" className={styles.tinyBtn}
+              disabled={savingAvail || !availDraft} onClick={() => saveAvailable(false)}
+            >
+              Guardar
+            </button>
+            <button type="button" className={styles.tinyBtn} onClick={() => setEditingAvail(false)}>
+              Cancelar
+            </button>
+          </span>
+        ) : availableAt ? (
+          <span className={styles.availEdit}>
+            {formatDate(availableAt)}
+            {canEditEpisode && (
+              <>
+                <button
+                  type="button" className={styles.tinyBtn}
+                  onClick={() => { setAvailDraft(availableAt.slice(0, 10)); setEditingAvail(true); }}
+                >
+                  editar
+                </button>
+                <button
+                  type="button" className={styles.tinyBtn}
+                  disabled={savingAvail} onClick={() => saveAvailable(true)}
+                >
+                  quitar
+                </button>
+              </>
+            )}
+          </span>
+        ) : canEditEpisode ? (
+          <button
+            type="button" className={styles.tinyBtn}
+            onClick={() => { setAvailDraft(""); setEditingAvail(true); }}
+          >
+            Marcar disponible
+          </button>
+        ) : (
+          <span className={styles.muted}>—</span>
+        )}
+      </span>
+    </div>
+  );
+
+  // ── Lesiones variant render ────────────────────────────────────────────
+  if (isLesiones) {
+    const d = episode.latest_result_data || {};
+    const region = labelFor(template, "body_part", d.body_part);
+    const lado = labelFor(template, "lado", d.lado);
+    const tipo = labelFor(template, "type", d.type);
+    const severidad = labelFor(template, "severity", d.severity);
+    const expected = d.expected_return_date ? String(d.expected_return_date) : null;
+
+    return (
+      <div
+        className={`${styles.card} ${isOpen ? "" : styles.closed} ${
+          showLog ? styles.cardExpanded : ""
+        }`}
+      >
+        <div className={styles.cardHeader}>
+          <div>
+            <div className={styles.cardTitle}>{episode.title || "(sin título)"}</div>
+            <div className={styles.cardSub}>{episode.template_name}</div>
+          </div>
+          <span className={`${styles.stagePill} ${stageClass(episode.stage)}`}>{stageLabel}</span>
+        </div>
+
+        <div className={styles.row}>
+          <span className={styles.rowLabel}>Inicio</span>
+          <span className={styles.rowValue}>{formatDate(episode.started_at)}</span>
+        </div>
+        {region && (
+          <div className={styles.row}>
+            <span className={styles.rowLabel}>Región</span>
+            <span className={styles.rowValue}>{region}{lado && lado !== "NA" ? ` · ${lado}` : ""}</span>
+          </div>
+        )}
+        {tipo && (
+          <div className={styles.row}>
+            <span className={styles.rowLabel}>Tipo</span>
+            <span className={styles.rowValue}>{tipo}{severidad ? ` · ${severidad}` : ""}</span>
+          </div>
+        )}
+        {expected && (
+          <div className={styles.row}>
+            <span className={styles.rowLabel}>Retorno estimado</span>
+            <span className={styles.rowValue}>{formatDate(expected)}</span>
+          </div>
+        )}
+        {episode.ended_at && (
+          <div className={styles.row}>
+            <span className={styles.rowLabel}>Cierre</span>
+            <span className={styles.rowValue}>{formatDate(episode.ended_at)}</span>
+          </div>
+        )}
+        {availabilityRow}
+
+        <div className={styles.actions}>
+          {isOpen && canEditEpisode && (
+            <button
+              type="button"
+              className={styles.linkBtn}
+              disabled={stageOptions.length === 0}
+              onClick={() => { setStageDraft(episode.stage); setStageDate(todayStr()); setStageOpen(true); }}
+            >
+              Actualizar etapa
+            </button>
+          )}
+          <button
+            type="button"
+            className={showLog ? styles.ghostBtnOn : styles.ghostBtn}
+            onClick={() => setShowLog((v) => !v)}
+          >
+            {showLog ? "Ocultar bitácora" : "Bitácora"}
+          </button>
+          {continueHref && canEditEpisode && (
+            <Link href={continueHref} className={styles.ghostBtn}>
+              Editar datos
+            </Link>
+          )}
+        </div>
+
+        {showLog && template && (
+          <div className={styles.logSection}>
+            <h5 className={styles.timelineTitle}>Bitácora de la lesión</h5>
+            <InjuryLog
+              episode={episode}
+              template={template}
+              canEdit={canEditEpisode}
+              refreshToken={logRefresh}
+            />
+          </div>
+        )}
+
+        <Modal open={stageOpen} title="Actualizar etapa" onClose={() => setStageOpen(false)}>
+          <div className={styles.stageForm}>
+            <label className={styles.stageField}>
+              <span className={styles.stageFieldLabel}>Nueva etapa</span>
+              <select
+                className={styles.stageSelect}
+                value={stageDraft}
+                onChange={(e) => setStageDraft(e.target.value)}
+              >
+                {stageOptions.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className={styles.stageField}>
+              <span className={styles.stageFieldLabel}>Fecha efectiva</span>
+              <input
+                type="date"
+                className={styles.stageSelect}
+                value={stageDate}
+                max={todayStr()}
+                onChange={(e) => setStageDate(e.target.value)}
+              />
+            </label>
+            <p className={styles.stageHint}>
+              Solo cambia la etapa. La evolución, hallazgos y documentos se
+              registran en la bitácora.
+            </p>
+            <div className={styles.stageActions}>
+              <button type="button" className={styles.primaryBtn} disabled={savingStage} onClick={saveStage}>
+                {savingStage ? "Guardando…" : "Guardar etapa"}
+              </button>
+              <button type="button" className={styles.ghostBtn} disabled={savingStage} onClick={() => setStageOpen(false)}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </Modal>
+      </div>
+    );
+  }
+
+  // ── Panel variant render (legacy, unchanged behaviour) ─────────────────
   const continueButton = isOpen && (
     continueHref ? (
-      <Link href={continueHref} className={styles.linkBtn}>
-        Actualizar etapa
-      </Link>
+      <Link href={continueHref} className={styles.linkBtn}>Actualizar etapa</Link>
     ) : onContinue ? (
-      <button type="button" className={styles.linkBtn} onClick={onContinue}>
-        Actualizar etapa
-      </button>
+      <button type="button" className={styles.linkBtn} onClick={onContinue}>Actualizar etapa</button>
     ) : null
   );
 
@@ -148,9 +405,7 @@ export default function EpisodeCard({
           <div className={styles.cardTitle}>{episode.title || "(sin título)"}</div>
           <div className={styles.cardSub}>{episode.template_name}</div>
         </div>
-        <span className={`${styles.stagePill} ${stageClass(episode.stage)}`}>
-          {stageLabel}
-        </span>
+        <span className={`${styles.stagePill} ${stageClass(episode.stage)}`}>{stageLabel}</span>
       </div>
       <div className={styles.row}>
         <span className={styles.rowLabel}>Inicio</span>
@@ -162,69 +417,14 @@ export default function EpisodeCard({
           <span className={styles.rowValue}>{formatDate(episode.ended_at)}</span>
         </div>
       )}
-      <div className={styles.row}>
-        <span className={styles.rowLabel}>Disponible p/ citar</span>
-        <span className={styles.rowValue}>
-          {editingAvail ? (
-            <span className={styles.availEdit}>
-              <input
-                type="date" value={availDraft}
-                onChange={(e) => setAvailDraft(e.target.value)}
-              />
-              <button
-                type="button" className={styles.tinyBtn}
-                disabled={savingAvail || !availDraft}
-                onClick={() => saveAvailable(false)}
-              >
-                Guardar
-              </button>
-              <button type="button" className={styles.tinyBtn} onClick={() => setEditingAvail(false)}>
-                Cancelar
-              </button>
-            </span>
-          ) : availableAt ? (
-            <span className={styles.availEdit}>
-              {formatDate(availableAt)}
-              {canEditEpisode && (
-                <>
-                  <button
-                    type="button" className={styles.tinyBtn}
-                    onClick={() => { setAvailDraft(availableAt.slice(0, 10)); setEditingAvail(true); }}
-                  >
-                    editar
-                  </button>
-                  <button
-                    type="button" className={styles.tinyBtn}
-                    disabled={savingAvail} onClick={() => saveAvailable(true)}
-                  >
-                    quitar
-                  </button>
-                </>
-              )}
-            </span>
-          ) : canEditEpisode ? (
-            <button
-              type="button" className={styles.tinyBtn}
-              onClick={() => { setAvailDraft(""); setEditingAvail(true); }}
-            >
-              Marcar disponible
-            </button>
-          ) : (
-            <span className={styles.muted}>—</span>
-          )}
-        </span>
-      </div>
+      {availabilityRow}
       <div className={styles.row}>
         <span className={styles.rowLabel}>Resultados</span>
         <span className={styles.rowValue}>{episode.result_count}</span>
       </div>
 
       <div className={styles.actions}>
-        <button
-          type="button"
-          className={styles.ghostBtn}
-          onClick={() => setShowTimeline((v) => !v)}
-        >
+        <button type="button" className={styles.ghostBtn} onClick={() => setShowTimeline((v) => !v)}>
           {showTimeline ? "Ocultar historial" : "Ver historial"}
         </button>
         {continueButton}
@@ -234,22 +434,15 @@ export default function EpisodeCard({
         <div className={styles.timeline}>
           <h5 className={styles.timelineTitle}>Historial</h5>
           {loadError && <div className={styles.error}>{loadError}</div>}
-          {results === null && !loadError && (
-            <div className={styles.timelineEmpty}>Cargando…</div>
-          )}
-          {results && results.length === 0 && (
-            <div className={styles.timelineEmpty}>Sin entradas.</div>
-          )}
-          {results && template && results.map((r) => {
+          {results === null && !loadError && <div className={styles.timelineEmpty}>Cargando…</div>}
+          {results && results.length === 0 && <div className={styles.timelineEmpty}>Sin entradas.</div>}
+          {results && panelTemplate && results.map((r) => {
             const stage = String(r.result_data?.stage ?? "");
-            // Labels from the loaded template's stage-field option_labels
-            // (covers any configured stage), legacy map as fallback.
-            const sf = template.episode_config?.stage_field;
-            const optLabels = (template.config_schema?.fields ?? [])
+            const sf = panelTemplate.episode_config?.stage_field;
+            const optLabels = (panelTemplate.config_schema?.fields ?? [])
               .find((f) => f.key === sf)?.option_labels as Record<string, string> | undefined;
             const stageLbl = optLabels?.[stage] ?? STAGE_LABEL[stage] ?? stage;
-            const noteSnippet = String(r.result_data?.notes ?? "")
-              .trim().slice(0, 80);
+            const noteSnippet = String(r.result_data?.notes ?? "").trim().slice(0, 80);
             return (
               <div key={r.id} className={styles.timelineRow}>
                 <div className={styles.timelineMain}>
@@ -259,18 +452,15 @@ export default function EpisodeCard({
                   </span>
                   {noteSnippet && (
                     <span className={styles.timelineSub}>
-                      {noteSnippet}
-                      {noteSnippet.length === 80 ? "…" : ""}
+                      {noteSnippet}{noteSnippet.length === 80 ? "…" : ""}
                     </span>
                   )}
                 </div>
-                <button
-                  type="button"
-                  className={styles.ghostBtn}
-                  onClick={() => onEdit(r, template)}
-                >
-                  Editar
-                </button>
+                {onEdit && (
+                  <button type="button" className={styles.ghostBtn} onClick={() => onEdit(r, panelTemplate)}>
+                    Editar
+                  </button>
+                )}
               </div>
             );
           })}

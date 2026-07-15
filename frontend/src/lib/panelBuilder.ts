@@ -113,3 +113,38 @@ export function editWidget(widgetId: string, spec: WidgetSpec): Promise<unknown>
     body: JSON.stringify({ spec }),
   });
 }
+
+// ── Per-player profile-layout widget config (§5b parity) ─────────────────────
+
+export function fetchPlayerWidgetOptions(
+  deptSlug: string,
+  categoryId: string,
+): Promise<WidgetOptions> {
+  return api<WidgetOptions>(
+    `/reports/${deptSlug}/player-widget-options?category_id=${categoryId}`,
+  );
+}
+
+export function fetchPlayerWidgetConfig(widgetId: string): Promise<WidgetConfig> {
+  return api<WidgetConfig>(`/players/widgets/${widgetId}/config`);
+}
+
+export function editPlayerWidget(widgetId: string, spec: WidgetSpec): Promise<unknown> {
+  return api(`/players/widgets/${widgetId}/config`, {
+    method: "PATCH",
+    body: JSON.stringify({ spec }),
+  });
+}
+
+/** Add a per-player widget (reuses the promote-from-spec endpoint; new widgets
+ *  land in "Mis gráficos" and render per player across the category). */
+export function addPlayerWidget(
+  playerId: string,
+  deptSlug: string,
+  spec: WidgetSpec,
+): Promise<unknown> {
+  return api(`/players/${playerId}/dashboard-widgets`, {
+    method: "POST",
+    body: JSON.stringify({ department_slug: deptSlug, spec }),
+  });
+}

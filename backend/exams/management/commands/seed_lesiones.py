@@ -135,11 +135,10 @@ LESIONES_SCHEMA: dict = {
                         "2a", "2b", "2c", "3a", "3b", "3c", "4"],
             "help_text": "Clasificación muscular británica por RM (solo lesiones musculares).",
         },
-        {
-            "key": "hallazgos_rm", "label": "Hallazgos RM / Informe", "type": "text",
-            "multiline": True, "rows": 3, "group": "Diagnóstico",
-            "placeholder": "Resumen del informe de imágenes…",
-        },
+        # NOTE: free-text findings ("Hallazgos RM / Informe"), the treatment
+        # notes and imaging attachments used to live here. They now belong to
+        # the injury bitácora (EpisodeNote): dated evolution entries with EVA
+        # and inline documents. The ficha keeps only structured definition.
 
         # === Etapa (drives the episode lifecycle) ===
         # The internal option keys stay English so they line up with
@@ -182,15 +181,9 @@ LESIONES_SCHEMA: dict = {
                 "pronóstico."
             ),
         },
-        {
-            "key": "actual_return_date", "label": "Retorno efectivo",
-            "type": "date", "group": "Pronóstico",
-            "placeholder": "Completar al cerrar el episodio",
-            "help_text": (
-                "Retorno efectivo a la práctica. La disponibilidad para ser "
-                "citado se marca a nivel del episodio ('Disponible para citar')."
-            ),
-        },
+        # NOTE: "Retorno efectivo" removed — the real return is marked at the
+        # episode level ('Disponible para citar', §3.1), which is what the
+        # forecast-accuracy KPI (§3.2) reads. No duplicate field on the ficha.
 
         # === Contexto (Fuller: dónde y cómo ocurrió) ===
         {
@@ -246,18 +239,10 @@ LESIONES_SCHEMA: dict = {
             "key": "partidos_perdidos", "label": "Partidos perdidos", "type": "number", "unit": "partidos",
             "group": "Contexto clínico",
         },
-
-        # === Notas + adjuntos ===
-        {
-            "key": "notes", "label": "Notas / plan", "type": "text",
-            "multiline": True, "rows": 6, "group": "Notas",
-            "placeholder": "Plan de tratamiento, evolución, observaciones…",
-        },
-        {
-            "key": "imaging", "label": "Imágenes / informes",
-            "type": "file", "group": "Adjuntos",
-            "placeholder": "Radiografías, RM, ecografías, informes en PDF…",
-        },
+        # NOTE: "Notas / plan" and "Imágenes / informes" removed — treatment
+        # plan, evolution and all documents now live in the injury bitácora
+        # (dated entries with EVA + inline imaging), so the two timelines no
+        # longer overlap.
     ],
 }
 

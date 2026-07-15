@@ -16,6 +16,7 @@ import DashboardEntryPanel from "@/components/perfil/ProfileDepartment/Dashboard
 import DepartmentCard from "@/components/perfil/DepartmentCard/DepartmentCard";
 import DepartmentDashboard from "@/components/dashboards/DepartmentDashboard";
 import MatchHistoryTable from "@/components/perfil/MatchHistoryTable/MatchHistoryTable";
+import AddWidgetModal from "@/components/reports/AddWidgetModal";
 import PlayerAssistant from "./PlayerAssistant";
 import styles from "./ProfileDepartment.module.css";
 
@@ -23,12 +24,15 @@ interface ProfileDepartmentProps {
   playerId: string;
   /** "First Last" — used for the Excel filename + summary sheet. */
   playerName: string;
+  /** Player's category — scopes the widget-options for the panel editor. */
+  categoryId: string;
   department: Department;
 }
 
 export default function ProfileDepartment({
   playerId,
   playerName,
+  categoryId,
   department,
 }: ProfileDepartmentProps) {
   const [results, setResults] = useState<ExamResult[] | null>(null);
@@ -38,6 +42,9 @@ export default function ProfileDepartment({
   // Bumped after a chart is promoted, so the layout refetches and shows it.
   const [reloadKey, setReloadKey] = useState(0);
   const [editMode, setEditMode] = useState(false);
+  // §5b — panel editor: add + edit-in-place per-player widgets.
+  const [addOpen, setAddOpen] = useState(false);
+  const [editWidgetId, setEditWidgetId] = useState<string | null>(null);
   const canEditPanel = usePermission("dashboards.change_widget");
 
   // Refetch only the results list. Used after a row is edited or deleted in
@@ -130,6 +137,7 @@ export default function ProfileDepartment({
             playerId={playerId}
             editMode={editMode}
             onChanged={() => setReloadKey((k) => k + 1)}
+            onEditWidget={(id) => setEditWidgetId(id)}
           />
         </>
       );
@@ -198,6 +206,15 @@ export default function ProfileDepartment({
               filename={`reporte-${playerName}-${department.slug}.docx`.replace(/\s+/g, "_")}
             />
           )}
+          {layout && canEditPanel && editMode && (
+            <button
+              type="button"
+              className={styles.editToggle}
+              onClick={() => setAddOpen(true)}
+            >
+              + Agregar widget
+            </button>
+          )}
           {layout && canEditPanel && (
             <button
               type="button"
@@ -221,6 +238,17 @@ export default function ProfileDepartment({
       />
 
       {renderBody()}
+
+      <AddWidgetModal
+        open={addOpen || editWidgetId !== null}
+        scope="player"
+        playerId={playerId}
+        deptSlug={department.slug}
+        categoryId={categoryId}
+        editWidgetId={editWidgetId}
+        onClose={() => { setAddOpen(false); setEditWidgetId(null); }}
+        onAdded={() => { setAddOpen(false); setEditWidgetId(null); setReloadKey((k) => k + 1); }}
+      />
     </section>
   );
 }

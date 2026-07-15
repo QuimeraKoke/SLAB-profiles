@@ -1114,3 +1114,54 @@ class Episode(models.Model):
     def __str__(self) -> str:
         scope = self.title or self.stage or "(sin título)"
         return f"[{self.get_status_display()}] {self.player} · {scope}"
+
+
+class EpisodeNote(models.Model):
+    """A dated progression entry ("bitácora") on an Episode.
+
+    Unlike an ExamResult — which is a structured, template-driven measurement —
+    a note is a low-friction free-text log entry the medical staff write to
+    narrate an injury's evolution (a control MRI reading, a rehab milestone,
+    a specialist's opinion). Documents (imaging, reports) attach to the note
+    via the polymorphic Attachment model (source_type='episode_note'), so a
+    single entry reads "14 jul · Control ecográfico + [eco.jpg]".
+
+    Notes are ordered newest-first by their clinical `entry_date` (which the
+    author sets and may differ from when the row was created).
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    episode = models.ForeignKey(
+        Episode,
+        on_delete=models.CASCADE,
+        related_name="notes",
+    )
+    # The clinical date of the entry (what the doctor is logging *about*),
+    # independent of created_at (when the row was written).
+    entry_date = models.DateField()
+    # Optional short heading, e.g. "Control ecográfico", "Diagnóstico".
+    title = models.CharField(max_length=200, blank=True)
+    note = models.TextField(blank=True)
+    # Structured clinical registers captured with the entry — e.g.
+    # {"eva": 6} for the EVA pain scale (0–10). Kept as a free-form dict so
+    # more registers (ROM, perimetría…) can be added without a migration.
+    metrics = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        "auth.User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="episode_notes",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-entry_date", "-created_at")
+        indexes = [
+            models.Index(fields=["episode", "-entry_date"]),
+        ]
+
+    def __str__(self) -> str:
+        head = self.title or (self.note[:40] if self.note else "(sin nota)")
+        return f"{self.entry_date} · {head}"

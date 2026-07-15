@@ -3,17 +3,14 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 
-import DynamicUploader from "@/components/forms/DynamicUploader";
-import Modal from "@/components/ui/Modal/Modal";
 import { api, ApiError } from "@/lib/api";
 import { usePermission } from "@/lib/permissions";
 import type {
   Episode,
-  ExamResult,
   ExamTemplate,
   PlayerDetail,
 } from "@/lib/types";
-import EpisodeCard, { formatDateTime } from "./EpisodeCard";
+import EpisodeCard from "./EpisodeCard";
 import styles from "./ProfileEpisodes.module.css";
 
 interface Props {
@@ -24,13 +21,7 @@ export default function ProfileEpisodes({ player }: Props) {
   const [episodes, setEpisodes] = useState<Episode[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [episodicTemplate, setEpisodicTemplate] = useState<ExamTemplate | null>(null);
-  // The result currently being edited in the modal, plus its template
-  // (needed because the modal renders DynamicUploader which needs the template).
-  const [editTarget, setEditTarget] = useState<{
-    result: ExamResult;
-    template: ExamTemplate;
-  } | null>(null);
-  // Bumping reloadKey re-runs the loader effect after a successful edit.
+  // Bumping reloadKey re-runs the loader effect after a stage change.
   const [reloadKey, setReloadKey] = useState(0);
   // The "+ Nueva lesión" button records a new ExamResult and may
   // also open a new Episode — both gated by add_examresult.
@@ -69,6 +60,7 @@ export default function ProfileEpisodes({ player }: Props) {
 
   const open = episodes.filter((e) => e.status === "open");
   const closed = episodes.filter((e) => e.status === "closed");
+  const refresh = () => setReloadKey((n) => n + 1);
 
   const newHref = episodicTemplate
     ? `/perfil/${player.id}/registrar/${episodicTemplate.id}?tab=lesiones&episode=new`
@@ -98,8 +90,9 @@ export default function ProfileEpisodes({ player }: Props) {
               <EpisodeCard
                 key={ep.id}
                 episode={ep}
+                variant="lesiones"
                 continueHref={`/perfil/${player.id}/registrar/${ep.template_id}?tab=lesiones&episode=${ep.id}`}
-                onEdit={(result, template) => setEditTarget({ result, template })}
+                onChanged={refresh}
               />
             ))}
           </div>
@@ -114,7 +107,8 @@ export default function ProfileEpisodes({ player }: Props) {
               <EpisodeCard
                 key={ep.id}
                 episode={ep}
-                onEdit={(result, template) => setEditTarget({ result, template })}
+                variant="lesiones"
+                onChanged={refresh}
               />
             ))}
           </div>
@@ -126,29 +120,6 @@ export default function ProfileEpisodes({ player }: Props) {
           No hay episodios registrados para este jugador.
         </div>
       )}
-
-      <Modal
-        open={editTarget !== null}
-        title={
-          editTarget
-            ? `Editar entrada · ${formatDateTime(editTarget.result.recorded_at)}`
-            : ""
-        }
-        onClose={() => setEditTarget(null)}
-      >
-        {editTarget && (
-          <DynamicUploader
-            template={editTarget.template}
-            playerId={player.id}
-            existingResult={editTarget.result}
-            onSaved={() => {
-              setEditTarget(null);
-              setReloadKey((n) => n + 1);
-            }}
-            onCancel={() => setEditTarget(null)}
-          />
-        )}
-      </Modal>
     </div>
   );
 }

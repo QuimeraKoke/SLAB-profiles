@@ -26,6 +26,7 @@ class AttachmentSource(models.TextChoices):
     EXAM_FIELD = "exam_field", "Campo de examen"
     EXAM_RESULT = "exam_result", "Resultado de examen (general)"
     EVENT = "event", "Evento"
+    EPISODE_NOTE = "episode_note", "Entrada de bitácora de lesión"
 
 
 # Allowlist for upload validation. The set is intentionally conservative —

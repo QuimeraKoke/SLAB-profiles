@@ -6,8 +6,12 @@ import Modal from "@/components/ui/Modal/Modal";
 import { useToast } from "@/components/ui/Toast/Toast";
 import { ApiError } from "@/lib/api";
 import {
+  addPlayerWidget,
   addWidget,
+  editPlayerWidget,
   editWidget,
+  fetchPlayerWidgetConfig,
+  fetchPlayerWidgetOptions,
   fetchWidgetConfig,
   fetchWidgetOptions,
   type WidgetOptions,
@@ -19,6 +23,11 @@ interface Props {
   open: boolean;
   deptSlug: string;
   categoryId: string;
+  /** "team" (default) edits team-report widgets; "player" edits per-player
+   *  profile-layout widgets (§5b). Swaps the endpoints + chart-type vocab. */
+  scope?: "team" | "player";
+  /** Required when scope === "player" and creating (not editing) a widget. */
+  playerId?: string;
   /** When set, the modal edits that widget in place (pre-filled) instead of
    *  creating a new one; its display_config is preserved on save (§5). */
   editWidgetId?: string | null;
@@ -26,16 +35,38 @@ interface Props {
   onAdded: () => void;
 }
 
-/** Add OR edit a team-report widget from a picked exam + metric(s) + chart
- *  type. Create reuses the promote-from-spec endpoint (new widgets land in
- *  "Mis gráficos"); edit PATCHes the widget's config in place (§2.c / §5). */
+const DEFAULT_CHART: Record<"team" | "player", string> = {
+  team: "team_leaderboard",
+  player: "line_with_selector",
+};
+
+/** Aggregation the resolver expects per chart type (mirrors how the seeds +
+ *  promote flow configure data sources). */
+function aggregationFor(chartType: string): string {
+  switch (chartType) {
+    case "team_horizontal_comparison":
+    case "grouped_bar":
+    case "comparison_table":
+      return "last_n";
+    case "line_with_selector":
+    case "multi_line":
+      return "all";
+    default:
+      return "latest";
+  }
+}
+
+/** Add OR edit a widget from a picked exam + metric(s) + chart type. Serves
+ *  both the team-report layout and the per-player profile layout via `scope`.
+ *  Create reuses the promote-from-spec endpoint; edit PATCHes config in place. */
 export default function AddWidgetModal({
-  open, deptSlug, categoryId, editWidgetId, onClose, onAdded,
+  open, deptSlug, categoryId, scope = "team", playerId, editWidgetId, onClose, onAdded,
 }: Props) {
   const { toast } = useToast();
   const isEdit = !!editWidgetId;
+  const isPlayer = scope === "player";
   const [opts, setOpts] = useState<WidgetOptions | null>(null);
-  const [chartType, setChartType] = useState("team_leaderboard");
+  const [chartType, setChartType] = useState(DEFAULT_CHART[scope]);
   const [templateSlug, setTemplateSlug] = useState("");
   const [fields, setFields] = useState<string[]>([]);
   const [title, setTitle] = useState("");
@@ -47,11 +78,13 @@ export default function AddWidgetModal({
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    fetchWidgetOptions(deptSlug, categoryId)
+    const optionsFn = isPlayer ? fetchPlayerWidgetOptions : fetchWidgetOptions;
+    const configFn = isPlayer ? fetchPlayerWidgetConfig : fetchWidgetConfig;
+    optionsFn(deptSlug, categoryId)
       .then((o) => { if (!cancelled) setOpts(o); })
       .catch(() => { if (!cancelled) setError("No se pudieron cargar las opciones."); });
     if (editWidgetId) {
-      fetchWidgetConfig(editWidgetId)
+      configFn(editWidgetId)
         .then((cfg) => {
           if (cancelled) return;
           setChartType(cfg.chart_type);
@@ -63,14 +96,14 @@ export default function AddWidgetModal({
         .catch(() => { if (!cancelled) setError("No se pudo cargar el widget."); });
     } else {
       // Fresh create — reset to defaults.
-      setChartType("team_leaderboard");
+      setChartType(DEFAULT_CHART[scope]);
       setTemplateSlug("");
       setFields([]);
       setTitle("");
       setExistingDisplayConfig(null);
     }
     return () => { cancelled = true; };
-  }, [open, deptSlug, categoryId, editWidgetId]);
+  }, [open, deptSlug, categoryId, editWidgetId, isPlayer, scope]);
 
   const template = useMemo(
     () => opts?.templates.find((t) => t.slug === templateSlug),
@@ -91,13 +124,17 @@ export default function AddWidgetModal({
       setError("Elegí un examen y al menos una métrica.");
       return;
     }
+    if (isPlayer && !isEdit && !playerId) {
+      setError("Falta el jugador para crear el widget.");
+      return;
+    }
     setBusy(true);
     setError(null);
     const isLeaderboard = chartType === "team_leaderboard";
     const source = {
       template_slug: templateSlug,
       field_keys: fields,
-      aggregation: chartType === "team_horizontal_comparison" ? "last_n" : "latest",
+      aggregation: aggregationFor(chartType),
       aggregation_param: 5,
     };
     // On edit, keep the widget's existing display_config (reference lines,
@@ -119,8 +156,11 @@ export default function AddWidgetModal({
     };
     try {
       if (isEdit && editWidgetId) {
-        await editWidget(editWidgetId, spec);
+        await (isPlayer ? editPlayerWidget : editWidget)(editWidgetId, spec);
         toast.success("Widget actualizado.");
+      } else if (isPlayer) {
+        await addPlayerWidget(playerId as string, deptSlug, spec);
+        toast.success("Widget agregado.");
       } else {
         await addWidget(deptSlug, categoryId, spec);
         toast.success("Widget agregado.");

@@ -338,6 +338,34 @@ def edit_chart_spec(*, widget, category: Category, spec: dict[str, Any]) -> dict
     return {"widget_id": str(widget.id), "title": widget.title}
 
 
+def edit_player_chart_spec(*, widget, category: Category, spec: dict[str, Any]) -> dict[str, Any]:
+    """Per-player twin of `edit_chart_spec`: apply a spec to an EXISTING
+    per-player `Widget` — update chart_type / title / display_config and replace
+    its data sources, preserving layout position. Returns {widget_id, title} or
+    {error}. Uses the PER-PLAYER chart-type vocabulary."""
+    try:
+        chart_type, title, display_config, resolved_sources = _normalize_spec(
+            category, spec, VALID_PLAYER_CHART_TYPES
+        )
+    except _SpecError as e:
+        return {"error": str(e)}
+
+    with transaction.atomic():
+        widget.chart_type = chart_type
+        widget.title = title or widget.title or "Gráfico"
+        widget.display_config = display_config
+        widget.save(update_fields=["chart_type", "title", "display_config"])
+        widget.data_sources.all().delete()
+        for i, rs in enumerate(resolved_sources):
+            WidgetDataSource.objects.create(
+                widget=widget, template=rs["template"],
+                field_keys=rs["field_keys"], aggregation=rs["aggregation"],
+                aggregation_param=rs["aggregation_param"],
+                label=rs["label"], color=rs["color"], sort_order=i,
+            )
+    return {"widget_id": str(widget.id), "title": widget.title}
+
+
 def promote_player_chart_spec(
     *,
     category: Category,

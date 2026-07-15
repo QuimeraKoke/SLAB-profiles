@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ArrowLeft, ArrowRight, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Pencil, Trash2 } from "lucide-react";
 
 import type { DashboardSection } from "@/lib/types";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
@@ -25,9 +25,11 @@ interface SectionGroupProps {
   editMode?: boolean;
   /** Refetch after a successful arrange mutation. */
   onChanged?: () => void;
+  /** §5b — opens the config editor for a widget (per-player parity). */
+  onEditWidget?: (widgetId: string) => void;
 }
 
-export default function SectionGroup({ section, playerId, editMode = false, onChanged }: SectionGroupProps) {
+export default function SectionGroup({ section, playerId, editMode = false, onChanged, onEditWidget }: SectionGroupProps) {
   const [collapsed, setCollapsed] = useState(section.default_collapsed);
   const [busy, setBusy] = useState(false);
   const { confirm } = useConfirm();
@@ -133,6 +135,12 @@ export default function SectionGroup({ section, playerId, editMode = false, onCh
                       </button>
                     ))}
                   </div>
+                  {onEditWidget && (
+                    <button type="button" className={styles.editBtn} disabled={busy}
+                      onClick={() => onEditWidget(widget.id)} aria-label="Editar widget" title="Editar configuración">
+                      <Pencil size={15} />
+                    </button>
+                  )}
                   <button type="button" className={styles.removeBtn} disabled={busy}
                     onClick={() => remove(widget.id, widget.title)} aria-label="Quitar widget" title="Quitar">
                     <Trash2 size={15} />

@@ -121,6 +121,7 @@ def build_daily_report(category, target_date: date_cls, user) -> dict:
         "kpis": _kpis(players, alerts, wellness, target_date),
         "lesionados": lesionados,
         "alertas": alertas,
+        "kine": _kine_entries(category, target_date),
         "notes": note_rows,
         "players": [
             {"id": str(p.id), "name": f"{p.first_name} {p.last_name}".strip()}
@@ -239,6 +240,31 @@ def _lesionado(p, episode, acwr_meta, wellness, player_alerts, player_notes,
         ],
         "notes": player_notes,
     }
+
+
+def serialize_kine(e) -> dict:
+    """A kinesiology daily-tracking row (the 'Plan kinésico' table)."""
+    return {
+        "id": str(e.id),
+        "player_id": str(e.player_id),
+        "player_name": f"{e.player.first_name} {e.player.last_name}".strip(),
+        "clinica": e.clinica,
+        "gimnasio": e.gimnasio,
+        "cancha": e.cancha,
+        "objetivo": e.objetivo,
+        "kinesiologo": e.kinesiologo,
+    }
+
+
+def _kine_entries(category, target_date) -> list[dict]:
+    from core.models import KineDailyEntry
+    entries = (
+        KineDailyEntry.objects
+        .filter(date=target_date, player__category=category)
+        .select_related("player")
+        .order_by("player__last_name", "player__first_name")
+    )
+    return [serialize_kine(e) for e in entries]
 
 
 def _alert_rows(players, alerts_by_player) -> list[dict]:
