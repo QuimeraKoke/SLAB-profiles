@@ -271,6 +271,24 @@ def me(request):
     }
 
 
+@api.post("/auth/refresh", response=LoginOut)
+def refresh_token(request):
+    """Re-issue a fresh JWT for the (still-valid) authenticated token.
+
+    The frontend calls this proactively while the user is active (before the
+    current token expires), so an active session slides forward and never dies
+    mid-use. Requires a valid, non-expired token — an already-expired token
+    401s here and the client bounces to login."""
+    token, expires_at = issue_token(request.user)
+    membership = get_membership(request.user)
+    return {
+        "access_token": token,
+        "expires_at": expires_at,
+        "user": _serialize_user(request.user),
+        "membership": _serialize_membership(membership),
+    }
+
+
 # ---------------------------------------------------------------------------
 # User management — Administración → Usuarios.
 #

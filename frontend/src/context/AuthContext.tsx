@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      setToken(res.access_token);
+      setToken(res.access_token, res.expires_at);
       setUser(res.user);
       setMembership(res.membership);
       router.push("/centro-de-mando");
