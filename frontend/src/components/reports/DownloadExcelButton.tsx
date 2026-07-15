@@ -52,7 +52,7 @@ export default function DownloadExcelButton({
       className={styles.button}
       onClick={onClick}
       disabled={busy || disabled || !hasWidgets}
-      title={hasWidgets ? "Descargar todos los widgets en un archivo Excel" : "No hay datos para exportar"}
+      title={hasWidgets ? "Descargar todos los gráficos en un archivo Excel" : "No hay datos para exportar"}
     >
       <span className={styles.icon}>📥</span>
       {busy ? "Generando…" : "Descargar Excel"}

@@ -124,3 +124,42 @@
   background: #0a2240;
   color: #fff;
 }
+
+/* ── Individual (single-player) capture ─────────────────────────── */
+
+.singleWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.playerPick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 22rem;
+}
+
+.playerPickLabel {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475467;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.playerSelect {
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: #101828;
+  background: #fff;
+  cursor: pointer;
+}
+.playerSelect:focus {
+  outline: none;
+  border-color: #6d28d9;
+  box-shadow: 0 0 0 2px rgba(109, 40, 217, 0.15);
+}

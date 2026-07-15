@@ -85,7 +85,7 @@ export default function ForecastAccuracyCard({ deptSlug, categoryId, dateFrom, d
         <>
           <div className={styles.stats}>
             <div className={styles.stat}>
-              <span className={styles.statValue}>
+              <span className={`${styles.statValue} ${bias! > 0 ? styles.late : bias! < 0 ? styles.early : ""}`}>
                 {bias! > 0 ? "+" : ""}{bias}<span className={styles.unit}> días</span>
               </span>
               <span className={styles.statLabel}>Sesgo</span>

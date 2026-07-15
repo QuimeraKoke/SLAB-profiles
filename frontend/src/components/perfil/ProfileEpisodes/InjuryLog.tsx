@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Activity, FileText, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 
 import Modal from "@/components/ui/Modal/Modal";
@@ -68,6 +68,26 @@ function evaTone(eva: number): string {
 function dayTs(iso: string): number {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
   return new Date(y || 1970, (m || 1) - 1, d || 1).getTime();
+}
+
+/** An inline image that self-heals on expiry: if the (short-lived) signed URL
+ *  returns 403/expired, it fetches a fresh one and retries once. Keyed by the
+ *  signed URL upstream, so a list refetch remounts it with a fresh start. */
+function SelfHealImg({ att, className }: { att: EpisodeNoteAttachment; className: string }) {
+  const [src, setSrc] = useState(att.signed_url ?? "");
+  const tried = useRef(false);
+  async function handleError() {
+    if (tried.current) return;
+    tried.current = true;
+    try {
+      const fresh = await fetchSignedUrl(att.id);
+      setSrc(fresh.url);
+    } catch {
+      /* leave the broken image; the docChip fallback isn't worth a second fetch */
+    }
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img className={className} src={src} alt={att.filename} onError={handleError} />;
 }
 
 // A merged timeline item: either a bitácora note or a stage transition.
@@ -330,8 +350,7 @@ export default function InjuryLog({ episode, template, canEdit, refreshToken = 0
               disabled={viewerLoading}
             >
               {isImage(att.mime_type) && att.signed_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img className={styles.thumbImg} src={att.signed_url} alt={att.filename} />
+                <SelfHealImg key={att.signed_url} att={att} className={styles.thumbImg} />
               ) : (
                 <span className={styles.docChip}>
                   <FileText size={16} />

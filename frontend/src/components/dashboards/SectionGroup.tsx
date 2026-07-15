@@ -63,12 +63,12 @@ export default function SectionGroup({ section, playerId, editMode = false, onCh
   }
   async function remove(id: string, title: string) {
     const ok = await confirm({
-      title: "Quitar widget",
+      title: "Quitar gráfico",
       message: `¿Quitar "${title}" del panel? Podés volver a agregarlo después.`,
       confirmLabel: "Quitar",
       variant: "danger",
     });
-    if (ok) run(() => deletePlayerWidget(id), "Widget quitado.");
+    if (ok) run(() => deletePlayerWidget(id), "Gráfico quitado.");
   }
 
   return (
@@ -137,12 +137,12 @@ export default function SectionGroup({ section, playerId, editMode = false, onCh
                   </div>
                   {onEditWidget && (
                     <button type="button" className={styles.editBtn} disabled={busy}
-                      onClick={() => onEditWidget(widget.id)} aria-label="Editar widget" title="Editar configuración">
+                      onClick={() => onEditWidget(widget.id)} aria-label="Editar gráfico" title="Editar configuración">
                       <Pencil size={15} />
                     </button>
                   )}
                   <button type="button" className={styles.removeBtn} disabled={busy}
-                    onClick={() => remove(widget.id, widget.title)} aria-label="Quitar widget" title="Quitar">
+                    onClick={() => remove(widget.id, widget.title)} aria-label="Quitar gráfico" title="Quitar">
                     <Trash2 size={15} />
                   </button>
                 </div>

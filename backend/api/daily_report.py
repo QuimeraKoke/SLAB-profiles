@@ -485,6 +485,25 @@ def _notes(category, target_date, user) -> tuple[dict, list]:
     return by_player, rows
 
 
+def plans_by_player(category, target_date, per_player: int = 3) -> dict:
+    """Standing 'plan de trabajo' entries (KIND_PLAN) per player, most recent
+    first, as of the target date. Used by the PDF deck to print each player's
+    current work plan alongside the day's pauta."""
+    plans = list(
+        DailyNote.objects.filter(
+            player__category=category, kind=DailyNote.KIND_PLAN, date__lte=target_date,
+        )
+        .select_related("player", "department", "created_by")
+        .order_by("-date", "-created_at")
+    )
+    by_player: dict[Any, list] = {}
+    for n in plans:
+        bucket = by_player.setdefault(n.player_id, [])
+        if len(bucket) < per_player:
+            bucket.append(serialize_note(n, None))
+    return by_player
+
+
 def serialize_note(n: DailyNote, user) -> dict:
     author = ""
     if n.created_by:

@@ -4554,7 +4554,13 @@ def list_attachments(
     return list(qs)
 
 
-def _public_signed_get_url(key: str) -> str:
+# Inline-rendered images/PDFs live on screen while the user browses a dossier,
+# so their signed URLs get a longer lifetime than the default one-shot download
+# (which just redirects). The frontend also self-heals on expiry.
+_INLINE_URL_EXPIRE = 3600  # 1 hour
+
+
+def _public_signed_get_url(key: str, expires: int | None = None) -> str:
     """Generate a pre-signed S3 GET URL using the PUBLIC endpoint.
 
     AWS Signature V4 hashes the host header into the signature, so we cannot
@@ -4593,7 +4599,7 @@ def _public_signed_get_url(key: str) -> str:
     return client.generate_presigned_url(
         "get_object",
         Params={"Bucket": settings.AWS_STORAGE_BUCKET_NAME, "Key": key},
-        ExpiresIn=getattr(settings, "AWS_QUERYSTRING_EXPIRE", 300),
+        ExpiresIn=expires or getattr(settings, "AWS_QUERYSTRING_EXPIRE", 300),
     )
 
 
@@ -4630,7 +4636,7 @@ def attachment_signed_url(request, attachment_id: UUID):
         request, attachment.source_type, attachment.source_id, mutate=False,
     )
     return {
-        "url": _public_signed_get_url(attachment.file.name),
+        "url": _public_signed_get_url(attachment.file.name, expires=_INLINE_URL_EXPIRE),
         "mime_type": attachment.mime_type,
         "filename": attachment.filename,
     }
@@ -4907,7 +4913,10 @@ def _note_attachments(note_id: UUID) -> list[dict]:
                 "filename": a.filename,
                 "mime_type": a.mime_type,
                 "size_bytes": a.size_bytes,
-                "signed_url": _public_signed_get_url(a.file.name) if renderable else None,
+                "signed_url": (
+                    _public_signed_get_url(a.file.name, expires=_INLINE_URL_EXPIRE)
+                    if renderable else None
+                ),
             }
         )
     return out

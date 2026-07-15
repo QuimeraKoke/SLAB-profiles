@@ -93,7 +93,7 @@ export default function AddWidgetModal({
           setTitle(cfg.title);
           setExistingDisplayConfig(cfg.display_config);
         })
-        .catch(() => { if (!cancelled) setError("No se pudo cargar el widget."); });
+        .catch(() => { if (!cancelled) setError("No se pudo cargar el gráfico."); });
     } else {
       // Fresh create — reset to defaults.
       setChartType(DEFAULT_CHART[scope]);
@@ -125,7 +125,7 @@ export default function AddWidgetModal({
       return;
     }
     if (isPlayer && !isEdit && !playerId) {
-      setError("Falta el jugador para crear el widget.");
+      setError("Falta el jugador para crear el gráfico.");
       return;
     }
     setBusy(true);
@@ -147,7 +147,7 @@ export default function AddWidgetModal({
     const firstLabel = numericFields.find((f) => f.key === fields[0])?.label ?? "";
     const defaultTitle = template
       ? `${template.name}${fields.length === 1 && firstLabel ? ` · ${firstLabel}` : ""}`
-      : "Widget";
+      : "Gráfico";
     const spec: WidgetSpec = {
       chart_type: chartType,
       title: title.trim() || defaultTitle,
@@ -157,27 +157,27 @@ export default function AddWidgetModal({
     try {
       if (isEdit && editWidgetId) {
         await (isPlayer ? editPlayerWidget : editWidget)(editWidgetId, spec);
-        toast.success("Widget actualizado.");
+        toast.success("Gráfico actualizado.");
       } else if (isPlayer) {
         await addPlayerWidget(playerId as string, deptSlug, spec);
-        toast.success("Widget agregado.");
+        toast.success("Gráfico agregado.");
       } else {
         await addWidget(deptSlug, categoryId, spec);
-        toast.success("Widget agregado.");
+        toast.success("Gráfico agregado.");
       }
       setFields([]);
       setTitle("");
       onAdded();
       onClose();
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "No se pudo guardar el widget.");
+      setError(e instanceof ApiError ? e.message : "No se pudo guardar el gráfico.");
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <Modal open={open} title={isEdit ? "Editar widget" : "Agregar widget"} onClose={onClose}>
+    <Modal open={open} title={isEdit ? "Editar gráfico" : "Agregar gráfico"} onClose={onClose}>
       {error && <div className={styles.error} role="alert">{error}</div>}
       <div className={styles.form}>
         <label className={styles.field}>

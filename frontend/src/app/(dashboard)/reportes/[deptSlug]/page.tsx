@@ -257,7 +257,7 @@ export default function ReportePage({ params }: PageProps) {
               className={styles.editToggle}
               onClick={() => setAddOpen(true)}
             >
-              + Agregar widget
+              + Agregar gráfico
             </button>
           )}
           {layout && canEditPanel && (

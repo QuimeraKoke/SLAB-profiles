@@ -85,5 +85,7 @@
 .right { text-align: right; }
 .player { font-weight: 600; color: #0a2240; }
 .epTitle { font-size: 11px; color: #98a2b3; }
+/* Días de diferencia: retorno más tardío (positivo) en rojo, más temprano
+   (negativo) en azul. */
 .late { color: #b42318; font-weight: 700; }
-.early { color: #16a34a; font-weight: 700; }
+.early { color: #2563eb; font-weight: 700; }

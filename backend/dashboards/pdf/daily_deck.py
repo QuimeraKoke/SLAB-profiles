@@ -262,6 +262,22 @@ def _notes_block(notes: list[dict], s: dict) -> list:
     return out
 
 
+def _plan_block(plans: list[dict], s: dict) -> list:
+    """The player's standing 'plan de trabajo' (KIND_PLAN), newest first."""
+    out = [Paragraph("Plan de trabajo", s["h2"])]
+    if not plans:
+        out.append(Paragraph("Sin plan de trabajo vigente.", s["muted"]))
+        return out
+    for p in plans:
+        dept = (p.get("department") or {}).get("name") or "General"
+        out.append(Paragraph(
+            f'<font color="#0d9488"><b>[{dept}]</b></font> {p["text"]}'
+            f'<font color="#98a2b3"> — {_fmt_day(p.get("date"))}</font>',
+            s["body"],
+        ))
+    return out
+
+
 # ─── Slides ──────────────────────────────────────────────────────────────
 
 
@@ -403,7 +419,7 @@ def _kine_slide(data: dict, s: dict) -> list:
     return out
 
 
-def _lesionado_slide(l: dict, s: dict) -> list:
+def _lesionado_slide(l: dict, plans: list[dict], s: dict) -> list:
     ep = l.get("episode") or {}
     meta_bits = [l["position"]]
     if ep.get("severity"):
@@ -444,11 +460,14 @@ def _lesionado_slide(l: dict, s: dict) -> list:
 
     out.append(Paragraph("Pauta del día", s["h2"]))
     out.extend(_notes_block(l.get("notes") or [], s))
+    out.append(Spacer(1, 3 * mm))
+    out.extend(_plan_block(plans, s))
     out.append(PageBreak())
     return out
 
 
-def _alert_slide(row: dict, roster_row: dict | None, notes: list[dict], s: dict) -> list:
+def _alert_slide(row: dict, roster_row: dict | None, notes: list[dict],
+                 plans: list[dict], s: dict) -> list:
     worst = row.get("worst") or "warning"
     out: list = list(_slide_header(
         "2 · ALERTAS",
@@ -464,6 +483,8 @@ def _alert_slide(row: dict, roster_row: dict | None, notes: list[dict], s: dict)
     out.append(Spacer(1, 4 * mm))
     out.append(Paragraph("Pauta del día", s["h2"]))
     out.extend(_notes_block(notes, s))
+    out.append(Spacer(1, 3 * mm))
+    out.extend(_plan_block(plans, s))
     out.append(PageBreak())
     return out
 
@@ -482,7 +503,7 @@ def _resume_chips(r: dict | None, s: dict) -> Table:
     return _value_chips(chips, s)
 
 
-def _disponible_slide(r: dict, notes: list[dict], s: dict) -> list:
+def _disponible_slide(r: dict, notes: list[dict], plans: list[dict], s: dict) -> list:
     out: list = list(_slide_header(
         "3 · DISPONIBLES · ANEXO",
         r["name"],
@@ -500,6 +521,8 @@ def _disponible_slide(r: dict, notes: list[dict], s: dict) -> list:
     out.append(Spacer(1, 5 * mm))
     out.append(Paragraph("Pauta del día", s["h2"]))
     out.extend(_notes_block(notes, s))
+    out.append(Spacer(1, 3 * mm))
+    out.extend(_plan_block(plans, s))
     out.append(PageBreak())
     return out
 
@@ -522,7 +545,7 @@ def _divider_slide(kicker: str, title: str, subtitle: str, count: int, s: dict) 
 
 
 def render_daily_deck(category, target_date: date_cls, user=None) -> bytes:
-    from api.daily_report import build_daily_report
+    from api.daily_report import build_daily_report, plans_by_player
     from api.roster import build_roster
 
     data = build_daily_report(category, target_date, user)
@@ -530,13 +553,14 @@ def render_daily_deck(category, target_date: date_cls, user=None) -> bytes:
     notes_by_player: dict[str, list] = {}
     for n in data["notes"]:
         notes_by_player.setdefault(n["player_id"], []).append(n)
+    plans_map = plans_by_player(category, target_date)
 
     s = _s()
     story: list = []
     story.extend(_cover_slide(data, category, target_date, s))
     story.extend(_index_slide(data, s))
     for l in data["lesionados"]:
-        story.extend(_lesionado_slide(l, s))
+        story.extend(_lesionado_slide(l, plans_map.get(l["player_id"], []), s))
 
     # Kinesiology daily table — the physios' plan for the injured (+ optional).
     story.extend(_kine_slide(data, s))
@@ -546,7 +570,8 @@ def render_daily_deck(category, target_date: date_cls, user=None) -> bytes:
                                 "Disponibles con alguna alerta activa", len(alert_rows), s))
     for row in alert_rows:
         story.extend(_alert_slide(row, roster.get(row["player_id"]),
-                                  notes_by_player.get(row["player_id"], []), s))
+                                  notes_by_player.get(row["player_id"], []),
+                                  plans_map.get(row["player_id"], []), s))
 
     alerted = {r["player_id"] for r in alert_rows}
     lesionados = {l["player_id"] for l in data["lesionados"]}
@@ -558,7 +583,8 @@ def render_daily_deck(category, target_date: date_cls, user=None) -> bytes:
     story.extend(_divider_slide("ANEXO", "Disponibles",
                                 "Sin alertas — ficha resumida por jugador", len(disponibles), s))
     for r in disponibles:
-        story.extend(_disponible_slide(r, notes_by_player.get(r["id"], []), s))
+        story.extend(_disponible_slide(r, notes_by_player.get(r["id"], []),
+                                       plans_map.get(r["id"], []), s))
 
     # Drop the trailing PageBreak so the PDF doesn't end on a blank page.
     if story and isinstance(story[-1], PageBreak):
