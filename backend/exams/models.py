@@ -3,7 +3,7 @@ import uuid
 from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 
-from core.models import Category, Department, Player
+from core.models import Category, Club, Department, Player
 
 
 def default_input_config() -> dict:
@@ -1165,3 +1165,153 @@ class EpisodeNote(models.Model):
     def __str__(self) -> str:
         head = self.title or (self.note[:40] if self.note else "(sin nota)")
         return f"{self.entry_date} · {head}"
+
+
+# ---------------------------------------------------------------------------
+# VALD Hub integration (ForceDecks / ForceFrame / NordBord).
+#
+# Per-club binding to a VALD tenant + a stored profile→player mapping. The
+# sync (exams/services/vald_sync.py) pulls tests from VALD and writes them into
+# the existing strength templates (cmj/imtp/hip_adab/nordico) as ExamResults.
+# ---------------------------------------------------------------------------
+
+VALD_REGION_CHOICES = [
+    ("use", "US East (use)"),
+    ("euw", "Europe West (euw)"),
+    ("aue", "Australia East (aue)"),
+]
+
+
+class ValdIntegration(models.Model):
+    """Binds one Club to a VALD Hub tenant. Credentials can be set per-club
+    here, or left blank to fall back to the env defaults (settings.VALD_*).
+    A VALD tenant is club-wide; matched players carry each test into their own
+    category via `Player.category`, so no per-category binding is needed."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    club = models.OneToOneField(
+        Club, on_delete=models.CASCADE, related_name="vald_integration",
+    )
+    enabled = models.BooleanField(
+        default=False,
+        help_text="When off, the club is skipped by the scheduled VALD sync.",
+    )
+    region = models.CharField(
+        max_length=8, choices=VALD_REGION_CHOICES, default="use",
+        help_text="VALD data region for this tenant (determined by VALD).",
+    )
+    tenant_id = models.CharField(
+        max_length=64, help_text="VALD tenantId (GUID) from the Tenants API.",
+    )
+    client_id = models.CharField(
+        max_length=255, blank=True,
+        help_text="Per-club OAuth client_id. Blank → uses settings.VALD_CLIENT_ID.",
+    )
+    client_secret = models.CharField(
+        max_length=255, blank=True,
+        help_text="Per-club OAuth client_secret. Blank → uses settings.VALD_CLIENT_SECRET. "
+        "Stored as-is; treat as a secret.",
+    )
+
+    # --- What to sync: per-product toggles + optional template-slug overrides.
+    # The VALD-metric → field-key mapping is fixed in code; these only choose
+    # WHICH products to ingest and WHICH template each test type feeds (blank →
+    # the default slug, so a club seeded with the standard templates needs none).
+    sync_forcedecks = models.BooleanField(
+        default=True, help_text="Ingerir tests de ForceDecks (CMJ / IMTP).",
+    )
+    sync_forceframe = models.BooleanField(
+        default=True, help_text="Ingerir tests de ForceFrame (Hip AD/AB).",
+    )
+    sync_nordbord = models.BooleanField(
+        default=True, help_text="Ingerir tests de NordBord (Nordic).",
+    )
+    cmj_template_slug = models.CharField(
+        max_length=80, blank=True,
+        help_text="Slug de plantilla destino para CMJ. Vacío → 'cmj'.",
+    )
+    imtp_template_slug = models.CharField(
+        max_length=80, blank=True,
+        help_text="Slug de plantilla destino para IMTP. Vacío → 'imtp'.",
+    )
+    hip_adab_template_slug = models.CharField(
+        max_length=80, blank=True,
+        help_text="Slug de plantilla destino para Hip AD/AB. Vacío → 'hip_adab'.",
+    )
+    nordico_template_slug = models.CharField(
+        max_length=80, blank=True,
+        help_text="Slug de plantilla destino para Nordic. Vacío → 'nordico'.",
+    )
+
+    # Per-product incremental high-water marks: {"forcedecks": iso, "forceframe":
+    # iso, "nordbord": iso, "profiles": iso}. Advanced after each successful pull.
+    sync_cursors = models.JSONField(default=dict, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "VALD integration"
+        verbose_name_plural = "VALD integrations"
+
+    def __str__(self) -> str:
+        return f"VALD · {self.club.name} ({'on' if self.enabled else 'off'})"
+
+
+class ValdProfileLink(models.Model):
+    """Maps a VALD athlete profile to a SLAB Player, within a club.
+
+    Auto-resolved by the sync (externalId → name+DOB → name), manually fixable
+    in the admin. Rows with `player is None` / `match_method='unresolved'` are
+    the review queue — their tests are skipped until a player is assigned."""
+
+    MATCH_EXTERNAL_ID = "external_id"
+    MATCH_NAME_DOB = "name_dob"
+    MATCH_NAME = "name"
+    MATCH_MANUAL = "manual"
+    MATCH_UNRESOLVED = "unresolved"
+    MATCH_CHOICES = [
+        (MATCH_EXTERNAL_ID, "externalId"),
+        (MATCH_NAME_DOB, "nombre + fecha nac."),
+        (MATCH_NAME, "nombre"),
+        (MATCH_MANUAL, "manual"),
+        (MATCH_UNRESOLVED, "sin resolver"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    club = models.ForeignKey(
+        Club, on_delete=models.CASCADE, related_name="vald_profile_links",
+    )
+    vald_profile_id = models.CharField(max_length=64)
+    player = models.ForeignKey(
+        Player, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="vald_links",
+    )
+    # Snapshot from VALD (for display + re-matching without another API call).
+    given_name = models.CharField(max_length=120, blank=True)
+    family_name = models.CharField(max_length=120, blank=True)
+    date_of_birth = models.DateField(null=True, blank=True)
+    external_id = models.CharField(max_length=128, blank=True)
+    sync_id = models.CharField(max_length=128, blank=True)
+    match_method = models.CharField(
+        max_length=16, choices=MATCH_CHOICES, default=MATCH_UNRESOLVED,
+    )
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["club", "vald_profile_id"], name="uniq_vald_profile_per_club",
+            ),
+        ]
+        indexes = [models.Index(fields=["club", "match_method"])]
+
+    @property
+    def vald_name(self) -> str:
+        return f"{self.given_name} {self.family_name}".strip()
+
+    def __str__(self) -> str:
+        target = self.player or "(sin jugador)"
+        return f"{self.vald_name} → {target}"

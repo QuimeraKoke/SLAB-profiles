@@ -33,7 +33,7 @@ from exams.bulk_ingest import IngestError, run_ingest
 from exams.calculations import compute_result_data
 from exams.models import ExamResult, ExamTemplate
 
-from .alert_rules import BacktestIn, RuleUpdateIn, RuleWriteIn
+from .alert_rules import AcwrConfigIn, BacktestIn, RuleUpdateIn, RuleWriteIn
 from .auth import issue_token, jwt_auth
 from .scoping import (
     get_membership,
@@ -3296,6 +3296,28 @@ def delete_alert_rule(request, rule_id: UUID):
     _club_access_or_403(request, rule.template.department.club)
     rule.delete()
     return {"ok": True}
+
+
+# ── ACWR (acute:chronic) configuration — part of the alert engine (§1.f) ────────
+# Lives on Category.load_config['acwr']; exposed here so physios tune windows +
+# limits from "Reglas de alerta" instead of Django admin. Editor-gated.
+
+
+@api.get("/acwr-config")
+@require_perm("goals.view_alertrule")
+def get_acwr_config(request, category_id: str):
+    from api.alert_rules import build_acwr_config
+    return build_acwr_config(_scoped_category_or_404(request, category_id))
+
+
+@api.patch("/acwr-config")
+@require_perm("goals.change_alertrule")
+def update_acwr_config(request, payload: AcwrConfigIn):
+    from api.alert_rules import build_acwr_config, save_acwr_config
+    category = _scoped_category_or_404(request, payload.category_id)
+    save_acwr_config(category, [v.dict() for v in payload.variables])
+    category.refresh_from_db()
+    return build_acwr_config(category)
 
 
 @api.get("/daily-report")

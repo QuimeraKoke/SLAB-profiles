@@ -1,0 +1,252 @@
+.card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+
+.head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.1rem;
+  background: #f8fafc;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.head:hover {
+  background: #f1f5f9;
+}
+.headTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+.headMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  color: #64748b;
+}
+.chev {
+  font-size: 0.9rem;
+  color: #94a3b8;
+}
+
+.body {
+  padding: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.intro {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #475569;
+}
+.muted {
+  font-size: 0.85rem;
+  color: #94a3b8;
+}
+
+.varCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.9rem;
+  background: #fcfcfd;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.varGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.7rem;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.lbl {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.input {
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: #0f172a;
+  background: #fff;
+  width: 100%;
+}
+.input:focus {
+  outline: none;
+  border-color: #6d28d9;
+  box-shadow: 0 0 0 2px rgba(109, 40, 217, 0.15);
+}
+.input:disabled {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+/* ── Limit bands ─────────────────────────────────────────────── */
+
+.bands {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.4rem;
+}
+.bandGroup {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+.bandLabel {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  align-self: center;
+  white-space: nowrap;
+}
+.bandOk {
+  background: #dcfce7;
+  color: #166534;
+}
+.bandDanger {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.limit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 5rem;
+}
+.limSub {
+  font-size: 0.66rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.limInput {
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+  text-align: center;
+  color: #0f172a;
+  background: #fff;
+  width: 100%;
+}
+.limInput:focus {
+  outline: none;
+  border-color: #6d28d9;
+  box-shadow: 0 0 0 2px rgba(109, 40, 217, 0.15);
+}
+.limInput:disabled {
+  background: #f1f5f9;
+}
+.dash {
+  color: #94a3b8;
+  padding-bottom: 0.5rem;
+}
+
+/* ── Footer (alert toggle + remove) ──────────────────────────── */
+
+.varFoot {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 0.7rem;
+}
+.alertToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #334155;
+  cursor: pointer;
+}
+.sevSelect {
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.82rem;
+  font-family: inherit;
+  background: #fff;
+  cursor: pointer;
+}
+.removeBtn {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 6px;
+}
+.removeBtn:hover {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+/* ── Actions ─────────────────────────────────────────────────── */
+
+.actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+.addBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px dashed #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.addBtn:hover {
+  background: #eef2f7;
+  border-color: #94a3b8;
+}
+.saveBtn {
+  margin-left: auto;
+  background: #6d28d9;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.55rem 1.2rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.saveBtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

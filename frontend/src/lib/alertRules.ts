@@ -120,3 +120,40 @@ export function backtestRule(
     body: JSON.stringify(draft),
   });
 }
+
+// ── ACWR (acute:chronic) config (§1.f) ──────────────────────────────────────
+
+export interface AcwrVariable {
+  field: string;
+  label: string;
+  acute_days: number;
+  chronic_days: number;
+  method: "moving_avg" | "ewma";
+  sweet_low: number;
+  sweet_high: number;
+  danger_low: number;
+  danger_high: number;
+  alert: boolean;
+  severity: Severity;
+}
+
+export interface AcwrConfig {
+  variables: AcwrVariable[];
+  available_fields: { key: string; label: string; unit: string }[];
+  methods: { value: string; label: string }[];
+  severities: Severity[];
+}
+
+export function fetchAcwrConfig(categoryId: string): Promise<AcwrConfig> {
+  return api<AcwrConfig>(`/acwr-config?category_id=${categoryId}`);
+}
+
+export function saveAcwrConfig(
+  categoryId: string,
+  variables: AcwrVariable[],
+): Promise<AcwrConfig> {
+  return api<AcwrConfig>(`/acwr-config`, {
+    method: "PATCH",
+    body: JSON.stringify({ category_id: categoryId, variables }),
+  });
+}

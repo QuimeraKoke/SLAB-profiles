@@ -89,3 +89,22 @@ def sync_wellness_responses(mode: str = "today", since_days: int = 3) -> dict:
                 lock.delete(_LOCK_KEY)
             except Exception:  # pragma: no cover
                 pass
+
+
+@shared_task(name="exams.tasks.sync_all_vald_clubs")
+def sync_all_vald_clubs(full: bool = False) -> list[dict]:
+    """Scheduled VALD Hub sync for every club with an enabled integration.
+
+    No-ops cleanly when nothing is bound / no credentials are configured, so
+    the beat schedule is safe to ship before a club wires its VALD keys.
+    """
+    from exams.models import ValdIntegration
+
+    if not ValdIntegration.objects.filter(enabled=True).exists():
+        logger.info("VALD sync skipped: no enabled integrations.")
+        return []
+    from exams.services.vald_sync import sync_all_bound_clubs
+
+    reports = sync_all_bound_clubs(full=full)
+    logger.info("VALD sync: %s", reports)
+    return reports

@@ -155,17 +155,27 @@ LESIONES_SCHEMA: dict = {
             # stay in option_labels + the map so existing episodes keep working.
             "options": ["aguda", "intermedia", "reintegro", "parcial", "rtt", "rtp", "closed"],
             "option_labels": {
-                "aguda": "Fase aguda",
-                "intermedia": "Fase intermedia",
-                "reintegro": "Reintegro deportivo",
-                "parcial": "Campo parcial",
-                "rtt": "Return to Train",
-                "rtp": "Return to Play",
+                "aguda": "Lesionado — fase aguda",
+                "intermedia": "Lesionado — fase intermedia",
+                "reintegro": "Reintegro",
+                "parcial": "Reintegro + entrenamiento parcial",
+                "rtt": "RTT (Return to Training)",
+                "rtp": "RTP (Return to Play)",
                 "closed": "Alta médica",
                 # legacy (display of pre-existing results)
                 "injured": "Lesionado",
                 "recovery": "Recuperación",
-                "reintegration": "Return to Train",
+                "reintegration": "Reintegro",
+            },
+            # Short clinical descriptor per stage — surfaced next to each option
+            # in the stage picker. "closed" is the archival action, not a stage.
+            "option_descriptions": {
+                "aguda": "Manejo sintomático; sin carga específica",
+                "intermedia": "Progresión de carga controlada",
+                "reintegro": "Trabajo de campo individualizado",
+                "parcial": "Integración parcial al grupo",
+                "rtt": "Entrenamiento completo con el grupo",
+                "rtp": "Disponible para competir",
             },
         },
 

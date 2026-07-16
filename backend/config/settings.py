@@ -237,3 +237,13 @@ API_FOOTBALL_BASE_URL = env(
     "API_FOOTBALL_BASE_URL",
     default="https://v3.football.api-sports.io",
 )
+
+# --- VALD Hub integration (ForceDecks / ForceFrame / NordBord) ---
+# OAuth2 client-credentials. These are the DEFAULT credentials; a club can
+# override client_id/secret/region/tenant per-club in its ValdIntegration row.
+# Blank creds ⇒ the sync no-ops for clubs without a per-club override.
+VALD_CLIENT_ID = env("VALD_CLIENT_ID", default="")
+VALD_CLIENT_SECRET = env("VALD_CLIENT_SECRET", default="")
+VALD_DEFAULT_REGION = env("VALD_DEFAULT_REGION", default="use")  # use | euw | aue
+VALD_TOKEN_URL = env("VALD_TOKEN_URL", default="https://auth.prd.vald.com/oauth/token")
+VALD_AUDIENCE = env("VALD_AUDIENCE", default="vald-api-external")

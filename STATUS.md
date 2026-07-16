@@ -2703,6 +2703,49 @@ the GPS-upload page's inline match creation (§3.50).
 
 ---
 
+### 3.52b VALD Hub sync — ForceDecks / ForceFrame / NordBord (2026-07-16)
+
+Direct API pull that replaces the manual xlsx importers (`import_cmj/imtp/
+hip_adab/nordico`), mirroring the API-Football architecture. Client package
+`integrations/vald_hub/` (OAuth2 client-credentials → `auth.prd.vald.com`,
+regional hosts `prd-{use|euw|aue}-api-*.valdperformance.com`, incremental
+`ModifiedFromUtc`→204). Service `exams/services/vald_sync.py`:
+
+- **Binding is per-club** — `ValdIntegration` (OneToOne Club: `enabled`,
+  `region`, `tenant_id`, per-club `client_id`/`client_secret` with env fallback
+  `VALD_CLIENT_ID`/`VALD_CLIENT_SECRET`, `sync_cursors`), edited in Django admin.
+  Add a second club = a second row; a club with no row / disabled is skipped.
+  Matched players carry each test into their own category via `Player.category`.
+  Per-team knobs (admin): `sync_forcedecks/forceframe/nordbord` toggles + optional
+  `{cmj,imtp,hip_adab,nordico}_template_slug` overrides (blank → standard slug).
+  The metric→field-key mapping stays in code (VALD's + the seed's fixed vocabularies).
+- **Matching** — `ValdProfileLink` (unique per club) auto-resolves a VALD
+  profile to a Player: `externalId`(=Player UUID) → normalized name+DOB → name.
+  Unresolved rows are the admin review queue (their tests are skipped);
+  manual assignments stick and are never overwritten.
+- **Ingestion** — per product, tests since the cursor map to the strength
+  templates: ForceDecks `CMJ`→cmj / `IMTP`→imtp; ForceFrame Hip AD/AB → hip_adab
+  (inner=squeeze, outer=pull, grouped per profile+day); NordBord Nordic → nordico
+  (left/right max). Dedup on `(template family, player, day)`;
+  `ExamResult.objects.create()` (fires imbalance band-alerts).
+  - **ForceDecks caveat**: the modern `/tests` list carries NO metric values
+    (`parameter`/`extendedParameters` empty); values come from the legacy
+    `/v2019q3/teams/{tenant}/tests/{testId}/trials` endpoint (limb=`Trial`
+    results, resolved via `/resultdefinitions` → `value×scaleFactor`, matched by
+    resultName). Same-day reconciliation matches the manual imports: per-metric
+    max across reps *within* a recording, then the single best *test* by primary
+    metric (jump_height / peak_vertical_force) across separate same-day sessions.
+
+Scheduled **hourly** (`sync-vald-hub` beat, minute 30); each run is incremental —
+only data modified since the last successful sync (per-product `sync_cursors`).
+No-op unless a club has an enabled integration with creds. Manual/backfill:
+`manage.py sync_vald [--club] [--full] [--product] [--profiles-only] [--since] [--commit]`
+(dry-run by default — prints the match + would-create report without writing).
+Admin: **VALD integration** (binding, secret write-only) + **VALD profile
+link** (review queue, `match_method=unresolved` filter, re-match action).
+
+---
+
 ### 3.53 Ask-SLAB assistant + chat-to-charts (the 2026-06-21 pivot)
 
 Downloadable reports are de-emphasized in favor of **dashboards + an

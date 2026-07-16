@@ -1,7 +1,15 @@
+from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import Episode, ExamResult, ExamTemplate, TemplateField
+from .models import (
+    Episode,
+    ExamResult,
+    ExamTemplate,
+    TemplateField,
+    ValdIntegration,
+    ValdProfileLink,
+)
 
 
 class AlertRuleInline(admin.TabularInline):
@@ -319,6 +327,143 @@ class EpisodeAdmin(admin.ModelAdmin):
             "classes": ("collapse",),
         }),
     )
+
+
+# ---------------------------------------------------------------------------
+# VALD Hub integration admin
+# ---------------------------------------------------------------------------
+
+
+class ValdIntegrationForm(forms.ModelForm):
+    """Renders `client_secret` write-only: never shows the stored value, and a
+    blank submit keeps the existing secret instead of wiping it."""
+
+    client_secret = forms.CharField(
+        required=False,
+        widget=forms.PasswordInput(render_value=False),
+        help_text=(
+            "Per-club client_secret. Leave blank to keep the current value "
+            "(or fall back to settings.VALD_CLIENT_SECRET)."
+        ),
+    )
+
+    class Meta:
+        model = ValdIntegration
+        fields = "__all__"
+
+    def clean_client_secret(self):
+        val = self.cleaned_data.get("client_secret")
+        if not val and self.instance and self.instance.pk:
+            return self.instance.client_secret  # keep existing
+        return val
+
+
+@admin.register(ValdIntegration)
+class ValdIntegrationAdmin(admin.ModelAdmin):
+    form = ValdIntegrationForm
+    list_display = ("club", "enabled", "region", "tenant_id", "has_secret", "last_synced_at")
+    list_filter = ("enabled", "region")
+    search_fields = ("club__name", "tenant_id")
+    readonly_fields = ("sync_cursors", "last_synced_at", "created_at", "updated_at")
+    actions = ["enqueue_sync_action"]
+    fieldsets = (
+        (None, {"fields": ("club", "enabled", "region", "tenant_id")}),
+        ("Credenciales (por club)", {
+            "fields": ("client_id", "client_secret"),
+            "description": (
+                "Dejar en blanco para usar las credenciales del entorno "
+                "(VALD_CLIENT_ID / VALD_CLIENT_SECRET). El secreto es de solo "
+                "escritura: no se muestra el valor guardado."
+            ),
+        }),
+        ("Qué sincronizar", {
+            "fields": (
+                ("sync_forcedecks", "sync_forceframe", "sync_nordbord"),
+                ("cmj_template_slug", "imtp_template_slug"),
+                ("hip_adab_template_slug", "nordico_template_slug"),
+            ),
+            "description": (
+                "Activá o desactivá cada producto de VALD y, opcionalmente, "
+                "apuntá cada tipo de test a un slug de plantilla distinto. "
+                "Dejar el slug en blanco usa el estándar "
+                "(cmj / imtp / hip_adab / nordico)."
+            ),
+        }),
+        ("Estado de sincronización", {
+            "fields": ("sync_cursors", "last_synced_at", "created_at", "updated_at"),
+            "classes": ("collapse",),
+        }),
+    )
+
+    def has_secret(self, obj: ValdIntegration) -> bool:
+        return bool(obj.client_secret)
+    has_secret.boolean = True
+    has_secret.short_description = "Secreto propio"
+
+    @admin.action(description="Encolar sincronización VALD (Celery, incremental)")
+    def enqueue_sync_action(self, request, queryset):
+        from exams.tasks import sync_all_vald_clubs
+        try:
+            sync_all_vald_clubs.delay(full=False)
+            self.message_user(request, "Sincronización VALD encolada (todas las integraciones activas).")
+        except Exception as exc:  # noqa: BLE001 — broker down shouldn't 500 the admin
+            self.message_user(request, f"No se pudo encolar: {exc}", level="warning")
+
+
+@admin.register(ValdProfileLink)
+class ValdProfileLinkAdmin(admin.ModelAdmin):
+    list_display = (
+        "vald_name", "player", "match_method", "club", "date_of_birth", "last_seen_at",
+    )
+    list_filter = ("match_method", "club")
+    search_fields = (
+        "given_name", "family_name", "external_id", "sync_id", "vald_profile_id",
+        "player__first_name", "player__last_name",
+    )
+    raw_id_fields = ("club", "player")
+    readonly_fields = (
+        "vald_profile_id", "given_name", "family_name", "date_of_birth",
+        "external_id", "sync_id", "last_seen_at", "created_at", "updated_at",
+    )
+    actions = ["rematch_action"]
+
+    def get_changeform_initial_data(self, request):
+        return {}
+
+    def save_model(self, request, obj, form, change):
+        # A human assigning the player here makes the link authoritative.
+        if "player" in form.changed_data and obj.player_id:
+            obj.match_method = ValdProfileLink.MATCH_MANUAL
+        super().save_model(request, obj, form, change)
+
+    @admin.action(description="Re-ejecutar auto-match (nombre / fecha nac.)")
+    def rematch_action(self, request, queryset):
+        from collections import defaultdict
+        from types import SimpleNamespace
+
+        from core.models import Player
+        from exams.services.vald_sync import _resolve_player
+
+        by_club: dict = defaultdict(list)
+        for link in queryset.select_related("club"):
+            by_club[link.club].append(link)
+        changed = 0
+        for club, links in by_club.items():
+            roster = list(Player.objects.filter(category__club=club, is_active=True))
+            for link in links:
+                if link.match_method == ValdProfileLink.MATCH_MANUAL:
+                    continue
+                prof = SimpleNamespace(
+                    external_id=link.external_id,
+                    full_name=link.vald_name,
+                    date_of_birth=link.date_of_birth.isoformat() if link.date_of_birth else None,
+                )
+                player, method = _resolve_player(prof, roster, club)
+                link.player = player
+                link.match_method = method
+                link.save(update_fields=["player", "match_method", "updated_at"])
+                changed += 1
+        self.message_user(request, f"Re-match ejecutado sobre {changed} vínculo(s).")
 
 
 def _removed_field_keys_vs_previous_version(template: ExamTemplate) -> set[str]:

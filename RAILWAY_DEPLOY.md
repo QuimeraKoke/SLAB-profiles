@@ -162,7 +162,11 @@ CELERY_RESULT_BACKEND=${{ Redis.REDIS_URL }}
 
 # AWS S3 — replace with your real values from step 1
 AWS_STORAGE_BUCKET_NAME=slab-attachments-prod
-AWS_S3_REGION_NAME=us-east-1
+# ⚠️ MUST match the bucket's actual region EXACTLY (check S3 console). A
+# mismatch signs presigned URLs for the wrong region, so uploads work (boto3
+# retries server-side) but INLINE viewing / downloads 403 with
+# "AuthorizationQueryParametersError … the region 'X' is wrong; expecting 'Y'".
+AWS_S3_REGION_NAME=us-east-2
 AWS_ACCESS_KEY_ID=AKIA...
 AWS_SECRET_ACCESS_KEY=...
 # Leave AWS_S3_ENDPOINT_URL / AWS_S3_PUBLIC_ENDPOINT_URL /
@@ -348,6 +352,10 @@ Common issues:
 - **`SignatureDoesNotMatch`** on file downloads → `AWS_S3_ENDPOINT_URL`
   was set; unset it (settings.py coerces empty to None which is what
   boto3 needs).
+- **`AuthorizationQueryParametersError … the region 'X' is wrong;
+  expecting 'Y'`** when viewing/downloading a file (uploads still work) →
+  `AWS_S3_REGION_NAME` doesn't match the bucket's real region. Set it to the
+  region S3 says it's "expecting" (e.g. `us-east-2`) and redeploy the backend.
 - **Frontend hits localhost:8000** → `NEXT_PUBLIC_API_URL` wasn't set
   before the build; update + redeploy frontend.
 

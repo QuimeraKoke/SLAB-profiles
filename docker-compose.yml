@@ -1,12 +1,12 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-slab}
       POSTGRES_USER: ${POSTGRES_USER:-slab}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-slab}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     ports:
       - "5432:5432"
     healthcheck:
@@ -84,6 +84,9 @@ services:
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-4-7}
       # API-Football (match calendar + results sync). Blank ⇒ sync no-ops.
       API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+      VALD_CLIENT_ID: ${VALD_CLIENT_ID:-}
+      VALD_CLIENT_SECRET: ${VALD_CLIENT_SECRET:-}
+      VALD_DEFAULT_REGION: ${VALD_DEFAULT_REGION:-use}
       # Wellness Google-Sheet ingest. Key file lives under backend/secrets/
       # (gitignored) → /app/secrets/ via the ./backend mount.
       GOOGLE_SHEETS_CREDENTIALS_FILE: ${GOOGLE_SHEETS_CREDENTIALS_FILE:-/app/secrets/gsheets.json}
@@ -134,6 +137,9 @@ services:
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3001}
       # API-Football scheduled fixture sync (events.tasks). Blank ⇒ no-op.
       API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+      VALD_CLIENT_ID: ${VALD_CLIENT_ID:-}
+      VALD_CLIENT_SECRET: ${VALD_CLIENT_SECRET:-}
+      VALD_DEFAULT_REGION: ${VALD_DEFAULT_REGION:-use}
       # Wellness Google-Sheet ingest (exams.tasks.sync_wellness_responses).
       GOOGLE_SHEETS_CREDENTIALS_FILE: ${GOOGLE_SHEETS_CREDENTIALS_FILE:-/app/secrets/gsheets.json}
       WELLNESS_SHEET_ID: ${WELLNESS_SHEET_ID:-}
@@ -181,6 +187,9 @@ services:
       FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3001}
       # API-Football scheduled fixture sync (events.tasks). Blank ⇒ no-op.
       API_FOOTBALL_KEY: ${API_FOOTBALL_KEY:-}
+      VALD_CLIENT_ID: ${VALD_CLIENT_ID:-}
+      VALD_CLIENT_SECRET: ${VALD_CLIENT_SECRET:-}
+      VALD_DEFAULT_REGION: ${VALD_DEFAULT_REGION:-use}
       # Wellness Google-Sheet ingest (exams.tasks.sync_wellness_responses).
       GOOGLE_SHEETS_CREDENTIALS_FILE: ${GOOGLE_SHEETS_CREDENTIALS_FILE:-/app/secrets/gsheets.json}
       WELLNESS_SHEET_ID: ${WELLNESS_SHEET_ID:-}

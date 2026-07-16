@@ -47,6 +47,14 @@ app.conf.beat_schedule = {
         "task": "events.tasks.sync_all_bound_category_fixtures",
         "schedule": crontab(minute=0, hour="*/6"),
     },
+    # VALD Hub strength/dynamometry sync (ForceDecks/ForceFrame/NordBord →
+    # ExamResults). Hourly at :30; each run is incremental — it only pulls data
+    # modified since the last successful sync (per-product `sync_cursors` on the
+    # ValdIntegration). No-op unless a club has an enabled integration + creds.
+    "sync-vald-hub": {
+        "task": "exams.tasks.sync_all_vald_clubs",
+        "schedule": crontab(minute=30),
+    },
     # Wellness Check-IN sync (Google Sheet → ExamResults). Hours are LOCAL
     # (CELERY_TIMEZONE). Frequent during the morning check-in window, relaxed
     # off-peak, plus a daily reconcile for late/edited responses. No-op unless

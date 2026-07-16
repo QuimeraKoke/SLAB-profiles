@@ -57,6 +57,72 @@ class BacktestIn(Schema):
     days: int = 30
 
 
+# ── ACWR (acute:chronic) configuration ─────────────────────────────────────────
+
+class AcwrVariableIn(Schema):
+    field: str
+    label: str = ""
+    acute_days: int = 7
+    chronic_days: int = 28
+    method: str = "moving_avg"  # "moving_avg" | "ewma"
+    # Target band (green) low/high, and the outer risk limits (red) low/high.
+    sweet_low: float = 0.8
+    sweet_high: float = 1.3
+    danger_low: float = 0.7
+    danger_high: float = 1.5
+    alert: bool = False
+    severity: str = AlertSeverity.WARNING
+
+
+class AcwrConfigIn(Schema):
+    category_id: str
+    variables: list[AcwrVariableIn] = []
+
+
+def build_acwr_config(category) -> dict:
+    """Current ACWR config for a category (defaults when unconfigured) + the
+    GPS numeric fields available as monitored variables + picker vocab."""
+    from dataclasses import asdict
+    from dashboards.acwr import resolve_specs, gps_templates
+
+    variables = [asdict(s) for s in resolve_specs(category)]
+
+    seen: set[str] = set()
+    fields: list[dict] = []
+    for t in gps_templates(category):
+        for f in (t.config_schema or {}).get("fields", []) or []:
+            key = f.get("key")
+            if f.get("type") in _NUMERIC_TYPES and key and key not in seen:
+                seen.add(key)
+                fields.append(
+                    {"key": key, "label": f.get("label") or key, "unit": f.get("unit", "")}
+                )
+    return {
+        "variables": variables,
+        "available_fields": fields,
+        "methods": [
+            {"value": "moving_avg", "label": "Media móvil (agudo ÷ crónico)"},
+            {"value": "ewma", "label": "EWMA (exponencial, Williams)"},
+        ],
+        "severities": [s.value for s in AlertSeverity],
+    }
+
+
+def save_acwr_config(category, variables: list[dict]) -> None:
+    """Persist the monitored ACWR variables into ``Category.load_config['acwr']``
+    (label backfilled from the field key when blank)."""
+    clean: list[dict] = []
+    for v in variables:
+        v = dict(v)
+        if not v.get("label"):
+            v["label"] = v.get("field", "")
+        clean.append(v)
+    cfg = dict(category.load_config or {})
+    cfg["acwr"] = {"variables": clean}
+    category.load_config = cfg
+    category.save(update_fields=["load_config"])
+
+
 # ── Serialization ─────────────────────────────────────────────────────────────
 
 def _field_label(template, field_key: str) -> str:

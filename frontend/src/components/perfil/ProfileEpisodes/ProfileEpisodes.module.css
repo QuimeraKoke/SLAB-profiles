@@ -45,6 +45,50 @@
   line-height: 1.4;
 }
 
+/* Stage radio list (name + clinical description per option). */
+.stageOptList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.stageOpt,
+.stageOptOn {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  cursor: pointer;
+}
+.stageOpt:hover {
+  border-color: #c4b5fd;
+  background: #faf9ff;
+}
+.stageOptOn {
+  border-color: #6d28d9;
+  background: #f5f3ff;
+}
+.stageOpt input,
+.stageOptOn input {
+  margin-top: 0.15rem;
+}
+.stageOptText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.stageOptLabel {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+.stageOptDesc {
+  font-size: 0.78rem;
+  color: #64748b;
+  line-height: 1.35;
+}
+
 .stageActions {
   display: flex;
   gap: 0.5rem;

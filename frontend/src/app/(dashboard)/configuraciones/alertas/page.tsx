@@ -13,6 +13,7 @@ import {
   fetchRules,
 } from "@/lib/alertRules";
 import RuleForm from "./RuleForm";
+import AcwrConfigSection from "./AcwrConfigSection";
 import styles from "./page.module.css";
 
 const KIND_LABEL: Record<string, string> = {
@@ -142,6 +143,10 @@ export default function AlertRulesPage() {
           </button>
         )}
       </header>
+
+      {editing === null && (
+        <AcwrConfigSection categoryId={categoryId} canEdit={canEdit} />
+      )}
 
       {editing !== null && meta && (
         <RuleForm

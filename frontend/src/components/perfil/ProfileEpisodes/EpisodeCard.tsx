@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api, ApiError } from "@/lib/api";
 import { usePermission } from "@/lib/permissions";
 import { useToast } from "@/components/ui/Toast/Toast";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import Modal from "@/components/ui/Modal/Modal";
 import type {
   Episode,
@@ -100,6 +101,7 @@ export default function EpisodeCard({
   const isLesiones = variant === "lesiones";
 
   const { toast } = useToast();
+  const { confirm } = useConfirm();
   const canEditEpisode = usePermission("exams.change_episode");
 
   // ── Legacy panel timeline ──────────────────────────────────────────────
@@ -124,6 +126,7 @@ export default function EpisodeCard({
   const [stageDraft, setStageDraft] = useState(episode.stage);
   const [stageDate, setStageDate] = useState(todayStr());
   const [savingStage, setSavingStage] = useState(false);
+  const [closing, setClosing] = useState(false);
 
   async function saveAvailable(clear: boolean) {
     setSavingAvail(true);
@@ -196,14 +199,42 @@ export default function EpisodeCard({
     }
   }
 
-  // Stage options for the modal (drop legacy keys not in the field's options).
+  async function darDeAlta() {
+    if (closing) return;
+    const ok = await confirm({
+      title: "Dar de alta",
+      message: "¿Cerrar esta lesión y darla de alta? Pasará al histórico.",
+      confirmLabel: "Dar de alta",
+      variant: "danger",
+    });
+    if (!ok) return;
+    setClosing(true);
+    try {
+      await advanceEpisodeStage(episode.id, "closed", todayStr());
+      setLogRefresh((n) => n + 1);
+      toast.success("Lesión cerrada (alta médica).");
+      onChanged?.();
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "No se pudo dar de alta.");
+    } finally {
+      setClosing(false);
+    }
+  }
+
+  // The 6 clinical stages (with descriptions) for the picker. "closed" (Alta
+  // médica) is the archival action, shown separately — not one of the stages.
   const stageField = template?.episode_config?.stage_field;
-  const stageOptions: { value: string; label: string }[] = (() => {
+  const stageOptions: { value: string; label: string; description: string }[] = (() => {
     if (!template || !stageField) return [];
-    const f = (template.config_schema?.fields ?? []).find((f) => f.key === stageField);
+    const f = (template.config_schema?.fields ?? []).find((f) => f.key === stageField) as
+      | { options?: string[]; option_labels?: Record<string, string>; option_descriptions?: Record<string, string> }
+      | undefined;
     const opts = (f?.options ?? []) as string[];
-    const labels = (f?.option_labels ?? {}) as Record<string, string>;
-    return opts.map((o) => ({ value: o, label: labels[o] ?? o }));
+    const labels = f?.option_labels ?? {};
+    const descs = f?.option_descriptions ?? {};
+    return opts
+      .filter((o) => o !== "closed")
+      .map((o) => ({ value: o, label: labels[o] ?? o, description: descs[o] ?? "" }));
   })();
 
   const availabilityRow = (
@@ -333,6 +364,16 @@ export default function EpisodeCard({
               Editar datos
             </Link>
           )}
+          {isOpen && canEditEpisode && (
+            <button
+              type="button"
+              className={styles.ghostBtn}
+              disabled={closing}
+              onClick={darDeAlta}
+            >
+              {closing ? "Cerrando…" : "Dar de alta"}
+            </button>
+          )}
         </div>
 
         {showLog && template && (
@@ -349,18 +390,24 @@ export default function EpisodeCard({
 
         <Modal open={stageOpen} title="Actualizar etapa" onClose={() => setStageOpen(false)}>
           <div className={styles.stageForm}>
-            <label className={styles.stageField}>
-              <span className={styles.stageFieldLabel}>Nueva etapa</span>
-              <select
-                className={styles.stageSelect}
-                value={stageDraft}
-                onChange={(e) => setStageDraft(e.target.value)}
-              >
-                {stageOptions.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-            </label>
+            <span className={styles.stageFieldLabel}>Nueva etapa</span>
+            <div className={styles.stageOptList} role="radiogroup" aria-label="Etapa">
+              {stageOptions.map((o) => (
+                <label key={o.value} className={stageDraft === o.value ? styles.stageOptOn : styles.stageOpt}>
+                  <input
+                    type="radio"
+                    name="stage"
+                    value={o.value}
+                    checked={stageDraft === o.value}
+                    onChange={() => setStageDraft(o.value)}
+                  />
+                  <span className={styles.stageOptText}>
+                    <span className={styles.stageOptLabel}>{o.label}</span>
+                    {o.description && <span className={styles.stageOptDesc}>{o.description}</span>}
+                  </span>
+                </label>
+              ))}
+            </div>
             <label className={styles.stageField}>
               <span className={styles.stageFieldLabel}>Fecha efectiva</span>
               <input
@@ -373,7 +420,7 @@ export default function EpisodeCard({
             </label>
             <p className={styles.stageHint}>
               Solo cambia la etapa. La evolución, hallazgos y documentos se
-              registran en la bitácora.
+              registran en la bitácora. Para cerrar la lesión usá “Dar de alta”.
             </p>
             <div className={styles.stageActions}>
               <button type="button" className={styles.primaryBtn} disabled={savingStage} onClick={saveStage}>
