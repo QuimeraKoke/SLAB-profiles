@@ -1,18 +1,21 @@
 """Seed the 'Medicación' exam template for the Médico department.
 
-Each prescription is a flat `ExamResult` — no episode lifecycle. Tracked
-fields capture which player is on what drug, since when, until when
-(optional `fecha_fin`), dose, route, and indication. Edits happen via
-the Médico department card's history table (per-row pencil button).
+Simplified per el pedido del área médica (2026-07): cada receta es un
+`ExamResult` plano (sin ciclo de episodio, sin etapas). Los campos son:
 
-The medicines list, their categoría (group), and their WADA risk level
-are loaded from `data/medicamentos.csv` shipped alongside this command.
+    Nombre · Tipo · Vía · Dosis · Fechas (inicio/fin) · Indicación · Adjuntos
 
-Risk metadata (PERMITIDO / CONDICIONAL / PROHIBIDO + WADA notes + actions)
-is stashed on the `medicamento` field config under custom keys
-(`option_risk`, `option_notes`, `option_actions`) so the post-save signal
-in `exams.signals.medication_wada_alert_on_result_save` can read it and
-fire WADA-flagged alerts via the existing `_upsert_alert` infrastructure.
+`Nombre`, `Tipo` y `Vía` son listas **seleccionables** (sin texto libre).
+El nombre lista solo el fármaco, sin la cantidad/mg (la dosis va en su
+propio campo). Adjuntos es opcional.
+
+Alertas WADA: el campo `medicamento` conserva la metadata `option_risk`
+(+ `option_notes` / `option_actions`) que lee el signal
+`medication_wada_alert_on_result_save`. La clasificación reutiliza la del
+listado médico original (`data/medicamentos.csv`) matcheada por principio
+activo. Recetar un medicamento CONDICIONAL o PROHIBIDO dispara una alerta
+anti-doping automática. Fuente: WADA 2025 / globaldro.com — el equipo
+médico debe verificar la formulación puntual de cada marca.
 
 Run:
 
@@ -22,9 +25,6 @@ Run:
 
 from __future__ import annotations
 
-import csv
-from pathlib import Path
-
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
@@ -32,75 +32,149 @@ from core.models import Category, Club, Department
 from exams.models import ExamTemplate
 
 
-CSV_PATH = Path(__file__).resolve().parent / "data" / "medicamentos.csv"
+# --- Catálogo seleccionable (curado por el área médica) --------------------
+# Solo el nombre del fármaco, sin cantidad/mg ni vía (esos van en sus campos).
+MEDICAMENTOS = [
+    "Abrilar",
+    "Aciclovir",
+    "Amoxicilina",
+    "Amoxicilina + Ácido clavulánico",
+    "Antiax",
+    "Azitromicina",
+    "Bromhexina",
+    "Celecoxib",
+    "Dacam",
+    "Desdol",
+    "Desloratadina",
+    "Dogenal",
+    "Domperidona",
+    "Eterocoxib",
+    "Fresh Mell",
+    "Ketanor",
+    "Ketoprofeno",
+    "Lertus",
+    "Levodroprizina",
+    "Loperamida",
+    "Neurobionta",
+    "Oticum",
+    "Papaína",
+    "Paracetamol",
+    "Pro Bextra",
+    "Reflexan",
+    "Suprahyal",
+    "Tapsin té día y noche",
+    "Valaciclovir",
+    "Viadil",
+    "Zopiclona",
+]
+
+# --- Clasificación WADA (reutilizada de data/medicamentos.csv por principio
+# activo). Todo lo no listado aquí es PERMITIDO. Solo CONDICIONAL/PROHIBIDO
+# disparan alerta. Fuente: WADA 2025 / globaldro.com — verificar formulación.
+WADA_FLAGS = {
+    # (riesgo, nota_medica, accion_requerida)
+    "Pro Bextra": (
+        "PROHIBIDO",
+        "Glucocorticoide inyectable sistémico (betametasona/dexametasona): "
+        "PROHIBIDO EN COMPETICIÓN (WADA S9).",
+        "No administrar en competición. Requiere TUE/AUT si es médicamente "
+        "necesario; documentar y respetar el periodo de lavado.",
+    ),
+    "Tapsin té día y noche": (
+        "CONDICIONAL",
+        "Contiene pseudoefedrina: prohibida EN COMPETICIÓN sobre 150 µg/mL en orina.",
+        "Evitar 24 h antes y durante la competición; preferir alternativa "
+        "sin pseudoefedrina.",
+    ),
+}
+
+# Marcas que NO estaban en el listado WADA original; se asumen PERMITIDO por
+# principio activo pero conviene que el médico las verifique en globaldro.com.
+WADA_VERIFY = {"Dacam", "Levodroprizina", "Papaína", "Reflexan"}
+
+TIPOS = [
+    "Aines",
+    "Analgésico",
+    "Antipirético",
+    "Relajante muscular",
+    "Inductor del sueño",
+    "Antialérgico",
+    "Antigripal",
+    "Antitusivo",
+    "Antiespasmódico",
+    "Antiácido / antiulceroso",
+    "Antidiarreico",
+    "Antiemético",
+    "Antibiótico",
+    "Antiviral",
+    "Corticoide",
+    "Vitaminas",
+    "Enzimático",
+    "Ácido hialurónico",
+    "Anestesia",
+    "Medicina regenerativa",
+    "Otro",
+]
+
+VIAS = [
+    "Oral",
+    "Sublingual",
+    "Jarabe",
+    "Gotas",
+    "Ampolla",
+    "Crema",
+    "Ótica",
+    "Intraarticular",
+    "Otra",
+]
 
 
-def _load_medicines() -> list[dict]:
-    """Read the bundled CSV. Strips whitespace; empty rows ignored."""
-    if not CSV_PATH.exists():
-        raise CommandError(
-            f"Medicines CSV not found at {CSV_PATH}. "
-            f"Place medicamentos.csv next to this command."
-        )
-    rows: list[dict] = []
-    with CSV_PATH.open("r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f, delimiter=";")
-        for raw in reader:
-            row = {k: (v.strip() if isinstance(v, str) else v) for k, v in raw.items()}
-            if not row.get("nombre"):
-                continue
-            rows.append(row)
-    if not rows:
-        raise CommandError("Medicines CSV is empty after parsing.")
-    return rows
+def _labels(options: list[str]) -> dict[str, str]:
+    """Identity label map — la opción es auto-descriptiva (key == label)."""
+    return {o: o for o in options}
 
 
-def _option_key(name: str) -> str:
-    """Stable, idempotent key per medicine. Matches the CSV's `nombre`
-    column verbatim — keeping it as the canonical key makes the option
-    string self-describing in result_data (vs. an opaque slug)."""
-    return name
-
-
-def _build_schema(medicines: list[dict]) -> dict:
-    """Construct the template's config_schema with the medicamento field
-    populated from the CSV. The cascading group → option dropdown is
-    enabled by `option_groups`; risk + WADA metadata sits in custom
-    `option_risk` / `option_notes` / `option_actions` maps."""
-    options: list[str] = []
-    option_labels: dict[str, str] = {}
-    option_groups: dict[str, str] = {}
+def _build_risk_maps() -> tuple[dict, dict, dict]:
+    """Construye option_risk / option_notes / option_actions para el campo
+    `medicamento`. Todo PERMITIDO salvo lo declarado en WADA_FLAGS."""
     option_risk: dict[str, str] = {}
     option_notes: dict[str, str] = {}
     option_actions: dict[str, str] = {}
+    for name in MEDICAMENTOS:
+        if name in WADA_FLAGS:
+            riesgo, nota, accion = WADA_FLAGS[name]
+            option_risk[name] = riesgo
+            if nota:
+                option_notes[name] = nota
+            if accion:
+                option_actions[name] = accion
+        else:
+            option_risk[name] = "PERMITIDO"
+            if name in WADA_VERIFY:
+                option_notes[name] = (
+                    "Clasificación por defecto (no estaba en el listado WADA "
+                    "original) — verificar formulación en globaldro.com."
+                )
+    return option_risk, option_notes, option_actions
 
-    for med in medicines:
-        key = _option_key(med["nombre"])
-        if key in option_labels:
-            # Duplicate names — append a discriminator so the option set is unique.
-            key = f"{key} (id {med.get('id', '?')})"
-        options.append(key)
-        option_labels[key] = med["nombre"]
-        option_groups[key] = med.get("categoria") or "Otros"
-        option_risk[key] = (med.get("riesgo_doping") or "").upper() or "PERMITIDO"
-        if med.get("nota_medica"):
-            option_notes[key] = med["nota_medica"]
-        if med.get("accion_requerida") and med["accion_requerida"].lower() not in {"ninguna", ""}:
-            option_actions[key] = med["accion_requerida"]
 
+def _build_schema() -> dict:
+    """Config schema simplificado: 3 listas seleccionables + dosis, fechas,
+    indicación y adjuntos. Sin etapas, sin cantidad ni notas. El campo
+    `medicamento` conserva la metadata WADA (`option_risk`) para las alertas."""
+    option_risk, option_notes, option_actions = _build_risk_maps()
     return {
         "fields": [
-            # === Curso de medicación ===
+            # === Medicamento ===
             {
                 "key": "medicamento",
-                "label": "Medicamento",
+                "label": "Nombre",
                 "type": "categorical",
-                "group": "Curso",
+                "group": "Medicamento",
                 "required": True,
-                "options": options,
-                "option_labels": option_labels,
-                "option_groups": option_groups,
-                # Custom metadata — read by the WADA-alert signal.
+                "options": list(MEDICAMENTOS),
+                "option_labels": _labels(MEDICAMENTOS),
+                # Metadata WADA — leída por el signal de alertas anti-doping.
                 "option_risk": option_risk,
                 "option_notes": option_notes,
                 "option_actions": option_actions,
@@ -109,76 +183,39 @@ def _build_schema(medicines: list[dict]) -> dict:
                 "key": "tipo",
                 "label": "Tipo de medicamento",
                 "type": "categorical",
-                "group": "Curso",
-                "help_text": (
-                    "Grupo terapéutico declarado por el equipo médico legacy "
-                    "(distinto del WADA group). Útil para reportes agregados."
-                ),
-                "options": [
-                    "Aines",
-                    "Analgesico",
-                    "Relajante muscular",
-                    "Inductor del sueño",
-                    "Antialergicos",
-                    "Vitaminas",
-                    "Antigripal",
-                    "Antiespasmodico",
-                    "Antiacido y antiulcerosos",
-                    "Antitusivos",
-                    "Antidiarreico",
-                    "Corticoides",
-                    "Antiemetico",
-                    "Antibioticos",
-                    "Hialuronico",
-                    "Anestesia",
-                    "Medicina regenerativa",
-                    "Antipiretico",
-                    "Otro",
-                ],
+                "group": "Medicamento",
+                "options": list(TIPOS),
+                "option_labels": _labels(TIPOS),
             },
             {
                 "key": "via_admin",
                 "label": "Vía de administración",
                 "type": "categorical",
-                "group": "Curso",
-                "options": [
-                    "oral",
-                    "sublingual",
-                    "inyectable",
-                    "inyectable local",
-                    "topica",
-                    "topica/oral",
-                    "inhalatoria",
-                    "intraarticular",
-                    "otra",
-                ],
+                "group": "Medicamento",
+                "options": list(VIAS),
+                "option_labels": _labels(VIAS),
             },
             {
                 "key": "dosis",
                 "label": "Dosis / posología",
                 "type": "text",
-                "group": "Curso",
+                "group": "Medicamento",
                 "placeholder": "Ej: 1 comprimido cada 8 hs por 5 días",
             },
-            {
-                "key": "cantidad",
-                "label": "Cantidad de comprimidos / unidades",
-                "type": "number",
-                "group": "Curso",
-                "help_text": "Número de comprimidos administrados en este registro (no la dosis total del curso).",
-            },
+
+            # === Fechas ===
             {
                 "key": "fecha_inicio",
                 "label": "Inicio del tratamiento",
                 "type": "date",
-                "group": "Curso",
+                "group": "Fechas",
                 "required": True,
             },
             {
                 "key": "fecha_fin",
                 "label": "Fin del tratamiento (estimado)",
                 "type": "date",
-                "group": "Curso",
+                "group": "Fechas",
                 "placeholder": "Dejar vacío si la duración aún no se conoce",
             },
 
@@ -191,40 +228,13 @@ def _build_schema(medicines: list[dict]) -> dict:
                 "placeholder": "Ej: dolor lumbar post-partido",
             },
 
-            # === Etapa (drives the episode lifecycle) ===
-            # `activa` while the player is on the course; `completada` once
-            # the course ends (or is interrupted). `suspendida` is open and
-            # treated as still-active for the squad-availability widget.
-            {
-                "key": "stage",
-                "label": "Estado del tratamiento",
-                "type": "categorical",
-                "group": "Estado",
-                "required": True,
-                "options": ["activa", "suspendida", "completada"],
-                "option_labels": {
-                    "activa": "Activa",
-                    "suspendida": "Suspendida",
-                    "completada": "Completada",
-                },
-            },
-
-            # === Notas + adjuntos ===
-            {
-                "key": "notas",
-                "label": "Notas / observaciones",
-                "type": "text",
-                "multiline": True,
-                "rows": 5,
-                "group": "Notas",
-                "placeholder": "Reacciones adversas, ajustes de dosis, etc.",
-            },
+            # === Adjuntos (opcional) ===
             {
                 "key": "adjuntos",
-                "label": "Recetas / informes",
+                "label": "Adjuntos (opcional)",
                 "type": "file",
                 "group": "Adjuntos",
-                "placeholder": "Receta médica, ficha técnica, notificación TUE…",
+                "placeholder": "Receta médica, ficha técnica, informe…",
             },
         ],
     }
@@ -237,7 +247,7 @@ INPUT_CONFIG = {
 
 
 class Command(BaseCommand):
-    help = "Create or refresh the 'Medicación' episodic template loaded from medicamentos.csv."
+    help = "Create or refresh the simplified 'Medicación' template (flat, seleccionable, sin etapas)."
 
     def add_arguments(self, parser):
         parser.add_argument("--department-slug", default="medico")
@@ -250,8 +260,7 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **opts):
-        medicines = _load_medicines()
-        schema = _build_schema(medicines)
+        schema = _build_schema()
         flagged = sum(
             1 for v in schema["fields"][0]["option_risk"].values()
             if v in {"PROHIBIDO", "CONDICIONAL"}
@@ -304,9 +313,8 @@ class Command(BaseCommand):
                 template.config_schema = schema
                 template.input_config = INPUT_CONFIG
                 template.is_episodic = False
-                # Flat-result model — clear any leftover episode_config
-                # from prior episodic runs so the admin / API never see
-                # stale stage definitions.
+                # Flat-result model — clear any leftover episode_config so the
+                # admin / API never see stale stage definitions.
                 template.episode_config = {}
                 if opts["unlock"]:
                     template.is_locked = False
@@ -321,12 +329,12 @@ class Command(BaseCommand):
                 cats_label = ", ".join(c.name for c in cats) or "(none)"
                 self.stdout.write(self.style.SUCCESS(
                     f"[{club.name}] {action} '{template.name}' "
-                    f"(slug={template.slug}); {len(medicines)} medicamentos, "
+                    f"(slug={template.slug}); {len(MEDICAMENTOS)} medicamentos, "
                     f"{flagged} con alerta WADA; categorías: {cats_label}"
                 ))
             else:
                 self.stdout.write(self.style.SUCCESS(
                     f"[{club.name}] {action} '{template.name}' "
-                    f"(slug={template.slug}); {len(medicines)} medicamentos, "
+                    f"(slug={template.slug}); {len(MEDICAMENTOS)} medicamentos, "
                     f"{flagged} con alerta WADA"
                 ))

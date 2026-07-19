@@ -4923,6 +4923,13 @@ def advance_episode_stage(request, episode_id: str, payload: StageAdvanceIn):
     refresh_episode_from_results(episode)
     recompute_player_status(episode.player)
     episode.refresh_from_db()
+    # "Dar de alta" = disponible: si este cambio de etapa cierra el episodio,
+    # marcamos al jugador disponible para citar en la fecha del alta. Solo se
+    # setea si no había una disponibilidad registrada antes (una fecha previa
+    # es más precisa que la del cierre formal y no debe pisarse).
+    if episode.status == Episode.STATUS_CLOSED and episode.available_at is None:
+        episode.available_at = recorded_at
+        episode.save(update_fields=["available_at", "updated_at"])
     return _serialize_episode(episode)
 
 

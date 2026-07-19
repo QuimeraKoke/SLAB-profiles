@@ -203,16 +203,19 @@ export default function EpisodeCard({
     if (closing) return;
     const ok = await confirm({
       title: "Dar de alta",
-      message: "¿Cerrar esta lesión y darla de alta? Pasará al histórico.",
+      message:
+        "¿Dar de alta al jugador? Quedará disponible para citar desde hoy y la " +
+        "lesión pasará al histórico.",
       confirmLabel: "Dar de alta",
       variant: "danger",
     });
     if (!ok) return;
     setClosing(true);
     try {
-      await advanceEpisodeStage(episode.id, "closed", todayStr());
+      const updated = await advanceEpisodeStage(episode.id, "closed", todayStr());
+      setAvailableAt(updated.available_at);
       setLogRefresh((n) => n + 1);
-      toast.success("Lesión cerrada (alta médica).");
+      toast.success("Jugador dado de alta y disponible para citar.");
       onChanged?.();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "No se pudo dar de alta.");
@@ -288,6 +291,15 @@ export default function EpisodeCard({
     </div>
   );
 
+  // Lesiones variant: la disponibilidad la maneja "Dar de alta" (no hay botón
+  // "Marcar disponible"). Solo mostramos la fecha una vez que quedó registrada.
+  const availabilityRowReadonly = availableAt ? (
+    <div className={styles.row}>
+      <span className={styles.rowLabel}>Disponible p/ citar</span>
+      <span className={styles.rowValue}>{formatDate(availableAt)}</span>
+    </div>
+  ) : null;
+
   // ── Lesiones variant render ────────────────────────────────────────────
   if (isLesiones) {
     const d = episode.latest_result_data || {};
@@ -339,7 +351,7 @@ export default function EpisodeCard({
             <span className={styles.rowValue}>{formatDate(episode.ended_at)}</span>
           </div>
         )}
-        {availabilityRow}
+        {availabilityRowReadonly}
 
         <div className={styles.actions}>
           {isOpen && canEditEpisode && (
