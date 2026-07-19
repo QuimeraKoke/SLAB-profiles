@@ -940,11 +940,16 @@ def _bucket_start(dt: datetime, bucket_size: str) -> datetime:
     return monday
 
 
-def _bucket_label(start: datetime, bucket_size: str) -> str:
+_MONTHS_ES = ["ene", "feb", "mar", "abr", "may", "jun",
+              "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def _bucket_label(start: datetime, bucket_size: str, week_style: str = "iso") -> str:
     if bucket_size == "month":
-        months = ["ene", "feb", "mar", "abr", "may", "jun",
-                  "jul", "ago", "sep", "oct", "nov", "dic"]
-        return f"{months[start.month - 1]} {start.year}"
+        return f"{_MONTHS_ES[start.month - 1]} {start.year}"
+    # week: `date` → the week's Monday as "10 feb"; `iso` → "S07 2026".
+    if week_style == "date":
+        return f"{start.day} {_MONTHS_ES[start.month - 1]}"
     iso_year, iso_week, _ = start.isocalendar()
     return f"S{iso_week:02d} {iso_year}"
 
@@ -1038,6 +1043,10 @@ def _resolve_team_trend_line(
     bucket_size = bucket_raw if bucket_raw in {"week", "month"} else "week"
     group_raw = display_config.get("group_by", "none")
     group_by = group_raw if group_raw in {"none", "position"} else "none"
+    # X-axis label style for week buckets: "iso" (S07 2026, default) or "date"
+    # (the week's Monday, e.g. "10 feb").
+    week_style_raw = display_config.get("week_label", "iso")
+    week_style = week_style_raw if week_style_raw in {"iso", "date"} else "iso"
 
     def _make_key(source_pk: UUID, field_key: str) -> str:
         return f"{source_pk}__{field_key}" if multi_source else field_key
@@ -1082,6 +1091,7 @@ def _resolve_team_trend_line(
         return _resolve_team_trend_line_by_position(
             widget, fields_meta, players, sources, bucket_size, _make_key,
             date_from, date_to, event_id, event_ids=event_ids,
+            week_style=week_style,
         )
 
     # ---- group_by == "none" (legacy team-wide path) ----
@@ -1130,7 +1140,7 @@ def _resolve_team_trend_line(
                 means[f["key"]] = round(sum(values) / len(values), 4)
         buckets_payload.append(
             {
-                "label": _bucket_label(start, bucket_size),
+                "label": _bucket_label(start, bucket_size, week_style),
                 "iso": iso,
                 "values": means,
             }
@@ -1187,6 +1197,7 @@ def _resolve_team_trend_line_by_position(
     date_to: datetime | None,
     event_id: UUID | None = None,
     event_ids: Sequence[UUID] | None = None,  # multi-match selector
+    week_style: str = "iso",
 ) -> dict[str, Any]:
     """Variant of `_resolve_team_trend_line` that emits one series per
     position. The team-wide path stays untouched; this one only runs
@@ -1285,7 +1296,7 @@ def _resolve_team_trend_line_by_position(
             if means:
                 values_by_group[g["id"]] = means
         buckets_payload.append({
-            "label": _bucket_label(start, bucket_size),
+            "label": _bucket_label(start, bucket_size, week_style),
             "iso": iso,
             "values_by_group": values_by_group,
         })
