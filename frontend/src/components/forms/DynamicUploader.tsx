@@ -4,6 +4,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import AttachmentList from "@/components/ui/AttachmentList/AttachmentList";
 import DeferredFilePicker from "@/components/forms/DeferredFilePicker";
 import MatchPicker from "@/components/forms/MatchPicker";
+import BodyMapField from "@/components/forms/BodyMapField";
+import {
+  emptyBodyMapValue,
+  isBodyMapEmpty,
+  normalizeBodyMapValue,
+  type BodyMapValue,
+} from "@/lib/bodyDiagrams";
 import { api, ApiError, getToken } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast/Toast";
 import {
@@ -41,7 +48,7 @@ interface DynamicUploaderProps {
   onCancel?: () => void;
 }
 
-type FormValue = string | number | boolean | null;
+type FormValue = string | number | boolean | null | BodyMapValue;
 
 function todayISO(): string {
   const d = new Date();
@@ -54,6 +61,7 @@ function todayISO(): string {
 function defaultValue(field: ExamField): FormValue {
   if (field.type === "boolean") return false;
   if (field.type === "date") return todayISO();
+  if (field.type === "bodymap") return emptyBodyMapValue();
   return "";
 }
 
@@ -111,6 +119,7 @@ export default function DynamicUploader({
           if (raw === undefined || raw === null) {
             if (hasSource) {
               // Respect the saved blank — don't auto-fill today / 0 / etc.
+              if (f.type === "bodymap") return [f.key, emptyBodyMapValue()];
               return [f.key, f.type === "boolean" ? false : ""];
             }
             return [f.key, defaultValue(f)];
@@ -119,6 +128,7 @@ export default function DynamicUploader({
           if (f.type === "number") {
             return [f.key, typeof raw === "number" ? raw : Number(raw)];
           }
+          if (f.type === "bodymap") return [f.key, normalizeBodyMapValue(raw)];
           return [f.key, String(raw)];
         }),
     );
@@ -242,6 +252,18 @@ export default function DynamicUploader({
     for (const f of fields) {
       if (f.type === "calculated" || f.type === "file") continue;
       const v = values[f.key];
+      if (f.type === "bodymap") {
+        const bm = normalizeBodyMapValue(v);
+        if (isBodyMapEmpty(bm)) {
+          if (f.required) {
+            setError(`Marcá al menos una zona en "${f.label}"`);
+            return;
+          }
+          continue;
+        }
+        raw[f.key] = bm;
+        continue;
+      }
       if (v === "" || v === null) {
         if (f.required) {
           setError(`Falta el campo "${f.label}"`);
@@ -493,6 +515,22 @@ function FieldInput({ field, value, onChange }: FieldInputProps) {
         />
         {label}
       </label>
+    );
+  }
+
+  if (field.type === "bodymap") {
+    return (
+      <div className={`${styles.field} ${styles.fullWidth}`}>
+        <span className={styles.label}>
+          {label}
+          {field.required ? " *" : ""}
+        </span>
+        <BodyMapField
+          diagramKey={field.diagram ?? "body"}
+          value={value}
+          onChange={(v) => onChange(v)}
+        />
+      </div>
     );
   }
 

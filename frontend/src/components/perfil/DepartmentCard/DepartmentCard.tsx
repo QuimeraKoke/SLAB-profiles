@@ -10,6 +10,7 @@ import {
 } from "recharts";
 
 import DynamicUploader from "@/components/forms/DynamicUploader";
+import BodyMapField from "@/components/forms/BodyMapField";
 import Modal from "@/components/ui/Modal/Modal";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import { api, ApiError } from "@/lib/api";
@@ -367,6 +368,25 @@ function CardTable({
   const canDelete = usePermission("exams.delete_examresult");
   const showActions = canEdit || canDelete;
 
+  // Fields not shown as compact columns (bodymap figures, long comments, …)
+  // live in an expandable detail row so the table stays scannable.
+  const detailFields = useMemo(
+    () => fields.filter((f) => f.type !== "date" && !columns.some((c) => c.key === f.key)),
+    [fields, columns],
+  );
+  // Only templates with an interactive bodymap get the expandable detail row,
+  // so existing department cards keep their current compact behaviour.
+  const hasDetail = detailFields.some((f) => f.type === "bodymap");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const detailSpan = 1 + columns.length + (showActions ? 1 : 0);
+
   return (
     <div className={styles.tableWrapper}>
       <table className={styles.table}>
@@ -382,47 +402,103 @@ function CardTable({
           </tr>
         </thead>
         <tbody>
-          {results.map((r) => (
-            <tr key={r.id}>
-              <td className={styles.dateCell}>{formatDate(r.recorded_at)}</td>
-              {columns.map((c) => {
-                const raw = r.result_data[c.key];
-                return (
-                  <td key={c.key} title={raw === null || raw === undefined ? "" : String(raw)}>
-                    {truncate(formatValue(raw), 36)}
-                    {c.unit && raw !== null && raw !== undefined && raw !== "" ? ` ${c.unit}` : ""}
+          {results.map((r) => {
+            const isOpen = expanded.has(r.id);
+            return (
+              <React.Fragment key={r.id}>
+                <tr className={hasDetail ? styles.rowClickable : undefined}>
+                  <td className={styles.dateCell}>
+                    {hasDetail && (
+                      <button
+                        type="button"
+                        className={styles.expandBtn}
+                        onClick={() => toggle(r.id)}
+                        aria-expanded={isOpen}
+                        aria-label={isOpen ? "Ocultar detalle" : "Ver detalle"}
+                      >
+                        {isOpen ? "▾" : "▸"}
+                      </button>
+                    )}
+                    {formatDate(r.recorded_at)}
                   </td>
-                );
-              })}
-              {showActions && (
-                <td className={styles.rowActions}>
-                  {canEdit && (
-                    <button
-                      type="button"
-                      className={styles.rowBtn}
-                      onClick={() => onEdit(r)}
-                      aria-label="Editar registro"
-                      title="Editar"
-                    >
-                      ✏️
-                    </button>
+                  {columns.map((c) => {
+                    const raw = r.result_data[c.key];
+                    return (
+                      <td key={c.key} title={raw === null || raw === undefined ? "" : String(raw)}>
+                        {truncate(formatValue(raw), 36)}
+                        {c.unit && raw !== null && raw !== undefined && raw !== "" ? ` ${c.unit}` : ""}
+                      </td>
+                    );
+                  })}
+                  {showActions && (
+                    <td className={styles.rowActions}>
+                      {canEdit && (
+                        <button
+                          type="button"
+                          className={styles.rowBtn}
+                          onClick={() => onEdit(r)}
+                          aria-label="Editar registro"
+                          title="Editar"
+                        >
+                          ✏️
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          className={`${styles.rowBtn} ${styles.rowBtnDanger}`}
+                          onClick={() => onDelete(r)}
+                          disabled={deletingId === r.id}
+                          aria-label="Borrar registro"
+                          title="Borrar"
+                        >
+                          {deletingId === r.id ? "…" : "🗑"}
+                        </button>
+                      )}
+                    </td>
                   )}
-                  {canDelete && (
-                    <button
-                      type="button"
-                      className={`${styles.rowBtn} ${styles.rowBtnDanger}`}
-                      onClick={() => onDelete(r)}
-                      disabled={deletingId === r.id}
-                      aria-label="Borrar registro"
-                      title="Borrar"
-                    >
-                      {deletingId === r.id ? "…" : "🗑"}
-                    </button>
-                  )}
-                </td>
-              )}
-            </tr>
-          ))}
+                </tr>
+                {hasDetail && isOpen && (
+                  <tr className={styles.detailRow}>
+                    <td colSpan={detailSpan}>
+                      <div className={styles.detailGrid}>
+                        {detailFields.map((f) => {
+                          const raw = r.result_data[f.key];
+                          if (f.type === "bodymap") {
+                            return (
+                              <div key={f.key} className={styles.detailItemFull}>
+                                <span className={styles.detailLabel}>{f.label}</span>
+                                <BodyMapField
+                                  diagramKey={f.diagram ?? "body"}
+                                  value={raw}
+                                  readOnly
+                                />
+                              </div>
+                            );
+                          }
+                          const text = formatValue(raw);
+                          if (text === "—") return null;
+                          const isLong = f.type === "text" && f.multiline;
+                          return (
+                            <div
+                              key={f.key}
+                              className={isLong ? styles.detailItemFull : styles.detailItem}
+                            >
+                              <span className={styles.detailLabel}>{f.label}</span>
+                              <span className={styles.detailValue}>
+                                {text}
+                                {f.unit ? ` ${f.unit}` : ""}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -439,6 +515,8 @@ function pickColumns(fields: ExamField[]): ExamField[] {
       f !== status &&
       f.type !== "calculated" &&
       f.type !== "date" &&
+      f.type !== "bodymap" &&
+      f.type !== "file" &&
       !(f.type === "text" && f.multiline),
   );
 
@@ -460,6 +538,19 @@ function formatValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "number") {
     return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  }
+  if (typeof value === "object") {
+    // bodymap value: {zones: [...], pins: [...]}
+    const v = value as { zones?: unknown; pins?: unknown };
+    if (Array.isArray(v.zones)) {
+      const nz = v.zones.length;
+      const np = Array.isArray(v.pins) ? v.pins.length : 0;
+      const parts: string[] = [];
+      if (nz) parts.push(`${nz} zona${nz > 1 ? "s" : ""}`);
+      if (np) parts.push(`${np} pin${np > 1 ? "s" : ""}`);
+      return parts.length ? parts.join(", ") : "—";
+    }
+    return "—";
   }
   return String(value);
 }

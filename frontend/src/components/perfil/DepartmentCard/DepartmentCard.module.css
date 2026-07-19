@@ -359,3 +359,65 @@
   background-color: #ede9fe;
   color: #5b21b6;
 }
+
+/* ── Expandable detail row (bodymap figures, long comments) ─────────────── */
+.expandBtn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 0.8rem;
+  margin-right: 4px;
+  padding: 0 2px;
+  line-height: 1;
+}
+.expandBtn:hover {
+  color: #111827;
+}
+.rowClickable td {
+  /* subtle affordance that the row has more underneath */
+  border-bottom-style: dashed;
+}
+.detailRow > td {
+  background: #f9fafb;
+  padding: 12px 16px;
+}
+.detailGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: flex-start;
+}
+.detailItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+.detailItemFull {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 100%;
+}
+.detailLabel {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #9ca3af;
+}
+.detailValue {
+  font-size: 0.9rem;
+  color: #111827;
+  white-space: pre-wrap;
+}
+
+@media (prefers-color-scheme: dark) {
+  .detailRow > td {
+    background: #0f172a;
+  }
+  .detailValue {
+    color: #e5e7eb;
+  }
+}

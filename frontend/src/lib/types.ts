@@ -266,7 +266,8 @@ export type ExamFieldType =
   | "calculated"
   | "boolean"
   | "date"
-  | "file";
+  | "file"
+  | "bodymap";
 
 export interface ExamField {
   key: string;
@@ -291,6 +292,10 @@ export interface ExamField {
   option_groups?: Record<string, string>;
   formula?: string;
   chart_type?: string;
+  /** For `bodymap` fields: which anatomical diagram to render, keyed into the
+   *  frontend diagram registry (`lib/bodyDiagrams.ts`), e.g. "foot" | "body".
+   *  The value stored is `{zones: string[], pins: {view,x,y}[]}`. */
+  diagram?: string;
   required?: boolean;
   /** When true on a `text` field, renders a textarea instead of a single-line input. */
   multiline?: boolean;

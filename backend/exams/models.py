@@ -649,6 +649,7 @@ class TemplateField(models.Model):
     TYPE_BOOLEAN = "boolean"
     TYPE_DATE = "date"
     TYPE_FILE = "file"
+    TYPE_BODYMAP = "bodymap"
     TYPE_CHOICES = [
         (TYPE_NUMBER, "Número"),
         (TYPE_TEXT, "Texto"),
@@ -657,6 +658,7 @@ class TemplateField(models.Model):
         (TYPE_BOOLEAN, "Sí/No"),
         (TYPE_DATE, "Fecha"),
         (TYPE_FILE, "Archivo (uno o varios)"),
+        (TYPE_BODYMAP, "Mapa corporal (zonas + pin)"),
     ]
 
     CHART_TYPE_CHOICES = [
