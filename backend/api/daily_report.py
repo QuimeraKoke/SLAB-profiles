@@ -126,6 +126,7 @@ def build_daily_report(category, target_date: date_cls, user) -> dict:
         "kine": _kine_entries(category, target_date),
         "notes": note_rows,
         "plans": {str(pid): rows for pid, rows in plans_map.items()},
+        "last_daily": _last_daily(category, pids, target_date),
         "players": [
             {"id": str(p.id), "name": f"{p.first_name} {p.last_name}".strip()}
             for p in players
@@ -488,6 +489,39 @@ def _responded_on(category, pids, target_date) -> set:
             player_id__in=pids, template_id__in=tids, recorded_at__date=target_date,
         ).values_list("player_id", flat=True)
     )
+
+
+def _last_daily(category, pids, target_date) -> dict | None:
+    """Compact recap of the most recent day BEFORE `target_date` that actually
+    had a daily — i.e. some pauta note or kine entry was logged. `None` if there
+    is no prior daily. Not necessarily yesterday; the last one that happened."""
+    from core.models import KineDailyEntry
+
+    note_dates = set(
+        DailyNote.objects.filter(
+            player__category=category, kind=DailyNote.KIND_PAUTA, date__lt=target_date,
+        ).values_list("date", flat=True)
+    )
+    kine_dates = set(
+        KineDailyEntry.objects.filter(
+            player__category=category, date__lt=target_date,
+        ).values_list("date", flat=True)
+    )
+    dates = note_dates | kine_dates
+    if not dates:
+        return None
+    d = max(dates)
+    return {
+        "date": d.isoformat(),
+        "notes": DailyNote.objects.filter(
+            player__category=category, kind=DailyNote.KIND_PAUTA, date=d,
+        ).count(),
+        "kine": KineDailyEntry.objects.filter(
+            player__category=category, date=d,
+        ).count(),
+        "wellness_responded": len(_responded_on(category, pids, d)),
+        "wellness_expected": len(pids),
+    }
 
 
 def _notes(category, target_date, user) -> tuple[dict, list]:

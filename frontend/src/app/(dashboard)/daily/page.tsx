@@ -9,6 +9,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  History,
   Sunrise,
 } from "lucide-react";
 
@@ -21,6 +22,7 @@ import LesionadoCard from "@/components/daily/LesionadoCard";
 import KineTable from "@/components/daily/KineTable";
 import NoteModal from "@/components/daily/NoteModal";
 import NotesPanel from "@/components/daily/NotesPanel";
+import PlansPanel from "@/components/daily/PlansPanel";
 import PlanList from "@/components/daily/PlanList";
 import type { DailyAlertRow, DailyNote, DailyReport } from "@/components/daily/types";
 import styles from "./page.module.css";
@@ -48,6 +50,15 @@ function longDate(iso: string): string {
     day: "numeric",
     month: "long",
   });
+}
+
+function relDays(iso: string): string {
+  const then = new Date(`${iso}T12:00:00`).getTime();
+  const now = new Date(`${todayIso()}T12:00:00`).getTime();
+  const n = Math.round((now - then) / 86_400_000);
+  if (n <= 0) return "hoy";
+  if (n === 1) return "ayer";
+  return `hace ${n} días`;
 }
 
 export default function DailyPage() {
@@ -101,6 +112,19 @@ export default function DailyPage() {
     [roster],
   );
 
+  // Flat list of the squad's standing plans (from the per-player map) for the
+  // rail panel — by player name, newest entry first.
+  const planRows = useMemo(
+    () =>
+      Object.values(data?.plans ?? {})
+        .flat()
+        .sort(
+          (a, b) =>
+            a.player_name.localeCompare(b.player_name) || b.date.localeCompare(a.date),
+        ),
+    [data?.plans],
+  );
+
   const categoryName =
     categories.find((c) => c.id === categoryId)?.name ?? data?.category ?? "";
 
@@ -110,7 +134,7 @@ export default function DailyPage() {
     setNoteOpen(true);
   }
 
-  function openPlan(playerId: string) {
+  function openPlan(playerId: string | null) {
     setNoteKind("plan");
     setNoteFor(playerId);
     setNoteOpen(true);
@@ -167,6 +191,30 @@ export default function DailyPage() {
           />
         </div>
       </header>
+
+      {/* ── Recap del último daily (fila full-width, clickeable) ── */}
+      {data.last_daily && (
+        <button
+          type="button"
+          className={styles.recap}
+          onClick={() => setDate(data.last_daily!.date)}
+          title="Ir al último daily"
+        >
+          <span className={styles.recapMain}>
+            <History size={15} aria-hidden="true" />
+            Último daily · <strong>{longDate(data.last_daily.date)}</strong>
+            <span className={styles.recapAgo}>{relDays(data.last_daily.date)}</span>
+          </span>
+          <span className={styles.recapStats}>
+            {data.last_daily.notes} nota{data.last_daily.notes === 1 ? "" : "s"} de pauta
+            {" · "}
+            {data.last_daily.kine} en plan kinésico
+            {" · "}
+            wellness {data.last_daily.wellness_responded}/{data.last_daily.wellness_expected}
+          </span>
+          <ChevronRight size={16} aria-hidden="true" className={styles.recapChevron} />
+        </button>
+      )}
 
       {/* ── KPI strip ── */}
       <div className={styles.kpis}>
@@ -311,6 +359,12 @@ export default function DailyPage() {
             canNote={canNote}
             onAdd={() => openNote(null)}
             onDeleted={() => setReload((n) => n + 1)}
+          />
+          <PlansPanel
+            plans={planRows}
+            canNote={canNote}
+            onAdd={() => openPlan(null)}
+            onChanged={() => setReload((n) => n + 1)}
           />
         </aside>
       </div>

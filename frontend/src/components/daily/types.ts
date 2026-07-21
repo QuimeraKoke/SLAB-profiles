@@ -131,6 +131,14 @@ export interface DailyReport {
   notes: DailyNote[];
   /** Standing 'plan de trabajo' (KIND_PLAN) per player id, newest first. */
   plans: Record<string, DailyNote[]>;
+  /** Recap of the most recent PRIOR daily (pauta/kine logged), or null. */
+  last_daily: {
+    date: string;
+    notes: number;
+    kine: number;
+    wellness_responded: number;
+    wellness_expected: number;
+  } | null;
   players: { id: string; name: string }[];
   departments: { id: string; name: string; slug: string }[];
 }
