@@ -4,7 +4,8 @@ import React from "react";
 import Link from "next/link";
 import { AlertTriangle, ArrowUpRight, CalendarClock, ClipboardList, MessageSquarePlus } from "lucide-react";
 
-import type { DailyLesionado, GpsCompare } from "./types";
+import type { DailyLesionado, DailyNote, GpsCompare } from "./types";
+import PlanList from "./PlanList";
 import styles from "./LesionadoCard.module.css";
 
 const nf = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 });
@@ -28,11 +29,15 @@ export default function LesionadoCard({
   onAddNote,
   onAddPlan,
   canNote,
+  plans,
+  onChanged,
 }: {
   row: DailyLesionado;
   onAddNote: (playerId: string) => void;
   onAddPlan: (playerId: string) => void;
   canNote: boolean;
+  plans: DailyNote[];
+  onChanged: () => void;
 }) {
   const ep = row.episode;
   return (
@@ -99,6 +104,10 @@ export default function LesionadoCard({
             </li>
           ))}
         </ul>
+      )}
+
+      {plans.length > 0 && (
+        <PlanList plans={plans} canNote={canNote} onChanged={onChanged} />
       )}
 
       <footer className={styles.foot}>

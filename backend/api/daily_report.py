@@ -96,6 +96,7 @@ def build_daily_report(category, target_date: date_cls, user) -> dict:
     wellness = _latest_wellness(category, pids)
     responded_ids = _responded_on(category, pids, target_date)
     notes_by_player, note_rows = _notes(category, target_date, user)
+    plans_map = plans_by_player(category, target_date, user=user)
 
     out_players = [p for p in players if p.status != Player.STATUS_AVAILABLE]
     episodes = _open_episodes({p.id for p in out_players})
@@ -124,6 +125,7 @@ def build_daily_report(category, target_date: date_cls, user) -> dict:
         "alertas": alertas,
         "kine": _kine_entries(category, target_date),
         "notes": note_rows,
+        "plans": {str(pid): rows for pid, rows in plans_map.items()},
         "players": [
             {"id": str(p.id), "name": f"{p.first_name} {p.last_name}".strip()}
             for p in players
@@ -506,10 +508,11 @@ def _notes(category, target_date, user) -> tuple[dict, list]:
     return by_player, rows
 
 
-def plans_by_player(category, target_date, per_player: int = 3) -> dict:
+def plans_by_player(category, target_date, per_player: int = 3, user=None) -> dict:
     """Standing 'plan de trabajo' entries (KIND_PLAN) per player, most recent
-    first, as of the target date. Used by the PDF deck to print each player's
-    current work plan alongside the day's pauta."""
+    first, as of the target date. Shown per-player in the web Daily (lesionado /
+    alerta cards) and printed on each PDF slide. `user` sets `mine` so the web
+    can offer delete on one's own entries."""
     plans = list(
         DailyNote.objects.filter(
             player__category=category, kind=DailyNote.KIND_PLAN, date__lte=target_date,
@@ -521,7 +524,7 @@ def plans_by_player(category, target_date, per_player: int = 3) -> dict:
     for n in plans:
         bucket = by_player.setdefault(n.player_id, [])
         if len(bucket) < per_player:
-            bucket.append(serialize_note(n, None))
+            bucket.append(serialize_note(n, user))
     return by_player
 
 

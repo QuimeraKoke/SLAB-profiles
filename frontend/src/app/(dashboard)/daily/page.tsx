@@ -21,7 +21,8 @@ import LesionadoCard from "@/components/daily/LesionadoCard";
 import KineTable from "@/components/daily/KineTable";
 import NoteModal from "@/components/daily/NoteModal";
 import NotesPanel from "@/components/daily/NotesPanel";
-import type { DailyAlertRow, DailyReport } from "@/components/daily/types";
+import PlanList from "@/components/daily/PlanList";
+import type { DailyAlertRow, DailyNote, DailyReport } from "@/components/daily/types";
 import styles from "./page.module.css";
 
 interface RosterPayload {
@@ -235,6 +236,8 @@ export default function DailyPage() {
                     canNote={canNote}
                     onAddNote={(pid) => openNote(pid)}
                     onAddPlan={(pid) => openPlan(pid)}
+                    plans={data.plans?.[l.player_id] ?? []}
+                    onChanged={() => setReload((n) => n + 1)}
                   />
                 ))}
               </div>
@@ -267,7 +270,15 @@ export default function DailyPage() {
             ) : (
               <div className={styles.alertList}>
                 {data.alertas.map((row) => (
-                  <AlertCard key={row.player_id} row={row} canNote={canNote} onAddNote={openNote} onAddPlan={openPlan} />
+                  <AlertCard
+                    key={row.player_id}
+                    row={row}
+                    canNote={canNote}
+                    onAddNote={openNote}
+                    onAddPlan={openPlan}
+                    plans={data.plans?.[row.player_id] ?? []}
+                    onChanged={() => setReload((n) => n + 1)}
+                  />
                 ))}
               </div>
             )}
@@ -351,11 +362,15 @@ function AlertCard({
   canNote,
   onAddNote,
   onAddPlan,
+  plans,
+  onChanged,
 }: {
   row: DailyAlertRow;
   canNote: boolean;
   onAddNote: (playerId: string) => void;
   onAddPlan: (playerId: string) => void;
+  plans: DailyNote[];
+  onChanged: () => void;
 }) {
   return (
     <div className={`${styles.alertCard} ${row.worst === "critical" ? styles.railCrit : styles.railWarn}`}>
@@ -383,6 +398,11 @@ function AlertCard({
           </li>
         ))}
       </ul>
+      {plans.length > 0 && (
+        <div className={styles.alertPlan}>
+          <PlanList plans={plans} canNote={canNote} onChanged={onChanged} />
+        </div>
+      )}
     </div>
   );
 }

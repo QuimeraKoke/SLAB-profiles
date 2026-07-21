@@ -129,6 +129,8 @@ export interface DailyReport {
   alertas: DailyAlertRow[];
   kine: KineEntry[];
   notes: DailyNote[];
+  /** Standing 'plan de trabajo' (KIND_PLAN) per player id, newest first. */
+  plans: Record<string, DailyNote[]>;
   players: { id: string; name: string }[];
   departments: { id: string; name: string; slug: string }[];
 }
