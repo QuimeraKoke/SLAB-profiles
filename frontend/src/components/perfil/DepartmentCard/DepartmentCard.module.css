@@ -412,12 +412,3 @@
   color: #111827;
   white-space: pre-wrap;
 }
-
-@media (prefers-color-scheme: dark) {
-  .detailRow > td {
-    background: #0f172a;
-  }
-  .detailValue {
-    color: #e5e7eb;
-  }
-}

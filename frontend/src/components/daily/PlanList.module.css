@@ -66,10 +66,3 @@
 .trash:hover {
   color: #b91c1c;
 }
-
-@media (prefers-color-scheme: dark) {
-  .wrap { background: #1e1b34; border-color: #3b3466; }
-  .label { color: #c4b5fd; }
-  .dept { color: #c4b5fd; background: #312e5a; }
-  .text { color: #e5e7eb; }
-}

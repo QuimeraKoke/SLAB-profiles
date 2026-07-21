@@ -68,11 +68,6 @@
   pointer-events: none;
   user-select: none;
 }
-@media (prefers-color-scheme: dark) {
-  .viewLabel {
-    fill: #94a3b8;
-  }
-}
 
 .zone {
   fill: #e2e8f0;
@@ -198,14 +193,3 @@
   color: #b91c1c;
 }
 
-@media (prefers-color-scheme: dark) {
-  .tabs { background: #1e293b; }
-  .tab, .tabOn { color: #cbd5e1; }
-  .tabOn { background: #334155; color: #fff; }
-  .figureWrap { background: #0f172a; border-color: #1e293b; }
-  .outline { fill: #1e293b; stroke: #334155; }
-  .zone { fill: #334155; stroke: #475569; }
-  .zone:hover { fill: #475569; }
-  .hint { color: #94a3b8; }
-  .pinBtn, .pinBtnOn { background: #1e293b; color: #cbd5e1; border-color: #334155; }
-}
