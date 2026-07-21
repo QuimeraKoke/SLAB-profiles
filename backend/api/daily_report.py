@@ -94,6 +94,7 @@ def build_daily_report(category, target_date: date_cls, user) -> dict:
     from api.roster import _player_acwr
     acwr = _player_acwr(category, pids, with_detail=True)
     wellness = _latest_wellness(category, pids)
+    responded_ids = _responded_on(category, pids, target_date)
     notes_by_player, note_rows = _notes(category, target_date, user)
 
     out_players = [p for p in players if p.status != Player.STATUS_AVAILABLE]
@@ -118,7 +119,7 @@ def build_daily_report(category, target_date: date_cls, user) -> dict:
         "date": target_date.isoformat(),
         "generated_at": now.isoformat(),
         "category": category.name,
-        "kpis": _kpis(players, alerts, wellness, target_date),
+        "kpis": _kpis(players, alerts, responded_ids, target_date),
         "lesionados": lesionados,
         "alertas": alertas,
         "kine": _kine_entries(category, target_date),
@@ -137,7 +138,7 @@ def build_daily_report(category, target_date: date_cls, user) -> dict:
 # ─── Sections ─────────────────────────────────────────────────────────
 
 
-def _kpis(players, alerts, wellness, target_date) -> dict:
+def _kpis(players, alerts, responded_ids, target_date) -> dict:
     by_status: dict[str, int] = {}
     for p in players:
         by_status[p.status] = by_status.get(p.status, 0) + 1
@@ -145,8 +146,8 @@ def _kpis(players, alerts, wellness, target_date) -> dict:
     for a in alerts:
         if a.severity in sev:
             sev[a.severity] += 1
-    tgt = target_date.isoformat()
-    responded_ids = {pid for pid, w in wellness.items() if w and w.get("date") == tgt}
+    # `responded_ids`: players who checked in ON `target_date` (not their
+    # latest check-in) — so navigating to a past day shows who responded THAT day.
     no_respondieron = [
         {
             "player_id": str(p.id),
@@ -465,6 +466,26 @@ def _latest_wellness(category, pids) -> dict:
         if s is not None:
             out[pid] = {"score": s, "date": timezone.localtime(rec).date().isoformat()}
     return out
+
+
+def _responded_on(category, pids, target_date) -> set:
+    """Set of player_ids with a check-in recorded ON `target_date`. Unlike
+    `_latest_wellness` (latest per player), this is date-scoped so the "no
+    respondieron" list is correct when navigating to a past meeting day."""
+    from api import wellness as w
+    from exams.models import ExamResult, ExamTemplate
+
+    tids = list(
+        ExamTemplate.objects.filter(slug=w.WELLNESS_SLUG, applicable_categories=category)
+        .values_list("id", flat=True)
+    ) or list(ExamTemplate.objects.filter(slug=w.WELLNESS_SLUG).values_list("id", flat=True))
+    if not tids:
+        return set()
+    return set(
+        ExamResult.objects.filter(
+            player_id__in=pids, template_id__in=tids, recorded_at__date=target_date,
+        ).values_list("player_id", flat=True)
+    )
 
 
 def _notes(category, target_date, user) -> tuple[dict, list]:

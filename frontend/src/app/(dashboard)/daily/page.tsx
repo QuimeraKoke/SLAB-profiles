@@ -185,7 +185,7 @@ export default function DailyPage() {
           tone={kpis.alertas.critical > 0 ? "crit" : kpis.alertas.warning > 0 ? "warn" : "ok"}
         />
         <Kpi
-          label="Wellness de hoy"
+          label="Wellness del día"
           value={`${kpis.wellness_hoy.n}/${kpis.wellness_hoy.expected}`}
           detail="check-ins respondidos"
         />
