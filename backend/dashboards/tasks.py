@@ -92,3 +92,35 @@ def recompute_readiness(player_id: str) -> dict | None:
         return None
     r = compute_readiness(player)
     return {"player": str(player_id), "score": r.score, "source": r.source}
+
+
+@shared_task(name="dashboards.tasks.generate_daily_summaries")
+def generate_daily_summaries() -> dict:
+    """00:00 pre-warm: build the AI recap of the day that just ended, for every
+    category that actually held a Daily (a pauta note or kine entry that day).
+    Lazy on-demand generation still covers any other day when first viewed."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from core.models import Category, DailyNote, KineDailyEntry
+
+    from .daily_summary import get_or_build
+
+    d = timezone.localdate() - timedelta(days=1)
+    cat_ids = set(
+        DailyNote.objects.filter(kind=DailyNote.KIND_PAUTA, date=d)
+        .values_list("player__category_id", flat=True)
+    )
+    cat_ids |= set(
+        KineDailyEntry.objects.filter(date=d).values_list("player__category_id", flat=True)
+    )
+    n = 0
+    for cat in Category.objects.filter(id__in=[c for c in cat_ids if c]):
+        try:
+            if get_or_build(cat, d):
+                n += 1
+        except Exception:  # noqa: BLE001 — one bad category can't break the batch
+            logger.exception("generate_daily_summaries: failed for %s (%s)", cat.id, d)
+    logger.info("generate_daily_summaries: %s summaries for %s", n, d)
+    return {"date": d.isoformat(), "generated": n}

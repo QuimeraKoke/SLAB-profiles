@@ -120,6 +120,14 @@ export interface KineEntry {
   kinesiologo: string;
 }
 
+/** GET /daily-report/summary — AI recap of a completed day (null for today). */
+export interface DailySummaryPayload {
+  date: string;
+  text: string | null;
+  generated_at: string | null;
+  model: string | null;
+}
+
 export interface DailyReport {
   date: string;
   generated_at: string;

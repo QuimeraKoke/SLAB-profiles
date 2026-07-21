@@ -948,6 +948,38 @@ class BriefingSnapshot(models.Model):
         return f"briefing · {self.category_id} · {self.data_hash[:12]}"
 
 
+class DailySummary(models.Model):
+    """AI recap of a day's Daily (morning meeting), one per (category, date).
+
+    Generated at 00:00 for the day that just ended (Celery beat) or lazily on
+    first view; `data_hash` (over the day's data + model) gates regeneration so
+    it runs once per state — the /daily view never recomputes it per request."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    category = models.ForeignKey(
+        "core.Category", on_delete=models.CASCADE, related_name="daily_summaries",
+    )
+    date = models.DateField(db_index=True)
+    text = models.TextField(blank=True)
+    model = models.CharField(max_length=64, blank=True)
+    data_hash = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["category", "date"], name="uniq_daily_summary",
+            ),
+        ]
+        ordering = ("-date",)
+        verbose_name = "Daily — resumen IA"
+        verbose_name_plural = "Daily — resúmenes IA"
+
+    def __str__(self) -> str:
+        return f"daily summary · {self.category_id} · {self.date}"
+
+
 class InsightAgent(models.Model):
     """Editable, stage-specialized 'insight agent': a role/system prompt plus
     a knowledge base the staff can modify, used to generate the LLM narrative

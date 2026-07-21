@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
+  Sparkles,
   Sunrise,
 } from "lucide-react";
 
@@ -24,7 +25,12 @@ import NoteModal from "@/components/daily/NoteModal";
 import NotesPanel from "@/components/daily/NotesPanel";
 import PlansPanel from "@/components/daily/PlansPanel";
 import PlanList from "@/components/daily/PlanList";
-import type { DailyAlertRow, DailyNote, DailyReport } from "@/components/daily/types";
+import type {
+  DailyAlertRow,
+  DailyNote,
+  DailyReport,
+  DailySummaryPayload,
+} from "@/components/daily/types";
 import styles from "./page.module.css";
 
 interface RosterPayload {
@@ -72,6 +78,7 @@ export default function DailyPage() {
   const date = searchParams.get("date") ?? todayIso();
 
   const [data, setData] = useState<DailyReport | null>(null);
+  const [summary, setSummary] = useState<DailySummaryPayload | null>(null);
   const [roster, setRoster] = useState<RosterPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
@@ -83,13 +90,20 @@ export default function DailyPage() {
     if (catLoading || !categoryId) return;
     let cancelled = false;
     Promise.resolve().then(() => {
-      if (!cancelled) setError(null);
+      if (!cancelled) {
+        setError(null);
+        setSummary(null);
+      }
     });
     api<DailyReport>(`/daily-report?category_id=${categoryId}&date=${date}`)
       .then((d) => { if (!cancelled) setData(d); })
       .catch((err) => {
         if (!cancelled) setError(err instanceof ApiError ? err.message : "No se pudo cargar la Daily.");
       });
+    // AI recap — separate call so the page renders without waiting on the model.
+    api<DailySummaryPayload>(`/daily-report/summary?category_id=${categoryId}&date=${date}`)
+      .then((d) => { if (!cancelled) setSummary(d); })
+      .catch(() => { /* best-effort — the Daily renders without it */ });
     api<RosterPayload>(`/roster?category_id=${categoryId}`)
       .then((d) => { if (!cancelled) setRoster(d); })
       .catch(() => { /* the annex is best-effort — the report still renders */ });
@@ -191,6 +205,17 @@ export default function DailyPage() {
           />
         </div>
       </header>
+
+      {/* ── Resumen IA del día (solo días completos, guardado) ── */}
+      {summary?.text && (
+        <section className={styles.aiSummary} aria-label="Resumen del día generado por IA">
+          <div className={styles.aiHead}>
+            <Sparkles size={15} aria-hidden="true" />
+            Resumen del día · IA
+          </div>
+          <div className={styles.aiBody}>{summary.text}</div>
+        </section>
+      )}
 
       {/* ── Recap del último daily (fila full-width, clickeable) ── */}
       {data.last_daily && (

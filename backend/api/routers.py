@@ -3338,6 +3338,40 @@ def daily_report(request, category_id: str, date: str = ""):
     return build_daily_report(category, parse_date(date), request.user)
 
 
+@api.get("/daily-report/summary")
+def daily_report_summary(request, category_id: str, date: str = ""):
+    """Saved AI recap of a COMPLETED day's Daily. Cached in `DailySummary`
+    (signature-gated), pre-warmed at 00:00 by Celery and generated lazily on
+    first view otherwise — never recomputed per request. Today / future → null
+    (the day isn't complete)."""
+    from django.utils import timezone as _tz
+
+    from api.daily_report import parse_date
+    from dashboards.daily_summary import get_or_build
+
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club").prefetch_related("departments"),
+        membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+
+    target = parse_date(date)
+    empty = {"date": target.isoformat(), "text": None, "generated_at": None, "model": None}
+    if target >= _tz.localdate():
+        return empty
+    obj = get_or_build(category, target)
+    if obj is None:
+        return empty
+    return {
+        "date": obj.date.isoformat(),
+        "text": obj.text,
+        "generated_at": obj.updated_at.isoformat(),
+        "model": obj.model,
+    }
+
+
 @api.get("/wellness-adherence")
 def wellness_adherence(request, category_id: str, date_from: str = "", date_to: str = ""):
     """Check-in adherence over a window (informative, no alerts): per-player
