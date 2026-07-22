@@ -783,7 +783,10 @@ def _chat(api_key: str, model: str, system: str, messages: list[dict], category)
         )
         if with_tools:
             kwargs["tools"] = TOOLS
-        return client.messages.create(**kwargs)
+        resp = client.messages.create(**kwargs)
+        from dashboards.llm_usage import log_usage
+        log_usage("assistant", model, resp)
+        return resp
 
     try:
         client = anthropic.Anthropic(api_key=api_key)
@@ -873,7 +876,10 @@ def _chat_with_charts(api_key, model, system, messages, category, chart_tool, re
         )
         if with_tools:
             kwargs["tools"] = tools
-        return client.messages.create(**kwargs)
+        resp = client.messages.create(**kwargs)
+        from dashboards.llm_usage import log_usage
+        log_usage("assistant_charts", model, resp)
+        return resp
 
     try:
         client = anthropic.Anthropic(api_key=api_key)

@@ -34,6 +34,25 @@ READINESS_MODEL = env("READINESS_MODEL", default="claude-haiku-4-5-20251001")
 # PDF snapshots in S3 keyed on a stable data + agent-config hash — so there's
 # no narrative-level TTL cache to configure.)
 
+# Per-call LLM cost telemetry → one INFO line per Anthropic call (see
+# dashboards/llm_usage.py). Configured narrowly so it doesn't disturb the
+# rest of the logging stack: only this logger is added, existing loggers keep
+# their behavior (disable_existing_loggers=False), and it doesn't propagate.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "llm_usage_console": {"class": "logging.StreamHandler"},
+    },
+    "loggers": {
+        "dashboards.llm_usage": {
+            "handlers": ["llm_usage_console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
+
 # Origins (scheme + host) that POSTing to /admin/ etc. are allowed to come
 # from. Required when DEBUG=False and the browser hits a non-localhost
 # domain — otherwise Django rejects the form with "CSRF verification failed".

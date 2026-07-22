@@ -182,6 +182,8 @@ def _agent_readiness(inp: dict, det: int, model: str) -> dict | None:
                 ),
             }],
         )
+        from dashboards.llm_usage import log_usage
+        log_usage("readiness", model, resp)
     except Exception:  # noqa: BLE001 — readiness must fall back to deterministic
         logger.exception("Agent readiness failed for %s.", inp.get("jugador"))
         return None

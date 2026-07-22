@@ -301,6 +301,9 @@ def _call_model(api_key: str, model: str, system: str, prompt_json: str, parser=
         logger.exception("Anthropic narrative generation failed.")
         return None
 
+    from dashboards.llm_usage import log_usage
+    log_usage("narrative", model, response)
+
     text = _extract_text(response)
     if not text:
         return None

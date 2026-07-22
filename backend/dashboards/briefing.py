@@ -99,19 +99,29 @@ def generate_briefing(category) -> list[dict]:
         ensure_ascii=False, default=str,
     )
 
-    # One call per department, in parallel (IO-bound). Each returns its cards.
+    # One call per department. The shared squad snapshot is a cached prefix,
+    # but concurrent requests can't read each other's cache — firing all five
+    # at once makes each PAY a cache-write for the identical snapshot (a net
+    # loss). So warm the cache with the first department serially, THEN fan out
+    # the rest in parallel — they read the snapshot the first call wrote.
     items: list[dict] = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(5, len(agents))) as pool:
-        futures = {
-            pool.submit(_call_department, api_key, model, context_json, a): a
-            for a in agents
-        }
-        for fut in concurrent.futures.as_completed(futures):
-            a = futures[fut]
-            try:
-                items.extend(fut.result())
-            except Exception:  # noqa: BLE001 — one area failing must not sink the rest
-                logger.exception("Briefing: department '%s' failed.", a.key)
+    first, rest = agents[0], agents[1:]
+    try:
+        items.extend(_call_department(api_key, model, context_json, first))
+    except Exception:  # noqa: BLE001 — one area failing must not sink the rest
+        logger.exception("Briefing: department '%s' failed.", first.key)
+    if rest:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(rest))) as pool:
+            futures = {
+                pool.submit(_call_department, api_key, model, context_json, a): a
+                for a in rest
+            }
+            for fut in concurrent.futures.as_completed(futures):
+                a = futures[fut]
+                try:
+                    items.extend(fut.result())
+                except Exception:  # noqa: BLE001
+                    logger.exception("Briefing: department '%s' failed.", a.key)
 
     items = _rank(items)
     _attach_player_ids(items, category)
@@ -178,6 +188,9 @@ def _call_department(api_key: str, model: str, context_json: str, agent) -> list
     except Exception:  # noqa: BLE001
         logger.exception("Briefing: model call failed for '%s'.", agent.key)
         return []
+
+    from dashboards.llm_usage import log_usage
+    log_usage(f"briefing:{agent.key}", model, response)
 
     text = _extract_text(response)
     return _parse_items(text, department=agent.key, label=label)

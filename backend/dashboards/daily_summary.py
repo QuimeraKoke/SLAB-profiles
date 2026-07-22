@@ -130,6 +130,8 @@ def _call_llm(context: dict, model: str) -> str | None:
                 ),
             }],
         )
+        from dashboards.llm_usage import log_usage
+        log_usage("daily", model, resp)
         parts = [
             getattr(b, "text", "") for b in resp.content
             if getattr(b, "type", None) == "text"
