@@ -123,7 +123,7 @@ def compute_readiness(player, *, force: bool = False):
 
     inp = build_inputs(player)
     det = deterministic(inp)
-    model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
+    model = getattr(settings, "READINESS_MODEL", "claude-haiku-4-5-20251001")
     sig = _signature(inp, det, model)
 
     existing = PlayerReadiness.objects.filter(player=player).first()
@@ -131,7 +131,7 @@ def compute_readiness(player, *, force: bool = False):
         return existing  # inputs unchanged → keep cached value
 
     score, source, rationale, flags = det, "deterministic", "", []
-    agent = _agent_readiness(inp, det) if det is not None else None
+    agent = _agent_readiness(inp, det, model) if det is not None else None
     if agent is not None:
         score, source = agent["score"], "agent"
         rationale, flags = agent["rationale"], agent["flags"]
@@ -150,7 +150,7 @@ def compute_readiness(player, *, force: bool = False):
 # ─── Agent call ───────────────────────────────────────────────────────
 
 
-def _agent_readiness(inp: dict, det: int) -> dict | None:
+def _agent_readiness(inp: dict, det: int, model: str) -> dict | None:
     api_key = (getattr(settings, "ANTHROPIC_API_KEY", "") or "").strip()
     if not api_key:
         return None
@@ -169,10 +169,10 @@ def _agent_readiness(inp: dict, det: int) -> dict | None:
     try:
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
-            model=getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8"),
+            # Bounded JSON contract → no thinking/effort (also required: the
+            # default READINESS_MODEL is Haiku 4.5, which rejects both params).
+            model=model,
             max_tokens=900,
-            thinking={"type": "adaptive"},
-            output_config={"effort": "low"},
             system=[{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             messages=[{
                 "role": "user",
