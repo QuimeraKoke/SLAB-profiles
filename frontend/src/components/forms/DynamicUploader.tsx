@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { ClipboardPaste } from "lucide-react";
 import AttachmentList from "@/components/ui/AttachmentList/AttachmentList";
+import PentaPasteModal from "@/components/forms/PentaPasteModal";
 import DeferredFilePicker from "@/components/forms/DeferredFilePicker";
 import MatchPicker from "@/components/forms/MatchPicker";
 import BodyMapField from "@/components/forms/BodyMapField";
@@ -147,6 +149,7 @@ export default function DynamicUploader({
   // is created, in handleSubmit's second phase.
   const [queuedFiles, setQueuedFiles] = useState<Record<string, File[]>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{
     uploaded: number;
     total: number;
@@ -364,7 +367,26 @@ export default function DynamicUploader({
       <div className={styles.header}>
         <h3 className={styles.title}>{template.name}</h3>
         <span className={styles.version}>v{template.version}</span>
+        {template.slug === "pentacompartimental" && (
+          <button
+            type="button"
+            className={styles.pasteBtn}
+            onClick={() => setPasteOpen(true)}
+          >
+            <ClipboardPaste size={14} aria-hidden="true" />
+            Pegar desde Excel
+          </button>
+        )}
       </div>
+
+      {template.slug === "pentacompartimental" && (
+        <PentaPasteModal
+          open={pasteOpen}
+          onClose={() => setPasteOpen(false)}
+          fields={fields}
+          onApply={(vals) => setValues((prev) => ({ ...prev, ...vals }))}
+        />
+      )}
 
       {allowEventLink && (
         <fieldset className={styles.group}>

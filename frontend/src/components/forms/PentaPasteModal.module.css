@@ -1,0 +1,134 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: min(560px, 80vw);
+}
+
+.help {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #475467;
+}
+
+.textarea {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 10px 12px;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.textarea:focus {
+  outline: none;
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px #e0e7ff;
+}
+
+.summary {
+  font-size: 13px;
+  color: #101828;
+}
+
+.warn {
+  color: #b54708;
+  font-weight: 600;
+}
+
+.tableWrap {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #eaecf0;
+  border-radius: 8px;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  text-align: left;
+  font-weight: 600;
+  color: #667085;
+  background: #f9fafb;
+  padding: 6px 10px;
+  border-bottom: 1px solid #eaecf0;
+}
+
+.table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid #f2f4f7;
+  color: #344054;
+}
+
+.val {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #101828;
+  white-space: nowrap;
+}
+
+.pasted {
+  color: #667085;
+}
+
+.byorder {
+  color: #98a2b3;
+  font-style: italic;
+}
+
+.rowWarn td {
+  background: #fffaeb;
+}
+
+.rowWarn .pasted {
+  color: #b54708;
+  font-weight: 600;
+}
+
+.rowEmpty td {
+  color: #98a2b3;
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ghost {
+  background: none;
+  border: 1px solid #d0d5dd;
+  color: #344054;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.primary {
+  background: #4f46e5;
+  border: 1px solid #4f46e5;
+  color: #fff;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
