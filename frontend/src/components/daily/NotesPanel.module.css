@@ -134,3 +134,27 @@
   color: #b42318;
   background: #fde8e8;
 }
+
+.rowActions {
+  flex-shrink: 0;
+  display: inline-flex;
+  gap: 2px;
+}
+
+.edit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: #98a2b3;
+  background: none;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.edit:hover {
+  color: #4f46e5;
+  background: #eef0ff;
+}

@@ -913,6 +913,13 @@ class DailyNoteIn(Schema):
     text: str
 
 
+class DailyNotePatchIn(Schema):
+    # Full-form edit from the Daily modal: text is required, department_id
+    # None = General (clear). Player/kind/date are not editable.
+    text: str
+    department_id: UUID | None = None
+
+
 class DailyNoteOut(Schema):
     id: UUID
     player_id: UUID

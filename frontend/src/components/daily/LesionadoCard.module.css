@@ -293,6 +293,37 @@
   line-height: 1.4;
 }
 
+.noteActions {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  gap: 1px;
+}
+
+.noteEdit,
+.noteDel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  color: #b0b7c3;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.noteEdit:hover {
+  color: #4f46e5;
+  background: #eef0ff;
+}
+
+.noteDel:hover {
+  color: #b42318;
+  background: #fde8e8;
+}
+
 .noteBtn {
   flex-shrink: 0;
   display: inline-flex;

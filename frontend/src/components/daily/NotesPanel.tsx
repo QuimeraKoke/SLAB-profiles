@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { MessageSquarePlus, NotebookPen, Trash2 } from "lucide-react";
+import { MessageSquarePlus, NotebookPen, Pencil, Trash2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
@@ -14,11 +14,13 @@ export default function NotesPanel({
   notes,
   canNote,
   onAdd,
+  onEdit,
   onDeleted,
 }: {
   notes: DailyNote[];
   canNote: boolean;
   onAdd: () => void;
+  onEdit: (note: DailyNote) => void;
   onDeleted: () => void;
 }) {
   const { confirm } = useConfirm();
@@ -80,13 +82,22 @@ export default function NotesPanel({
                 </span>
               </div>
               {n.mine && (
-                <button
-                  className={styles.trash}
-                  onClick={() => remove(n)}
-                  aria-label={`Eliminar nota sobre ${n.player_name}`}
-                >
-                  <Trash2 size={14} aria-hidden="true" />
-                </button>
+                <span className={styles.rowActions}>
+                  <button
+                    className={styles.edit}
+                    onClick={() => onEdit(n)}
+                    aria-label={`Editar nota sobre ${n.player_name}`}
+                  >
+                    <Pencil size={14} aria-hidden="true" />
+                  </button>
+                  <button
+                    className={styles.trash}
+                    onClick={() => remove(n)}
+                    aria-label={`Eliminar nota sobre ${n.player_name}`}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
+                </span>
               )}
             </li>
           ))}

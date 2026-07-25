@@ -12,6 +12,7 @@ export default function NoteModal({
   open,
   date,
   playerId,
+  note = null,
   players,
   departments,
   onClose,
@@ -23,6 +24,8 @@ export default function NoteModal({
   open: boolean;
   date: string;
   playerId: string | null; // preselected player (from a card) or null
+  /** When set, the modal edits this existing note instead of creating one. */
+  note?: DailyNote | null;
   players: { id: string; name: string }[];
   departments: { id: string; name: string; slug: string }[];
   onClose: () => void;
@@ -33,6 +36,7 @@ export default function NoteModal({
   placeholder?: string;
 }) {
   const { toast } = useToast();
+  const editing = note != null;
   const [player, setPlayer] = useState<string>("");
   const [department, setDepartment] = useState<string>("");
   const [text, setText] = useState("");
@@ -41,21 +45,22 @@ export default function NoteModal({
   const textRef = useRef<HTMLTextAreaElement>(null);
   const playerRef = useRef<HTMLSelectElement>(null);
 
-  // Re-arm the form each time the modal opens (possibly for another player).
-  // Microtask wrap keeps `react-hooks/set-state-in-effect` happy — behavior
-  // is identical (runs before paint).
+  // Re-arm the form each time the modal opens — prefilled from `note` when
+  // editing, otherwise blank for the (optionally preselected) player. Microtask
+  // wrap keeps `react-hooks/set-state-in-effect` happy (runs before paint).
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     Promise.resolve().then(() => {
       if (cancelled) return;
-      setPlayer(playerId ?? "");
-      setText("");
+      setPlayer(note ? note.player_id : (playerId ?? ""));
+      setDepartment(note ? (note.department?.id ?? "") : "");
+      setText(note ? note.text : "");
       setError(null);
       setBusy(false);
     });
     return () => { cancelled = true; };
-  }, [open, playerId]);
+  }, [open, playerId, note]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -72,18 +77,26 @@ export default function NoteModal({
     setBusy(true);
     setError(null);
     try {
-      const note = await api<DailyNote>("/daily-notes", {
-        method: "POST",
-        body: JSON.stringify({
-          player_id: player,
-          department_id: department || null,
-          kind,
-          date,
-          text: text.trim(),
-        }),
-      });
-      toast.success("Nota guardada.");
-      onSaved(note);
+      const saved = editing
+        ? await api<DailyNote>(`/daily-notes/${note!.id}`, {
+            method: "PATCH",
+            body: JSON.stringify({
+              department_id: department || null,
+              text: text.trim(),
+            }),
+          })
+        : await api<DailyNote>("/daily-notes", {
+            method: "POST",
+            body: JSON.stringify({
+              player_id: player,
+              department_id: department || null,
+              kind,
+              date,
+              text: text.trim(),
+            }),
+          });
+      toast.success(editing ? "Nota actualizada." : "Nota guardada.");
+      onSaved(saved);
       onClose();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "No se pudo guardar la nota.");
@@ -105,6 +118,8 @@ export default function NoteModal({
             ref={playerRef}
             value={player}
             onChange={(e) => setPlayer(e.target.value)}
+            // The player a note belongs to is fixed once created.
+            disabled={editing}
             aria-invalid={!!error && !player}
             aria-describedby={error && !player ? "daily-note-error" : undefined}
           >
@@ -140,7 +155,7 @@ export default function NoteModal({
             Cancelar
           </button>
           <button type="submit" className={styles.primary} disabled={busy}>
-            {busy ? "Guardando…" : "Guardar nota"}
+            {busy ? "Guardando…" : editing ? "Guardar cambios" : "Guardar nota"}
           </button>
         </div>
       </form>

@@ -2,7 +2,7 @@
 
 import React from "react";
 import Link from "next/link";
-import { ClipboardList, ClipboardPlus, Trash2 } from "lucide-react";
+import { ClipboardList, ClipboardPlus, Pencil, Trash2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
@@ -25,11 +25,13 @@ export default function PlansPanel({
   plans,
   canNote,
   onAdd,
+  onEdit,
   onChanged,
 }: {
   plans: DailyNote[];
   canNote: boolean;
   onAdd: () => void;
+  onEdit: (note: DailyNote) => void;
   onChanged: () => void;
 }) {
   const { confirm } = useConfirm();
@@ -89,13 +91,22 @@ export default function PlansPanel({
                 </span>
               </div>
               {n.mine && (
-                <button
-                  className={styles.trash}
-                  onClick={() => remove(n)}
-                  aria-label={`Eliminar entrada del plan de ${n.player_name}`}
-                >
-                  <Trash2 size={14} aria-hidden="true" />
-                </button>
+                <span className={styles.rowActions}>
+                  <button
+                    className={styles.edit}
+                    onClick={() => onEdit(n)}
+                    aria-label={`Editar entrada del plan de ${n.player_name}`}
+                  >
+                    <Pencil size={14} aria-hidden="true" />
+                  </button>
+                  <button
+                    className={styles.trash}
+                    onClick={() => remove(n)}
+                    aria-label={`Eliminar entrada del plan de ${n.player_name}`}
+                  >
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
+                </span>
               )}
             </li>
           ))}

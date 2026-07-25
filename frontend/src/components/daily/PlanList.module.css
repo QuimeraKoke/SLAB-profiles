@@ -55,6 +55,11 @@
   color: #9ca3af;
   grid-column: 1 / -1;
 }
+.actions {
+  display: inline-flex;
+  gap: 2px;
+  justify-self: end;
+}
 .trash {
   border: none;
   background: transparent;
@@ -65,4 +70,14 @@
 }
 .trash:hover {
   color: #b91c1c;
+}
+.edit {
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  cursor: pointer;
+  padding: 0 2px;
+}
+.edit:hover {
+  color: #4f46e5;
 }

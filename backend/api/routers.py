@@ -76,6 +76,7 @@ from .schemas import (
     ContractPatchIn,
     DailyNoteIn,
     DailyNoteOut,
+    DailyNotePatchIn,
     KineEntryIn,
     KineEntryOut,
     EpisodeOut,
@@ -3543,6 +3544,47 @@ def create_daily_note(request, payload: DailyNoteIn):
         player=player, department=department, kind=payload.kind,
         date=payload.date, text=text, created_by=request.user,
     )
+    return serialize_note(note, request.user)
+
+
+@api.patch("/daily-notes/{note_id}", response=DailyNoteOut)
+def update_daily_note(request, note_id: str, payload: DailyNotePatchIn):
+    """Edit a meeting note (pauta) or work-plan entry (plan). Authors can edit
+    their own; editing someone else's requires `core.change_dailynote`. Only
+    text + área are editable — player, kind and date stay fixed."""
+    from api.daily_report import serialize_note
+
+    membership = get_membership(request.user)
+    note = (
+        DailyNote.objects.filter(
+            pk=note_id,
+            player__in=scope_players(Player.objects.all(), membership),
+        )
+        .select_related("player__category", "department", "created_by")
+        .first()
+    )
+    if note is None:
+        raise HttpError(404, "Note not found")
+    if note.created_by_id != request.user.id and not _has_perm(
+        request.user, "core.change_dailynote"
+    ):
+        raise HttpError(403, "Solo el autor puede editar esta nota.")
+
+    text = (payload.text or "").strip()
+    if not text:
+        raise HttpError(400, "La nota no puede estar vacía.")
+
+    department = None
+    if payload.department_id:
+        department = Department.objects.filter(
+            pk=payload.department_id, club=note.player.category.club,
+        ).first()
+        if department is None:
+            raise HttpError(404, "Department not found")
+
+    note.text = text
+    note.department = department
+    note.save(update_fields=["text", "department"])
     return serialize_note(note, request.user)
 
 

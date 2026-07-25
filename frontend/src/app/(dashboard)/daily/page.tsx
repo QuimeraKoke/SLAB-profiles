@@ -85,6 +85,7 @@ export default function DailyPage() {
   const [noteFor, setNoteFor] = useState<string | null>(null); // player_id | null
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteKind, setNoteKind] = useState<"pauta" | "plan">("pauta");
+  const [editNote, setEditNote] = useState<DailyNote | null>(null); // null = create
 
   useEffect(() => {
     if (catLoading || !categoryId) return;
@@ -145,12 +146,21 @@ export default function DailyPage() {
   function openNote(playerId: string | null) {
     setNoteKind("pauta");
     setNoteFor(playerId);
+    setEditNote(null);
     setNoteOpen(true);
   }
 
   function openPlan(playerId: string | null) {
     setNoteKind("plan");
     setNoteFor(playerId);
+    setEditNote(null);
+    setNoteOpen(true);
+  }
+
+  function openEdit(n: DailyNote) {
+    setNoteKind(n.kind ?? "pauta");
+    setNoteFor(n.player_id);
+    setEditNote(n);
     setNoteOpen(true);
   }
 
@@ -309,6 +319,8 @@ export default function DailyPage() {
                     canNote={canNote}
                     onAddNote={(pid) => openNote(pid)}
                     onAddPlan={(pid) => openPlan(pid)}
+                    onEditPlan={openEdit}
+                    onEditNote={openEdit}
                     plans={data.plans?.[l.player_id] ?? []}
                     onChanged={() => setReload((n) => n + 1)}
                   />
@@ -349,6 +361,7 @@ export default function DailyPage() {
                     canNote={canNote}
                     onAddNote={openNote}
                     onAddPlan={openPlan}
+                    onEditPlan={openEdit}
                     plans={data.plans?.[row.player_id] ?? []}
                     onChanged={() => setReload((n) => n + 1)}
                   />
@@ -383,12 +396,14 @@ export default function DailyPage() {
             notes={data.notes}
             canNote={canNote}
             onAdd={() => openNote(null)}
+            onEdit={openEdit}
             onDeleted={() => setReload((n) => n + 1)}
           />
           <PlansPanel
             plans={planRows}
             canNote={canNote}
             onAdd={() => openPlan(null)}
+            onEdit={openEdit}
             onChanged={() => setReload((n) => n + 1)}
           />
         </aside>
@@ -398,12 +413,21 @@ export default function DailyPage() {
         open={noteOpen}
         date={date}
         playerId={noteFor}
+        note={editNote}
         players={data.players}
         departments={data.departments}
-        onClose={() => setNoteOpen(false)}
+        onClose={() => { setNoteOpen(false); setEditNote(null); }}
         onSaved={() => setReload((n) => n + 1)}
         kind={noteKind}
-        title={noteKind === "plan" ? "Entrada del plan de trabajo" : "Nota de la reunión"}
+        title={
+          editNote
+            ? noteKind === "plan"
+              ? "Editar entrada del plan"
+              : "Editar nota"
+            : noteKind === "plan"
+              ? "Entrada del plan de trabajo"
+              : "Nota de la reunión"
+        }
         placeholder={
           noteKind === "plan"
             ? "Directriz vigente para este jugador — p. ej. bloque de fuerza 3×/semana, progresión de carrera, plan nutricional…"
@@ -441,6 +465,7 @@ function AlertCard({
   canNote,
   onAddNote,
   onAddPlan,
+  onEditPlan,
   plans,
   onChanged,
 }: {
@@ -448,6 +473,7 @@ function AlertCard({
   canNote: boolean;
   onAddNote: (playerId: string) => void;
   onAddPlan: (playerId: string) => void;
+  onEditPlan: (note: DailyNote) => void;
   plans: DailyNote[];
   onChanged: () => void;
 }) {
@@ -479,7 +505,7 @@ function AlertCard({
       </ul>
       {plans.length > 0 && (
         <div className={styles.alertPlan}>
-          <PlanList plans={plans} canNote={canNote} onChanged={onChanged} />
+          <PlanList plans={plans} canNote={canNote} onEdit={onEditPlan} onChanged={onChanged} />
         </div>
       )}
     </div>

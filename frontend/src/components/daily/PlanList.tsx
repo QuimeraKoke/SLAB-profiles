@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { ClipboardList, Trash2 } from "lucide-react";
+import { ClipboardList, Pencil, Trash2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
@@ -22,10 +22,12 @@ function fmtDay(iso: string): string {
 export default function PlanList({
   plans,
   canNote,
+  onEdit,
   onChanged,
 }: {
   plans: DailyNote[];
   canNote: boolean;
+  onEdit: (note: DailyNote) => void;
   onChanged: () => void;
 }) {
   const { confirm } = useConfirm();
@@ -68,14 +70,24 @@ export default function PlanList({
                 {fmtDay(n.date)}
               </span>
               {canNote && n.mine && (
-                <button
-                  type="button"
-                  className={styles.trash}
-                  onClick={() => remove(n)}
-                  aria-label="Eliminar entrada del plan"
-                >
-                  <Trash2 size={13} aria-hidden="true" />
-                </button>
+                <span className={styles.actions}>
+                  <button
+                    type="button"
+                    className={styles.edit}
+                    onClick={() => onEdit(n)}
+                    aria-label="Editar entrada del plan"
+                  >
+                    <Pencil size={13} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.trash}
+                    onClick={() => remove(n)}
+                    aria-label="Eliminar entrada del plan"
+                  >
+                    <Trash2 size={13} aria-hidden="true" />
+                  </button>
+                </span>
               )}
             </li>
           ))}

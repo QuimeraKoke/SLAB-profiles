@@ -2,8 +2,11 @@
 
 import React from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowUpRight, CalendarClock, ClipboardList, MessageSquarePlus } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CalendarClock, ClipboardList, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 
+import { api, ApiError } from "@/lib/api";
+import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
+import { useToast } from "@/components/ui/Toast/Toast";
 import type { DailyLesionado, DailyNote, GpsCompare } from "./types";
 import PlanList from "./PlanList";
 import styles from "./LesionadoCard.module.css";
@@ -28,6 +31,8 @@ export default function LesionadoCard({
   row,
   onAddNote,
   onAddPlan,
+  onEditPlan,
+  onEditNote,
   canNote,
   plans,
   onChanged,
@@ -35,11 +40,32 @@ export default function LesionadoCard({
   row: DailyLesionado;
   onAddNote: (playerId: string) => void;
   onAddPlan: (playerId: string) => void;
+  onEditPlan: (note: DailyNote) => void;
+  onEditNote: (note: DailyNote) => void;
   canNote: boolean;
   plans: DailyNote[];
   onChanged: () => void;
 }) {
+  const { confirm } = useConfirm();
+  const { toast } = useToast();
   const ep = row.episode;
+
+  async function removeNote(n: DailyNote) {
+    const ok = await confirm({
+      title: "Eliminar nota",
+      message: `Se eliminará la nota sobre ${row.name}. Esta acción no se puede deshacer.`,
+      confirmLabel: "Eliminar",
+      variant: "danger",
+    });
+    if (!ok) return;
+    try {
+      await api(`/daily-notes/${n.id}`, { method: "DELETE" });
+      toast.success("Nota eliminada.");
+      onChanged();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "No se pudo eliminar la nota.");
+    }
+  }
   return (
     <article className={styles.card}>
       <header className={styles.head}>
@@ -107,7 +133,7 @@ export default function LesionadoCard({
       )}
 
       {plans.length > 0 && (
-        <PlanList plans={plans} canNote={canNote} onChanged={onChanged} />
+        <PlanList plans={plans} canNote={canNote} onEdit={onEditPlan} onChanged={onChanged} />
       )}
 
       <footer className={styles.foot}>
@@ -119,6 +145,26 @@ export default function LesionadoCard({
               <div key={n.id} className={styles.note}>
                 <span className={styles.noteDept}>{n.department?.name ?? "General"}</span>
                 <span className={styles.noteText}>{n.text}</span>
+                {n.mine && (
+                  <span className={styles.noteActions}>
+                    <button
+                      type="button"
+                      className={styles.noteEdit}
+                      onClick={() => onEditNote(n)}
+                      aria-label="Editar nota"
+                    >
+                      <Pencil size={13} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      className={styles.noteDel}
+                      onClick={() => removeNote(n)}
+                      aria-label="Eliminar nota"
+                    >
+                      <Trash2 size={13} aria-hidden="true" />
+                    </button>
+                  </span>
+                )}
               </div>
             ))
           )}
