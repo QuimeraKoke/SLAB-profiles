@@ -42,9 +42,12 @@ SCHEMA: dict = {
         {"key": "vitamina_d",         "label": "Vitamina D",         "type": "number", "unit": "ng/mL",  "group": "Hierro y vitaminas"},
 
         # === Eje hormonal ===
-        {"key": "testosterona_total", "label": "Testosterona total", "type": "number", "unit": "ng/dL",  "group": "Hormonal"},
+        # testosterona_total + cortisol are reported by Clínica MEDS (and stored
+        # in SLAB) on the ng/mL scale — not the ng/dL / µg/dL the earlier labels
+        # implied. Units match the values; converting would corrupt trends.
+        {"key": "testosterona_total", "label": "Testosterona total", "type": "number", "unit": "ng/mL",  "group": "Hormonal"},
         {"key": "testosterona_libre", "label": "Testosterona libre", "type": "number", "unit": "pg/mL",  "group": "Hormonal"},
-        {"key": "cortisol",           "label": "Cortisol",           "type": "number", "unit": "µg/dL",  "group": "Hormonal"},
+        {"key": "cortisol",           "label": "Cortisol",           "type": "number", "unit": "ng/mL",  "group": "Hormonal"},
 
         # === Tiroides ===
         {"key": "tsh",                "label": "TSH",                "type": "number", "unit": "µUI/mL", "group": "Tiroides"},
