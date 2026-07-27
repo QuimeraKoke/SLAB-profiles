@@ -1017,6 +1017,10 @@ export interface TeamHorizontalComparisonPayload {
 export interface TeamRosterMatrixPayload {
   chart_type: "team_roster_matrix";
   title: string;
+  /** player_ids in `rows` that are called up from another category
+   *  (secondary). The frontend badges them; empty when the report is
+   *  filtered to home players only. Present on every team widget payload. */
+  call_up_player_ids?: string[];
   columns: {
     key: string;
     label: string;
@@ -1326,6 +1330,10 @@ export interface TeamActiveRecordsPayload {
 export interface TeamLeaderboardPayload {
   chart_type: "team_leaderboard";
   title: string;
+  /** player_ids among `rows` that are called up from another category
+   *  (secondary). The frontend badges them; empty when filtered to home
+   *  players only. Present on every team widget payload. */
+  call_up_player_ids?: string[];
   mode?: "single" | "multi_field";
   /** Single-mode rendering style. `list` = podium-style ordered list
    *  (legacy, default). `vertical_bars` = vertical bar chart with every

@@ -21,6 +21,9 @@ export interface ReportFiltersValue {
   playerIds: string[];
   preset: DatePreset;
   date: DateRange;
+  /** Include players called up from another category (secondary players).
+   *  Default true — they show flagged; unchecking gives a home-only view. */
+  includeSecondary: boolean;
 }
 
 interface Props {
@@ -72,6 +75,15 @@ export default function ReportFilters({
           onChange={(next) => onChange({ ...value, preset: next.preset, date: next.date })}
         />
       )}
+
+      <label className={styles.secondaryToggle}>
+        <input
+          type="checkbox"
+          checked={value.includeSecondary}
+          onChange={(e) => onChange({ ...value, includeSecondary: e.target.checked })}
+        />
+        <span>Incluir convocados de otra categoría</span>
+      </label>
     </div>
   );
 }
@@ -238,6 +250,7 @@ export function defaultFilters(): ReportFiltersValue {
     playerIds: [],
     preset: base.preset,
     date: base.date,
+    includeSecondary: true,
   };
 }
 // Re-export the underlying types so callers needing finer-grained imports

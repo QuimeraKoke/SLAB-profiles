@@ -309,6 +309,81 @@ class Player(models.Model):
         return f"{self.first_name} {self.last_name}"
 
 
+class PlayerCallUp(models.Model):
+    """A player 'called up' to a category other than their home one.
+
+    A player's HOME category stays `Player.category` (unchanged FK). A call-up
+    is an *additive, flagged* secondary membership — e.g. a SUB-20 groomed for /
+    training with the Primer Equipo. Semantics (see PLAYER_CALLUP_STRATEGY.md):
+
+    * **Equal access** — the call-up category's staff get the same working
+      access to the player as to their home players (`api.scoping.scope_players`
+      widens to include active call-ups).
+    * **Shown flagged** — the player appears in the call-up category's roster /
+      views with a badge, never unbadged.
+    * **Not counted** — the player is NOT folded into the call-up category's
+      team stats (counts stay home-category only, i.e. the plain `category=`
+      filter, which excludes call-ups by construction).
+
+    Additive: an empty table means zero behavior change anywhere.
+    """
+
+    STATUS_CALL_UP = "call_up"
+    STATUS_PROMOTION = "promotion_track"
+    STATUS_CHOICES = [
+        (STATUS_CALL_UP, "Convocado"),
+        (STATUS_PROMOTION, "Proyección (listo para subir)"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.ForeignKey(
+        Player, on_delete=models.CASCADE, related_name="call_ups",
+    )
+    category = models.ForeignKey(
+        Category, on_delete=models.CASCADE, related_name="called_up_players",
+        help_text="Category the player is called up TO (must differ from the "
+                  "player's home category).",
+    )
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default=STATUS_CALL_UP,
+    )
+    active = models.BooleanField(
+        default=True, db_index=True,
+        help_text="Inactive call-ups drop the player from the category's access "
+                  "+ views (history kept).",
+    )
+    since = models.DateField(null=True, blank=True)
+    note = models.CharField(max_length=200, blank=True)
+    created_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_call_ups",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["player", "category"], name="uniq_player_callup_category",
+            ),
+        ]
+        indexes = [models.Index(fields=["category", "active"])]
+
+    def clean(self) -> None:
+        super().clean()
+        if (
+            self.player_id and self.category_id
+            and self.player.category_id == self.category_id
+        ):
+            from django.core.exceptions import ValidationError
+            raise ValidationError({
+                "category": "La categoría de convocatoria debe ser distinta a la "
+                            "categoría principal del jugador.",
+            })
+
+    def __str__(self) -> str:
+        return f"{self.player} → {self.category} ({self.get_status_display()})"
+
+
 class PlayerAlias(models.Model):
     """Alternate identifiers a player can be matched by during bulk ingest.
 

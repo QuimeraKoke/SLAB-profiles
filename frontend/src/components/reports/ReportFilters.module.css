@@ -23,7 +23,7 @@
 .field input[type="date"] {
   padding: 8px 12px;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 0.9rem;
   background: #ffffff;
   min-width: 180px;
@@ -44,10 +44,36 @@
   position: relative;
 }
 
+/* A bordered chip so it reads as a filter control (not floating text) and
+   bottom-aligns with the select/date inputs on the flex-end bar. */
+.secondaryToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 0.85rem;
+  color: #374151;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.secondaryToggle:hover {
+  border-color: #9ca3af;
+}
+
+.secondaryToggle input {
+  cursor: pointer;
+  accent-color: #6d28d9;
+}
+
 .playerButton {
   padding: 8px 12px;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
+  border-radius: 8px;
   font-size: 0.9rem;
   background: #ffffff;
   min-width: 220px;

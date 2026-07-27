@@ -2006,6 +2006,7 @@ def get_team_report(
     player_ids: str | None = None,
     match_id: str | None = None,
     match_ids: str | None = None,
+    include_secondary: bool = True,
 ):
     """Return the active TeamReportLayout for `(department, category)`.
 
@@ -2193,6 +2194,7 @@ def get_team_report(
                         date_to=parsed_to,
                         event_id=parsed_match_id,
                         event_ids=parsed_match_ids or None,
+                        include_secondary=include_secondary,
                     ),
                 }
             )

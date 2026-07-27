@@ -8,6 +8,7 @@ import type {
   TeamReportWidget,
 } from "@/lib/types";
 
+import CallUpMark from "./CallUpMark";
 import ShowNoDataToggle from "./ShowNoDataToggle";
 import styles from "./TeamLeaderboard.module.css";
 
@@ -71,6 +72,11 @@ const singleRowHasData = (row: SingleRow): boolean => (row.samples ?? 0) > 0;
  *  rendering — see the discriminated row type above. */
 export default function TeamLeaderboard({ widget }: Props) {
   const data = widget.data as TeamLeaderboardPayload;
+  // Players shown here on call-up (secondary category) — badged in the list.
+  const callUpIds = useMemo(
+    () => new Set(data.call_up_player_ids ?? []),
+    [data.call_up_player_ids],
+  );
   const isMultiField = data.mode === "multi_field";
 
   // Per-chart aggregator override. Defaults to whatever the layout
@@ -227,6 +233,7 @@ export default function TeamLeaderboard({ widget }: Props) {
               <span className={styles.rank}>#{row.rank}</span>
               <span className={styles.name} title={row.player_name}>
                 {row.player_name}
+                <CallUpMark show={callUpIds.has(row.player_id)} />
               </span>
               <span className={styles.value}>
                 {formatNumber(row.value)}{unit}

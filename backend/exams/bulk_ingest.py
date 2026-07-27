@@ -22,7 +22,9 @@ from typing import Any
 import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
 
-from core.models import Category, Player, PlayerAlias
+from django.db.models import Q
+
+from core.models import Category, Player, PlayerAlias, PlayerCallUp
 from events.models import Event
 from exams.calculations import compute_result_data
 from exams.models import ExamResult, ExamTemplate
@@ -92,10 +94,25 @@ def _normalize(text: str) -> str:
 
 
 def _build_player_index(category: Category) -> tuple[dict[str, Player], dict[str, Player]]:
-    """Build two normalized lookups: by alias value and by full name."""
-    players = list(Player.objects.filter(category=category, is_active=True))
+    """Build two normalized lookups: by alias value and by full name.
+
+    Includes the category's HOME players plus players actively CALLED UP to it
+    (see core.models.PlayerCallUp) — so a first-team upload resolves youth
+    players training with the first team, without matching across the whole club.
+    """
+    call_up_pids = list(
+        PlayerCallUp.objects.filter(
+            category=category, active=True, player__is_active=True,
+        ).values_list("player_id", flat=True)
+    )
+    players = list(
+        Player.objects.filter(is_active=True)
+        .filter(Q(category=category) | Q(pk__in=call_up_pids))
+        .distinct()
+    )
     aliases = (
-        PlayerAlias.objects.filter(player__category=category, player__is_active=True)
+        PlayerAlias.objects.filter(player__is_active=True)
+        .filter(Q(player__category=category) | Q(player_id__in=call_up_pids))
         .select_related("player")
     )
 

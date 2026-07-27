@@ -13,6 +13,7 @@ from datetime import timedelta
 from django.utils import timezone
 
 from core.models import Player
+from api.scoping import players_in_category
 from dashboards.acwr import compute_acwr, resolve_specs
 
 _STATUS_LABEL = {
@@ -31,9 +32,11 @@ _STATUS_FACTOR = {
 
 
 def build_roster(category) -> dict:
+    # Home players + players CALLED UP to this category (shown flagged). Counts
+    # below stay home-only — a call-up isn't part of this squad's totals.
     players = list(
-        Player.objects.filter(category=category, is_active=True)
-        .select_related("position").order_by("last_name", "first_name")
+        players_in_category(category)
+        .select_related("position", "category").order_by("last_name", "first_name")
     )
     pids = [p.id for p in players]
 
@@ -49,10 +52,14 @@ def build_roster(category) -> dict:
     }
 
     rows = []
-    counts = {"all": len(players), "available": 0, "reintegration": 0,
+    counts = {"all": 0, "available": 0, "reintegration": 0,
               "recovery": 0, "injured": 0}
     for p in players:
-        counts[p.status] = counts.get(p.status, 0) + 1
+        # A call-up (home category differs) is shown but NOT counted here.
+        is_call_up = p.category_id != category.id
+        if not is_call_up:
+            counts["all"] += 1
+            counts[p.status] = counts.get(p.status, 0) + 1
         w = wellness.get(p.id)
         a_meta = acwr.get(p.id)                       # dict or None
         a = a_meta["ratio"] if a_meta else None       # ratio float for readiness/tone
@@ -76,6 +83,8 @@ def build_roster(category) -> dict:
             "acwr": a,
             "acwr_meta": a_meta,
             "forma": forma.get(p.id, []),
+            "call_up": is_call_up,
+            "home_category": p.category.name if is_call_up else None,
         })
     return {"category": category.name, "counts": counts, "players": rows}
 

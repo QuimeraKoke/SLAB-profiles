@@ -7,6 +7,7 @@ from .models import (
     Department,
     Player,
     PlayerAlias,
+    PlayerCallUp,
     Position,
     StaffMembership,
 )
@@ -16,6 +17,32 @@ class PlayerAliasInline(admin.TabularInline):
     model = PlayerAlias
     extra = 0
     fields = ("kind", "source", "value")
+
+
+class PlayerCallUpInline(admin.TabularInline):
+    """Manage a player's call-ups (secondary categories) from their page."""
+    model = PlayerCallUp
+    fk_name = "player"
+    extra = 0
+    fields = ("category", "status", "active", "since", "note")
+    verbose_name = "Convocatoria (categoría secundaria)"
+    verbose_name_plural = "Convocatorias (categorías secundarias)"
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        # Restrict the call-up category to the player's own club, excluding
+        # their home category (a call-up must be to a DIFFERENT category).
+        if db_field.name == "category":
+            object_id = request.resolver_match.kwargs.get("object_id")
+            if object_id:
+                player = (
+                    Player.objects.filter(pk=object_id)
+                    .select_related("category__club").first()
+                )
+                if player and player.category_id:
+                    kwargs["queryset"] = Category.objects.filter(
+                        club=player.category.club,
+                    ).exclude(pk=player.category_id)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 class ContractInline(admin.StackedInline):
@@ -178,7 +205,7 @@ class PlayerAdmin(admin.ModelAdmin):
     list_filter = ("category", "position", "sex", "is_active")
     search_fields = ("first_name", "last_name", "nationality")
     autocomplete_fields = ("position",)
-    inlines = [PlayerAliasInline, ContractInline]
+    inlines = [PlayerCallUpInline, PlayerAliasInline, ContractInline]
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
         """Limit the position dropdown to the player's own club."""
@@ -189,6 +216,18 @@ class PlayerAdmin(admin.ModelAdmin):
                 if player and player.category_id:
                     kwargs["queryset"] = Position.objects.filter(club=player.category.club)
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
+
+@admin.register(PlayerCallUp)
+class PlayerCallUpAdmin(admin.ModelAdmin):
+    list_display = ("player", "home_category", "category", "status", "active", "since")
+    list_filter = ("category", "status", "active")
+    search_fields = ("player__first_name", "player__last_name", "category__name")
+    autocomplete_fields = ("player",)
+
+    @admin.display(description="Categoría principal")
+    def home_category(self, obj: PlayerCallUp):
+        return obj.player.category
 
 
 @admin.register(Contract)

@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { Smile, Meh, Frown, Pencil, UserMinus, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import { Smile, Meh, Frown, Pencil, UserMinus, ChevronUp, ChevronDown, ChevronsUpDown, ArrowUpRight } from "lucide-react";
 
 import styles from "./RosterTable.module.css";
 
@@ -23,6 +23,11 @@ export interface RosterRow {
   acwr: number | null;
   acwr_meta?: AcwrMeta | null;
   forma: FormaBar[];
+  /** True when the player's home category differs from the one being viewed
+   *  (a call-up shown flagged, not counted in this category's totals). */
+  call_up?: boolean;
+  /** The player's home category name — shown on the call-up badge. */
+  home_category?: string | null;
 }
 export interface AcwrMeta {
   ratio: number; acute_km: number; chronic_week_km: number; last: string | null;
@@ -139,7 +144,18 @@ export default function RosterTable({
                 <Link href={`/perfil/${r.id}`} className={styles.player}>
                   <Avatar photo={r.photo} initials={r.initials} />
                   <span className={styles.pmeta}>
-                    <span className={styles.pname}>{r.name}</span>
+                    <span className={styles.pname}>
+                      {r.name}
+                      {r.call_up && (
+                        <span
+                          className={styles.callupBadge}
+                          title={`Convocado · categoría principal: ${r.home_category ?? "—"}`}
+                        >
+                          <ArrowUpRight size={11} aria-hidden="true" />
+                          {r.home_category ?? "convocado"}
+                        </span>
+                      )}
+                    </span>
                     <span className={styles.ppos}>{r.position}</span>
                   </span>
                 </Link>

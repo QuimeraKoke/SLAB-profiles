@@ -146,6 +146,9 @@ export default function ReportePage({ params }: PageProps) {
     if (filters.playerIds.length > 0) {
       params.set("player_ids", filters.playerIds.join(","));
     }
+    // Home-only view when the user unchecks "Incluir convocados". Default
+    // (true) is the backend default, so only send it when opting out.
+    if (!filters.includeSecondary) params.set("include_secondary", "false");
     // When the layout exposes a match selector, the chosen match scopes
     // time — sending date_from/to in addition would just confuse the
     // resolver. We still send them on the first request (before layout
@@ -214,61 +217,69 @@ export default function ReportePage({ params }: PageProps) {
           <span className={styles.eyebrow}>Reporte por departamento</span>
           <h1 className={styles.title}>{department.name}</h1>
         </div>
-        <div className={styles.controls}>
-          <ReportFilters
-            positions={positions}
-            players={players}
-            value={filters}
-            onChange={setFilters}
-            hideDateRange={layout?.match_selector?.enabled === true}
-          />
-          {/* NAV-04: the dashboard is squad-only (no "Por jugador" tab). This
-              picker is a drill-down jump — choosing a player opens their
-              department profile, the canonical per-player surface. */}
-          <PlayerPicker
-            players={players}
-            onJump={(id) => router.push(`/perfil/${id}?tab=${department.slug}`)}
-          />
-          {layout && categoryId && (
-            <DownloadExcelButton
-              deptSlug={department.slug}
-              sections={layout.sections}
-              meta={{
-                departmentName: department.name,
-                categoryName: layout.category.name,
-                filters: {
-                  positionLabel: filterPositionLabel(filters.positionId, positions),
-                  playerNames: filterPlayerNames(filters.playerIds, players),
-                  dateFrom: filters.date.from,
-                  dateTo: filters.date.to,
-                },
-              }}
+        <div className={styles.toolbar}>
+          <div className={styles.group}>
+            <span className={styles.groupTitle}>Filtros</span>
+            <ReportFilters
+              positions={positions}
+              players={players}
+              value={filters}
+              onChange={setFilters}
+              hideDateRange={layout?.match_selector?.enabled === true}
             />
-          )}
-          {layout && categoryId && (
-            <DownloadPdfButton
-              endpoint={`/reports/${department.slug}/team.docx?${teamDocxQuery(categoryId, filters)}`}
-              filename={`reporte-${department.slug}-${layout.category.name}.docx`.replace(/\s+/g, "_")}
-            />
-          )}
-          {editMode && categoryId && (
-            <button
-              type="button"
-              className={styles.editToggle}
-              onClick={() => setAddOpen(true)}
-            >
-              + Agregar gráfico
-            </button>
-          )}
-          {layout && canEditPanel && (
-            <button
-              type="button"
-              className={editMode ? styles.editOn : styles.editToggle}
-              onClick={() => setEditMode((e) => !e)}
-            >
-              {editMode ? "Listo" : "Editar panel"}
-            </button>
-          )}
+          </div>
+          <div className={styles.group}>
+            <span className={styles.groupTitle}>Acciones</span>
+            <div className={styles.actionZone}>
+              {/* NAV-04: the dashboard is squad-only (no "Por jugador" tab). This
+                  picker is a drill-down jump — choosing a player opens their
+                  department profile, the canonical per-player surface. */}
+              <PlayerPicker
+                players={players}
+                onJump={(id) => router.push(`/perfil/${id}?tab=${department.slug}`)}
+              />
+              {layout && categoryId && (
+              <DownloadExcelButton
+                deptSlug={department.slug}
+                sections={layout.sections}
+                meta={{
+                  departmentName: department.name,
+                  categoryName: layout.category.name,
+                  filters: {
+                    positionLabel: filterPositionLabel(filters.positionId, positions),
+                    playerNames: filterPlayerNames(filters.playerIds, players),
+                    dateFrom: filters.date.from,
+                    dateTo: filters.date.to,
+                  },
+                }}
+              />
+            )}
+            {layout && categoryId && (
+              <DownloadPdfButton
+                endpoint={`/reports/${department.slug}/team.docx?${teamDocxQuery(categoryId, filters)}`}
+                filename={`reporte-${department.slug}-${layout.category.name}.docx`.replace(/\s+/g, "_")}
+              />
+            )}
+            {editMode && categoryId && (
+              <button
+                type="button"
+                className={styles.editToggle}
+                onClick={() => setAddOpen(true)}
+              >
+                + Agregar gráfico
+              </button>
+            )}
+            {layout && canEditPanel && (
+              <button
+                type="button"
+                className={editMode ? styles.editOn : styles.editToggle}
+                onClick={() => setEditMode((e) => !e)}
+              >
+                {editMode ? "Listo" : "Editar panel"}
+              </button>
+            )}
+            </div>
+          </div>
         </div>
       </header>
 
@@ -350,26 +361,25 @@ interface PlayerPickerProps {
  *  selection — the value stays empty and resets after navigating. */
 function PlayerPicker({ players, onJump }: PlayerPickerProps) {
   return (
-    <label className={styles.field}>
-      <span className={styles.label}>Ver perfil</span>
-      <select
-        value=""
-        onChange={(e) => {
-          if (e.target.value) onJump(e.target.value);
-        }}
-      >
-        <option value="">— ver perfil de un jugador —</option>
-        {groupPlayersByPosition(players).map((g) => (
-          <optgroup key={g.key} label={g.label}>
-            {g.players.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.first_name} {p.last_name}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-    </label>
+    <select
+      className={styles.profileSelect}
+      aria-label="Ver perfil de un jugador"
+      value=""
+      onChange={(e) => {
+        if (e.target.value) onJump(e.target.value);
+      }}
+    >
+      <option value="">— ver perfil de un jugador —</option>
+      {groupPlayersByPosition(players).map((g) => (
+        <optgroup key={g.key} label={g.label}>
+          {g.players.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.first_name} {p.last_name}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
   );
 }
 

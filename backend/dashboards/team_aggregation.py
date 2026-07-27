@@ -14,6 +14,7 @@ can show a friendly stub instead of crashing.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -24,6 +25,17 @@ from exams.models import Episode, ExamResult, ExamTemplate
 
 from .models import Aggregation, ChartType, TeamReportWidget
 from .stats import deviation as _stats_deviation
+
+
+# When False, every team widget's roster EXCLUDES players who are only called
+# up to the category (secondary players — see api.scoping.players_in_category).
+# Set per request by resolve_team_widget so the report page's "incluir
+# secundarios" toggle reaches all 16 resolvers without threading a flag through
+# each one (same ContextVar pattern the PDF renderers use for column width).
+# Default True: callers that don't opt out see the full flagged roster.
+_INCLUDE_SECONDARY: ContextVar[bool] = ContextVar(
+    "team_include_secondary", default=True,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -41,6 +53,7 @@ def resolve_team_widget(
     date_to: datetime | None = None,
     event_id: UUID | None = None,
     event_ids: Sequence[UUID] | None = None,
+    include_secondary: bool = True,
 ) -> dict[str, Any]:
     """Resolve a team-scoped widget against a category roster.
 
@@ -62,8 +75,12 @@ def resolve_team_widget(
     linked to that Event (i.e., one specific match). Used by per-match
     report layouts (e.g. GPS match reports). Episode / Goal / Alert
     based resolvers ignore this param — they're not match-scoped.
+
+    `include_secondary` (default True): when False, players who are only
+    CALLED UP to this category are dropped from every widget's roster — the
+    report page's "incluir secundarios" toggle. When True, each widget's
+    payload also carries `call_up_player_ids` so the frontend can flag them.
     """
-    chart_type = widget.chart_type
     common = {
         "position_id": position_id,
         "player_ids": player_ids,
@@ -72,6 +89,40 @@ def resolve_team_widget(
         "event_id": event_id,
         "event_ids": event_ids,
     }
+    token = _INCLUDE_SECONDARY.set(include_secondary)
+    try:
+        result = _dispatch_team_widget(widget, category, common)
+    finally:
+        _INCLUDE_SECONDARY.reset(token)
+
+    # Tell the frontend which of this widget's roster players are call-ups
+    # (home category differs) so it can badge them. Empty when secondaries are
+    # excluded or the category has none. Cheap roster re-query (~30 rows).
+    if isinstance(result, dict) and "call_up_player_ids" not in result:
+        if include_secondary:
+            inner = _INCLUDE_SECONDARY.set(True)
+            try:
+                result["call_up_player_ids"] = [
+                    str(p.id)
+                    for p in _roster_query(category, position_id, player_ids)
+                    if p.category_id != category.id
+                ]
+            finally:
+                _INCLUDE_SECONDARY.reset(inner)
+        else:
+            result["call_up_player_ids"] = []
+    return result
+
+
+def _dispatch_team_widget(
+    widget: TeamReportWidget,
+    category: Category,
+    common: dict[str, Any],
+) -> dict[str, Any]:
+    """Route a widget to its chart-type resolver. Split out from
+    `resolve_team_widget` so the ContextVar set/reset wraps the whole
+    dispatch in one try/finally."""
+    chart_type = widget.chart_type
     if chart_type == ChartType.TEAM_HORIZONTAL_COMPARISON.value:
         return _resolve_team_horizontal_comparison(widget, category, **common)
     if chart_type == ChartType.TEAM_ROSTER_MATRIX.value:
@@ -117,8 +168,19 @@ def _roster_query(
     Players that the caller passes in `player_ids` are kept even if they
     have no data in the current date window — by design, since the
     selection itself is the user's "frame of reference".
+
+    Includes players CALLED UP to the category (secondary players) unless the
+    `_INCLUDE_SECONDARY` ContextVar is False. A call-up is a player whose home
+    `category` differs from this one — callers detect them with
+    `p.category_id != category.id`.
     """
-    qs = Player.objects.filter(category_id=category.id, is_active=True)
+    # Lazy import: api.routers imports this module, so a top-level
+    # `from api.scoping import ...` would risk an import cycle.
+    from api.scoping import players_in_category
+
+    qs = players_in_category(
+        category, include_call_ups=_INCLUDE_SECONDARY.get(),
+    )
     if position_id is not None:
         qs = qs.filter(position_id=position_id)
     if player_ids:

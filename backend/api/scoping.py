@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 
 from core.models import StaffMembership
 
@@ -64,12 +64,42 @@ def scope_positions(qs: QuerySet, membership: StaffMembership | None) -> QuerySe
 
 
 def scope_players(qs: QuerySet, membership: StaffMembership | None) -> QuerySet:
+    """Players a staff user may access (ACCESS scope — view/edit/exams/notes).
+
+    Equal-access rule for call-ups: a player is in scope when their HOME
+    category is assigned OR they're ACTIVELY called up to an assigned category
+    (see `core.models.PlayerCallUp`). This is the permission boundary only —
+    team COUNTS/aggregation must stay home-category-only via the plain
+    `category=`/`category__in` filter, which excludes call-ups by construction.
+    """
     if has_full_access(membership):
         return qs
     qs = qs.filter(category__club=membership.club)
     if not membership.all_categories:
-        qs = qs.filter(category__in=membership.categories.all())
+        cat_ids = list(membership.categories.values_list("pk", flat=True))
+        qs = qs.filter(
+            Q(category__in=cat_ids)
+            | Q(call_ups__category__in=cat_ids, call_ups__active=True)
+        ).distinct()
     return qs
+
+
+def players_in_category(category, *, include_call_ups: bool = True) -> QuerySet:
+    """DISPLAY roster for one category: home players + (optionally) active
+    call-ups. For COUNTS/aggregation pass `include_call_ups=False` (or use a
+    plain `category=` filter) — call-ups are shown flagged, never counted.
+
+    Callers can tell a call-up apart with `p.category_id != category.id`.
+    """
+    from core.models import Player
+
+    qs = Player.objects.filter(is_active=True)
+    if include_call_ups:
+        return qs.filter(
+            Q(category=category)
+            | Q(call_ups__category=category, call_ups__active=True)
+        ).distinct()
+    return qs.filter(category=category)
 
 
 def scope_players_for_roster(qs: QuerySet, membership: StaffMembership | None) -> QuerySet:

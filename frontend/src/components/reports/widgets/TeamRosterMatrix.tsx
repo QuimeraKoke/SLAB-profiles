@@ -7,6 +7,7 @@ import type {
   TeamReportWidget,
   TeamRosterMatrixPayload,
 } from "@/lib/types";
+import CallUpMark from "./CallUpMark";
 import styles from "./TeamRosterMatrix.module.css";
 
 interface Props {
@@ -18,6 +19,11 @@ type SortState = { key: string; dir: SortDir };
 
 export default function TeamRosterMatrix({ widget }: Props) {
   const data = widget.data as TeamRosterMatrixPayload;
+  // Players shown here on call-up (secondary category) — badged in the list.
+  const callUpIds = useMemo(
+    () => new Set(data.call_up_player_ids ?? []),
+    [data.call_up_player_ids],
+  );
 
   // Default sort: player name asc. Click any header to sort by that column.
   // Repeated clicks toggle direction; clicking a different column resets to asc.
@@ -145,6 +151,7 @@ export default function TeamRosterMatrix({ widget }: Props) {
               <tr key={row.player_id}>
                 <td className={styles.playerCell} title={row.player_name}>
                   {row.player_name}
+                  <CallUpMark show={callUpIds.has(row.player_id)} />
                 </td>
                 {data.columns.map((col) => {
                   const cell = row.cells?.[col.key];

@@ -7,31 +7,33 @@
 .button {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border: 1px solid #b91c1c;
+  gap: 7px;
+  padding: 0 14px;
+  height: 38px;
+  border: 1px solid #d0d5dd;
   background: #ffffff;
-  color: #991b1b;
-  border-radius: 6px;
-  font-size: 0.85rem;
+  color: #344054;
+  border-radius: 8px;
+  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  height: 38px;
 }
 
 .button:hover:not(:disabled) {
-  background: #fef2f2;
+  background: #f9fafb;
+  border-color: #b7bdc7;
 }
 
 .button:disabled {
-  opacity: 0.6;
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
+/* Subtle format cue — blue download glyph, neutral button. */
 .icon {
-  font-size: 0.95rem;
-  line-height: 1;
+  display: inline-flex;
+  color: #2563eb;
 }
 
 .error {
