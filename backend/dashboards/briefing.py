@@ -3,8 +3,9 @@
 One LLM call per department: each department's `InsightAgent` (its persona
 + research-grounded playbook KB) reads the squad's live snapshot and emits
 0–4 actionable cards for its area. The cards are merged, ranked by priority
-then confidence, numbered, and cached (`BriefingSnapshot`) keyed on the data
-+ agents' config so the multi-call generation runs once per state.
+then confidence, and cached (`BriefingSnapshot`) PER DEPARTMENT — each keyed
+on the slice of the snapshot that department materially depends on, so a
+change regenerates only the affected area(s) rather than all five.
 
 The card output contract is code-owned (`_BRIEFING_CONTRACT`) so editing an
 agent's playbook can never break parsing. Never raises — returns whatever
@@ -61,9 +62,39 @@ _BRIEFING_CONTRACT = (
 )
 
 
+# ─── Per-department change-detection (only rebuild what changed) ───────
+#
+# Each department's cards are cached against the SLICE of the snapshot that
+# department materially depends on, so a GPS upload rebuilds only Físico, a
+# wellness sync only Wellness, etc. — not all five. The model still receives
+# the WHOLE snapshot on every (re)generation, so a rebuilt card is exactly
+# what it is today; only the *when-to-rebuild* decision changes. The bias is
+# toward over-waking (an unresolved metric wakes everyone), so a card is
+# never stale — at worst it rebuilds as often as before.
+
+# Cross-cutting framing hashed into EVERY department's key: squad status,
+# next match, pre-match risk, active alerts (which carry no per-department
+# attribution), data quality. A change here reframes all areas → all rebuild.
+_GLOBAL_KEYS = (
+    "categoria", "kpis", "estado_plantel", "disponibilidad_por_linea",
+    "proximo_partido", "riesgo_pre_partido", "jugadores_que_requieren_decision",
+    "calidad_de_datos", "alertas_activas",
+)
+# Per-player identity/status is framing too (an injury flips availability for
+# everyone) → in every department's key. Weekly GPS load is routed, not framing.
+_ROSTER_IDENTITY = ("nombre", "posicion", "estado", "edad")
+# Weekly GPS load wakes Físico + Médico (load ↔ injury risk).
+_LOAD_DEPTS = ("fisico", "medico")
+# A metric's home department (from its template) also wakes these — wellness/
+# psicosocial signals are clinically relevant (molestia ↔ Médico).
+_METRIC_EXTRA_LINKS = {"psicosocial": ("medico",)}
+
+
 def generate_briefing(category) -> list[dict]:
-    """Ranked briefing cards for the category — cached by data+agents
-    signature. Never raises."""
+    """Ranked briefing cards for the category. Each department's cards are
+    cached independently, keyed on the slice of the snapshot that department
+    materially depends on — so a change rebuilds only the affected area(s),
+    not all five. Never raises."""
     api_key = (getattr(settings, "ANTHROPIC_API_KEY", "") or "").strip()
 
     from dashboards.assistant import build_team_context
@@ -78,61 +109,156 @@ def generate_briefing(category) -> list[dict]:
     agents = list(
         InsightAgent.objects.filter(is_active=True, key__in=_DEPT_LABEL.keys())
     )
-    model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
-    signature = _signature(context, agents, model)
-
-    cached = (
-        BriefingSnapshot.objects
-        .filter(category=category, data_hash=signature)
-        .first()
-    )
-    if cached is not None:
-        items = cached.items or []
-        _attach_player_ids(items, category)  # live — old snapshots lack ids
-        return items
-
-    if not api_key or not agents:
+    if not agents:
         return []
+    model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
 
-    context_json = json.dumps(
-        {k: v for k, v in context.items() if k != "fecha"},
-        ensure_ascii=False, default=str,
-    )
+    # One cache key per department, over only that department's material slice.
+    tpl_to_dept = _template_department_map()
+    per_dept_sig = {
+        a.key: _dept_signature(_material_view(context, a.key, tpl_to_dept), a, model)
+        for a in agents
+    }
+    cached = {
+        r.data_hash: (r.items or [])
+        for r in BriefingSnapshot.objects.filter(
+            category=category, data_hash__in=list(per_dept_sig.values())
+        )
+    }
 
-    # One call per department. The shared squad snapshot is a cached prefix,
-    # but concurrent requests can't read each other's cache — firing all five
-    # at once makes each PAY a cache-write for the identical snapshot (a net
-    # loss). So warm the cache with the first department serially, THEN fan out
-    # the rest in parallel — they read the snapshot the first call wrote.
     items: list[dict] = []
-    first, rest = agents[0], agents[1:]
-    try:
-        items.extend(_call_department(api_key, model, context_json, first))
-    except Exception:  # noqa: BLE001 — one area failing must not sink the rest
-        logger.exception("Briefing: department '%s' failed.", first.key)
-    if rest:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(rest))) as pool:
-            futures = {
-                pool.submit(_call_department, api_key, model, context_json, a): a
-                for a in rest
-            }
-            for fut in concurrent.futures.as_completed(futures):
-                a = futures[fut]
-                try:
-                    items.extend(fut.result())
-                except Exception:  # noqa: BLE001
-                    logger.exception("Briefing: department '%s' failed.", a.key)
+    stale = []  # departments whose slice changed → must regenerate
+    for a in agents:
+        hit = cached.get(per_dept_sig[a.key])
+        if hit is not None:
+            items.extend(hit)
+        else:
+            stale.append(a)
+
+    if stale and api_key:
+        context_json = json.dumps(
+            {k: v for k, v in context.items() if k != "fecha"},
+            ensure_ascii=False, default=str,
+        )
+        # The shared squad snapshot is a cached prefix, but concurrent calls
+        # can't read each other's cache. So warm it with the first stale
+        # department serially, THEN fan out the rest — they read the prefix
+        # the first call wrote instead of each paying to re-write it.
+        first, rest = stale[0], stale[1:]
+        items.extend(_generate_and_store(
+            category, per_dept_sig[first.key], api_key, model, context_json, first
+        ))
+        if rest:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(rest))) as pool:
+                futures = {
+                    pool.submit(_call_department, api_key, model, context_json, a): a
+                    for a in rest
+                }
+                for fut in concurrent.futures.as_completed(futures):
+                    a = futures[fut]
+                    try:
+                        a_items = fut.result()
+                    except Exception:  # noqa: BLE001 — one area failing must not sink the rest
+                        logger.exception("Briefing: department '%s' failed.", a.key)
+                        a_items = []
+                    _persist_dept(category, per_dept_sig[a.key], model, a_items)
+                    items.extend(a_items)
 
     items = _rank(items)
     _attach_player_ids(items, category)
+    return items
+
+
+def _generate_and_store(
+    category, data_hash: str, api_key: str, model: str, context_json: str, agent
+) -> list[dict]:
+    """Serial warm call for one department + persist its cards. Never raises."""
+    try:
+        dept_items = _call_department(api_key, model, context_json, agent)
+    except Exception:  # noqa: BLE001 — one area failing must not sink the rest
+        logger.exception("Briefing: department '%s' failed.", agent.key)
+        dept_items = []
+    _persist_dept(category, data_hash, model, dept_items)
+    return dept_items
+
+
+def _persist_dept(category, data_hash: str, model: str, dept_items: list[dict]) -> None:
+    """Best-effort cache of one department's cards, keyed on its slice hash."""
+    from dashboards.models import BriefingSnapshot
+
     try:
         BriefingSnapshot.objects.update_or_create(
-            category=category, data_hash=signature,
-            defaults={"model": model, "items": items},
+            category=category, data_hash=data_hash,
+            defaults={"model": model, "items": dept_items},
         )
     except Exception:  # noqa: BLE001 — caching is best-effort
-        logger.exception("Briefing: failed to persist snapshot.")
-    return items
+        logger.exception("Briefing: failed to persist department snapshot.")
+
+
+def _template_department_map() -> dict:
+    """Template display-name → department slug, from ExamTemplate — routes each
+    per-player metric to its home department for change-detection. A name that
+    resolves to >1 department is dropped (treated as global). Never raises; an
+    empty map just means every metric is global (safe: more rebuilds, never a
+    stale card)."""
+    try:
+        from exams.models import ExamTemplate
+
+        pairs = list(ExamTemplate.objects.values_list("name", "department__slug"))
+    except Exception:  # noqa: BLE001
+        return {}
+    mapping: dict = {}
+    ambiguous: set = set()
+    for name, dept in pairs:
+        if not name or not dept:
+            continue
+        if name in mapping and mapping[name] != dept:
+            ambiguous.add(name)
+        mapping[name] = dept
+    for name in ambiguous:
+        mapping.pop(name, None)
+    return mapping
+
+
+def _metric_owner_depts(area, tpl_to_dept: dict):
+    """Department keys a metric with template-name `area` wakes, or None if it
+    can't be resolved to a known department → treated as global (wakes all)."""
+    home = tpl_to_dept.get(area)
+    if home is None or home not in _DEPT_LABEL:
+        return None
+    return {home, *_METRIC_EXTRA_LINKS.get(home, ())}
+
+
+def _material_view(context: dict, dept_key: str, tpl_to_dept: dict) -> dict:
+    """The slice of the snapshot department `dept_key` materially depends on:
+    the global framing block + its own per-player metric detail. Drives the
+    cache key ONLY — the full snapshot is still sent to the model — so a card
+    rebuilds exactly when its own inputs move."""
+    view = {k: context[k] for k in _GLOBAL_KEYS if k in context}
+    roster_view = []
+    for p in context.get("plantel") or []:
+        entry = {k: p.get(k) for k in _ROSTER_IDENTITY}
+        if dept_key in _LOAD_DEPTS and p.get("carga_semanal"):
+            entry["carga_semanal"] = p["carga_semanal"]
+        mine = []
+        for met in p.get("metricas") or []:
+            owners = _metric_owner_depts(met.get("area"), tpl_to_dept)
+            if owners is None or dept_key in owners:
+                mine.append(met)
+        if mine:
+            entry["metricas"] = mine
+        roster_view.append(entry)
+    view["plantel"] = roster_view
+    return view
+
+
+def _dept_signature(view: dict, agent, model: str) -> str:
+    basis = (
+        f"briefing-dept\n{_RENDER_VERSION}\n{model}\n{agent.key}\n"
+        f"{agent.config_fingerprint()}\n"
+        + json.dumps(view, ensure_ascii=False, sort_keys=True, default=str)
+    )
+    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
 # ─── Per-department generation ────────────────────────────────────────
@@ -283,16 +409,6 @@ def _attach_player_ids(items: list[dict], category) -> None:
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────
-
-
-def _signature(context: dict, agents, model: str) -> str:
-    stable = {k: v for k, v in context.items() if k != "fecha"}
-    agents_fp = "|".join(sorted(a.config_fingerprint() for a in agents))
-    basis = (
-        f"briefing\n{_RENDER_VERSION}\n{model}\n{agents_fp}\n"
-        + json.dumps(stable, ensure_ascii=False, sort_keys=True, default=str)
-    )
-    return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
 
 def _clamp_pct(v) -> int:
