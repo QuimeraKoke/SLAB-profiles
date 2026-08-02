@@ -145,6 +145,122 @@ class StatsTests(SimpleTestCase):
         self.assertEqual(d["z"], 2.0)        # (10-6)/sd(=2)
 
 
+class ParseDateWindowTests(SimpleTestCase):
+    """`_parse_date_window` — the shared date-range sanitizer behind the
+    player layout (`/players/{id}/views`) and team reports (`/reports/{slug}`).
+
+    Regression: a date-only upper bound parsed to midnight, so
+    `recorded_at__lte=<to>` dropped everything recorded on the final day —
+    "últimos 30 días" and custom ranges never showed today's data.
+    """
+
+    def _win(self, a, b):
+        from api.routers import _parse_date_window
+
+        return _parse_date_window(a, b)
+
+    def test_date_only_upper_bound_covers_the_whole_day(self):
+        _, to = self._win("2026-07-03", "2026-08-02")
+        self.assertEqual(to, datetime(2026, 8, 2, 23, 59, 59, 999999))
+
+    def test_same_day_range_is_not_empty(self):
+        frm, to = self._win("2026-08-02", "2026-08-02")
+        self.assertEqual(frm, datetime(2026, 8, 2, 0, 0))
+        self.assertEqual(to, datetime(2026, 8, 2, 23, 59, 59, 999999))
+        self.assertLess(frm, to)
+
+    def test_lower_bound_stays_at_midnight(self):
+        frm, _ = self._win("2026-07-03", "2026-08-02")
+        self.assertEqual(frm, datetime(2026, 7, 3, 0, 0))
+
+    def test_explicit_datetime_upper_bound_is_honored(self):
+        # An explicit time means the caller meant it — don't stretch it.
+        _, to = self._win("2026-07-03", "2026-08-02T09:30:00")
+        self.assertEqual(to, datetime(2026, 8, 2, 9, 30))
+
+    def test_inverted_range_swaps_then_stretches_the_upper_bound(self):
+        # The stretch must follow the swap, else 23:59:59 lands on the LOWER
+        # bound and the range silently loses most of its first day.
+        frm, to = self._win("2026-08-05", "2026-08-01")
+        self.assertEqual(frm, datetime(2026, 8, 1, 0, 0))
+        self.assertEqual(to, datetime(2026, 8, 5, 23, 59, 59, 999999))
+
+    def test_span_cap_still_enforced(self):
+        from api.routers import DATE_WINDOW_MAX_DAYS
+
+        frm, to = self._win("2023-08-02", "2026-08-02")
+        self.assertEqual((to - frm).days, DATE_WINDOW_MAX_DAYS)
+
+    def test_malformed_and_missing_are_none(self):
+        self.assertEqual(self._win("nope", "also-nope"), (None, None))
+        self.assertEqual(self._win(None, None), (None, None))
+        _, to = self._win(None, "2026-08-02")
+        self.assertEqual(to, datetime(2026, 8, 2, 23, 59, 59, 999999))
+
+
+class UsageBucketStartsTests(SimpleTestCase):
+    """`usage_bucket_starts` — the x-axis of the Uso page.
+
+    Regression: the series started at the cutoff and stepped forward, snapping
+    each week back to Monday. That shifted the whole run one bucket early, so
+    the in-progress week/month was never emitted and results recorded in it
+    silently vanished from the chart. The window must always run THROUGH the
+    current bucket, present even when there's no data for it.
+    """
+
+    def _keys(self, now, bucket, n):
+        from api.routers import usage_bucket_starts
+
+        return [d.date().isoformat() for d in usage_bucket_starts(now, bucket, n)]
+
+    # 2026-08-02 is a Sunday; its Monday-anchored week starts 2026-07-27.
+    SUNDAY = datetime(2026, 8, 2, 15, 30, tzinfo=_tz.utc)
+
+    def test_weekly_run_ends_on_the_current_week(self):
+        keys = self._keys(self.SUNDAY, "week", 12)
+        self.assertEqual(len(keys), 12)
+        self.assertEqual(keys[-1], "2026-07-27")
+        self.assertEqual(keys[0], "2026-05-11")
+
+    def test_sunday_is_not_pushed_into_the_next_week(self):
+        # Sunday is weekday()==6 — the boundary the old code got wrong.
+        self.assertEqual(self._keys(self.SUNDAY, "week", 1), ["2026-07-27"])
+
+    def test_monday_anchors_on_itself(self):
+        monday = datetime(2026, 7, 27, 0, 5, tzinfo=_tz.utc)
+        self.assertEqual(self._keys(monday, "week", 1), ["2026-07-27"])
+
+    def test_weekly_buckets_are_consecutive_mondays(self):
+        keys = self._keys(self.SUNDAY, "week", 6)
+        days = [datetime.fromisoformat(k) for k in keys]
+        self.assertTrue(all(d.weekday() == 0 for d in days))
+        gaps = {(b - a).days for a, b in zip(days, days[1:])}
+        self.assertEqual(gaps, {7})
+
+    def test_monthly_run_ends_on_the_current_month(self):
+        keys = self._keys(self.SUNDAY, "month", 6)
+        self.assertEqual(keys, [
+            "2026-03-01", "2026-04-01", "2026-05-01",
+            "2026-06-01", "2026-07-01", "2026-08-01",
+        ])
+
+    def test_monthly_does_not_skip_february(self):
+        # The 31-day step turned Jan 31 into Mar 3, dropping February.
+        keys = self._keys(datetime(2026, 3, 31, 12, 0, tzinfo=_tz.utc), "month", 3)
+        self.assertEqual(keys, ["2026-01-01", "2026-02-01", "2026-03-01"])
+
+    def test_monthly_crosses_the_year_boundary(self):
+        keys = self._keys(datetime(2026, 2, 10, 12, 0, tzinfo=_tz.utc), "month", 4)
+        self.assertEqual(keys, ["2025-11-01", "2025-12-01", "2026-01-01", "2026-02-01"])
+
+    def test_bucket_starts_are_midnight(self):
+        from api.routers import usage_bucket_starts
+
+        for b in ("week", "month"):
+            for d in usage_bucket_starts(self.SUNDAY, b, 3):
+                self.assertEqual((d.hour, d.minute, d.second, d.microsecond), (0, 0, 0, 0))
+
+
 from django.contrib.auth import get_user_model  # noqa: E402
 from django.test import RequestFactory, TestCase  # noqa: E402
 from django.utils import timezone  # noqa: E402

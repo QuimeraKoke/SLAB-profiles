@@ -181,6 +181,11 @@ def _parse_date_window(
     - Strings are parsed as ISO-8601 (date or datetime). Malformed values
       become None silently — same "don't break on stale frontend state"
       posture used everywhere else in this module.
+    - A DATE-ONLY upper bound ("2026-08-01") is stretched to the end of that
+      day. It parses to midnight, and the resolvers filter
+      `recorded_at__lte=date_to`, so leaving it at 00:00:00 silently excludes
+      everything recorded during the final day — i.e. "últimos 30 días" never
+      showed today. An explicit datetime bound is honored as given.
     - If both bounds are present and inverted (from > to), they swap.
     - If the resulting span exceeds DATE_WINDOW_MAX_DAYS, the lower bound
       is pinned so the window equals the cap.
@@ -197,11 +202,26 @@ def _parse_date_window(
         except (TypeError, ValueError):
             return None
 
-    parsed_from = _parse(date_from)
-    parsed_to = _parse(date_to)
+    def _is_date_only(raw: str | None) -> bool:
+        # "YYYY-MM-DD" (exactly 10 chars) is the shape the pickers and presets
+        # emit; anything longer carries an explicit time.
+        return bool(raw) and len(raw.strip()) == 10
+
+    parsed_from, parsed_to = _parse(date_from), _parse(date_to)
+    from_date_only, to_date_only = _is_date_only(date_from), _is_date_only(date_to)
+
+    # Swap BEFORE stretching, carrying each bound's date-only flag with it, so
+    # an inverted range doesn't end up with 23:59:59 on the lower bound.
+    if parsed_from and parsed_to and parsed_to < parsed_from:
+        parsed_from, parsed_to = parsed_to, parsed_from
+        from_date_only, to_date_only = to_date_only, from_date_only
+
+    if parsed_to is not None and to_date_only:
+        parsed_to = parsed_to.replace(
+            hour=23, minute=59, second=59, microsecond=999999,
+        )
+
     if parsed_from and parsed_to:
-        if parsed_to < parsed_from:
-            parsed_from, parsed_to = parsed_to, parsed_from
         if (parsed_to - parsed_from).days > DATE_WINDOW_MAX_DAYS:
             parsed_from = parsed_to - _td(days=DATE_WINDOW_MAX_DAYS)
     return parsed_from, parsed_to
@@ -5184,6 +5204,35 @@ def delete_episode_note(request, episode_id: str, note_id: UUID):
 # clinical staff. Scoped to the membership's club; superusers without a
 # membership see all clubs.
 
+def usage_bucket_starts(now: datetime, bucket: str, n: int) -> list[datetime]:
+    """The `n` bucket-start datetimes ending on the CURRENT week/month.
+
+    Anchors on the bucket containing `now` and walks BACK, so the window always
+    runs *through* today. The previous approach started at the cutoff and
+    stepped forward, snapping each week back to Monday — which shifted the run
+    a bucket early, so the in-progress week was never emitted and results
+    recorded in it silently vanished from the chart.
+
+    Weeks are Monday-anchored to match Django's `TruncWeek`. Months step by
+    CALENDAR month: stepping 31 days at a time skips short months outright
+    (Jan 31 + 31d = Mar 3, so February disappeared).
+    """
+    from datetime import timedelta as _td
+
+    midnight = {"hour": 0, "minute": 0, "second": 0, "microsecond": 0}
+    if bucket == "week":
+        current = (now - _td(days=now.weekday())).replace(**midnight)
+        return [current - _td(weeks=n - 1 - i) for i in range(n)]
+
+    current = now.replace(day=1, **midnight)
+    ordinal = current.year * 12 + (current.month - 1)
+    out = []
+    for back in range(n - 1, -1, -1):
+        y, m = divmod(ordinal - back, 12)
+        out.append(current.replace(year=y, month=m + 1))
+    return out
+
+
 @api.get("/admin/usage")
 def admin_usage(
     request,
@@ -5198,7 +5247,6 @@ def admin_usage(
     department slug, plus a `departments` index of {slug, name} for the
     chart legend.
     """
-    from datetime import timedelta
     from django.db.models import Count
     from django.db.models.functions import TruncMonth, TruncWeek
     from django.utils import timezone
@@ -5213,13 +5261,11 @@ def admin_usage(
     # runaway aggregation queries.
     n = max(1, min(n, 120))
 
-    now = timezone.now()
-    if bucket == "week":
-        cutoff = now - timedelta(weeks=n)
-        trunc = TruncWeek
-    else:
-        cutoff = now - timedelta(days=n * 31)
-        trunc = TruncMonth
+    trunc = TruncWeek if bucket == "week" else TruncMonth
+    bucket_starts = usage_bucket_starts(timezone.now(), bucket, n)
+    # Align the query window with the first rendered bucket so the totals and
+    # the x-axis always describe the same span.
+    cutoff = bucket_starts[0]
 
     qs = ExamResult.objects.filter(recorded_at__gte=cutoff)
     if category_id:
@@ -5249,17 +5295,8 @@ def admin_usage(
     # weeks where nobody recorded anything (otherwise the missing bar
     # silently lies about engagement).
     series: list[dict[str, Any]] = []
-    bucket_start = cutoff
-    for i in range(n):
-        if bucket == "week":
-            # Match Django's TruncWeek (Monday-anchored).
-            ws = bucket_start + timedelta(weeks=i)
-            ws = ws - timedelta(days=ws.weekday())
-            key = ws.date().isoformat()
-        else:
-            ws = bucket_start + timedelta(days=i * 31)
-            ws = ws.replace(day=1)
-            key = ws.date().isoformat()
+    for ws in bucket_starts:
+        key = ws.date().isoformat()
         entry: dict[str, Any] = {"bucket": key}
         counts = pivot.get(key, {})
         for slug in departments:

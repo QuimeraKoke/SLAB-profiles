@@ -49,28 +49,58 @@ function ellipse(cx: number, cy: number, rx: number, ry: number): string {
 // directly on the relevant foot — no separate "lado" pick. The foot side is
 // encoded in each zone key. Base geometry is a single foot in a 0–100 box;
 // each foot is offset horizontally and zones get an `_izq` / `_der` suffix.
-interface FootZoneSpec {
-  key: string;
-  label: string;
+// A zone is either a single ellipse (cx/cy/rx/ry) or an explicit list of
+// ellipses — the toe groups draw as several separate ovals that still form ONE
+// selectable zone, because an SVG path may hold multiple subpaths under one
+// `d`. That keeps the stored zone keys (and the pins' normalized coordinates)
+// untouched while the drawing actually shows individual toes.
+interface FootOval {
   cx: number;
   cy: number;
   rx: number;
   ry: number;
 }
+interface FootZoneSpec {
+  key: string;
+  label: string;
+  /** One or more ovals; multiple ovals render as one multi-subpath zone. */
+  ovals: FootOval[];
+}
+
+/** Toe row: `n` ovals marching laterally, each a bit smaller and set a bit
+ *  lower than the last — the natural cascade from 2nd toe to 5th. */
+function toeRow(
+  startCx: number, startCy: number, step: number, n: number,
+  rx: number, ry: number,
+): FootOval[] {
+  return Array.from({ length: n }, (_, i) => ({
+    cx: startCx + i * step,
+    cy: startCy + i * 2,          // each toe sits slightly lower
+    rx: rx - i * 0.5,
+    ry: ry - i * 1.6,
+  }));
+}
 
 const PLANTAR_BASE: FootZoneSpec[] = [
-  { key: "hallux", label: "Hallux (1er dedo)", cx: 32, cy: 28, rx: 14, ry: 18 },
-  { key: "dedos", label: "Dedos menores (2–5)", cx: 66, cy: 26, rx: 22, ry: 16 },
-  { key: "metatarso", label: "Cabezas metatarsianas", cx: 52, cy: 72, rx: 38, ry: 26 },
-  { key: "arco_medial", label: "Arco medial", cx: 38, cy: 135, rx: 16, ry: 34 },
-  { key: "arco_lateral", label: "Arco lateral", cx: 66, cy: 135, rx: 14, ry: 34 },
-  { key: "talon", label: "Talón", cx: 52, cy: 210, rx: 30, ry: 34 },
+  // Hallux keeps its own footprint; the 2nd–5th toes now read as four ovals
+  // spanning the same x-range the single "dedos" ellipse used to cover.
+  { key: "hallux", label: "Hallux (1er dedo)", ovals: [{ cx: 32, cy: 30, rx: 12, ry: 17 }] },
+  { key: "dedos", label: "Dedos menores (2–5)", ovals: toeRow(52, 28, 10, 4, 6, 15) },
+  { key: "metatarso", label: "Cabezas metatarsianas", ovals: [{ cx: 52, cy: 72, rx: 38, ry: 26 }] },
+  { key: "arco_medial", label: "Arco medial", ovals: [{ cx: 38, cy: 135, rx: 16, ry: 34 }] },
+  { key: "arco_lateral", label: "Arco lateral", ovals: [{ cx: 66, cy: 135, rx: 14, ry: 34 }] },
+  { key: "talon", label: "Talón", ovals: [{ cx: 52, cy: 210, rx: 30, ry: 34 }] },
 ];
 
 const DORSAL_BASE: FootZoneSpec[] = [
-  { key: "dedos", label: "Dedos", cx: 52, cy: 26, rx: 40, ry: 18 },
-  { key: "dorso", label: "Dorso del pie", cx: 52, cy: 112, rx: 40, ry: 62 },
-  { key: "tobillo", label: "Tobillo / empeine", cx: 52, cy: 212, rx: 30, ry: 34 },
+  // Dorsal has no separate hallux zone, so all five toes live in "dedos".
+  {
+    key: "dedos",
+    label: "Dedos",
+    ovals: [{ cx: 24, cy: 32, rx: 11, ry: 17 }, ...toeRow(46, 30, 11, 4, 6.5, 15)],
+  },
+  { key: "dorso", label: "Dorso del pie", ovals: [{ cx: 52, cy: 112, rx: 40, ry: 62 }] },
+  { key: "tobillo", label: "Tobillo / empeine", ovals: [{ cx: 52, cy: 212, rx: 30, ry: 34 }] },
 ];
 
 const FOOT_DY = 30; // top room for the Izquierdo / Derecho labels
@@ -79,6 +109,23 @@ const FEET = [
   { side: "der", label: "der", dx: 122 },
 ];
 
+/** Non-interactive foot body drawn behind the zones — gives the toes something
+ *  to sit on so they read as a foot rather than floating ovals. Spans the
+ *  metatarsal-to-heel area only; the toes themselves are zones. */
+function footOutline(dx: number): string {
+  const x = (n: number) => n + dx;
+  const y = (n: number) => n + FOOT_DY;
+  return (
+    `M ${x(14)} ${y(70)} ` +
+    `C ${x(10)} ${y(40)}, ${x(94)} ${y(40)}, ${x(90)} ${y(70)} ` +
+    `C ${x(94)} ${y(120)}, ${x(84)} ${y(150)}, ${x(82)} ${y(185)} ` +
+    `C ${x(82)} ${y(232)}, ${x(22)} ${y(232)}, ${x(22)} ${y(185)} ` +
+    `C ${x(20)} ${y(150)}, ${x(10)} ${y(120)}, ${x(14)} ${y(70)} Z`
+  );
+}
+
+const FOOT_OUTLINE = FEET.map((f) => footOutline(f.dx)).join(" ");
+
 function bothFeet(base: FootZoneSpec[], viewKey: string): DiagramZone[] {
   const out: DiagramZone[] = [];
   for (const f of FEET) {
@@ -86,7 +133,9 @@ function bothFeet(base: FootZoneSpec[], viewKey: string): DiagramZone[] {
       out.push({
         key: `${viewKey}_${z.key}_${f.side}`,
         label: `${z.label} (${f.label})`,
-        path: ellipse(z.cx + f.dx, z.cy + FOOT_DY, z.rx, z.ry),
+        path: z.ovals
+          .map((o) => ellipse(o.cx + f.dx, o.cy + FOOT_DY, o.rx, o.ry))
+          .join(" "),
       });
     }
   }
@@ -106,6 +155,7 @@ const FOOT: Diagram = {
       key: "plantar",
       label: "Plantar",
       viewBox: "0 0 230 285",
+      outline: FOOT_OUTLINE,
       labels: FOOT_LABELS,
       zones: bothFeet(PLANTAR_BASE, "plantar"),
     },
@@ -113,6 +163,7 @@ const FOOT: Diagram = {
       key: "dorsal",
       label: "Dorsal",
       viewBox: "0 0 230 285",
+      outline: FOOT_OUTLINE,
       labels: FOOT_LABELS,
       zones: bothFeet(DORSAL_BASE, "dorsal"),
     },
