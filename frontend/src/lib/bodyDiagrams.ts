@@ -104,9 +104,14 @@ const DORSAL_BASE: FootZoneSpec[] = [
 ];
 
 const FOOT_DY = 30; // top room for the Izquierdo / Derecho labels
+// The base geometry is anatomically a RIGHT foot (hallux/medial on the left).
+// Drawn as a pair the two feet must be MIRROR images, not identical, so the
+// big toes face inward (medial-to-medial). The right foot uses the base as-is;
+// the left foot is horizontally mirrored about the foot's centerline.
+const FOOT_CENTER_X = 52; // outline + base ovals are symmetric about this x
 const FEET = [
-  { side: "izq", label: "izq", dx: 8 },
-  { side: "der", label: "der", dx: 122 },
+  { side: "izq", label: "izq", dx: 8, mirror: true },
+  { side: "der", label: "der", dx: 122, mirror: false },
 ];
 
 /** Non-interactive foot body drawn behind the zones — gives the toes something
@@ -133,8 +138,14 @@ function bothFeet(base: FootZoneSpec[], viewKey: string): DiagramZone[] {
       out.push({
         key: `${viewKey}_${z.key}_${f.side}`,
         label: `${z.label} (${f.label})`,
+        // Mirror the left foot about the centerline so the pair is symmetric
+        // (big toes inward) rather than two identical feet. Zone KEYS are
+        // unchanged, so stored selections are unaffected.
         path: z.ovals
-          .map((o) => ellipse(o.cx + f.dx, o.cy + FOOT_DY, o.rx, o.ry))
+          .map((o) => {
+            const cx = f.mirror ? 2 * FOOT_CENTER_X - o.cx : o.cx;
+            return ellipse(cx + f.dx, o.cy + FOOT_DY, o.rx, o.ry);
+          })
           .join(" "),
       });
     }
