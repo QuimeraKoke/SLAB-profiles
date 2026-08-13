@@ -63,6 +63,13 @@ export default function TeamTableForm({
   );
   const teamCfg = template.input_config?.team_table ?? {};
 
+  // Opt-in: when the template sets modifiers.allow_custom_date the squad-entry
+  // date is user-settable (drives recorded_at) instead of defaulting to "now".
+  // Suppressed under event linking, which already fixes recorded_at server-side.
+  const allowCustomDate =
+    template.input_config?.modifiers?.allow_custom_date === true && !eventId;
+  const [recordedDate, setRecordedDate] = useState<string>(todayISO());
+
   // Resolve shared vs row fields, defaulting row_fields to "everything not
   // shared and not calculated" (in declared order).
   const sharedKeys = useMemo(
@@ -287,7 +294,9 @@ export default function TeamTableForm({
     const payload: TeamResultsIn = {
       template_id: template.id,
       category_id: categoryId,
-      recorded_at: new Date().toISOString(),
+      recorded_at: allowCustomDate
+        ? `${recordedDate}T12:00:00`
+        : new Date().toISOString(),
       shared_data: sharedData,
       rows,
       // When linking to an event, the backend overrides recorded_at with
@@ -347,6 +356,22 @@ export default function TeamTableForm({
         <h3 className={styles.title}>{template.name}</h3>
         <span className={styles.version}>v{template.version}</span>
       </header>
+
+      {allowCustomDate && (
+        <fieldset className={styles.sharedSection}>
+          <legend className={styles.legend}>Fecha de la evaluación</legend>
+          <div className={styles.sharedGrid}>
+            <label className={styles.field}>
+              <span className={styles.label}>Fecha</span>
+              <input
+                type="date"
+                value={recordedDate}
+                onChange={(e) => setRecordedDate(e.target.value)}
+              />
+            </label>
+          </div>
+        </fieldset>
+      )}
 
       {sharedFields.length > 0 && (
         <fieldset className={styles.sharedSection}>

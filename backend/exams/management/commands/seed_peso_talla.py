@@ -56,8 +56,13 @@ SCHEMA: dict = {
 }
 
 INPUT_CONFIG: dict = {
-    "input_modes": ["team_table", "single"],
+    # team_table = multi-player grid; bulk_ingest = "Subir archivo" (load from
+    # file); single ("Individual") is always offered by the Subir-datos hub.
+    "input_modes": ["team_table", "bulk_ingest"],
     "default_input_mode": "team_table",
+    # Let staff set WHEN the measurement was taken (a date input appears in the
+    # single, team-table, and file flows) instead of defaulting to "now".
+    "modifiers": {"allow_custom_date": True},
     "team_table": {"shared_fields": []},
 }
 
