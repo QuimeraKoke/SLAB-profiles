@@ -108,3 +108,25 @@ def sync_all_vald_clubs(full: bool = False) -> list[dict]:
     reports = sync_all_bound_clubs(full=full)
     logger.info("VALD sync: %s", reports)
     return reports
+
+
+@shared_task(name="exams.tasks.sync_all_catapult_categories")
+def sync_all_catapult_categories() -> list[dict]:
+    """Scheduled Catapult OpenField GPS sync for every category with an enabled
+    integration — matches → gps_partido, trainings → gps_sesion, gap-fill so
+    re-runs are idempotent (dedup on the Catapult activity_id).
+
+    No-ops cleanly when nothing is bound / no token is configured, so the beat
+    schedule is safe to ship before a club wires its Catapult key.
+    """
+    from exams.models import CatapultIntegration
+
+    if not CatapultIntegration.objects.filter(enabled=True).exists():
+        logger.info("Catapult sync skipped: no enabled integrations.")
+        return []
+    from exams.services.catapult_sync import plan_all_enabled
+
+    plans = plan_all_enabled(dry_run=False)
+    summary = [{"category": p.category, "errors": p.errors, **p.totals()} for p in plans]
+    logger.info("Catapult sync: %s", summary)
+    return summary

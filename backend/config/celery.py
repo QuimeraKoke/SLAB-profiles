@@ -82,4 +82,13 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute=10, hour=13),            # 13:10 catch-up
         "kwargs": {"mode": "reconcile", "since_days": 3},
     },
+    # Catapult OpenField GPS sync (activities → gps_partido/gps_sesion). Hourly
+    # at :15 (staggered from fixtures :00 and VALD :30). Gap-fill / idempotent —
+    # dedup on the Catapult activity_id, so re-runs never duplicate and
+    # hand-uploaded sessions are left alone. No-op unless a category has an
+    # enabled CatapultIntegration + token.
+    "sync-catapult-gps": {
+        "task": "exams.tasks.sync_all_catapult_categories",
+        "schedule": crontab(minute=15),
+    },
 }
