@@ -487,3 +487,52 @@ def _removed_field_keys_vs_previous_version(template: ExamTemplate) -> set[str]:
         return out
 
     return _keys(previous.config_schema or {}) - _keys(template.config_schema or {})
+
+
+# ── Catapult OpenField GPS integration ─────────────────────────────────────
+
+from exams.models import CatapultAthleteLink, CatapultIntegration  # noqa: E402
+
+
+@admin.register(CatapultIntegration)
+class CatapultIntegrationAdmin(admin.ModelAdmin):
+    list_display = (
+        "category", "enabled", "catapult_team_id", "classify_strategy",
+        "sync_matches", "sync_training", "last_synced_at",
+    )
+    list_filter = ("enabled", "classify_strategy", "sync_matches", "sync_training")
+    search_fields = ("category__name", "catapult_team_id")
+    readonly_fields = ("last_synced_at", "created_at", "updated_at")
+    fieldsets = (
+        (None, {"fields": ("category", "enabled")}),
+        ("Conexión (por equipo)", {
+            "fields": ("base_url", "api_token", "catapult_team_id"),
+            "description": (
+                "Token Bearer del tenant Catapult y el UUID del equipo que "
+                "corresponde a esta categoría (usá catapult_probe para listarlos)."
+            ),
+        }),
+        ("Qué sincronizar", {
+            "fields": (
+                ("sync_matches", "sync_training"),
+                "classify_strategy",
+                "min_training_minutes",
+                ("partido_template_slug", "sesion_template_slug"),
+                "lookback_days",
+            ),
+        }),
+        ("Estado", {
+            "fields": ("last_synced_at", "created_at", "updated_at"),
+            "classes": ("collapse",),
+        }),
+    )
+
+
+@admin.register(CatapultAthleteLink)
+class CatapultAthleteLinkAdmin(admin.ModelAdmin):
+    list_display = ("athlete_name", "player", "match_method", "athlete_id")
+    list_filter = ("match_method",)
+    search_fields = (
+        "athlete_name", "athlete_id", "player__first_name", "player__last_name",
+    )
+    readonly_fields = ("created_at",)

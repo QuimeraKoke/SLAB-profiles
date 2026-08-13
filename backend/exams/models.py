@@ -1324,3 +1324,93 @@ class ValdProfileLink(models.Model):
     def __str__(self) -> str:
         target = self.player or "(sin jugador)"
         return f"{self.vald_name} → {target}"
+
+
+# ── Catapult OpenField GPS integration ─────────────────────────────────────
+
+
+class CatapultIntegration(models.Model):
+    """Per-category binding to a Catapult OpenField tenant/team — drives the
+    hourly GPS sync (matches → gps_partido, trainings → gps_sesion). The
+    `api_token` lives here (per row) since different teams use different
+    tenants. Django-admin-editable; when disabled the category is skipped."""
+
+    FIXTURE, TAG, NAME, HYBRID = "fixture", "tag", "name", "hybrid"
+    STRATEGY_CHOICES = [
+        (FIXTURE, "Partido si hay fixture ese día (recomendado)"),
+        (TAG, "Por tag de Catapult (Activity / DayCode)"),
+        (NAME, "Por nombre de la actividad (' vs ')"),
+        (HYBRID, "Fixture y, si no hay, tag / nombre"),
+    ]
+    DEFAULT_BASE_URL = "https://backend-us.openfield.catapultsports.com/api/v6"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    category = models.OneToOneField(
+        "core.Category", on_delete=models.CASCADE, related_name="catapult_integration",
+    )
+    enabled = models.BooleanField(
+        default=False,
+        help_text="Con esto apagado, la categoría se omite en la sincronización horaria.",
+    )
+    base_url = models.CharField(max_length=200, default=DEFAULT_BASE_URL)
+    api_token = models.TextField(help_text="Bearer JWT del tenant Catapult (por equipo).")
+    catapult_team_id = models.CharField(
+        max_length=64,
+        help_text="UUID del equipo en Catapult que corresponde a esta categoría.",
+    )
+    classify_strategy = models.CharField(
+        max_length=12, choices=STRATEGY_CHOICES, default=FIXTURE,
+        help_text="Cómo decidir partido vs entrenamiento.",
+    )
+    sync_matches = models.BooleanField(default=True, help_text="Ingerir partidos (→ gps_partido).")
+    sync_training = models.BooleanField(default=True, help_text="Ingerir entrenamientos (→ gps_sesion).")
+    min_training_minutes = models.PositiveIntegerField(
+        default=0, help_text="Omitir entrenamientos más cortos que esto (limpieza de datos).",
+    )
+    partido_template_slug = models.CharField(max_length=64, default="gps_partido")
+    sesion_template_slug = models.CharField(max_length=64, default="gps_sesion")
+    lookback_days = models.PositiveIntegerField(
+        default=14, help_text="Cuántos días hacia atrás revisa cada corrida.",
+    )
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Integración Catapult"
+        verbose_name_plural = "Integraciones Catapult"
+
+    def __str__(self) -> str:
+        return f"Catapult · {self.category} · {'on' if self.enabled else 'off'}"
+
+
+class CatapultAthleteLink(models.Model):
+    """Maps a Catapult `athlete_id` to a SLAB Player. The sync auto-creates
+    links by external-id → name+DOB → name; MANUAL links are never overwritten."""
+
+    MATCH_EXTERNAL_ID = "external_id"
+    MATCH_NAME_DOB = "name_dob"
+    MATCH_NAME = "name"
+    MATCH_MANUAL = "manual"
+    MATCH_CHOICES = [
+        (MATCH_EXTERNAL_ID, "external id"),
+        (MATCH_NAME_DOB, "name + DOB"),
+        (MATCH_NAME, "name"),
+        (MATCH_MANUAL, "manual"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    athlete_id = models.CharField(max_length=64, unique=True, help_text="UUID del atleta en Catapult.")
+    player = models.ForeignKey(
+        "core.Player", on_delete=models.CASCADE, related_name="catapult_links",
+    )
+    athlete_name = models.CharField(max_length=200, blank=True, help_text="Nombre en Catapult (referencia).")
+    match_method = models.CharField(max_length=16, choices=MATCH_CHOICES, default=MATCH_MANUAL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Vínculo atleta Catapult"
+        verbose_name_plural = "Vínculos atleta Catapult"
+
+    def __str__(self) -> str:
+        return f"{self.athlete_name or self.athlete_id} → {self.player}"
