@@ -77,6 +77,8 @@ from .schemas import (
     DailyNoteIn,
     DailyNoteOut,
     DailyNotePatchIn,
+    ManualAlertIn,
+    ManualAlertOut,
     KineEntryIn,
     KineEntryOut,
     EpisodeOut,
@@ -3662,6 +3664,54 @@ def create_daily_note(request, payload: DailyNoteIn):
         date=payload.date, text=text, created_by=request.user,
     )
     return serialize_note(note, request.user)
+
+
+@api.post("/alerts", response=ManualAlertOut)
+@require_perm("core.add_dailynote")
+def create_manual_alert(request, payload: ManualAlertIn):
+    """Create a manual alert for a player from the Daily view. `level` is
+    'leve' (→ warning) or 'agudo' (→ critical); the staff-assigned date becomes
+    the alert's displayed date (source_recorded_at + last_fired_at). Creating
+    an Alert fires no signals/email, so this is a plain, low-blast-radius write.
+    """
+    from datetime import time as _time
+    from django.utils import timezone as _djtz
+    from goals.models import Alert, AlertSeverity, AlertSource, AlertStatus
+
+    membership = get_membership(request.user)
+    player = scope_players(
+        Player.objects.select_related("category__club"), membership,
+    ).filter(pk=payload.player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+
+    message = (payload.message or "").strip()
+    if not message:
+        raise HttpError(400, "La descripción no puede estar vacía.")
+    sev_map = {"leve": AlertSeverity.WARNING, "agudo": AlertSeverity.CRITICAL}
+    level = (payload.level or "").strip().lower()
+    if level not in sev_map:
+        raise HttpError(422, "level inválido — 'leve' o 'agudo'.")
+
+    when = _djtz.make_aware(datetime.combine(payload.date, _time(12, 0)))
+    alert = Alert.objects.create(
+        player=player,
+        source_type=AlertSource.MANUAL,
+        source_id=None,
+        severity=sev_map[level],
+        status=AlertStatus.ACTIVE,
+        message=message,
+        last_fired_at=when,
+        source_recorded_at=when,
+    )
+    return {
+        "id": alert.id,
+        "player_id": player.id,
+        "player_name": f"{player.first_name} {player.last_name}".strip(),
+        "severity": alert.severity,
+        "message": alert.message,
+        "date": payload.date,
+    }
 
 
 @api.patch("/daily-notes/{note_id}", response=DailyNoteOut)

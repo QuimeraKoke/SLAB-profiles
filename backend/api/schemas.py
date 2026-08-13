@@ -933,6 +933,24 @@ class DailyNoteOut(Schema):
     created_at: datetime
 
 
+# ---------- Manual alert (created from the Daily view) ----------
+
+class ManualAlertIn(Schema):
+    player_id: UUID
+    level: str  # "leve" | "agudo"
+    message: str
+    date: date  # the date the staff assigns to the alert
+
+
+class ManualAlertOut(Schema):
+    id: UUID
+    player_id: UUID
+    player_name: str
+    severity: str
+    message: str
+    date: date
+
+
 # ---------- Kinesiology daily table ("Plan kinésico") ----------
 
 class KineEntryOut(Schema):

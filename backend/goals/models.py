@@ -150,6 +150,7 @@ class AlertSource(models.TextChoices):
     TRAINING_LOAD = "training_load", "Carga de entrenamiento"
     MOLESTIA = "molestia", "Molestia (check-in)"
     ACWR = "acwr", "ACWR (agudo:crónico)"
+    MANUAL = "manual", "Manual (creada por el staff)"
 
 
 class Alert(models.Model):
@@ -163,7 +164,11 @@ class Alert(models.Model):
     player = models.ForeignKey(Player, on_delete=models.CASCADE, related_name="alerts")
     source_type = models.CharField(max_length=20, choices=AlertSource.choices)
     source_id = models.UUIDField(
-        help_text="UUID of the source row (Goal.id, Threshold.id, …)."
+        null=True, blank=True,
+        help_text=(
+            "UUID of the source row (Goal.id, Threshold.id, …). Null for "
+            "manually-created alerts, which have no source row."
+        ),
     )
     severity = models.CharField(
         max_length=10, choices=AlertSeverity.choices, default=AlertSeverity.WARNING

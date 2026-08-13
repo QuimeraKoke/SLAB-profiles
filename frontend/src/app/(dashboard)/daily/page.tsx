@@ -10,6 +10,7 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
+  Plus,
   Sparkles,
   Sunrise,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import RosterTable, { RosterRow } from "@/components/equipo/RosterTable";
 import LesionadoCard from "@/components/daily/LesionadoCard";
 import KineTable from "@/components/daily/KineTable";
 import NoteModal from "@/components/daily/NoteModal";
+import CreateAlertModal from "@/components/daily/CreateAlertModal";
 import NotesPanel from "@/components/daily/NotesPanel";
 import PlansPanel from "@/components/daily/PlansPanel";
 import PlanList from "@/components/daily/PlanList";
@@ -86,6 +88,8 @@ export default function DailyPage() {
   const [noteOpen, setNoteOpen] = useState(false);
   const [noteKind, setNoteKind] = useState<"pauta" | "plan">("pauta");
   const [editNote, setEditNote] = useState<DailyNote | null>(null); // null = create
+  const [alertOpen, setAlertOpen] = useState(false);
+  const [alertFor, setAlertFor] = useState<string | null>(null); // preselected player | null
 
   useEffect(() => {
     if (catLoading || !categoryId) return;
@@ -148,6 +152,11 @@ export default function DailyPage() {
     setNoteFor(playerId);
     setEditNote(null);
     setNoteOpen(true);
+  }
+
+  function openAlert(playerId: string | null) {
+    setAlertFor(playerId);
+    setAlertOpen(true);
   }
 
   function openPlan(playerId: string | null) {
@@ -349,6 +358,16 @@ export default function DailyPage() {
               <span className={styles.sectionNum}>3</span>
               Alertas en disponibles
               <span className={styles.count}>{data.alertas.length}</span>
+              {canNote && (
+                <button
+                  type="button"
+                  className={styles.crearAlertaBtn}
+                  onClick={() => openAlert(null)}
+                >
+                  <Plus size={14} aria-hidden="true" />
+                  Crear alerta
+                </button>
+              )}
             </h2>
             {data.alertas.length === 0 ? (
               <p className={styles.emptySection}>Sin alertas activas entre los disponibles.</p>
@@ -433,6 +452,15 @@ export default function DailyPage() {
             ? "Directriz vigente para este jugador — p. ej. bloque de fuerza 3×/semana, progresión de carrera, plan nutricional…"
             : "Qué se decidió para este jugador hoy…"
         }
+      />
+
+      <CreateAlertModal
+        open={alertOpen}
+        defaultDate={date}
+        playerId={alertFor}
+        players={data.players}
+        onClose={() => { setAlertOpen(false); setAlertFor(null); }}
+        onSaved={() => setReload((n) => n + 1)}
       />
     </div>
   );
