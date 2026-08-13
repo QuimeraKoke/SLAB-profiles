@@ -328,6 +328,11 @@ export type ExamInputMode =
 
 export interface ExamInputModifiers {
   prefill_from_last?: boolean;
+  /** When true, the single-mode form shows a "Fecha del examen" date input
+   *  (defaulting to today) whose value becomes the result's `recorded_at`.
+   *  For exams routinely recorded after the fact — anthropometry, lab panels.
+   *  Off by default: everything else keeps `recorded_at` = save time. */
+  allow_custom_date?: boolean;
 }
 
 export interface ExamTeamTableConfig {

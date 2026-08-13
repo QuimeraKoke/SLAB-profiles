@@ -1700,6 +1700,101 @@ def gps_session_upload(
         raise HttpError(400, str(exc))
 
 
+# --- Pentacompartimental (anthropometry) self-service upload -----------------
+# The ISAK "Modelo 5 componentes" export carries one row per (player, assessment
+# date), so `bulk_ingest` can't model it: that engine groups by player and
+# reduces multiple rows into a single result under one form-supplied
+# recorded_at. `exams.penta_ingest` — the same engine as the
+# `import_pentacompartimental` command — reads the real export shape instead.
+
+def _penta_template_for(request):
+    """(club, template) for the caller's Pentacompartimental, or 404/403."""
+    membership = get_membership(request.user)
+    if membership is None:
+        raise HttpError(403, "Tu usuario no está asociado a un club.")
+    template = scope_templates(
+        ExamTemplate.objects.select_related("department__club"), membership,
+    ).filter(slug="pentacompartimental", is_active_version=True).first()
+    if template is None:
+        raise HttpError(404, (
+            "Plantilla 'pentacompartimental' no encontrada "
+            "(corre seed_pentacompartimental)."
+        ))
+    return membership.club, template
+
+
+@api.post("/pentacompartimental/upload")
+@require_perm("exams.add_examresult")
+def pentacompartimental_upload(
+    request,
+    file: UploadedFile = File(...),
+    dry_run: bool = Form(True),
+):
+    """Upload the 5-component anthropometry workbook.
+
+    One result per (player, assessment date), dated from the sheet's "Informes"
+    column — not from an upload timestamp. Additive: an existing (player, date)
+    is reported as skipped and never overwritten, so re-uploading is a no-op.
+    `dry_run=True` (default) returns the preview without writing.
+    """
+    from exams import penta_ingest
+
+    club, template = _penta_template_for(request)
+    try:
+        file_bytes = file.read()
+    finally:
+        file.close()
+
+    try:
+        return penta_ingest.run(
+            file_bytes, club=club, template=template, dry_run=dry_run,
+        )
+    except penta_ingest.PentaParseError as exc:
+        raise HttpError(400, str(exc))
+
+
+@api.get("/pentacompartimental/template.xlsx")
+def pentacompartimental_blank_template(request, category_id: str = ""):
+    """Blank workbook in the export's own shape, limited to what SLAB reads.
+
+    Only the 27 raw ISAK measurements: the export's computed columns are omitted
+    because SLAB recalculates the 5 masses and indices from the template's
+    formulas, and `sexo` comes from the player record. Optionally pre-seeded
+    with a category's roster names so they already match.
+    """
+    from django.http import HttpResponse
+
+    from exams import penta_ingest
+
+    club, _template = _penta_template_for(request)
+    membership = get_membership(request.user)
+
+    names: list[str] = []
+    if category_id:
+        category = scope_categories(
+            Category.objects.all(), membership,
+        ).filter(pk=category_id).first()
+        if category is None:
+            raise HttpError(404, "Category not found")
+        names = [
+            f"{p.first_name} {p.last_name}"
+            for p in Player.objects.filter(category=category, is_active=True)
+            .order_by("first_name", "last_name")
+        ]
+
+    xlsx = penta_ingest.build_blank_template(names)
+    resp = HttpResponse(
+        xlsx,
+        content_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+    )
+    resp["Content-Disposition"] = (
+        'attachment; filename="plantilla_5componentes.xlsx"'
+    )
+    return resp
+
+
 @api.get("/players/{player_id}/templates", response=list[TemplateOut])
 def list_player_templates(request, player_id: str, department: str | None = None):
     """Templates the doctor can fill in for this player.

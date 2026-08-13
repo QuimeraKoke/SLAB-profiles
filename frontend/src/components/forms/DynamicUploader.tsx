@@ -60,6 +60,18 @@ function todayISO(): string {
   return `${y}-${m}-${day}`;
 }
 
+/** `<input type="date">` value for an ISO timestamp, in LOCAL time — slicing
+ *  the UTC string would land on the previous/next day west of Greenwich.
+ *  Falls back to today when there's no timestamp (create). */
+function localDateInput(iso?: string | null): string {
+  if (!iso) return todayISO();
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return todayISO();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
 function defaultValue(field: ExamField): FormValue {
   if (field.type === "boolean") return false;
   if (field.type === "date") return todayISO();
@@ -164,6 +176,18 @@ export default function DynamicUploader({
     !isEditing &&
     (template.link_to_match === true ||
       template.input_config?.allow_event_link === true);
+
+  // Optional back-dating: templates that opt in via
+  // `modifiers.allow_custom_date` let the user state WHEN the exam happened,
+  // instead of stamping the save time. Suppressed when the template links to a
+  // match, since the backend then derives recorded_at from the event and the
+  // control would silently do nothing.
+  const allowCustomDate =
+    template.input_config?.modifiers?.allow_custom_date === true &&
+    !allowEventLink;
+  const [recordedDate, setRecordedDate] = useState<string>(() =>
+    localDateInput(existingResult?.recorded_at),
+  );
   const [eventId, setEventId] = useState<string>("");
   const [matches, setMatches] = useState<CalendarEvent[]>([]);
 
@@ -311,9 +335,19 @@ export default function DynamicUploader({
       if (isEditing && existingResult) {
         // PATCH path: update raw_data on the existing result. Files are
         // managed via AttachmentList in real time — nothing to upload here.
+        const patch: Record<string, unknown> = { raw_data: raw };
+        // Only send recorded_at when the template allows back-dating AND the
+        // user actually moved it — otherwise a no-op edit would rewrite the
+        // timestamp (and shift the result on every chart).
+        if (
+          allowCustomDate &&
+          recordedDate !== localDateInput(existingResult.recorded_at)
+        ) {
+          patch.recorded_at = `${recordedDate}T12:00:00`;
+        }
         const result = await api<ExamResult>(`/results/${existingResult.id}`, {
           method: "PATCH",
-          body: JSON.stringify({ raw_data: raw }),
+          body: JSON.stringify(patch),
         });
         // ME-5: positive confirmation so the user knows the save landed.
         // Previously they only saw a silent redirect.
@@ -323,7 +357,11 @@ export default function DynamicUploader({
         const payload: Record<string, unknown> = {
           player_id: playerId,
           template_id: template.id,
-          recorded_at: new Date().toISOString(),
+          // Noon local, matching BulkIngestForm — a midnight stamp lands on the
+          // previous day once stored as UTC, which would misfile the exam.
+          recorded_at: allowCustomDate
+            ? `${recordedDate}T12:00:00`
+            : new Date().toISOString(),
           raw_data: raw,
         };
         if (eventId) payload.event_id = eventId;
@@ -386,6 +424,28 @@ export default function DynamicUploader({
           fields={fields}
           onApply={(vals) => setValues((prev) => ({ ...prev, ...vals }))}
         />
+      )}
+
+      {allowCustomDate && (
+        <fieldset className={styles.group}>
+          <legend className={styles.legend}>Fecha del examen</legend>
+          <div className={styles.grid}>
+            <label className={styles.field} htmlFor="recorded-date">
+              <span className={styles.label}>Fecha de la evaluación</span>
+              <input
+                id="recorded-date"
+                type="date"
+                value={recordedDate}
+                max={todayISO()}
+                onChange={(e) => setRecordedDate(e.target.value)}
+              />
+              <span className={styles.matchHint}>
+                Cuándo se tomaron las medidas. Por defecto hoy; cámbiala si
+                estás registrando una evaluación anterior.
+              </span>
+            </label>
+          </div>
+        </fieldset>
       )}
 
       {allowEventLink && (

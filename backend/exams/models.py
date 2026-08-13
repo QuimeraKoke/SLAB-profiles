@@ -25,7 +25,14 @@ class ExamTemplate(models.Model):
         {
           "input_modes": ["single", "team_table", "quick_list", "bulk_ingest"],
           "default_input_mode": "single",
-          "modifiers": {"prefill_from_last": false},
+          "modifiers": {
+            "prefill_from_last": false,
+            # When true the single-mode form shows a "Fecha del examen" date
+            # input (default today) that becomes the result's `recorded_at`.
+            # For exams routinely recorded after the fact (anthropometry, lab
+            # panels). Off by default → recorded_at stays the save time.
+            "allow_custom_date": false
+          },
 
           # Only meaningful when "bulk_ingest" is enabled. Tells the parser
           # how to translate a spreadsheet's columns into the template's
