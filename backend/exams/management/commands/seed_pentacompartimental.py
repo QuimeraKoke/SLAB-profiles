@@ -443,6 +443,24 @@ class Command(BaseCommand):
                 continue
             template.config_schema = PENTACOMPARTIMENTAL_SCHEMA
             update_fields = ["config_schema", "updated_at"]
+            # Anthropometry is recorded days after the assessment and for many
+            # players at once, so offer the same self-service capture as the
+            # other loads: team_table (per-player grid) + bulk_ingest ("Subir
+            # archivo"), plus a settable measurement date (single is always
+            # available). Merged (not replaced) so any club customization
+            # survives.
+            cfg = dict(template.input_config or {})
+            modifiers = dict(cfg.get("modifiers") or {})
+            modifiers["allow_custom_date"] = True
+            cfg["modifiers"] = modifiers
+            modes = list(cfg.get("input_modes") or [])
+            for m in ("team_table", "bulk_ingest"):
+                if m not in modes:
+                    modes.append(m)
+            cfg["input_modes"] = modes
+            cfg.setdefault("team_table", {"shared_fields": []})
+            template.input_config = cfg
+            update_fields.append("input_config")
             if unlock and template.is_locked:
                 template.is_locked = False
                 update_fields.append("is_locked")
