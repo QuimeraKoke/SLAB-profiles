@@ -1337,10 +1337,10 @@ class CatapultIntegration(models.Model):
 
     FIXTURE, TAG, NAME, HYBRID = "fixture", "tag", "name", "hybrid"
     STRATEGY_CHOICES = [
-        (FIXTURE, "Partido si hay fixture ese día (recomendado)"),
-        (TAG, "Por tag de Catapult (Activity / DayCode)"),
-        (NAME, "Por nombre de la actividad (' vs ')"),
-        (HYBRID, "Fixture y, si no hay, tag / nombre"),
+        (TAG, "Por señal de Catapult: DayCode=MD o nombre ' vs ' (recomendado)"),
+        (FIXTURE, "Sólo si hay fixture en SLAB ese día exacto"),
+        (NAME, "Sólo por nombre de la actividad (' vs ')"),
+        (HYBRID, "Señal de Catapult y, si no, fixture del día"),
     ]
     DEFAULT_BASE_URL = "https://backend-us.openfield.catapultsports.com/api/v6"
 
@@ -1359,7 +1359,7 @@ class CatapultIntegration(models.Model):
         help_text="UUID del equipo en Catapult que corresponde a esta categoría.",
     )
     classify_strategy = models.CharField(
-        max_length=12, choices=STRATEGY_CHOICES, default=FIXTURE,
+        max_length=12, choices=STRATEGY_CHOICES, default=TAG,
         help_text="Cómo decidir partido vs entrenamiento.",
     )
     sync_matches = models.BooleanField(default=True, help_text="Ingerir partidos (→ gps_partido).")
