@@ -68,6 +68,10 @@ CORE_SLUGS = ["total_distance", "meterage_per_minute", DURATION_SLUG]
 
 MATCH_DAYCODE = "MD"
 
+# Per-category commit lock TTL (seconds) — longer than any real run, shorter
+# than the hourly beat interval so a crashed run self-heals within one tick.
+_COMMIT_LOCK_TTL = 1800
+
 
 # ── normalization ──────────────────────────────────────────────────────────
 
@@ -261,6 +265,36 @@ def _map_row(stats: dict) -> dict:
 # ── the planner ────────────────────────────────────────────────────────────
 
 def plan_category(integ: CatapultIntegration, *, dry_run: bool = True, now=None) -> CategoryPlan:
+    """Public entry. On a committing run, hold a per-category cache lock so a
+    manual `--commit` and the hourly beat can't overlap — the dedup is
+    check-then-create, so two concurrent writers would duplicate rows. Dry-runs
+    never lock. Cache backend down → proceed rather than block ingestion."""
+    if dry_run or not getattr(integ, "category_id", None):
+        return _plan_category(integ, dry_run=dry_run, now=now)
+    from django.core.cache import cache
+
+    key = f"lock:catapult_sync:{integ.category_id}"
+    try:
+        got = cache.add(key, "1", _COMMIT_LOCK_TTL)
+    except Exception:  # pragma: no cover — cache unavailable
+        got, key = True, None
+    if not got:
+        plan = CategoryPlan(category=str(integ.category), strategy=integ.classify_strategy,
+                            window_days=integ.lookback_days)
+        plan.errors.append("otra sincronización en curso (lock) — omitido")
+        logger.info("Catapult sync skipped for %s: another run holds the lock", integ.category)
+        return plan
+    try:
+        return _plan_category(integ, dry_run=dry_run, now=now)
+    finally:
+        if key:
+            try:
+                cache.delete(key)
+            except Exception:  # pragma: no cover
+                pass
+
+
+def _plan_category(integ: CatapultIntegration, *, dry_run: bool = True, now=None) -> CategoryPlan:
     category = integ.category
     plan = CategoryPlan(
         category=str(category), strategy=integ.classify_strategy,
