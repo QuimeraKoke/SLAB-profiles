@@ -79,8 +79,8 @@ export default function CommandCenterPage() {
         {/* Below: main column + rail (Estado del plantel moved down here). */}
         <div className={styles.grid}>
           <main className={styles.main}>
-            <BriefingPanel categoryId={categoryId} />
             <DecisionTable decisions={data.decisions} />
+            <BriefingPanel categoryId={categoryId} />
           </main>
 
           <aside className={styles.rail}>
