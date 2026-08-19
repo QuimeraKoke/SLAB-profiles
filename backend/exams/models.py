@@ -1414,3 +1414,198 @@ class CatapultAthleteLink(models.Model):
 
     def __str__(self) -> str:
         return f"{self.athlete_name or self.athlete_id} → {self.player}"
+
+
+class CometIntegration(models.Model):
+    """Per-CLUB binding to a COMET LIVE tenant (Analyticom — the platform the
+    federation runs; ANFP for Chile). Drives the played-match sync that fills
+    the "Ficha oficial de partido" template and the match Events' general data.
+
+    Per-club, NOT per-category, and that is the whole point: a single COMET team
+    id returns matches for EVERY category the club enters (Primera División
+    through Sub 11). The category comes from each match's competition, resolved
+    through `CometCompetitionLink` — so one row here covers the entire club.
+
+    The four values COMET requires are all editable here, since every Chilean
+    club gets its own set: `api_key`, `tenant`, `comet_team_id`,
+    `organization_id`. All four are sent on every request — COMET documents the
+    organization/team filters as "required if API_KEY is restricted by" them,
+    and a restricted key 401s without them.
+    """
+
+    DEFAULT_BASE_URL = "https://api-latam.analyticom.de"
+    DEFAULT_TENANT = "ANFP"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    club = models.OneToOneField(
+        Club, on_delete=models.CASCADE, related_name="comet_integration",
+    )
+    enabled = models.BooleanField(
+        default=False,
+        help_text="Con esto apagado, el club se omite en la sincronización.",
+    )
+    base_url = models.CharField(max_length=200, default=DEFAULT_BASE_URL)
+
+    # ---- The four values COMET needs (all required on every call) ----
+    api_key = models.TextField(
+        help_text="API_KEY entregada por la federación (va como header en cada llamada).",
+    )
+    tenant = models.CharField(
+        max_length=32, default=DEFAULT_TENANT,
+        help_text="Tenant COMET, ej. 'ANFP' para Chile. Va en la ruta.",
+    )
+    comet_team_id = models.BigIntegerField(
+        help_text="ID del club en COMET, ej. 40017 = Universidad de Chile.",
+    )
+    organization_id = models.BigIntegerField(
+        help_text="ID de la organización / federación en COMET, ej. 39972 = ANFP.",
+    )
+
+    # ---- Knobs ----
+    utc_offset = models.IntegerField(
+        default=-4,
+        help_text=(
+            "Offset horario en HORAS que pide COMET para agrupar por día (Chile: -4). "
+            "Sólo afecta el agrupamiento del proveedor: la hora real de cada partido "
+            "se toma de `dateTimeUTC`, así que el horario de verano no la altera."
+        ),
+    )
+    lookback_days = models.PositiveIntegerField(
+        default=30, help_text="Cuántos días hacia atrás revisa cada corrida.",
+    )
+    template_slug = models.CharField(
+        max_length=64, default="ficha_partido",
+        help_text="Plantilla que recibe la ficha por jugador.",
+    )
+    update_event_metadata = models.BooleanField(
+        default=True,
+        help_text=(
+            "Escribir los datos generales del partido (marcador, fecha del torneo, "
+            "árbitro, estadio) en el Event."
+        ),
+    )
+    store_raw_match_data = models.BooleanField(
+        default=True,
+        help_text="Guardar alineaciones y eventos crudos en MatchData (auditoría).",
+    )
+    create_missing_events = models.BooleanField(
+        default=False,
+        help_text=(
+            "Crear el Event del partido si no existe ninguno en SLAB. Apagado por "
+            "defecto: así la sincronización sólo enriquece partidos ya cargados y "
+            "no inventa calendario."
+        ),
+    )
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Integración COMET"
+        verbose_name_plural = "Integraciones COMET"
+
+    def __str__(self) -> str:
+        return f"COMET · {self.club} · {'on' if self.enabled else 'off'}"
+
+
+class CometCompetitionLink(models.Model):
+    """Maps a COMET competition to a SLAB Category.
+
+    Auto-created (and auto-resolved when the name carries a "Sub NN" token) on
+    every sync, so it doubles as the review queue: a competition with no
+    category is REPORTED and its matches skipped, never guessed at.
+
+    Resolution has to consider `parent_name` too — for cup and CONMEBOL ties the
+    competition `name` is only the phase ("Semifinales", "GRUPO D") and the real
+    competition sits in the parent. "Grupo 2" alone appears under both Sub 11
+    and Sub 12 parents, so name-only matching would misfile matches.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    integration = models.ForeignKey(
+        CometIntegration, on_delete=models.CASCADE, related_name="competition_links",
+    )
+    competition_id = models.BigIntegerField(help_text="ID de la competencia en COMET.")
+    competition_name = models.CharField(max_length=200, blank=True)
+    parent_name = models.CharField(max_length=200, blank=True)
+    category = models.ForeignKey(
+        "core.Category", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="comet_competition_links",
+        help_text="Vacío = sin resolver: los partidos de esta competencia se omiten.",
+    )
+    ignored = models.BooleanField(
+        default=False,
+        help_text="Marcar para omitir esta competencia sin que aparezca como pendiente.",
+    )
+    auto_resolved = models.BooleanField(
+        default=False,
+        help_text="La categoría la dedujo la sincronización (no un humano).",
+    )
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Competencia COMET"
+        verbose_name_plural = "Competencias COMET"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["integration", "competition_id"],
+                name="uniq_comet_competition_per_integration",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        target = self.category or ("ignorada" if self.ignored else "SIN RESOLVER")
+        return f"{self.competition_name or self.competition_id} → {target}"
+
+
+class CometPlayerLink(models.Model):
+    """Maps a COMET `personId` to a SLAB Player.
+
+    COMET exposes a STABLE per-person id (plus a FIFA id), which is a far better
+    key than the fuzzy name matching VALD and Catapult have to use — once a link
+    exists it never drifts. Unresolved rows are the review queue; their rows are
+    skipped rather than guessed.
+    """
+
+    MATCH_NAME_DOB = "name_dob"
+    MATCH_NAME = "name"
+    MATCH_MANUAL = "manual"
+    MATCH_UNRESOLVED = "unresolved"
+    MATCH_CHOICES = [
+        (MATCH_NAME_DOB, "nombre + fecha nac."),
+        (MATCH_NAME, "nombre"),
+        (MATCH_MANUAL, "manual"),
+        (MATCH_UNRESOLVED, "sin resolver"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    integration = models.ForeignKey(
+        CometIntegration, on_delete=models.CASCADE, related_name="player_links",
+    )
+    person_id = models.BigIntegerField(help_text="personId estable en COMET.")
+    fifa_id = models.CharField(max_length=32, blank=True)
+    person_name = models.CharField(max_length=200, blank=True)
+    shirt_number = models.PositiveSmallIntegerField(null=True, blank=True)
+    player = models.ForeignKey(
+        "core.Player", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="comet_links",
+    )
+    match_method = models.CharField(
+        max_length=16, choices=MATCH_CHOICES, default=MATCH_UNRESOLVED,
+    )
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Vínculo jugador COMET"
+        verbose_name_plural = "Vínculos jugador COMET"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["integration", "person_id"],
+                name="uniq_comet_person_per_integration",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.person_name or self.person_id} → {self.player or 'SIN RESOLVER'}"

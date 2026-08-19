@@ -130,3 +130,25 @@ def sync_all_catapult_categories() -> list[dict]:
     summary = [{"category": p.category, "errors": p.errors, **p.totals()} for p in plans]
     logger.info("Catapult sync: %s", summary)
     return summary
+
+
+@shared_task(name="exams.tasks.sync_all_comet_clubs")
+def sync_all_comet_clubs() -> list[dict]:
+    """Scheduled COMET LIVE sync for every club with an enabled integration —
+    played matches → the "Ficha oficial de partido" template + the match Event's
+    general data (score, round, referee, venue).
+
+    No-ops cleanly when nothing is bound, so the beat schedule is safe to ship
+    before a club wires its federation key. Additive: a ficha that already
+    exists for (player, match-day) is skipped, so re-runs are idempotent.
+    """
+    from exams.models import CometIntegration
+
+    if not CometIntegration.objects.filter(enabled=True).exists():
+        logger.info("COMET sync skipped: no enabled integrations.")
+        return []
+    from exams.services.comet_sync import sync_all_clubs
+
+    reports = sync_all_clubs(dry_run=False)
+    logger.info("COMET sync: %s", reports)
+    return reports

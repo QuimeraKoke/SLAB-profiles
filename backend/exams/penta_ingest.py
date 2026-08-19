@@ -1,9 +1,11 @@
 """Parse + ingest the Pentacompartimental (5-component anthropometry) workbook.
 
-Shared by the `import_pentacompartimental` management command and the
-self-service upload endpoint (`POST /pentacompartimental/upload`), so both agree
-on parsing, name matching, dedup and recompute — there is one implementation of
-the rules and one report shape.
+Engine behind the `import_pentacompartimental` management command — a CLI-only
+path for bulk-loading an ISAK export (historical backfills, or a season's worth
+of assessments arriving in one file). Routine capture goes through the
+template's own `team_table` / `bulk_ingest` modes on /subir-datos instead; a
+self-service upload for this format existed briefly and was removed as
+redundant.
 
 The workbook is the ISAK software's "Modelo 5 componentes" export: four title /
 group-header rows, the real header on row 5, data from row 6. Each player is a
@@ -53,28 +55,6 @@ RAW_MAP = {
     26: "pliegue_supracrestideo", 27: "pliegue_supra", 28: "pliegue_abdomen",
     29: "pliegue_muslo", 30: "pliegue_pierna",
 }
-
-# Header labels for the generated blank template, mirroring the export's own
-# row-5 wording. POSITION IS LOAD-BEARING: RAW_MAP reads by column index, so
-# this list must occupy exactly the same columns as the real export — including
-# "Edad cronológica" (col 3), which SLAB ignores (age comes from the player's
-# date of birth) but which must be present or every measurement shifts left one.
-TEMPLATE_HEADERS = [
-    "PACIENTES", "Informes", "Edad cronológica",
-    "M. corporal", "Talla", "Talla sent.",
-    "Biacromial", "T. del tórax", "Ant.-post. del tórax", "Biiliocristal",
-    "Húmero", "Fémur",
-    "Cabeza", "Brazo relajado", "Brazo flexionado y contraído", "Antebrazo",
-    "Tórax", "Cintura", "Caderas", "Muslo 1cm glúteo", "Muslo medio", "Pierna",
-    "Biceps", "Tríceps", "Subescapular", "Cresta ilíaca", "Supraespinal",
-    "Abdominal", "Muslo", "Pierna (pliegue)",
-]
-# Group banner spans for row 4: (label, width). Widths must total the header
-# count so the banners sit over the columns they describe.
-TEMPLATE_GROUPS = [
-    ("", 3), ("Medidas básicas", 3), ("Diámetros [cms]", 6),
-    ("Perímetros [cms]", 10), ("Pliegues [mm]", 8),
-]
 
 MIN_NAME_TOKEN_HITS = 2   # below this the name is treated as unmatched
 
@@ -296,76 +276,3 @@ def _fire_band_alerts(results: list[ExamResult]) -> int:
             continue
         fired += len(evaluate_threshold_rules_for_result(result))
     return fired
-
-
-# ---------- blank template generator ----------
-
-def build_blank_template(player_names: list[str] | None = None) -> bytes:
-    """A blank .xlsx in the export's own shape, limited to what SLAB reads.
-
-    Same layout the importer expects (title rows, group banners on row 4,
-    headers on row 5, data from row 6) so a real ISAK export and this template
-    are interchangeable. Only the 27 raw measurements are included — the
-    export's computed columns are omitted precisely because SLAB recalculates
-    them from the template's formulas.
-    """
-    import openpyxl
-    from openpyxl.styles import Alignment, Font, PatternFill
-
-    # The importer reads by column index, so a header list that doesn't span
-    # exactly the RAW_MAP columns would silently shift every measurement.
-    if len(TEMPLATE_HEADERS) != max(RAW_MAP):
-        raise RuntimeError(
-            f"TEMPLATE_HEADERS has {len(TEMPLATE_HEADERS)} columns but RAW_MAP "
-            f"reads up to column {max(RAW_MAP)} — they must match."
-        )
-    if sum(w for _, w in TEMPLATE_GROUPS) != len(TEMPLATE_HEADERS):
-        raise RuntimeError("TEMPLATE_GROUPS widths must total the header count.")
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = SHEET
-
-    bold = Font(bold=True)
-    ws["B1"] = "INFORME ANTROPOMÉTRICO"
-    ws["B1"].font = Font(bold=True, size=14)
-    ws["B2"] = "Plantel"
-    ws["B3"] = "Modelo: 5 componentes"
-
-    # Row 4 — group banners over their column spans.
-    col = 1
-    banner = PatternFill("solid", fgColor="EEF2F6")
-    for label, width in TEMPLATE_GROUPS:
-        if label:
-            cell = ws.cell(row=4, column=col, value=label)
-            cell.font = bold
-            cell.alignment = Alignment(horizontal="center")
-            cell.fill = banner
-            if width > 1:
-                ws.merge_cells(start_row=4, start_column=col,
-                               end_row=4, end_column=col + width - 1)
-        col += width
-
-    # Row 5 — the headers the importer keys on positionally.
-    header_fill = PatternFill("solid", fgColor="DDE5EE")
-    for i, label in enumerate(TEMPLATE_HEADERS, start=1):
-        cell = ws.cell(row=5, column=i, value=label)
-        cell.font = bold
-        cell.fill = header_fill
-        cell.alignment = Alignment(horizontal="center", wrap_text=True)
-    ws.freeze_panes = "A6"
-
-    ws.column_dimensions["A"].width = 26
-    ws.column_dimensions["B"].width = 13
-    for i in range(3, len(TEMPLATE_HEADERS) + 1):
-        ws.column_dimensions[ws.cell(row=5, column=i).column_letter].width = 11
-
-    # Pre-seed one row per player so names already match the roster; the date
-    # and measurements are left blank for the nutritionist to fill.
-    for i, name in enumerate(player_names or [], start=FIRST_DATA_ROW):
-        ws.cell(row=i, column=NAME_COL, value=name)
-        ws.cell(row=i, column=DATE_COL).number_format = "DD/MM/YYYY"
-
-    out = io.BytesIO()
-    wb.save(out)
-    return out.getvalue()

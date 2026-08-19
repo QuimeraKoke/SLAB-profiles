@@ -1702,101 +1702,6 @@ def gps_session_upload(
         raise HttpError(400, str(exc))
 
 
-# --- Pentacompartimental (anthropometry) self-service upload -----------------
-# The ISAK "Modelo 5 componentes" export carries one row per (player, assessment
-# date), so `bulk_ingest` can't model it: that engine groups by player and
-# reduces multiple rows into a single result under one form-supplied
-# recorded_at. `exams.penta_ingest` — the same engine as the
-# `import_pentacompartimental` command — reads the real export shape instead.
-
-def _penta_template_for(request):
-    """(club, template) for the caller's Pentacompartimental, or 404/403."""
-    membership = get_membership(request.user)
-    if membership is None:
-        raise HttpError(403, "Tu usuario no está asociado a un club.")
-    template = scope_templates(
-        ExamTemplate.objects.select_related("department__club"), membership,
-    ).filter(slug="pentacompartimental", is_active_version=True).first()
-    if template is None:
-        raise HttpError(404, (
-            "Plantilla 'pentacompartimental' no encontrada "
-            "(corre seed_pentacompartimental)."
-        ))
-    return membership.club, template
-
-
-@api.post("/pentacompartimental/upload")
-@require_perm("exams.add_examresult")
-def pentacompartimental_upload(
-    request,
-    file: UploadedFile = File(...),
-    dry_run: bool = Form(True),
-):
-    """Upload the 5-component anthropometry workbook.
-
-    One result per (player, assessment date), dated from the sheet's "Informes"
-    column — not from an upload timestamp. Additive: an existing (player, date)
-    is reported as skipped and never overwritten, so re-uploading is a no-op.
-    `dry_run=True` (default) returns the preview without writing.
-    """
-    from exams import penta_ingest
-
-    club, template = _penta_template_for(request)
-    try:
-        file_bytes = file.read()
-    finally:
-        file.close()
-
-    try:
-        return penta_ingest.run(
-            file_bytes, club=club, template=template, dry_run=dry_run,
-        )
-    except penta_ingest.PentaParseError as exc:
-        raise HttpError(400, str(exc))
-
-
-@api.get("/pentacompartimental/template.xlsx")
-def pentacompartimental_blank_template(request, category_id: str = ""):
-    """Blank workbook in the export's own shape, limited to what SLAB reads.
-
-    Only the 27 raw ISAK measurements: the export's computed columns are omitted
-    because SLAB recalculates the 5 masses and indices from the template's
-    formulas, and `sexo` comes from the player record. Optionally pre-seeded
-    with a category's roster names so they already match.
-    """
-    from django.http import HttpResponse
-
-    from exams import penta_ingest
-
-    club, _template = _penta_template_for(request)
-    membership = get_membership(request.user)
-
-    names: list[str] = []
-    if category_id:
-        category = scope_categories(
-            Category.objects.all(), membership,
-        ).filter(pk=category_id).first()
-        if category is None:
-            raise HttpError(404, "Category not found")
-        names = [
-            f"{p.first_name} {p.last_name}"
-            for p in Player.objects.filter(category=category, is_active=True)
-            .order_by("first_name", "last_name")
-        ]
-
-    xlsx = penta_ingest.build_blank_template(names)
-    resp = HttpResponse(
-        xlsx,
-        content_type=(
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        ),
-    )
-    resp["Content-Disposition"] = (
-        'attachment; filename="plantilla_5componentes.xlsx"'
-    )
-    return resp
-
-
 @api.get("/players/{player_id}/templates", response=list[TemplateOut])
 def list_player_templates(request, player_id: str, department: str | None = None):
     """Templates the doctor can fill in for this player.
@@ -3139,6 +3044,153 @@ def briefing(request, category_id: str):
     return {"items": generate_briefing(category)}
 
 
+def _comet_match_data(md, meta: dict, event) -> dict:
+    """Normalize a COMET `MatchData` into the same shape the panel expects.
+
+    COMET has no team match statistics (no possession/shots — it's the
+    federation's official record, not analytics), so `team_statistics` comes
+    back empty and the panel simply omits that block.
+    """
+    lineups_raw = md.lineups if isinstance(md.lineups, dict) else {}
+    sides = []
+    for side in ("home", "away"):
+        block = lineups_raw.get(side) or {}
+        players = block.get("players") or []
+        if not players:
+            continue
+        coach = next(
+            (o.get("name") for o in (block.get("officials") or [])
+             if (o.get("role") or "").lower() == "head coach"),
+            None,
+        )
+
+        def _fmt(rows):
+            return [
+                {"name": p.get("name"), "number": p.get("shirtNumber"),
+                 "pos": (p.get("position") or "") or None}
+                for p in rows
+            ]
+
+        sides.append({
+            # COMET's lineup block carries no team name; take it from the match
+            # metadata, which knows which side we are.
+            "team": ("Universidad de Chile" if (
+                (side == "home") == bool(meta.get("is_home"))
+            ) else meta.get("opponent")) or side,
+            "team_id": None,
+            # COMET does not publish a formation string for this tenant.
+            "formation": None,
+            "coach": coach,
+            "start_xi": _fmt([p for p in players if p.get("starting")]),
+            "substitutes": _fmt([p for p in players if not p.get("starting")]),
+        })
+
+    # Period markers arrive with only `fcdName` (START / END / FULL_TIME) and no
+    # player — they belong in the timeline as separators, not as blank rows.
+    # COMET labels phases in English; the UI is Spanish, so translate off the
+    # stable `fcdName` rather than the display string.
+    marker_labels = {
+        "START": "Inicio", "END": "Fin", "HALF_TIME": "Entretiempo",
+        "FULL_TIME": "Final del partido",
+    }
+    phase_labels = {
+        "FIRST_HALF": "1er tiempo", "SECOND_HALF": "2do tiempo",
+        "FIRST_EXTRA_TIME": "1er tiempo extra",
+        "SECOND_EXTRA_TIME": "2do tiempo extra",
+        "PENALTY_SHOOTOUT": "Penales",
+    }
+    # Keyed on `fcdName` (stable) rather than the display name, which COMET
+    # sends in English.
+    type_labels = {
+        "GOAL": "Gol", "OWN_GOAL": "Autogol", "PENALTY_GOAL": "Gol de penal",
+        "PENALTY_MISSED": "Penal errado", "YELLOW": "Tarjeta amarilla",
+        "SECOND_YELLOW": "Doble amarilla", "RED": "Tarjeta roja",
+        "SUBSTITUTION": "Cambio", "SIN_BIN": "Expulsión temporal",
+    }
+
+    def _event(e: dict) -> dict:
+        p = e.get("player") or {}
+        p2 = e.get("player2") or {}
+        et = e.get("eventType") or {}
+        etype = et.get("name") or ""
+        fcd = (et.get("fcdName") or "").upper()
+        mp = e.get("matchPhase") or {}
+        phase = phase_labels.get(
+            (mp.get("fcdName") or "").upper(), mp.get("name"),
+        )
+        is_sub = "substitution" in etype.lower()
+        is_marker = not etype and not p
+        try:
+            stoppage = int(e.get("stoppageTime") or 0)
+        except (TypeError, ValueError):
+            stoppage = 0
+        if is_marker:
+            label = marker_labels.get(fcd, fcd.replace("_", " ").title())
+            # FULL_TIME already reads as the end of the match — don't append
+            # "· 2do tiempo" to it.
+            etype = label if fcd == "FULL_TIME" else f"{label} · {phase}".strip(" ·")
+            # The added time each period actually ran belongs on its closing
+            # marker; that's the only place COMET states it.
+            if stoppage and fcd in ("END", "FULL_TIME"):
+                etype = f"{etype} · +{stoppage}′ de alargue"
+        else:
+            etype = type_labels.get(fcd, etype)
+        # COMET already formats the added-time notation ("45+3'", "90+1'"), and
+        # it's authoritative — rebuilding it from minuteFull loses the distinction
+        # and renders two bare "45'" rows for a goal scored in stoppage time.
+        display = (e.get("displayMinute") or "").strip().rstrip("'").strip()
+        return {
+            # `minuteFull` is the match minute; `minute` restarts each half.
+            "minute": e.get("minuteFull"),
+            "display_minute": display or (
+                str(e.get("minuteFull")) if e.get("minuteFull") is not None else None
+            ),
+            "stoppage": stoppage or None,
+            "extra": stoppage or None,
+            "kind": "phase" if is_marker else "event",
+            "team": None if is_marker else ("Universidad de Chile" if (
+                bool(e.get("homeTeam")) == bool(meta.get("is_home"))
+            ) else meta.get("opponent")),
+            "player": p.get("name"),
+            "shirt_number": p.get("shirtNumber"),
+            # On a substitution player2 is the one going OFF, not an assist.
+            "assist": None if is_sub else (p2.get("name") or None),
+            "substituted_out": p2.get("name") if is_sub else None,
+            "type": etype,
+            "detail": phase,
+        }
+
+    # Sort by `orderNumber`, COMET's authoritative sequence (1..N over the whole
+    # match). Sorting by minute instead breaks the period markers: END and
+    # FULL_TIME carry NO minute at all, so `minuteFull or 0` floated them to the
+    # very top — "Fin 1er tiempo" and "Final del partido" rendered before kickoff.
+    def _seq(e: dict):
+        order = e.get("orderNumber")
+        return (
+            order if isinstance(order, int) else 10**6,
+            e.get("minuteFull") or 0,
+        )
+
+    events = sorted(md.events or [], key=_seq)
+    return {
+        "has_data": True,
+        "source": md.source,
+        "competition": meta.get("competition"),
+        "status": meta.get("status"),
+        "score": meta.get("score"),
+        "score_half_time": meta.get("score_half_time"),
+        "round": meta.get("round"),
+        "venue": meta.get("venue"),
+        "referee": meta.get("referee"),
+        "is_home": meta.get("is_home"),
+        "opponent": meta.get("opponent"),
+        "synced_at": md.synced_at.isoformat() if md.synced_at else None,
+        "lineups": sides,
+        "events": [_event(e) for e in events],
+        "team_statistics": [],
+    }
+
+
 @api.get("/events/{event_id}/match-data")
 def event_match_data(request, event_id: str):
     """Imported results + tactical data (API-Football) for a match Event:
@@ -3156,6 +3208,14 @@ def event_match_data(request, event_id: str):
     if md is None:
         return {"has_data": False, "competition": meta.get("competition"),
                 "score": meta.get("score"), "status": meta.get("status")}
+
+    # MatchData stores each provider's payload verbatim, so the shapes differ:
+    # API-Football sends lineups as a LIST of team objects, COMET a DICT keyed
+    # home/away with a flat `players` array carrying `starting`. Iterating a
+    # COMET payload with the API-Football reader yields the dict's string keys
+    # and raises AttributeError, so branch on the source rather than duck-type.
+    if (md.source or "") == "comet":
+        return _comet_match_data(md, meta, event)
 
     def _lineup(l: dict) -> dict:
         team = l.get("team") or {}
@@ -3204,6 +3264,250 @@ def event_match_data(request, event_id: str):
         "events": [_event(e) for e in (md.events or [])],
         "team_statistics": [_team_stats(s) for s in (md.team_statistics or [])],
     }
+
+
+@api.get("/events/{event_id}/match-sheet")
+def event_match_sheet(request, event_id: str):
+    """The federation's official match sheet for a match Event, plus SLAB's own
+    physical data cross-referenced against it.
+
+    One call backs the whole match view: header, timeline, both lineups with a
+    per-player status, referees, the GPS × official-minutes cross and the
+    tournament context. Everything is read from what the COMET sync already
+    stored (`Event.metadata` + `MatchData`), so this never calls the provider
+    inside a page request.
+
+    `has_sheet=False` when no COMET data has been synced for the match — the
+    caller renders nothing rather than an empty shell.
+    """
+    membership = get_membership(request.user)
+    event = scope_events(
+        Event.objects.select_related("category", "club"), membership,
+    ).filter(pk=event_id).first()
+    if event is None:
+        raise HttpError(404, "Event not found")
+
+    meta = event.metadata or {}
+    md = getattr(event, "match_data", None)
+    if md is None or (md.source or "") != "comet":
+        return {"has_sheet": False, "reason": "sin ficha oficial sincronizada"}
+
+    sheet = _comet_match_data(md, meta, event)
+    lineups_raw = md.lineups if isinstance(md.lineups, dict) else {}
+    our_side = "home" if meta.get("is_home") else "away"
+    ours = lineups_raw.get(our_side) or {}
+
+    # ---- per-player status + the GPS cross -------------------------------
+    # `ficha_partido` holds the official per-player record for this match;
+    # `gps_partido` the physical one. Both are linked to the Event, so they join
+    # on player — which is exactly the pairing no single provider can give.
+    ficha = {
+        r.player_id: r.result_data or {}
+        for r in ExamResult.objects.filter(
+            event=event, template__slug="ficha_partido",
+        ).select_related("player")
+    }
+    gps = {
+        r.player_id: r.result_data or {}
+        for r in ExamResult.objects.filter(
+            event=event, template__slug="gps_partido",
+        )
+    }
+    names = {
+        r.player_id: f"{r.player.first_name} {r.player.last_name}"
+        for r in ExamResult.objects.filter(
+            event=event, template__slug="ficha_partido",
+        ).select_related("player")
+    }
+
+    # Real clock: COMET's official minutes stop at 90, but the END / FULL_TIME
+    # markers carry each period's added time, so the true elapsed time can be
+    # rebuilt. Validated against GPS to within 0.6 min on two matches.
+    from api import match_sheet as _MS
+
+    stop_1, stop_2 = _MS.period_stoppage(md.events or [])
+    real_total = _MS.real_total_minutes(stop_1, stop_2)
+    has_stoppage = bool(stop_1 or stop_2)
+
+    def _status(row: dict) -> str:
+        minutes = row.get("minutos") or 0
+        if row.get("titular"):
+            return "titular"
+        if minutes > 0:
+            return "ingreso"
+        return "citado"
+
+    squad = []
+    for pid, row in ficha.items():
+        g = gps.get(pid) or {}
+        official = row.get("minutos") or 0
+        dist = g.get("tot_dist")
+        minutes_real = _MS.real_minutes_played(
+            row.get("min_ingreso"), row.get("min_salida"), s1=stop_1, s2=stop_2,
+        )
+        squad.append({
+            "player_id": str(pid),
+            "player": names.get(pid),
+            "shirt_number": row.get("dorsal"),
+            "status": _status(row),
+            "captain": bool(row.get("capitan")),
+            "minutes_official": official,
+            # Regulation minutes plus the added time actually played. None when
+            # the federation didn't publish stoppage for this match.
+            "minutes_real": minutes_real if has_stoppage else None,
+            "minute_in": row.get("min_ingreso"),
+            "minute_out": row.get("min_salida"),
+            "goals": row.get("goles") or 0,
+            "assists": row.get("asistencias") or 0,
+            "yellow": row.get("amarillas") or 0,
+            "red": row.get("rojas") or 0,
+            "gps": None if not g else {
+                "duration": g.get("tot_dur"),
+                "distance": dist,
+                "mpm": g.get("mpm"),
+                "hsr": g.get("hsr"),
+                "sprint": g.get("sprint_dist") or g.get("sprint"),
+                "max_vel": g.get("max_vel"),
+                # The point of the cross: metres per OFFICIAL minute, which no
+                # single provider can compute on its own.
+                "m_per_official_min": (
+                    round(dist / official, 1)
+                    if dist and official else None
+                ),
+            },
+        })
+    squad.sort(key=lambda r: (-(r["minutes_official"] or 0), r["player"] or ""))
+
+    # Mismatches worth surfacing: physical data for someone the federation says
+    # never played, or a player with official minutes and no GPS.
+    gps_without_minutes = [
+        r["player"] for r in squad
+        if r["gps"] and not r["minutes_official"]
+    ]
+    minutes_without_gps = [
+        r["player"] for r in squad
+        if r["minutes_official"] and not r["gps"]
+    ]
+    # The mismatch that hides in plain sight: a GPS row that looks perfectly
+    # normal on its own but covers a fraction of the minutes the federation says
+    # the player was on the pitch (unit switched off, or the session got
+    # assigned to the wrong match). It silently UNDER-reports load, so it's the
+    # dangerous direction. GPS legitimately runs longer than official minutes
+    # (stoppage time), hence the asymmetric bounds.
+    duration_mismatch = []
+    for r in squad:
+        g, official = r["gps"], r["minutes_official"]
+        if not g or not official:
+            continue
+        dur = g.get("duration")
+        if not dur:
+            continue
+        # Compare against the REAL clock when the federation published stoppage:
+        # GPS tracks actual elapsed time, so `minutes_real` is the honest
+        # expectation and the tolerance can be tight (measured error was ≤0.6
+        # min). Without stoppage data, fall back to the official 90 and a loose
+        # asymmetric bound, since GPS legitimately overruns it by ~10.
+        expected = r["minutes_real"] if r["minutes_real"] else None
+        if expected:
+            slack = max(5.0, expected * 0.15)
+            if abs(dur - expected) > slack:
+                duration_mismatch.append({
+                    "player": r["player"], "minutes_official": official,
+                    "minutes_real": expected, "gps_duration": dur,
+                    "issue": "gps_mucho_menor" if dur < expected else "gps_mucho_mayor",
+                })
+        elif dur < official * 0.8:
+            duration_mismatch.append({
+                "player": r["player"], "minutes_official": official,
+                "minutes_real": None, "gps_duration": dur,
+                "issue": "gps_mucho_menor",
+            })
+        elif dur > official + 25:
+            duration_mismatch.append({
+                "player": r["player"], "minutes_official": official,
+                "minutes_real": None, "gps_duration": dur,
+                "issue": "gps_mucho_mayor",
+            })
+
+    return {
+        "has_sheet": True,
+        "synced_at": sheet["synced_at"],
+        "header": {
+            "competition": meta.get("competition"),
+            "phase": meta.get("competition_phase"),
+            "round": meta.get("round"),
+            "status": meta.get("status"),
+            "status_long": meta.get("status_long"),
+            "venue": meta.get("venue"),
+            "is_home": meta.get("is_home"),
+            "opponent": meta.get("opponent"),
+            "score": meta.get("score"),
+            "score_half_time": meta.get("score_half_time"),
+            "comet_match_id": meta.get("comet_match_id"),
+            # Real clock, when the federation published added time.
+            "stoppage_first_half": stop_1 if has_stoppage else None,
+            "stoppage_second_half": stop_2 if has_stoppage else None,
+            "real_duration_minutes": real_total if has_stoppage else None,
+        },
+        "timeline": sheet["events"],
+        "lineups": sheet["lineups"],
+        "referee": meta.get("referee"),
+        "match_officials": meta.get("match_officials") or [],
+        "team_staff": meta.get("team_staff") or [],
+        "squad": squad,
+        "cross_check": {
+            "with_gps": sum(1 for r in squad if r["gps"]),
+            "played": sum(1 for r in squad if r["minutes_official"]),
+            "gps_without_official_minutes": gps_without_minutes,
+            "official_minutes_without_gps": minutes_without_gps,
+            "duration_mismatch": duration_mismatch,
+        },
+        "standings": md.standings or [],
+        "head_to_head": md.head_to_head or [],
+        "pitch": _build_pitch(md, meta, ficha, our_side),
+    }
+
+
+def _build_pitch(md, meta: dict, ficha: dict, our_side: str) -> dict:
+    """Both pitch sides, each declaring how trustworthy its placement is.
+
+    Our side is placed from SLAB's registered positions; the rival has none in any
+    source, so it falls back to a generic 4-4-2 by shirt number and says so.
+    """
+    from api import match_sheet as MS
+    from core.models import Player
+
+    lineups = md.lineups if isinstance(md.lineups, dict) else {}
+    events = md.events or []
+    rival_side = "away" if our_side == "home" else "home"
+
+    # personId → (position name, abbreviation) for the players on OUR sheet.
+    # `ficha` is keyed by SLAB player id, and CometPlayerLink ties that to the
+    # COMET personId — go through it so the mapping survives a renamed player.
+    from exams.models import CometPlayerLink
+
+    slab_positions: dict[int, tuple[str | None, str | None]] = {}
+    links = CometPlayerLink.objects.filter(
+        player_id__in=list(ficha.keys()),
+    ).select_related("player__position")
+    for link in links:
+        pos = getattr(link.player, "position", None)
+        slab_positions[link.person_id] = (
+            getattr(pos, "name", None), getattr(pos, "abbreviation", None),
+        )
+
+    ours = MS.build_side(
+        (lineups.get(our_side) or {}).get("players") or [],
+        events, home=(our_side == "home"),
+        team="Universidad de Chile" if meta.get("is_home") is not None else None,
+        slab_positions=slab_positions,
+    )
+    rival = MS.build_side(
+        (lineups.get(rival_side) or {}).get("players") or [],
+        events, home=(rival_side == "home"),
+        team=meta.get("opponent"),
+    )
+    return {"ours": ours, "rival": rival}
 
 
 @api.get("/roster")

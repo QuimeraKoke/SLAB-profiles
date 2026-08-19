@@ -32,7 +32,6 @@ const SEGMENT_LABELS: Record<string, string> = {
   uso: "Uso",
   "centro-de-mando": "Centro de mando",
   "gps-entrenamiento": "Cargar GPS",
-  antropometria: "Cargar antropometría",
   daily: "Daily",
 };
 

@@ -1,0 +1,117 @@
+/* Two pitches, one visible at a time, swapped on hover or via tabs. */
+
+.wrap { display: flex; flex-direction: column; gap: 10px; }
+
+.tabs {
+  display: inline-flex; gap: 4px; align-self: flex-start;
+  background: #f2f4f7; border: 1px solid #e4e7ec; border-radius: 10px; padding: 4px;
+}
+.tab {
+  border: none; background: transparent; color: #475467; cursor: pointer;
+  font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 7px;
+}
+.tabOn { background: #fff; color: #4f46e5; box-shadow: 0 1px 2px rgba(16,24,40,.08); }
+
+/* The stage clips the two slides; only one is on screen at a time. */
+.stage { position: relative; overflow: hidden; min-height: 430px; }
+.slide {
+  position: absolute; inset: 0;
+  transition: transform .32s cubic-bezier(.4,0,.2,1), opacity .24s ease;
+  will-change: transform, opacity;
+}
+.slideOn { transform: translateX(0); opacity: 1; pointer-events: auto; }
+.slideLeft { transform: translateX(-6%); opacity: 0; pointer-events: none; }
+.slideRight { transform: translateX(6%); opacity: 0; pointer-events: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .slide { transition: opacity .12s linear; }
+  .slideLeft, .slideRight { transform: none; }
+}
+
+.pitchCol { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── the field ──────────────────────────────────────────────────────────── */
+.field {
+  position: relative; height: 340px; border-radius: 10px;
+  background:
+    repeating-linear-gradient(
+      to top, #2f8f4e 0 34px, #2b8449 34px 68px
+    );
+  border: 2px solid rgba(255,255,255,.55);
+  overflow: hidden;
+}
+.halfway {
+  position: absolute; left: 0; right: 0; top: 50%;
+  border-top: 2px solid rgba(255,255,255,.45);
+}
+.circle {
+  position: absolute; left: 50%; top: 50%; width: 96px; height: 96px;
+  transform: translate(-50%, -50%); border: 2px solid rgba(255,255,255,.45);
+  border-radius: 50%;
+}
+.box {
+  position: absolute; left: 50%; bottom: 0; width: 168px; height: 62px;
+  transform: translateX(-50%);
+  border: 2px solid rgba(255,255,255,.45); border-bottom: none;
+  border-radius: 3px 3px 0 0;
+}
+.sixYard {
+  position: absolute; left: 50%; bottom: 0; width: 80px; height: 26px;
+  transform: translateX(-50%);
+  border: 2px solid rgba(255,255,255,.4); border-bottom: none;
+}
+
+/* ── players ────────────────────────────────────────────────────────────── */
+.dotWrap {
+  position: absolute; transform: translate(-50%, 50%);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  width: 86px; text-align: center;
+}
+.dot {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: #1d4ed8; color: #fff; border: 2px solid rgba(255,255,255,.9);
+  font-size: 10px; font-weight: 800; font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 3px rgba(0,0,0,.35);
+}
+.gk { background: #f59e0b; }
+.dotName {
+  font-size: 10.5px; font-weight: 700; color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.75);
+  line-height: 1.15; max-width: 86px; overflow-wrap: break-word;
+}
+.cap {
+  display: inline-block; margin-left: 3px; padding: 0 3px; border-radius: 2px;
+  background: rgba(255,255,255,.9); color: #1d4ed8; font-size: 8px;
+}
+.dotMarks {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 9px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.7);
+}
+.out { color: #fecdca; font-style: normal; }
+.in { color: #a6f4c5; font-style: normal; }
+
+/* ── caption + bench ────────────────────────────────────────────────────── */
+.caption {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: #98a2b3; margin: 0;
+}
+.benchLabel {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: #98a2b3; margin: 4px 0 0;
+}
+.bench {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 2px 12px; font-size: 12px; color: #475467;
+}
+.bench li { display: flex; align-items: center; gap: 6px; }
+.benchNum {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 19px; height: 17px; padding: 0 3px;
+  background: #f2f4f7; border-radius: 4px;
+  font-size: 10px; font-weight: 700; color: #475467;
+  font-variant-numeric: tabular-nums;
+}
+
+.hoverHint { font-size: 11px; color: #b4bcc8; margin: 0; }

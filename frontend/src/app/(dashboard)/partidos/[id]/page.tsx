@@ -1,9 +1,10 @@
 "use client";
 
-import React, { use, useEffect, useState } from "react";
+import React, { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
 import TeamReportDashboard from "@/components/reports/TeamReportDashboard";
+import MatchSheet from "@/components/partidos/MatchSheet";
 import { useBreadcrumbLabel } from "@/components/layout/Breadcrumbs";
 import { api, ApiError } from "@/lib/api";
 import type { CalendarEvent, MatchReportResponse } from "@/lib/types";
@@ -29,6 +30,39 @@ export default function PartidoDetailPage({ params }: PageProps) {
   const [report, setReport] = useState<MatchReportResponse["layout"] | null>(null);
   const [reportFetched, setReportFetched] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Hide widgets with nothing to show, then hide sections left with none, so a
+  // match without GPS or hand-entered rendimiento doesn't render a block of
+  // "Sin datos suficientes" panels under the match sheet.
+  //
+  // Two flavours of empty. `empty: true` is the backend's own flag. But a
+  // leaderboard also reports the FULL roster with `samples: 0` on every row —
+  // technically 32 rows, materially nothing, and it renders as "Ningún jugador
+  // tiene datos en este período". Only treat that as empty when every row
+  // carries a numeric `samples` and all of them are zero, so a widget with even
+  // one real reading always survives.
+  const sections = useMemo(() => {
+    type Row = { samples?: unknown };
+    const isBlank = (data: unknown): boolean => {
+      const d = data as { empty?: boolean; rows?: Row[]; players?: Row[] } | null;
+      if (!d) return true;
+      if (d.empty) return true;
+      const rows = d.rows ?? d.players;
+      if (Array.isArray(rows) && rows.length > 0) {
+        const counted = rows.filter((r) => typeof r?.samples === "number");
+        if (
+          counted.length === rows.length &&
+          counted.every((r) => (r.samples as number) === 0)
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+    return (report?.sections ?? [])
+      .map((sec) => ({ ...sec, widgets: sec.widgets.filter((w) => !isBlank(w.data)) }))
+      .filter((sec) => sec.widgets.length > 0);
+  }, [report]);
 
   // Match metadata (for the header + breadcrumb).
   useEffect(() => {
@@ -114,7 +148,11 @@ export default function PartidoDetailPage({ params }: PageProps) {
 
       {error && <div className={styles.errorBox}>{error}</div>}
 
-      {report ? (
+      {/* Federation match sheet + GPS cross. Self-hiding when nothing has been
+          synced for this match, so it's safe to mount unconditionally. */}
+      <MatchSheet eventId={id} />
+
+      {sections.length > 0 ? (
         <>
           <div className={styles.reportLead}>
             <h2 className={styles.reportTitle}>Reporte de partido</h2>
@@ -122,10 +160,12 @@ export default function PartidoDetailPage({ params }: PageProps) {
               Físico (GPS) + Táctico, fijado a este partido.
             </span>
           </div>
-          <TeamReportDashboard sections={report.sections} />
+          <TeamReportDashboard sections={sections} />
         </>
       ) : (
-        reportFetched && !error && (
+        // Only nudge when there is genuinely nothing AND no match sheet either;
+        // with a sheet on screen the page is already informative.
+        reportFetched && !error && !report && (
           <div className={styles.placeholder}>
             <strong>Sin reporte para este partido.</strong>
             <p>

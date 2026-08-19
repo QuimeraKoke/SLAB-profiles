@@ -1,0 +1,123 @@
+/* Ficha oficial del partido (COMET) + cruce con GPS.
+   Visual language borrowed from gps-entrenamiento / MatchDataPanel so the
+   match page reads as one system. */
+
+.wrap { display: flex; flex-direction: column; gap: 16px; margin: 0 0 28px; }
+
+.head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px; flex-wrap: wrap;
+}
+.h2 { font-size: 18px; font-weight: 700; color: #101828; margin: 0; }
+.sub { font-size: 13px; color: #667085; margin: 3px 0 0; }
+
+.scoreBox { display: flex; flex-direction: column; align-items: flex-end; }
+.score { font-size: 26px; font-weight: 800; color: #101828; letter-spacing: .5px; }
+.scoreHt { font-size: 11px; color: #98a2b3; }
+
+.factRow {
+  display: flex; flex-wrap: wrap; gap: 14px; margin: 0;
+  font-size: 12px; color: #475467;
+}
+.factRow span { display: inline-flex; align-items: center; gap: 5px; }
+
+/* ── cross-check warnings ───────────────────────────────────────────────── */
+.warnBox {
+  display: flex; gap: 10px; align-items: flex-start;
+  background: #fffaeb; border: 1px solid #fedf89; border-radius: 10px;
+  padding: 12px 14px; color: #b54708; font-size: 13px;
+}
+.warnBox strong { color: #93370d; }
+.warnList { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+
+/* ── layout ─────────────────────────────────────────────────────────────── */
+.grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 16px; align-items: start;
+}
+.card {
+  background: #fff; border: 1px solid #eaecf0; border-radius: 12px;
+  padding: 14px 16px;
+}
+.h3 {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 14px; font-weight: 700; color: #344054; margin: 0 0 10px;
+}
+.hint { font-size: 11px; color: #98a2b3; margin: -4px 0 10px; }
+
+/* ── timeline ───────────────────────────────────────────────────────────── */
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.phase {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: #98a2b3; padding: 8px 0 4px; border-bottom: 1px dashed #eaecf0;
+  margin-bottom: 4px;
+}
+.tlRow {
+  display: grid; grid-template-columns: 34px 18px 1fr auto;
+  align-items: baseline; gap: 6px; padding: 3px 0; font-size: 13px;
+}
+.min { color: #667085; font-variant-numeric: tabular-nums; text-align: right; }
+.glyph { text-align: center; }
+.tlBody { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; color: #344054; }
+.tlType { font-size: 11px; color: #667085; }
+.tlNote { font-size: 11px; color: #98a2b3; }
+.tlTeam { font-size: 11px; color: #98a2b3; white-space: nowrap; }
+.shirt { font-size: 10px; color: #98a2b3; }
+
+/* ── lineups ────────────────────────────────────────────────────────────── */
+.lineup { margin-bottom: 14px; }
+.lineup:last-child { margin-bottom: 0; }
+.lineupHead {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 8px; font-size: 13px; color: #101828; margin-bottom: 6px;
+}
+.coach { font-size: 11px; color: #667085; }
+.xi { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 13px; }
+.xi li { display: flex; align-items: center; gap: 7px; color: #344054; }
+.bench li { color: #667085; }
+.benchLabel {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: #98a2b3; margin: 10px 0 4px;
+}
+.shirtBox {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 4px;
+  background: #f2f4f7; border-radius: 4px;
+  font-size: 10px; font-weight: 700; color: #475467;
+  font-variant-numeric: tabular-nums;
+}
+.pos { font-size: 10px; color: #98a2b3; }
+
+/* ── tables ─────────────────────────────────────────────────────────────── */
+.tableWrap { overflow-x: auto; border: 1px solid #eaecf0; border-radius: 10px; }
+.table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.table th {
+  text-align: left; padding: 8px 10px; background: #f9fafb; color: #475467;
+  font-weight: 600; border-bottom: 1px solid #eaecf0; white-space: nowrap;
+}
+.table td {
+  padding: 7px 10px; border-bottom: 1px solid #f4f5f8; color: #344054;
+  white-space: nowrap;
+}
+.table tr:last-child td { border-bottom: none; }
+.r { text-align: right; font-variant-numeric: tabular-nums; }
+.strong { font-weight: 700; color: #101828; }
+.name { display: flex; align-items: center; gap: 7px; font-weight: 600; color: #101828; }
+.cap {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; border-radius: 3px;
+  background: #eef2ff; color: #4338ca; font-size: 9px; font-weight: 800;
+}
+.hl { background: #f5f8ff; }
+
+/* status badges */
+.badge {
+  font-size: 10.5px; font-weight: 600; border-radius: 999px; padding: 2px 8px;
+  white-space: nowrap;
+}
+.titular { background: #ecfdf3; color: #027a48; }
+.ingreso { background: #eef2ff; color: #4338ca; }
+.citado  { background: #f2f4f7; color: #667085; }
+
+.plainList { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 12.5px; color: #344054; }
+.role { display: inline-block; min-width: 116px; color: #98a2b3; font-size: 11px; }

@@ -536,3 +536,81 @@ class CatapultAthleteLinkAdmin(admin.ModelAdmin):
         "athlete_name", "athlete_id", "player__first_name", "player__last_name",
     )
     readonly_fields = ("created_at",)
+
+
+# ── COMET LIVE (federation match record) integration ───────────────────────
+
+from exams.models import (  # noqa: E402
+    CometCompetitionLink, CometIntegration, CometPlayerLink,
+)
+
+
+@admin.register(CometIntegration)
+class CometIntegrationAdmin(admin.ModelAdmin):
+    list_display = (
+        "club", "enabled", "tenant", "comet_team_id", "organization_id",
+        "lookback_days", "last_synced_at",
+    )
+    list_filter = ("enabled", "tenant")
+    search_fields = ("club__name", "comet_team_id", "organization_id")
+    readonly_fields = ("last_synced_at", "created_at", "updated_at")
+    fieldsets = (
+        (None, {"fields": ("club", "enabled")}),
+        ("Credenciales COMET (los 4 valores)", {
+            "fields": ("api_key", "tenant", "comet_team_id", "organization_id", "base_url"),
+            "description": (
+                "Los cuatro valores que entrega la federación. Se envían TODOS en "
+                "cada llamada: la API documenta los filtros de organización y equipo "
+                "como obligatorios cuando la API_KEY está restringida, y una key "
+                "restringida responde 401 sin ellos.<br><br>"
+                "<b>Un solo team id cubre todas las categorías del club</b> "
+                "(Primera hasta Sub 11): la categoría sale de la competencia de cada "
+                "partido, que se mapea en «Competencias COMET»."
+            ),
+        }),
+        ("Qué sincronizar", {
+            "fields": (
+                "template_slug",
+                ("update_event_metadata", "store_raw_match_data"),
+                "create_missing_events",
+                ("lookback_days", "utc_offset"),
+            ),
+        }),
+        ("Estado", {
+            "fields": ("last_synced_at", "created_at", "updated_at"),
+            "classes": ("collapse",),
+        }),
+    )
+
+
+@admin.register(CometCompetitionLink)
+class CometCompetitionLinkAdmin(admin.ModelAdmin):
+    """Review queue: a competition with no category has its matches skipped."""
+
+    list_display = (
+        "competition_name", "parent_name", "category", "auto_resolved",
+        "ignored", "competition_id", "last_seen_at",
+    )
+    list_filter = ("ignored", "auto_resolved", "category", "integration__club")
+    search_fields = ("competition_name", "parent_name", "competition_id")
+    list_editable = ("category", "ignored")
+    list_select_related = ("category", "integration")
+    readonly_fields = ("created_at", "last_seen_at")
+
+
+@admin.register(CometPlayerLink)
+class CometPlayerLinkAdmin(admin.ModelAdmin):
+    """Review queue: `personId` is stable, so a manual link is permanent."""
+
+    list_display = (
+        "person_name", "shirt_number", "player", "match_method",
+        "person_id", "fifa_id", "last_seen_at",
+    )
+    list_filter = ("match_method", "integration__club")
+    search_fields = (
+        "person_name", "person_id", "fifa_id",
+        "player__first_name", "player__last_name",
+    )
+    list_editable = ("player",)
+    list_select_related = ("player", "integration")
+    readonly_fields = ("created_at", "last_seen_at")

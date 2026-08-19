@@ -1,11 +1,12 @@
-"""Pentacompartimental ingest — parsing, name matching and, above all, the
-column alignment between the generated blank template and RAW_MAP.
+"""Pentacompartimental ingest — workbook parsing, cell coercion, name matching.
 
-RAW_MAP reads the workbook BY COLUMN INDEX, so the generated template has to
-occupy exactly the same columns as the real ISAK export. Dropping a column SLAB
-doesn't even read (the export's "Edad cronológica") silently shifts every
-measurement one to the left — `talla` gets stored as `peso` — with no error
-anywhere. These tests pin that down; none of them need a database.
+Covers `exams.penta_ingest`, the engine behind the `import_pentacompartimental`
+CLI. Note that RAW_MAP reads the sheet BY COLUMN INDEX, so a real ISAK export
+whose columns shift (a dropped column, an extra one) misfiles every measurement
+silently — `talla` lands in `peso` with no error. Nothing here can catch that
+for an arbitrary third-party file; the guard is that the export layout is fixed.
+
+None of these need a database.
 """
 from __future__ import annotations
 
@@ -18,47 +19,16 @@ from django.test import SimpleTestCase
 from exams import penta_ingest as P
 
 
-class TemplateAlignmentTests(SimpleTestCase):
-    def test_headers_span_exactly_the_raw_map_columns(self):
-        self.assertEqual(len(P.TEMPLATE_HEADERS), max(P.RAW_MAP))
-
-    def test_group_banner_widths_total_the_header_count(self):
-        self.assertEqual(
-            sum(w for _, w in P.TEMPLATE_GROUPS), len(P.TEMPLATE_HEADERS),
-        )
-
+class ColumnLayoutTests(SimpleTestCase):
     def test_name_and_date_columns_are_not_measurement_columns(self):
+        # RAW_MAP is index-based; overlapping it with the name/date columns
+        # would read a player's name as a measurement.
         self.assertNotIn(P.NAME_COL, P.RAW_MAP)
         self.assertNotIn(P.DATE_COL, P.RAW_MAP)
 
-    def test_generated_template_round_trips_through_the_parser(self):
-        # Distinct value per column: any shift changes which key it lands on.
-        data = P.build_blank_template(["Jugador Uno"])
-        wb = openpyxl.load_workbook(io.BytesIO(data))
-        ws = wb.worksheets[0]
-        ws.cell(row=P.FIRST_DATA_ROW, column=P.DATE_COL, value="05/08/2026")
-        expected = {}
-        for col, key in P.RAW_MAP.items():
-            value = round(10 + col * 1.01, 2)
-            ws.cell(row=P.FIRST_DATA_ROW, column=col, value=value)
-            expected[key] = value
-        buf = io.BytesIO()
-        wb.save(buf)
-
-        rows = P.parse_workbook(buf.getvalue())
-        self.assertEqual(len(rows), 1)
-        got = {key: P._num(rows[0][col - 1]) for col, key in P.RAW_MAP.items()}
-        self.assertEqual(got, expected)
-
-    def test_generated_template_uses_the_sheet_name_the_parser_expects(self):
-        wb = openpyxl.load_workbook(io.BytesIO(P.build_blank_template()))
-        self.assertEqual(wb.worksheets[0].title, P.SHEET)
-
-    def test_generated_template_seeds_roster_names_from_the_first_data_row(self):
-        data = P.build_blank_template(["Ana Uno", "Beto Dos"])
-        ws = openpyxl.load_workbook(io.BytesIO(data)).worksheets[0]
-        self.assertEqual(ws.cell(row=P.FIRST_DATA_ROW, column=P.NAME_COL).value, "Ana Uno")
-        self.assertEqual(ws.cell(row=P.FIRST_DATA_ROW + 1, column=P.NAME_COL).value, "Beto Dos")
+    def test_raw_map_covers_the_27_isak_measurements(self):
+        self.assertEqual(len(P.RAW_MAP), 27)
+        self.assertEqual(len(set(P.RAW_MAP.values())), 27, "duplicate field key")
 
 
 class ParseWorkbookTests(SimpleTestCase):

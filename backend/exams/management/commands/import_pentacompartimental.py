@@ -1,10 +1,10 @@
 """Import the Pentacompartimental (5-component anthropometry) xlsx export into
 the `pentacompartimental` template.
 
-Thin CLI over `exams.penta_ingest` — the same engine behind the self-service
-upload (`POST /pentacompartimental/upload`), so a file imported here and one
-uploaded through the UI are treated identically. See that module for the parsing
-rules, name matching and dedup policy.
+Thin CLI over `exams.penta_ingest`; see that module for the parsing rules, name
+matching and dedup policy. This is the only entry point for the multi-date ISAK
+export — routine capture happens through the template's `team_table` /
+`bulk_ingest` modes on /subir-datos.
 
 Additive: dedup on (player, assessment date), existing results are never
 overwritten. Dry-run by default.

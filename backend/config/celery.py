@@ -91,4 +91,11 @@ app.conf.beat_schedule = {
         "task": "exams.tasks.sync_all_catapult_categories",
         "schedule": crontab(minute=15),
     },
+    # COMET LIVE (federation match record). Off-peak minute so it doesn't
+    # collide with the Catapult / VALD runs; matches are published hours after
+    # kickoff, so hourly is plenty.
+    "sync-comet-matches": {
+        "task": "exams.tasks.sync_all_comet_clubs",
+        "schedule": crontab(minute=45),
+    },
 }

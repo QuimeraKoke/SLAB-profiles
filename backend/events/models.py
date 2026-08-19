@@ -277,6 +277,17 @@ class MatchData(models.Model):
     events = models.JSONField(default=list, blank=True)
     team_statistics = models.JSONField(default=list, blank=True)
     player_statistics = models.JSONField(default=list, blank=True)
+    # Tournament context, fetched once at sync time so the match view never
+    # calls the provider inside a page request. COMET only; API-Football fills
+    # neither.
+    standings = models.JSONField(
+        default=list, blank=True,
+        help_text="Official competition table as of this match (COMET /standings).",
+    )
+    head_to_head = models.JSONField(
+        default=list, blank=True,
+        help_text="Recent meetings between the two teams (COMET /h2h).",
+    )
     synced_at = models.DateTimeField(auto_now=True)
 
     def __str__(self) -> str:
