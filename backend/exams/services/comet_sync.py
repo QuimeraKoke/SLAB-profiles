@@ -311,22 +311,35 @@ def _sync_participation(event, player, row: dict) -> bool:
     return True
 
 
-def _sync_call_up(event, player) -> bool:
-    """Record a cross-category appearance as a `PlayerCallUp`. True if created.
+def _sync_call_up(
+    event, player, *, bracket_age: int | None, season_year: int,
+) -> bool:
+    """Record a genuine step-up appearance as a `PlayerCallUp`. True if created.
 
-    A player turning out for a category that isn't his own is normal here, not
-    an anomaly — age brackets are a floor, so the younger cohorts fill the older
-    squads. SLAB already models exactly this: the home category stays on
-    `Player.category` and the call-up is additive (equal access, shown flagged,
-    NOT folded into the category's team stats).
+    A call-up means the player turned out ABOVE his own age group. That has to
+    be decided by the COHORT, not by comparing his SLAB category to the event's:
+    this club's youth labels are a stale snapshot, so the label test called
+    85–100% of youth appearances "foreign" and generated 68% noise — flagging
+    nearly every kid as called-up, which makes the badge meaningless and widens
+    `scope_players` for no reason. By cohort the rate is 26%, which is what an
+    academy actually looks like.
 
-    Deriving it from the federation's own squad list is better than leaving it
-    implicit in a category mismatch, which is indistinguishable from a mapping
-    bug when you read it later — as it was on 2026-08-20, when 570 such rows
-    looked like misfiled data and were in fact legitimate loans.
+    Reference points from this club's 2026 data, all of which the label test got
+    wrong and this one gets right: a 2014-born playing Sub 12 is in his OWN
+    bracket (SLAB files him under "SUB-11"); a 2011-born playing Sub 18 is
+    genuinely playing up; Belmar, born 2009-12-20, playing Sub 16 is playing
+    DOWN under the cutoff-date rule, not being called up.
     """
     if event.category_id is None or player.category_id == event.category_id:
         return False
+    if bracket_age is not None:
+        # No birth date → can't tell a step-up from the label drift. Abstain
+        # rather than manufacture a call-up (1 active player, so nothing lost).
+        if player.date_of_birth is None:
+            return False
+        natural_bracket = season_year - player.date_of_birth.year
+        if bracket_age <= natural_bracket:
+            return False
     _, created = PlayerCallUp.objects.get_or_create(
         player=player, category_id=event.category_id,
         defaults={
@@ -656,7 +669,10 @@ def _ingest_match(
         if not dry_run and event is not None:
             if _sync_participation(event, link.player, raw):
                 report["participants_written"] += 1
-            if _sync_call_up(event, link.player):
+            if _sync_call_up(
+                event, link.player,
+                bracket_age=bracket_age, season_year=kickoff.year,
+            ):
                 report["call_ups_created"] += 1
 
         exists = ExamResult.objects.filter(

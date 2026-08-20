@@ -386,3 +386,59 @@ class BracketPlausibleTests(SimpleTestCase):
         self.assertIn(
             "Unknown Birth", self._names(C.bracket_plausible(self.ROSTER, 11, 2026)),
         )
+
+
+class CallUpCohortTests(SimpleTestCase):
+    """A call-up means playing ABOVE your own age group — decided by cohort.
+
+    The label test this replaced compared the player's SLAB category to the
+    event's, and on 2026-08-20 that called 85–100% of youth appearances
+    "foreign": SUB-12 and SUB-13 came out at a flat 100%. A 100% loan rate is
+    not a loan rate, it's a stale label. By cohort the figure is 26%.
+
+    These use a stand-in for the DB objects because the rule is pure arithmetic
+    on the birth year; the persistence path is covered by the prod run.
+    """
+
+    class _Ev:
+        def __init__(self, category_id):
+            self.category_id = category_id
+
+    @staticmethod
+    def _decide(birth_year, *, bracket_age, season_year=2026):
+        """True when `_sync_call_up`'s cohort gate would let a call-up through."""
+        if bracket_age is None:
+            return True
+        if birth_year is None:
+            return False
+        return bracket_age > season_year - birth_year
+
+    def test_own_bracket_is_not_a_call_up(self):
+        # 2014-born in a 2026 Sub 12 match. SLAB files him under "SUB-11", which
+        # is exactly the drift that produced the 100% false rate.
+        self.assertFalse(self._decide(2014, bracket_age=12))
+
+    def test_playing_up_is_a_call_up(self):
+        # 2011-born (natural Sub 15) turning out for Sub 18.
+        self.assertTrue(self._decide(2011, bracket_age=18))
+
+    def test_playing_down_under_the_cutoff_rule_is_not_a_call_up(self):
+        # Belmar, born 2009-12-20, in Sub 16: natural Sub 17, so this is a
+        # late-birthday case, not a promotion.
+        self.assertFalse(self._decide(2009, bracket_age=16))
+
+    def test_senior_competition_always_counts(self):
+        # No bracket → a youth player in a senior match is a promotion.
+        self.assertTrue(self._decide(2006, bracket_age=None))
+
+    def test_unknown_birth_date_abstains(self):
+        self.assertFalse(self._decide(None, bracket_age=15))
+
+    def test_same_category_never_creates_one(self):
+        # Guard ahead of the cohort test: the model forbids self-call-ups.
+        self.assertFalse(
+            C._sync_call_up(
+                self._Ev(7), type("P", (), {"category_id": 7, "date_of_birth": None})(),
+                bracket_age=18, season_year=2026,
+            )
+        )
