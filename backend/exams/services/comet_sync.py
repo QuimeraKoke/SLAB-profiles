@@ -225,6 +225,54 @@ _STATUS_LONG = {
     "ABANDONED": "Abandonado",
 }
 
+# Roles that assert the player did NOT take part. COMET's minute count is the
+# federation's official record, so it overrides these — but nothing else a human
+# entered, since the remaining roles (selección, promovido…) carry context COMET
+# cannot see.
+_NON_PARTICIPATION = frozenset({
+    EventParticipant.MatchRole.NO_CITADO,
+    EventParticipant.MatchRole.CITADO_NO_VESTIR,
+    EventParticipant.MatchRole.LESIONADO,
+    EventParticipant.MatchRole.SUSPENDIDO,
+})
+
+
+def match_role_for(row: dict) -> str:
+    """A COMET player row → `EventParticipant.match_role`."""
+    if row.get("titular"):
+        return EventParticipant.MatchRole.TITULAR
+    if (row.get("minutos") or 0) > 0:
+        return EventParticipant.MatchRole.SUPLENTE_INGRESA
+    return EventParticipant.MatchRole.SUPLENTE_NO_INGRESA
+
+
+def _sync_participation(event, player, row: dict) -> bool:
+    """Upsert the player's participation for `event`. True if anything was written.
+
+    `match_role` is not decoration. `api.triage` suppresses a player's entire
+    performance block — GPS included — when the role is NULL, and shows no role
+    label either, so a substitute who came on reads as though he was never
+    called up. Writing the role is what makes his match data visible at all.
+    """
+    role = match_role_for(row)
+    part, created = EventParticipant.objects.get_or_create(
+        event=event, player=player,
+        defaults={
+            "attendance": EventParticipant.Attendance.ATTENDED,
+            "match_role": role,
+        },
+    )
+    if created:
+        return True
+    played = bool(row.get("titular")) or (row.get("minutos") or 0) > 0
+    # Fill a blank; otherwise defer to the human, except when they recorded a
+    # non-participation for someone the federation says actually played.
+    if part.match_role and not (played and part.match_role in _NON_PARTICIPATION):
+        return False
+    part.match_role = role
+    part.save(update_fields=["match_role"])
+    return True
+
 
 def build_event_metadata(
     match: dict, match_officials: list[dict], team_id: int,
@@ -311,6 +359,7 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
         "skipped_not_played": 0, "skipped_existing": 0,
         "events_updated": 0, "events_created": 0,
         "results_created": 0, "players_unresolved": 0,
+        "participants_written": 0,
         "competitions_new": 0, "unmapped_competitions": [], "unresolved_players": [],
         "errors": [],
     }
@@ -526,6 +575,14 @@ def _ingest_match(
                 report["unresolved_players"].append(nm)
             continue
 
+        # Deliberately BEFORE the ficha dedup: the participation link is a
+        # separate fact from the exam row, so a re-run must still be able to
+        # write (or repair) it. Bundling the two left every `match_role` NULL
+        # once the ficha existed — see `_sync_participation`.
+        if not dry_run and event is not None:
+            if _sync_participation(event, link.player, raw):
+                report["participants_written"] += 1
+
         exists = ExamResult.objects.filter(
             template__family_id=template.family_id, player=link.player,
             recorded_at__date=day,
@@ -541,11 +598,6 @@ def _ingest_match(
         ExamResult.objects.create(
             player=link.player, template=template, recorded_at=kickoff,
             result_data=result_data, inputs_snapshot=snapshot, event=event,
-        )
-        # Canonical "was at this event" link, same as the GPS ingest.
-        EventParticipant.objects.get_or_create(
-            event=event, player=link.player,
-            defaults={"attendance": EventParticipant.Attendance.ATTENDED},
         )
     return True
 

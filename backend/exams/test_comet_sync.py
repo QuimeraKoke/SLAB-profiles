@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from django.test import SimpleTestCase
 
+from events.models import EventParticipant
 from exams.services import comet_sync as C
 
 
@@ -238,3 +239,47 @@ class EventMetadataTests(SimpleTestCase):
         md = C.build_event_metadata(self.MATCH, self.OFFICIALS, 40003)
         self.assertTrue(md["is_home"])
         self.assertEqual(md["opponent"], "UNIVERSIDAD DE CHILE")
+
+
+class MatchRoleTests(SimpleTestCase):
+    """`match_role` decides whether a player's match data is visible at all.
+
+    `api.triage` suppresses the whole performance block — GPS included — when
+    the role is NULL, so a substitute who came on used to read as never called
+    up. These pin the mapping from COMET's own squad list.
+    """
+
+    def test_starter_is_titular(self):
+        self.assertEqual(
+            C.match_role_for({"titular": True, "minutos": 90}),
+            EventParticipant.MatchRole.TITULAR,
+        )
+
+    def test_substitute_who_came_on_is_suplente_ingresa(self):
+        # The real case: Nicolás Fernández vs Limache — on at 79', 11 official
+        # minutes. Reported as "no GPS data" purely because the role was unset.
+        self.assertEqual(
+            C.match_role_for({"titular": False, "minutos": 11, "min_ingreso": 79}),
+            EventParticipant.MatchRole.SUPLENTE_INGRESA,
+        )
+
+    def test_unused_substitute_is_still_a_called_up_player(self):
+        self.assertEqual(
+            C.match_role_for({"titular": False, "minutos": 0}),
+            EventParticipant.MatchRole.SUPLENTE_NO_INGRESA,
+        )
+
+    def test_a_starter_sent_off_at_zero_is_not_demoted_to_the_bench(self):
+        # `titular` wins over the minute count: COMET reports the flag
+        # independently, and a red card in the opening seconds still means he
+        # started the match.
+        self.assertEqual(
+            C.match_role_for({"titular": True, "minutos": 0}),
+            EventParticipant.MatchRole.TITULAR,
+        )
+
+    def test_missing_minutes_key_does_not_crash(self):
+        self.assertEqual(
+            C.match_role_for({"titular": False}),
+            EventParticipant.MatchRole.SUPLENTE_NO_INGRESA,
+        )
