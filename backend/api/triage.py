@@ -431,12 +431,17 @@ def _build_last_match(player: Player) -> dict | None:
     # match_performance, etc.). We surface the result_data dict per
     # template so the UI can decide which fields to render; the PDF
     # picks the headline numbers.
+    #
+    # Only a role that ASSERTS non-participation suppresses this. An unset role
+    # means "unknown" — the GPS ingest and the legacy import both create
+    # participations without one — and reading that as "did not play" hid the
+    # physical data of 338 Primer Equipo player-matches that had results all
+    # along. It surfaced as "no aparecen sus datos de GPS".
     performance: list[dict] = []
     if participation is not None and participation.match_role not in (
         EventParticipant.MatchRole.NO_CITADO,
         EventParticipant.MatchRole.LESIONADO,
         EventParticipant.MatchRole.SUSPENDIDO,
-        None,
     ):
         match_results = (
             ExamResult.objects
