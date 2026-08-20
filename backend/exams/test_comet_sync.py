@@ -12,6 +12,8 @@ numbers rather than errors:
 """
 from __future__ import annotations
 
+from datetime import date
+
 from django.test import SimpleTestCase
 
 from events.models import EventParticipant
@@ -282,4 +284,105 @@ class MatchRoleTests(SimpleTestCase):
         self.assertEqual(
             C.match_role_for({"titular": False}),
             EventParticipant.MatchRole.SUPLENTE_NO_INGRESA,
+        )
+
+
+class _FakePlayer:
+    def __init__(self, name, year):
+        self.first_name, self.last_name = name.split(" ", 1)
+        self.date_of_birth = date(year, 6, 1) if year else None
+
+    def __repr__(self):  # keeps assertion output readable
+        return f"{self.first_name} {self.last_name}"
+
+
+class BracketTieBreakTests(SimpleTestCase):
+    """The age bracket disambiguates namesakes — it never vetoes a lone match.
+
+    Learned on 2026-08-20 by nearly shipping the opposite. A birth-YEAR filter
+    applied to the roster up front looked right and would have suppressed 17
+    real fichas: this club's 2026 Sub 16 fields a player born 2009-12-20, Sub 15
+    one born 2010-12-21, Sub 14 one born 2011-10-23. All three are the only
+    holder of their name in the club, so there was never any ambiguity to
+    resolve — eligibility is a cutoff-DATE rule, not a birth-year one, and a
+    suppressed row is indistinguishable from a player who didn't play.
+    """
+
+    @staticmethod
+    def _person(name):
+        return {"name": name}
+
+    def test_lone_candidate_wins_even_when_apparently_overage(self):
+        # Belmar, born 2009-12-20, in a 2026 Sub 16 match. No namesake, so the
+        # bracket must not get a vote.
+        roster = [_FakePlayer("Oscar Belmar", 2009)]
+        player, method = C._resolve_player(
+            self._person("BELMAR OSCAR"), roster, bracket_age=16, season_year=2026,
+        )
+        self.assertIsNotNone(player)
+        self.assertEqual(method, C.CometPlayerLink.MATCH_NAME)
+
+    def test_namesakes_are_split_by_the_bracket(self):
+        # The Cofre shape: two humans, one name, cohorts far apart.
+        roster = [_FakePlayer("Diego Cofre", 2008), _FakePlayer("Diego Cofre", 2014)]
+        player, method = C._resolve_player(
+            self._person("COFRE DIEGO"), roster, bracket_age=12, season_year=2026,
+        )
+        self.assertEqual(player.date_of_birth.year, 2014)
+        self.assertEqual(method, C.CometPlayerLink.MATCH_NAME)
+
+    def test_namesakes_in_the_same_cohort_stay_unresolved(self):
+        # Age can't separate these, so it must abstain rather than guess.
+        roster = [_FakePlayer("Diego Cofre", 2014), _FakePlayer("Diego Cofre", 2014)]
+        player, method = C._resolve_player(
+            self._person("COFRE DIEGO"), roster, bracket_age=12, season_year=2026,
+        )
+        self.assertIsNone(player)
+        self.assertEqual(method, C.CometPlayerLink.MATCH_UNRESOLVED)
+
+    def test_senior_match_never_uses_the_bracket(self):
+        roster = [_FakePlayer("Diego Cofre", 2008), _FakePlayer("Diego Cofre", 2014)]
+        player, _ = C._resolve_player(
+            self._person("COFRE DIEGO"), roster, bracket_age=None, season_year=2026,
+        )
+        self.assertIsNone(player)  # still ambiguous, still abstains
+
+    def test_no_match_stays_no_match(self):
+        player, method = C._resolve_player(
+            self._person("NADIE PERDIDO"), [_FakePlayer("Oscar Belmar", 2009)],
+            bracket_age=16, season_year=2026,
+        )
+        self.assertIsNone(player)
+        self.assertEqual(method, C.CometPlayerLink.MATCH_UNRESOLVED)
+
+
+class BracketPlausibleTests(SimpleTestCase):
+    ROSTER = [
+        _FakePlayer("Kid Fifteen", 2015),
+        _FakePlayer("Kid Fourteen", 2014),
+        _FakePlayer("Old Six", 2006),
+        _FakePlayer("Unknown Birth", None),
+    ]
+
+    def _names(self, out):
+        return sorted(f"{p.first_name} {p.last_name}" for p in out)
+
+    def test_senior_keeps_everyone(self):
+        self.assertEqual(len(C.bracket_plausible(self.ROSTER, None, 2026)), 4)
+
+    def test_a_year_of_slack_is_allowed_for_the_cutoff_rule(self):
+        # Sub 15 in 2026 nominally wants 2011+; 2010 is kept on purpose.
+        kept = self._names(C.bracket_plausible(
+            [_FakePlayer("Vasco Marin", 2010)], 15, 2026,
+        ))
+        self.assertEqual(kept, ["Vasco Marin"])
+
+    def test_clearly_overage_is_still_dropped(self):
+        self.assertNotIn(
+            "Old Six", self._names(C.bracket_plausible(self.ROSTER, 12, 2026)),
+        )
+
+    def test_unknown_birth_date_is_never_dropped(self):
+        self.assertIn(
+            "Unknown Birth", self._names(C.bracket_plausible(self.ROSTER, 11, 2026)),
         )

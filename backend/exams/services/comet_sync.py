@@ -35,7 +35,7 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
-from core.models import Player
+from core.models import Player, PlayerCallUp
 from events.models import Event, EventParticipant, MatchData
 from exams.calculations import compute_result_data
 from exams.models import (
@@ -113,7 +113,38 @@ def _name_tokens(s: str) -> set[str]:
     return {t for t in _norm(s).split() if len(t) > 1}
 
 
-def _resolve_player(person: dict, roster: list) -> tuple[Any, str]:
+def bracket_plausible(roster: list, bracket_age: int | None, season_year: int) -> list:
+    """Of `roster`, those young enough to plausibly appear in a `Sub N` squad.
+
+    A FLOOR on the birth year, and a loose one. Two reasons it can't be tight:
+
+      * The bracket is not an equality — Sub 18 legitimately fields 2009 and
+        2010 players as well as 2008 (in this club's 2026 data, twice as many
+        2009-born as 2008-born). Playing up is routine.
+      * Eligibility is a cutoff-DATE rule, not a birth-year one. This club's
+        2026 Sub 16 fields a player born 2009-12-20, Sub 15 one born 2010-12-21,
+        Sub 14 one born 2011-10-23 — all three late-in-the-year kids who a
+        birth-year test would call over-age, and none of whom has a namesake.
+        Hence the year of slack.
+
+    Which is why this is only ever a TIE-BREAKER (see `_resolve_player`): used
+    to reject, it would silently drop real appearances, and a suppressed row
+    looks exactly like a player who didn't play.
+    """
+    if bracket_age is None:
+        return roster
+    min_year = season_year - bracket_age - 1  # slack for the cutoff-date rule
+    return [
+        p for p in roster
+        # An unknown birth date can't prove ineligibility, so it stays in.
+        if p.date_of_birth is None or p.date_of_birth.year >= min_year
+    ]
+
+
+def _resolve_player(
+    person: dict, roster: list, *,
+    bracket_age: int | None = None, season_year: int | None = None,
+) -> tuple[Any, str]:
     """COMET person → (Player, match_method). COMET names are 'LAST FIRST'."""
     ptoks = _name_tokens(person.get("name") or "")
     if not ptoks:
@@ -125,8 +156,14 @@ def _resolve_player(person: dict, roster: list) -> tuple[Any, str]:
     ]
     if len(cands) == 1:
         return cands[0], CometPlayerLink.MATCH_NAME
-    if len(cands) > 1:
-        return None, CometPlayerLink.MATCH_UNRESOLVED
+    if len(cands) > 1 and season_year is not None:
+        # Cohorts are what the age can settle: two kids years apart sharing a
+        # name, only one of whom could have been on that pitch. Applied here
+        # rather than to the roster up front so it can only ever break a tie,
+        # never veto an unambiguous match.
+        narrowed = bracket_plausible(cands, bracket_age, season_year)
+        if len(narrowed) == 1:
+            return narrowed[0], CometPlayerLink.MATCH_NAME
     return None, CometPlayerLink.MATCH_UNRESOLVED
 
 
@@ -274,6 +311,33 @@ def _sync_participation(event, player, row: dict) -> bool:
     return True
 
 
+def _sync_call_up(event, player) -> bool:
+    """Record a cross-category appearance as a `PlayerCallUp`. True if created.
+
+    A player turning out for a category that isn't his own is normal here, not
+    an anomaly — age brackets are a floor, so the younger cohorts fill the older
+    squads. SLAB already models exactly this: the home category stays on
+    `Player.category` and the call-up is additive (equal access, shown flagged,
+    NOT folded into the category's team stats).
+
+    Deriving it from the federation's own squad list is better than leaving it
+    implicit in a category mismatch, which is indistinguishable from a mapping
+    bug when you read it later — as it was on 2026-08-20, when 570 such rows
+    looked like misfiled data and were in fact legitimate loans.
+    """
+    if event.category_id is None or player.category_id == event.category_id:
+        return False
+    _, created = PlayerCallUp.objects.get_or_create(
+        player=player, category_id=event.category_id,
+        defaults={
+            "status": PlayerCallUp.STATUS_CALL_UP,
+            "since": timezone.localdate(event.starts_at),
+            "note": "Detectado en ficha oficial COMET",
+        },
+    )
+    return created
+
+
 def build_event_metadata(
     match: dict, match_officials: list[dict], team_id: int,
     *, team_staff: list[dict] | None = None,
@@ -359,7 +423,7 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
         "skipped_not_played": 0, "skipped_existing": 0,
         "events_updated": 0, "events_created": 0,
         "results_created": 0, "players_unresolved": 0,
-        "participants_written": 0,
+        "participants_written": 0, "call_ups_created": 0,
         "competitions_new": 0, "unmapped_competitions": [], "unresolved_players": [],
         "errors": [],
     }
@@ -441,6 +505,13 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
                 got = _ingest_match(
                     client, integration, template, match, kickoff, link.category,
                     roster, report, dry_run=dry_run, now=now,
+                    # The bracket, not the SLAB label: this club's youth
+                    # categories are a stale cohort snapshot (its "SUB-11" holds
+                    # the 2014 kids, who play Sub 12 in 2026), so the age has to
+                    # come from the competition name.
+                    bracket_age=_category_from_names(
+                        comp.get("name") or "", comp.get("parentName") or "",
+                    ),
                 )
             except CometError as exc:
                 logger.warning("COMET match %s failed: %s", match.get("id"), exc)
@@ -457,7 +528,7 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
 
 def _ingest_match(
     client, integration, template, match, kickoff, category, roster, report,
-    *, dry_run: bool, now,
+    *, dry_run: bool, now, bracket_age: int | None = None,
 ) -> bool:
     club = integration.club
     match_id = match.get("id")
@@ -562,7 +633,10 @@ def _ingest_match(
             )
         # A MANUAL link is a human decision — never re-derive it.
         if link.player_id is None and link.match_method != CometPlayerLink.MATCH_MANUAL:
-            player, method = _resolve_player(person, roster)
+            player, method = _resolve_player(
+                person, roster,
+                bracket_age=bracket_age, season_year=kickoff.year,
+            )
             link.player, link.match_method = player, method
         link.last_seen_at = now
         if not dry_run:
@@ -582,6 +656,8 @@ def _ingest_match(
         if not dry_run and event is not None:
             if _sync_participation(event, link.player, raw):
                 report["participants_written"] += 1
+            if _sync_call_up(event, link.player):
+                report["call_ups_created"] += 1
 
         exists = ExamResult.objects.filter(
             template__family_id=template.family_id, player=link.player,
