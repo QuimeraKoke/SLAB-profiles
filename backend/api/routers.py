@@ -5909,3 +5909,52 @@ def fixtures_upcoming(
         club_id=membership.club_id, player=player, team=team,
         days=max(1, min(days, 180)), include_context=include_context,
     )
+
+
+@api.get("/teams")
+def teams_with_seasons(request):
+    """Los equipos del club con su cohorte y en qué compiten cada temporada.
+
+    Existe para que la UI pueda mostrar la distinción que el modelo introdujo:
+    el EQUIPO es el grupo de personas (durable, identificado por su año de
+    nacimiento) y la CATEGORÍA DE COMPETENCIA es dónde juega esa temporada. El
+    nombre del equipo no alcanza para explicarla —de hecho engaña, porque las
+    etiquetas de este club son una foto de 2025— así que la pantalla necesita
+    las dos cosas por separado.
+    """
+    membership = get_membership(request.user)
+    if membership is None:
+        raise HttpError(403, "Sin membresía de club")
+
+    teams = list(
+        scope_categories(Category.objects.all(), membership)
+        .prefetch_related("team_seasons__bracket")
+        .order_by("name")
+    )
+    out = []
+    for t in teams:
+        seasons = sorted(
+            (
+                {
+                    "season": ts.season,
+                    "bracket": ts.bracket.name,
+                    "bracket_order": ts.bracket.order,
+                    "derived": ts.derived,
+                }
+                for ts in t.team_seasons.all()
+            ),
+            key=lambda s: -s["season"],
+        )
+        out.append({
+            "id": str(t.id),
+            "name": t.name,
+            "cohort_year": t.cohort_year,
+            # Empty is meaningful: a multi-cohort squad like Sub 20 (43 players
+            # spanning five birth years) legitimately has no cohort, and the UI
+            # should say so rather than invent one.
+            "is_age_group": t.cohort_year is not None,
+            "seasons": seasons,
+        })
+    return {"teams": out, "seasons": sorted(
+        {s["season"] for t in out for s in t["seasons"]}, reverse=True,
+    )}

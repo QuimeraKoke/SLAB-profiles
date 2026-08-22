@@ -17,6 +17,7 @@ import {
   Settings,
   Sparkles,
   Sunrise,
+  TrendingUp,
   X,
 } from "lucide-react";
 
@@ -203,6 +204,14 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   // assistant); Administración = lower-traffic admin. NAV-11 moved "Uso" into
   // Administración; NAV-02 added the assistant entry. Role-aware hiding is
   // still TODO (P2) — for now everyone sees every group they can access.
+  // Cohort development: reads across seasons, so it belongs in Análisis rather
+  // than beside the daily flows.
+  const desarrolloItem: NavGroup = {
+    label: "Desarrollo",
+    icon: TrendingUp,
+    href: "/desarrollo",
+  };
+
   const navSections: Array<{ label: string | null; items: NavGroup[] }> = [
     {
       label: "Operativa",
@@ -210,7 +219,12 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     },
     {
       label: "Análisis",
-      items: [...(reportsGroup ? [reportsGroup] : []), datosGroup, askAiItem],
+      items: [
+        ...(reportsGroup ? [reportsGroup] : []),
+        desarrolloItem,
+        datosGroup,
+        askAiItem,
+      ],
     },
     {
       label: "Administración",
