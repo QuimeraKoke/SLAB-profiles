@@ -58,6 +58,34 @@ RAW_MAP = {
 
 MIN_NAME_TOKEN_HITS = 2   # below this the name is treated as unmatched
 
+# Plausible human ranges for the two measurements every mass equation depends
+# on. These are a COLUMN-ALIGNMENT check, not a clinical one.
+#
+# On 2026-08-22, 20 youth assessments were found holding `talla` values of
+# 30–68 cm. The cause was a source file with an extra leading column (the
+# player's age), which shifted every reading one field to the right: age landed
+# in `peso`, weight in `talla`, height in `talla_sentado`, and so on down the
+# row. Nothing errored — the 5-mass decomposition was simply computed from the
+# wrong inputs, giving a BMI of 54 and a muscle mass of 6.5 kg, and those
+# numbers then went into the players' anthropometry charts.
+#
+# The true last reading (`pliegue_pierna`) shifted into column 31, which is
+# outside the read range, so a shifted row cannot be repaired after the fact —
+# which is exactly why it has to be caught at the door.
+TALLA_RANGE = (100.0, 220.0)   # cm
+PESO_RANGE = (25.0, 150.0)     # kg
+
+
+def plausible_anthropometry(raw: dict) -> bool:
+    """False when `talla`/`peso` are outside any human range — i.e. misaligned."""
+    talla, peso = raw.get("talla"), raw.get("peso")
+    if talla is None or peso is None:
+        return False
+    return (
+        TALLA_RANGE[0] <= talla <= TALLA_RANGE[1]
+        and PESO_RANGE[0] <= peso <= PESO_RANGE[1]
+    )
+
 
 class PentaParseError(ValueError):
     """The upload isn't a readable 5-component workbook."""
@@ -179,6 +207,8 @@ def run(
     seen_in_file: set[tuple] = set()
     cur_name = None
     skipped_existing = skipped_dupe = skipped_incomplete = skipped_undated = 0
+    skipped_implausible = 0
+    implausible_rows: list[dict] = []
 
     for r in rows:
         # Column A carries the name only on a block's first row.
@@ -211,6 +241,14 @@ def run(
         # spacer or a partially-filled draft, not an assessment.
         if not raw.get("peso") or not raw.get("talla"):
             skipped_incomplete += 1
+            continue
+        if not plausible_anthropometry(raw):
+            skipped_implausible += 1
+            implausible_rows.append({
+                "player": f"{player.first_name} {player.last_name}",
+                "date": d.isoformat(),
+                "talla": raw.get("talla"), "peso": raw.get("peso"),
+            })
             continue
         seen_in_file.add(key)
         raw["sexo"] = 1 if (getattr(player, "sex", "M") or "M").upper().startswith("M") else 2
@@ -249,6 +287,10 @@ def run(
         "skipped_existing": skipped_existing,
         "skipped_duplicate_in_file": skipped_dupe,
         "skipped_incomplete": skipped_incomplete,
+        "skipped_implausible": skipped_implausible,
+        # Surfaced, not just counted: a misaligned file is an operator error
+        # to fix at the source, and silence is how the last one got in.
+        "implausible_rows": implausible_rows,
         "skipped_undated": skipped_undated,
         "players": sorted(per_player.values(), key=lambda s: s["player"]),
         "unmatched": [

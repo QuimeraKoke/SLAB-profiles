@@ -78,6 +78,21 @@ class Command(BaseCommand):
             f"{rep['skipped_incomplete']} | sin fecha: {rep['skipped_undated']} "
             f"| jugadores: {len(rep['players'])}"
         )
+        # Loud on purpose: implausible talla/peso means the file's COLUMNS are
+        # misaligned, so every reading in those rows is one field off. A silent
+        # skip is how 20 shifted assessments reached the database in 2025.
+        if rep.get("skipped_implausible"):
+            self.stdout.write(self.style.ERROR(
+                f"\n⚠ {rep['skipped_implausible']} fila(s) con talla/peso fuera "
+                "de rango humano — el archivo tiene las COLUMNAS CORRIDAS. "
+                "Revisá que no haya una columna extra antes de 'peso'."
+            ))
+            for row in rep.get("implausible_rows", [])[:10]:
+                self.stdout.write(self.style.ERROR(
+                    f"    {row['date']}  {row['player']}: "
+                    f"talla={row['talla']} peso={row['peso']}"
+                ))
+
         for s in rep["players"]:
             self.stdout.write(
                 f"  +{s['new']:>2}  {s['player']} [{s['category'] or '?'}]  "

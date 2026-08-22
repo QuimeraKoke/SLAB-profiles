@@ -98,3 +98,51 @@ class NameTokenTests(SimpleTestCase):
 
     def test_unrelated_tokens_do_not_match(self):
         self.assertFalse(P._tok_match("vargas", "valenzuela"))
+
+
+class PlausibilityGuardTests(SimpleTestCase):
+    """The column-alignment guard.
+
+    Exists because of 20 youth assessments found on 2026-08-22 holding `talla`
+    values of 30–68 cm. A source file carried an extra leading column (the
+    player's age), shifting every reading one field right: age → `peso`, weight →
+    `talla`, height → `talla_sentado`. Nothing raised. The 5-mass decomposition
+    was computed from the shifted inputs and produced a BMI of 54 and a muscle
+    mass of 6.5 kg, which then went straight into those players' charts.
+
+    A shifted row cannot be repaired afterwards — the true last reading
+    (`pliegue_pierna`) lands in column 31, outside the read range — so the only
+    place to catch it is the door.
+    """
+
+    def test_a_normal_assessment_passes(self):
+        self.assertTrue(P.plausible_anthropometry({"talla": 148.6, "peso": 44.7}))
+        self.assertTrue(P.plausible_anthropometry({"talla": 188.5, "peso": 84.0}))
+
+    def test_the_real_shifted_rows_are_rejected(self):
+        # Verbatim from the corrupted rows: weight landed in `talla`, age in
+        # `peso`.
+        for talla, peso in ((45.15, 11.0), (30.25, 10.6), (66.45, 14.9), (68.1, 15.0)):
+            self.assertFalse(
+                P.plausible_anthropometry({"talla": talla, "peso": peso}),
+                f"talla={talla} peso={peso} debería rechazarse",
+            )
+
+    def test_height_in_metres_is_rejected(self):
+        # The other plausible misencoding, and 1.48 would sail through any
+        # "is it a number?" check.
+        self.assertFalse(P.plausible_anthropometry({"talla": 1.48, "peso": 44.7}))
+
+    def test_a_missing_value_is_not_plausible(self):
+        self.assertFalse(P.plausible_anthropometry({"talla": 150.0}))
+        self.assertFalse(P.plausible_anthropometry({"peso": 44.7}))
+        self.assertFalse(P.plausible_anthropometry({}))
+
+    def test_the_bounds_are_wide_enough_for_real_squads(self):
+        # This club's real extremes: a 2014-born at 131 cm and a senior at
+        # 194 cm. The guard must not reject either.
+        from exams.penta_ingest import PESO_RANGE, TALLA_RANGE, plausible_anthropometry
+
+        self.assertLessEqual(P.TALLA_RANGE[0], 131.0)
+        self.assertGreaterEqual(P.TALLA_RANGE[1], 194.0)
+        self.assertLessEqual(P.PESO_RANGE[0], 30.0)
