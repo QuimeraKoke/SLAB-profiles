@@ -70,6 +70,20 @@ class Event(models.Model):
         help_text="Set when the event was created for an entire category. "
                   "Informational — participants are still listed explicitly.",
     )
+    bracket = models.ForeignKey(
+        "core.Bracket",
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name="events",
+        help_text=(
+            "For matches: the competition age group the fixture belongs to "
+            "(Sub 15, Primera). Distinct from `category` on purpose — a Sub 18 "
+            "fixture is played by TWO cohort teams at once (the 2009s and the "
+            "2008s), so a single team FK cannot describe who turned out. "
+            "`category` stays as the principal team; this says which "
+            "competition it was."
+        ),
+    )
     participants = models.ManyToManyField(
         Player,
         through="EventParticipant",

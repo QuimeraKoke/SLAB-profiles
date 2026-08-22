@@ -11,7 +11,7 @@ from __future__ import annotations
 from django.test import SimpleTestCase
 
 from core.management.commands.backfill_cohorts import (
-    BRACKETS, bracket_for_age, is_age_group, parse_age,
+    BRACKETS, bracket_for_age, is_age_group, parse_age, parse_age_token,
 )
 
 
@@ -108,3 +108,55 @@ class ParseAgeTests(SimpleTestCase):
     def test_is_age_group_agrees_with_parse_age(self):
         for name in ("SUB-11", "SUB-20", "Primer Equipo", "PEF - Femenino"):
             self.assertEqual(is_age_group(name), parse_age(name) is not None)
+
+
+class ParseAgeTokenTests(SimpleTestCase):
+    """Reading the age out of a federation competition name.
+
+    Looser than `parse_age` on purpose — it has to cope with how COMET writes
+    competitions — but the season must never be mistaken for an age group.
+    """
+
+    def test_reads_the_age_from_a_real_competition_name(self):
+        self.assertEqual(parse_age_token("Sub 15 Nacional Clausura 2026"), 15)
+        self.assertEqual(parse_age_token("Playoffs Sub 18 Nacional Apertura 2026"), 18)
+        self.assertEqual(parse_age_token("Grupo Centro 1 - Sub 13"), 13)
+        self.assertEqual(parse_age_token("Final Sub 11 Apertura"), 11)
+
+    def test_the_season_is_not_read_as_an_age(self):
+        # The trap: "Clausura 2026" must not parse as Sub 20 (or Sub 26).
+        self.assertIsNone(parse_age_token("Primera División 2026"))
+        self.assertIsNone(parse_age_token("Clausura 2026"))
+
+    def test_senior_competitions_have_no_age(self):
+        for name in ("Primera División 2026", "COPA CHILE COCA COLA ZERO AZUCAR 2026",
+                     "GRUPO D", "Primera Fase", ""):
+            self.assertIsNone(parse_age_token(name), name)
+
+    def test_case_and_spacing_dont_matter(self):
+        for text in ("SUB 16 Nacional", "sub16 apertura", "Sub  14 grupo"):
+            self.assertIsNotNone(parse_age_token(text), text)
+
+
+class EventBracketFallbackTests(SimpleTestCase):
+    """A label can name an age the federation doesn't actually run.
+
+    `SUB-17` is a real category in this club with 6 fixtures, and there is no
+    Sub 17 competition — so an exact-age lookup left those events without a
+    bracket. They belong to Sub 18, the same answer the rest of the system
+    gives for a 17-year-old.
+    """
+
+    def test_sub_17_fixtures_belong_to_sub_18(self):
+        self.assertEqual(bracket_for_age(parse_age("SUB-17"), LADDER).code, "sub_18")
+
+    def test_a_label_below_the_ladder_has_no_competition(self):
+        # Sub 9/10 are local tournaments; promoting them to Sub 11 would invent
+        # a competition that doesn't exist, so the caller must skip them.
+        min_age = min(b.age for b in LADDER if b.age is not None)
+        for name in ("SUB-8", "SUB-9", "SUB-10"):
+            self.assertLess(parse_age(name), min_age, name)
+
+    def test_labels_on_the_ladder_map_to_themselves(self):
+        for age in (11, 12, 13, 14, 15, 16, 18, 20):
+            self.assertEqual(bracket_for_age(age, LADDER).age, age)
