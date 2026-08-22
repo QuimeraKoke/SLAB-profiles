@@ -128,3 +128,81 @@ class LadderOrderingTests(SimpleTestCase):
 
     def test_empty_ladder_does_not_crash(self):
         self.assertIsNone(Ladder([]).natural(2014, 2026))
+
+
+class RateMetricChoiceTests(SimpleTestCase):
+    """Which GPS metrics may be compared at all.
+
+    Both directions are confounded and both were measured on real data:
+
+      * **Cumulative** metrics measure MINUTES, not ability. Jhon Cortés sat at
+        the 13th percentile for total distance and the 17th for HSR purely
+        because he came on for 10 minutes.
+      * **Per-minute** rates favour short appearances — a 15-minute substitute
+        out-runs a 90-minute starter on every rate — which is why peers are
+        restricted to comparable durations. Vicente Ramírez went from the 30th
+        to the 55th percentile for top speed once that band was applied.
+    """
+
+    def test_only_duration_safe_metrics_are_offered(self):
+        from api.development import RATE_METRICS
+
+        keys = {k for k, _, _ in RATE_METRICS}
+        self.assertEqual(keys, {"max_vel", "mpm", "hsr_min", "sprint_dist_min"})
+
+    def test_cumulative_metrics_are_excluded(self):
+        from api.development import RATE_METRICS
+
+        keys = {k for k, _, _ in RATE_METRICS}
+        for banned in ("tot_dist", "hsr", "sprint_dist", "tot_dur", "player_load"):
+            self.assertNotIn(banned, keys, f"{banned} depende de los minutos")
+
+    def test_every_metric_has_a_label_and_a_unit(self):
+        from api.development import RATE_METRICS
+
+        for key, label, unit in RATE_METRICS:
+            self.assertTrue(label and unit, key)
+
+    def test_the_peer_band_is_a_ratio_not_an_absolute(self):
+        # ±35% of the player's OWN typical duration: a fixed window of minutes
+        # would be far too wide for a 15-minute cameo and too narrow for 98.
+        from api.development import DURATION_BAND
+
+        self.assertGreater(DURATION_BAND, 0)
+        self.assertLess(DURATION_BAND, 1)
+
+    def test_the_peer_floor_is_high_enough_to_mean_something(self):
+        # Correct banding left Jhon Cortés with ONE comparable peer, where a
+        # "100th percentile" would have been indefensible.
+        from api.development import MIN_PEERS
+
+        self.assertGreaterEqual(MIN_PEERS, 5)
+
+
+class MedianTests(SimpleTestCase):
+    def test_odd_and_even_lengths(self):
+        from api.development import _median
+
+        self.assertEqual(_median([3.0, 1.0, 2.0]), 2.0)
+        self.assertEqual(_median([1.0, 2.0, 3.0, 4.0]), 2.5)
+
+    def test_single_value(self):
+        from api.development import _median
+
+        self.assertEqual(_median([7.5]), 7.5)
+
+
+class NumCoercionTests(SimpleTestCase):
+    def test_reads_numbers_and_rejects_everything_else(self):
+        from api.development import _num
+
+        self.assertEqual(_num({"a": 3}, "a"), 3.0)
+        self.assertEqual(_num({"a": 2.5}, "a"), 2.5)
+        for bad in ({}, {"a": None}, {"a": ""}, {"a": "12"}, None):
+            self.assertIsNone(_num(bad, "a"), bad)
+
+    def test_booleans_are_not_numbers(self):
+        # `True` is an int in Python; a checkbox field must never be averaged.
+        from api.development import _num
+
+        self.assertIsNone(_num({"a": True}, "a"))

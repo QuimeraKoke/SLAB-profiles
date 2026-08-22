@@ -5958,3 +5958,33 @@ def teams_with_seasons(request):
     return {"teams": out, "seasons": sorted(
         {s["season"] for t in out for s in t["seasons"]}, reverse=True,
     )}
+
+
+@api.get("/players/{player_id}/physical-context")
+def player_physical_context(request, player_id: str, season: int | None = None):
+    """Rendimiento físico del jugador comparado con el plantel con el que jugó.
+
+    Mismos partidos, así que rival y ritmo quedan controlados. Es la única
+    comparación que estos datos sostienen: el GPS crudo entre edades no dice
+    nada (un 2008 le corre a un 2014 por construcción) y las categorías
+    juveniles no tienen GPS — las 6.331 filas del club son de Primer Equipo y
+    Selección.
+
+    Sólo métricas independientes de la duración o por minuto, y con los pares
+    acotados a minutos comparables: los acumulados miden MINUTOS, no capacidad,
+    y las tasas por minuto favorecen a quien entró poco. Cuando no hay
+    suficientes pares devuelve `available: false` con el motivo, en vez de un
+    percentil que no se sostiene.
+    """
+    from api import development as _dev
+
+    membership = get_membership(request.user)
+    player = (
+        scope_players(Player.objects.all(), membership)
+        .filter(pk=player_id).first()
+    )
+    if player is None:
+        raise HttpError(404, "Jugador no encontrado")
+    return _dev.physical_context(
+        player, season=season or timezone.now().year,
+    )

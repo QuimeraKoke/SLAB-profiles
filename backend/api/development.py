@@ -173,3 +173,128 @@ def summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             if r["status"] in ("muy_por_encima", "por_encima")
         ],
     }
+
+
+# ---------- physical context ----------
+
+# Only duration-independent or per-minute metrics. Cumulative ones (tot_dist,
+# hsr, sprint_dist) measure MINUTES, not ability: Jhon Cortés sat at the 13th
+# percentile for total distance purely because he came on for 10 minutes.
+RATE_METRICS: list[tuple[str, str, str]] = [
+    ("max_vel", "Velocidad máxima", "km/h"),
+    ("mpm", "Metros por minuto", "m/min"),
+    ("hsr_min", "HSR por minuto", "m/min"),
+    ("sprint_dist_min", "Sprint por minuto", "m/min"),
+]
+
+# Per-minute rates cut the other way: a 15-minute substitute out-runs a
+# 90-minute starter on every rate. So peers are restricted to appearances of
+# comparable length — ±35% of the player's own typical duration.
+DURATION_BAND = 0.35
+
+# Below this many comparable peers, a percentile is noise wearing a number's
+# clothes. Measured on real data: banding correctly leaves Cortés with n=1,
+# where "100th percentile" would be indefensible. Refusing to answer is the
+# honest output.
+MIN_PEERS = 8
+
+_GPS_MATCH_SLUG = "gps_partido"
+
+
+def _num(data: dict | None, key: str) -> float | None:
+    v = (data or {}).get(key)
+    return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _median(values: list[float]) -> float:
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    return s[mid] if n % 2 else (s[mid - 1] + s[mid]) / 2
+
+
+def physical_context(player, *, season: int) -> dict[str, Any]:
+    """How the player's physical output compares to the squad he played WITH.
+
+    Same matches, so opponent and tempo are controlled for. This is the only
+    comparison the data supports: raw GPS across ages is meaningless (a 2008
+    outruns a 2014 by construction), and youth categories have no GPS at all —
+    every one of this club's 6,331 GPS rows belongs to Primer Equipo or the
+    national team.
+
+    Returns `available: False` with a reason rather than a number it can't
+    stand behind.
+    """
+    from exams.models import ExamResult
+
+    mine = list(
+        ExamResult.objects
+        .filter(
+            player=player, template__slug=_GPS_MATCH_SLUG,
+            recorded_at__year=season, event__isnull=False,
+        )
+        .values_list("event_id", "result_data")
+    )
+    if not mine:
+        return {
+            "available": False,
+            "reason": "Sin GPS de partido en la temporada.",
+            "metrics": [],
+        }
+
+    own_durations = [d for d in (_num(r, "tot_dur") for _, r in mine) if d]
+    typical = _median(own_durations) if own_durations else None
+    event_ids = [e for e, _ in mine]
+
+    peers: dict[str, list[float]] = {k: [] for k, _, _ in RATE_METRICS}
+    for pid, data in (
+        ExamResult.objects
+        .filter(template__slug=_GPS_MATCH_SLUG, event_id__in=event_ids)
+        .values_list("player_id", "result_data")
+    ):
+        if pid == player.id:
+            continue
+        dur = _num(data, "tot_dur")
+        if typical is None or dur is None:
+            continue
+        if abs(dur - typical) > DURATION_BAND * typical:
+            continue
+        for key, _, _ in RATE_METRICS:
+            v = _num(data, key)
+            if v is not None:
+                peers[key].append(v)
+
+    metrics = []
+    for key, label, unit in RATE_METRICS:
+        own = [v for v in (_num(r, key) for _, r in mine) if v is not None]
+        pool = peers[key]
+        if not own:
+            continue
+        value = _median(own)
+        if len(pool) < MIN_PEERS:
+            metrics.append({
+                "key": key, "label": label, "unit": unit,
+                "value": round(value, 1), "squad_median": None,
+                "percentile": None, "peers": len(pool),
+            })
+            continue
+        metrics.append({
+            "key": key, "label": label, "unit": unit,
+            "value": round(value, 1),
+            "squad_median": round(_median(pool), 1),
+            "percentile": round(100.0 * sum(1 for v in pool if v < value) / len(pool)),
+            "peers": len(pool),
+        })
+
+    judged = [m for m in metrics if m["percentile"] is not None]
+    return {
+        "available": bool(judged),
+        "reason": (
+            None if judged
+            else f"Menos de {MIN_PEERS} compañeros con minutos comparables "
+                 f"({'; '.join(str(m['peers']) for m in metrics) or '0'})."
+        ),
+        "matches": len(mine),
+        "typical_minutes": round(typical) if typical else None,
+        "metrics": metrics,
+    }
