@@ -5811,3 +5811,54 @@ def admin_usage(
         "templates": templates_out,
         "templates_series": templates_series,
     }
+
+
+@api.get("/development/cohorts")
+def development_cohorts(
+    request, season: int | None = None, category_id: str | None = None,
+):
+    """Who plays above their own age group, and by how much.
+
+    Anchored on the player's BIRTH YEAR, not on his team's bracket: a mixed team
+    makes its own players read as misplaced (SUB-15 holds 2010s and 2011s, so
+    its team bracket is Sub 16 and the 2011s look like they're playing below it
+    while being exactly where they belong). Measured both ways on this club's
+    data, the team anchor invents 8.7% of false mismatches against 0.7% for the
+    cohort anchor. See `api.development` and PRD_EQUIPO_TEMPORADA.md §7.
+
+    Distance is in ladder RUNGS, never years — the ANFP ladder skips Sub 17 and
+    Sub 19, so Sub 16 → Sub 18 is one step.
+    """
+    from api import development as _dev
+
+    membership = get_membership(request.user)
+    if membership is None:
+        raise HttpError(403, "Sin membresía de club")
+
+    if category_id and not has_full_access(membership):
+        allowed = {str(c) for c in membership.categories.values_list("pk", flat=True)}
+        if str(category_id) not in allowed:
+            raise HttpError(403, "Categoría fuera de tu alcance")
+
+    rows = _dev.player_seasons(
+        club_id=membership.club_id, season=season, category_id=category_id,
+    )
+    # Filter through `scope_players`, not by category name. Two reasons: names
+    # are about to change (the cohort rename), and the equal-access rule means a
+    # player CALLED UP to an assigned category is in scope even though his home
+    # team isn't — filtering by team name would hide exactly the players this
+    # report is about.
+    if not has_full_access(membership):
+        visible = set(
+            scope_players(Player.objects.all(), membership)
+            .values_list("pk", flat=True)
+        )
+        rows = [r for r in rows if r["player_id"] in {str(v) for v in visible}]
+
+    seasons = sorted({r["season"] for r in rows}, reverse=True)
+    return {
+        "seasons": seasons,
+        "season": season,
+        "summary": _dev.summary(rows),
+        "rows": rows,
+    }
