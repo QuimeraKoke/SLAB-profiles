@@ -94,6 +94,14 @@ class Command(BaseCommand):
             f"creados {rep['events_created']} · "
             f"sin evento en SLAB {rep['skipped_no_event']}"
         )
+        if rep.get("fixtures_seen"):
+            self.stdout.write(
+                f"  fixtures: vistos {rep['fixtures_seen']} · "
+                f"creados {rep['fixtures_created']} · "
+                f"actualizados {rep['fixtures_updated']} · "
+                f"sin categoría {rep['fixtures_unmapped']} · "
+                f"sin evento {rep['fixtures_no_event']}"
+            )
         if rep["competitions_new"]:
             self.stdout.write(f"  competencias nuevas detectadas: {rep['competitions_new']}")
 

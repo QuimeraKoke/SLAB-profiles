@@ -5862,3 +5862,50 @@ def development_cohorts(
         "summary": _dev.summary(rows),
         "rows": rows,
     }
+
+
+@api.get("/fixtures/upcoming")
+def fixtures_upcoming(
+    request, player_id: str | None = None, category_id: str | None = None,
+    days: int = 45, include_context: bool = True,
+):
+    """Próximos partidos, en capas de relevancia.
+
+    Pasado y futuro son preguntas distintas: el pasado es un hecho (participé o
+    no) y el futuro es un plan. Por eso el futuro se entrega en tres capas
+    —`own`, `likely`, `context`— y nunca aplanado: un calendario que mezcla
+    certeza con probabilidad sin decir cuál es cuál hace planificar mal en las
+    dos direcciones.
+
+    La relevancia se resuelve por BRACKET vía `TeamSeason`, jamás por
+    `Event.category` — esa etiqueta es una foto de 2025, así que el equipo
+    llamado `SUB-11` tiene que ver los fixtures de Sub 12. Ver `api.fixtures`.
+    """
+    from api import fixtures as _fx
+
+    membership = get_membership(request.user)
+    if membership is None:
+        raise HttpError(403, "Sin membresía de club")
+
+    player = team = None
+    if player_id:
+        player = (
+            scope_players(Player.objects.select_related("category"), membership)
+            .filter(pk=player_id).first()
+        )
+        if player is None:
+            raise HttpError(404, "Jugador no encontrado")
+    if category_id:
+        team = scope_categories(
+            Category.objects.all(), membership,
+        ).filter(pk=category_id).first()
+        if team is None:
+            raise HttpError(404, "Equipo no encontrado")
+
+    if player is None and team is None:
+        raise HttpError(400, "Indicá player_id o category_id")
+
+    return _fx.upcoming(
+        club_id=membership.club_id, player=player, team=team,
+        days=max(1, min(days, 180)), include_context=include_context,
+    )

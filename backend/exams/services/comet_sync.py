@@ -1,6 +1,6 @@
-"""Pull PLAYED matches from COMET LIVE into SLAB.
+"""Pull matches from COMET LIVE into SLAB — played ones, and the schedule.
 
-Two targets per match, matching how the data is actually shaped:
+Two targets per PLAYED match, matching how the data is actually shaped:
 
   * the match **Event** gets the general, non-player facts (score, half-time
     score, round, competition, referee, venue, official match id) written into
@@ -15,8 +15,13 @@ Per-club, not per-category: one COMET team id returns matches for every
 category the club enters, so the category is resolved from each match's
 competition via `CometCompetitionLink`.
 
-Deliberate non-goals: no future fixtures (the calendar slice is separate) and
-no physical metrics — COMET has none, that's Catapult's job.
+Scheduled matches are synced too (`sync_future_fixtures`), but only as Events: a
+fixture has no lineup, so there is no ficha to write and no participant to link.
+All it carries is when and against whom — which is what a coach plans the week
+around. The Event's `bracket` is what makes a fixture answerable as "is this
+ours?", because at the ladder gaps two cohort teams compete together.
+
+Deliberate non-goal: no physical metrics — COMET has none, that's Catapult's job.
 
 Two field-level traps this module exists to get right, both verified against
 live ANFP data:
@@ -74,6 +79,40 @@ def _category_from_names(*names: str) -> int | None:
         if m:
             return int(m.group(1))
     return None
+
+
+def _competition_link(
+    integration, club, comp: dict, by_age, default_category, report,
+    *, dry_run: bool, now,
+):
+    """The `CometCompetitionLink` for a competition, resolving it if it's unset.
+
+    NOT `get_or_create`: that writes even on a dry run, and it used to persist
+    the row with a NULL category (the in-memory resolution was never saved),
+    which then poisoned every later run because a pre-existing row skipped
+    resolution entirely. Shared by the played-match and fixture loops so that
+    subtlety lives in exactly one place.
+    """
+    link = CometCompetitionLink.objects.filter(
+        integration=integration, competition_id=comp.get("id"),
+    ).first()
+    if link is None:
+        link = CometCompetitionLink(
+            integration=integration, competition_id=comp.get("id"),
+            competition_name=comp.get("name") or "",
+            parent_name=comp.get("parentName") or "",
+        )
+        report["competitions_new"] += 1
+    # Retry resolution whenever it's still unset — a row created before a
+    # category existed must be able to resolve later. `ignored` is how a human
+    # says "leave this alone".
+    if link.category_id is None and not link.ignored:
+        cat, auto = _resolve_category(club, comp, by_age, default_category)
+        link.category, link.auto_resolved = cat, auto
+    link.last_seen_at = now
+    if not dry_run:
+        link.save()
+    return link
 
 
 def _resolve_category(club, comp: dict, roster_by_age: dict[int, Any], default_category):
@@ -437,6 +476,8 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
         "events_updated": 0, "events_created": 0,
         "results_created": 0, "players_unresolved": 0,
         "participants_written": 0, "call_ups_created": 0,
+        "fixtures_seen": 0, "fixtures_created": 0, "fixtures_updated": 0,
+        "fixtures_unmapped": 0, "fixtures_no_event": 0,
         "competitions_new": 0, "unmapped_competitions": [], "unresolved_players": [],
         "errors": [],
     }
@@ -481,29 +522,10 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
             kickoff = datetime.fromtimestamp(ts / 1000, _tz.utc)
 
             comp = match.get("competition") or {}
-            # NOT get_or_create: that writes even on a dry run, and it used to
-            # persist the row with a NULL category (the in-memory resolution was
-            # never saved) which then poisoned every later run, since a
-            # pre-existing row skipped resolution entirely.
-            link = CometCompetitionLink.objects.filter(
-                integration=integration, competition_id=comp.get("id"),
-            ).first()
-            if link is None:
-                link = CometCompetitionLink(
-                    integration=integration, competition_id=comp.get("id"),
-                    competition_name=comp.get("name") or "",
-                    parent_name=comp.get("parentName") or "",
-                )
-                report["competitions_new"] += 1
-            # Retry resolution whenever it's still unset — a row created before
-            # a category existed must be able to resolve later. `ignored` is how
-            # a human says "leave this alone".
-            if link.category_id is None and not link.ignored:
-                cat, auto = _resolve_category(club, comp, by_age, default_category)
-                link.category, link.auto_resolved = cat, auto
-            link.last_seen_at = now
-            if not dry_run:
-                link.save()
+            link = _competition_link(
+                integration, club, comp, by_age, default_category, report,
+                dry_run=dry_run, now=now,
+            )
 
             if link.ignored:
                 continue
@@ -532,6 +554,22 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
                 continue
             if got:
                 report["matches_ingested"] += 1
+
+        # Fixtures last: the played loop is what the club depends on, so a
+        # failure fetching the schedule must not cost it.
+        try:
+            sync_future_fixtures(
+                client, integration, report, by_age=by_age,
+                default_category=default_category,
+                # Same department the played-match path uses: Event.department is
+                # NOT NULL, and the ficha template's is the only one this
+                # integration knows about.
+                department=template.department,
+                dry_run=dry_run, now=now,
+            )
+        except CometError as exc:
+            logger.warning("COMET fixtures failed for %s: %s", club.name, exc)
+            report["errors"].append(f"fixtures: {exc}")
 
     if not dry_run:
         integration.last_synced_at = now
@@ -692,6 +730,96 @@ def _ingest_match(
             result_data=result_data, inputs_snapshot=snapshot, event=event,
         )
     return True
+
+
+def sync_future_fixtures(
+    client, integration, report, *, by_age, default_category, department,
+    dry_run: bool, now,
+) -> None:
+    """Scheduled matches → Events, so the calendar has something to plan against.
+
+    Separate from the played-match loop because a fixture has no lineup yet:
+    there is nothing to write a ficha from, and no participants to link. All it
+    can offer is *when* and *against whom* — which is exactly what a coach needs
+    to plan the week.
+
+    The bracket matters more here than for past matches. A fixture is relevant
+    to a team when the team competes in that competition, and at the ladder gaps
+    two cohorts compete together — Sub 18 2026 has three of this club's teams in
+    it. Without `bracket` on the Event there is no way to answer "is this ours?"
+    for those.
+    """
+    from core.models import Bracket
+
+    club = integration.club
+    brackets = {b.age: b for b in Bracket.objects.all() if b.age is not None}
+    senior = Bracket.objects.filter(code="primera").first()
+
+    for match in client.future_matches(utc_offset=integration.utc_offset):
+        ts = match.get("dateTimeUTC")
+        if not ts:
+            continue
+        report["fixtures_seen"] += 1
+        kickoff = datetime.fromtimestamp(ts / 1000, _tz.utc)
+        comp = match.get("competition") or {}
+        link = _competition_link(
+            integration, club, comp, by_age, default_category, report,
+            dry_run=dry_run, now=now,
+        )
+        if link.ignored:
+            continue
+        if link.category is None:
+            report["fixtures_unmapped"] += 1
+            continue
+
+        side = _our_side(match, integration.comet_team_id)
+        if side is None:
+            continue
+
+        age = _category_from_names(comp.get("name") or "", comp.get("parentName") or "")
+        bracket = brackets.get(age) if age is not None else senior
+        if bracket is None and age is not None:
+            # A competition naming an age the federation doesn't run (there is no
+            # Sub 17): fall to the first rung that admits it, same as everywhere.
+            bracket = next(
+                (b for a, b in sorted(brackets.items()) if a >= age), senior,
+            )
+
+        event = _find_event(club, link.category, kickoff, match.get("id"))
+        if event is None and not integration.create_missing_events:
+            report["fixtures_no_event"] += 1
+            continue
+
+        metadata = build_event_metadata(match, [], integration.comet_team_id)
+        home = (match.get("homeTeam") or {}).get("name") or ""
+        away = (match.get("awayTeam") or {}).get("name") or ""
+
+        if dry_run:
+            report["fixtures_created" if event is None else "fixtures_updated"] += 1
+            continue
+
+        with transaction.atomic():
+            if event is None:
+                Event.objects.create(
+                    club=club, category=link.category,
+                    department=department, bracket=bracket,
+                    event_type=Event.TYPE_MATCH, scope=Event.SCOPE_CATEGORY,
+                    title=f"{home} vs {away}", starts_at=kickoff,
+                    location=metadata.get("venue") or "", metadata=metadata,
+                )
+                report["fixtures_created"] += 1
+            else:
+                # A fixture moves: date and round are the fields that actually
+                # change before a match is played, so they must not be treated
+                # as write-once.
+                event.starts_at = kickoff
+                event.metadata = {**(event.metadata or {}), **metadata}
+                if bracket is not None and event.bracket_id is None:
+                    event.bracket = bracket
+                event.save(update_fields=[
+                    "starts_at", "metadata", "bracket", "updated_at",
+                ])
+                report["fixtures_updated"] += 1
 
 
 def sync_all_clubs(*, dry_run: bool = True) -> list[dict]:
