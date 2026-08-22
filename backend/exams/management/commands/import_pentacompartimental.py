@@ -91,6 +91,7 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.ERROR(
                     f"    {row['date']}  {row['player']}: "
                     f"talla={row['talla']} peso={row['peso']}"
+                    + (f" — {row['reason']}" if row.get("reason") else "")
                 ))
 
         for s in rep["players"]:

@@ -146,3 +146,56 @@ class PlausibilityGuardTests(SimpleTestCase):
         self.assertLessEqual(P.TALLA_RANGE[0], 131.0)
         self.assertGreaterEqual(P.TALLA_RANGE[1], 194.0)
         self.assertLessEqual(P.PESO_RANGE[0], 30.0)
+
+
+class MassPlausibilityTests(SimpleTestCase):
+    """The five-mass decomposition checks itself.
+
+    Kerr's model partitions body mass, so every component must be positive and
+    they must sum to roughly the measured weight. That catches corrupted inputs
+    no per-field range can see.
+
+    The case that motivated it: the club's own legacy system stored a bone mass
+    of **-3.28 kg** for a 10-year-old, computed from shifted columns, and nobody
+    noticed for over a year. A negative mass needs no context to be recognised
+    as impossible.
+    """
+
+    OK = {"masa_osea": 8.0, "masa_muscular": 20.0, "masa_adiposa": 11.0,
+          "masa_piel": 2.0, "masa_residual": 5.0}
+
+    def test_a_sane_decomposition_passes(self):
+        self.assertIsNone(P.implausible_masses(self.OK, 46.0))
+
+    def test_the_real_negative_bone_mass_is_caught(self):
+        # Verbatim from the legacy row.
+        bad = {"masa_osea": -3.281047, "masa_piel": 0.902487,
+               "masa_adiposa": 1.733382, "masa_muscular": 6.499624,
+               "masa_residual": 5.145553}
+        reason = P.implausible_masses(bad, 11.0)
+        self.assertIsNotNone(reason)
+        self.assertIn("masa_osea", reason)
+
+    def test_a_zero_mass_is_also_impossible(self):
+        self.assertIsNotNone(P.implausible_masses({**self.OK, "masa_piel": 0.0}, 46.0))
+
+    def test_masses_that_do_not_sum_to_the_weight_are_caught(self):
+        # All positive, but the partition doesn't close — the signature of a
+        # weight that doesn't belong to the rest of the measurements.
+        self.assertIsNotNone(P.implausible_masses(self.OK, 90.0))
+
+    def test_the_tolerance_leaves_room_for_the_model(self):
+        # Kerr's partition doesn't close exactly; a few percent must pass.
+        self.assertIsNone(P.implausible_masses(self.OK, 46.0 * 1.05))
+        self.assertIsNone(P.implausible_masses(self.OK, 46.0 * 0.95))
+
+    def test_it_abstains_when_the_model_did_not_run(self):
+        # A missing mass means the formulas didn't produce one, which is not the
+        # same as producing an impossible one. Judging it would reject rows for
+        # a template that simply doesn't compute masses.
+        self.assertIsNone(P.implausible_masses({"masa_osea": 8.0}, 46.0))
+        self.assertIsNone(P.implausible_masses({}, 46.0))
+
+    def test_no_weight_still_catches_negatives(self):
+        bad = {**self.OK, "masa_osea": -1.0}
+        self.assertIsNotNone(P.implausible_masses(bad, None))

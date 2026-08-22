@@ -87,6 +87,37 @@ def plausible_anthropometry(raw: dict) -> bool:
     )
 
 
+# The five-mass decomposition is itself a check. Kerr's model partitions body
+# mass, so every component must be positive and they must sum to roughly the
+# measured weight. Corrupted inputs break that arithmetic in ways no range check
+# on individual fields can see.
+#
+# The legacy `antropometria` rows found on 2026-08-22 are the proof: the club's
+# own system stored a bone mass of **-3.28 kg** for a 10-year-old and nobody
+# noticed. A negative mass needs no context to be recognised as impossible,
+# which makes this a stronger guard than any per-field range.
+MASS_KEYS = ("masa_osea", "masa_muscular", "masa_adiposa", "masa_piel", "masa_residual")
+MASS_SUM_TOLERANCE = 0.15   # the model doesn't close exactly; 15% is generous
+
+
+def implausible_masses(result_data: dict, peso: float | None) -> str | None:
+    """A reason string when the computed masses can't be right, else None."""
+    values = {}
+    for k in MASS_KEYS:
+        v = result_data.get(k)
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            return None          # the model didn't run; not our call to judge
+        values[k] = float(v)
+    negative = [k for k, v in values.items() if v <= 0]
+    if negative:
+        return f"masa(s) no positiva(s): {', '.join(negative)}"
+    if peso:
+        total = sum(values.values())
+        if abs(total - peso) > MASS_SUM_TOLERANCE * peso:
+            return f"las masas suman {total:.1f} kg contra un peso de {peso:.1f} kg"
+    return None
+
+
 class PentaParseError(ValueError):
     """The upload isn't a readable 5-component workbook."""
 
@@ -253,6 +284,15 @@ def run(
         seen_in_file.add(key)
         raw["sexo"] = 1 if (getattr(player, "sex", "M") or "M").upper().startswith("M") else 2
         result_data, inputs_snapshot = compute_result_data(template, raw, player=player)
+        bad_mass = implausible_masses(result_data, raw.get("peso"))
+        if bad_mass:
+            skipped_implausible += 1
+            implausible_rows.append({
+                "player": f"{player.first_name} {player.last_name}",
+                "date": d.isoformat(), "talla": raw.get("talla"),
+                "peso": raw.get("peso"), "reason": bad_mass,
+            })
+            continue
         to_create.append(ExamResult(
             player=player, template=template,
             recorded_at=timezone.make_aware(
