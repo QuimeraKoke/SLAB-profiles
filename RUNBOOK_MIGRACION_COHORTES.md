@@ -228,6 +228,9 @@ avisar**. Es el trabajo más tedioso y el que más errores silenciosos deja.
 | Pendiente | Qué falta | Dónde está descrito |
 |---|---|---|
 | Detección de talento con GPS | GPS juvenil (hoy: 0 filas en toda la cantera). No requiere Catapult — 5.830 de 6.331 filas entraron por carga manual, y `/gps-entrenamiento` ya la soporta. Umbral útil: ≥8 jugadores por sesión y ≥3 apariciones por jugador. | PRD §8 |
+| **Bio-banding (maturity offset)** | **Nada — los datos ya están.** Talla, talla sentado y peso al 100 % en 1.185 mediciones juveniles seriadas, que es el insumo exacto de Mirwald. Falta código, y arreglar §9.2 primero. | PRD §9.1 / §9.3-A |
+| ⚠️ **20 filas de antropometría con columnas corridas** | Re-importar dos lotes desde el xlsx: SUB-11 del 2025-04-07 y SUB-14 del 2026-03-30. Edad→peso, peso→talla, talla→talla_sentado. Produce +62 cm de crecimiento en 4 meses y ya tuerce los gráficos de esos chicos. | PRD §9.2 |
+| Proyección de talla adulta (%PAH) | **Talla de los padres** — no existe en ningún template. Se mide una vez por jugador y no cambia; mejor un campo en la ficha que un examen. | PRD §9.3-B |
 | Plantel del cohorte 2015 | Los Sub 11 de 2026 son nacidos en 2015 y no existe ninguno en SLAB, así que sus 6 partidos tienen 0 fichas. | PRD §5 |
 | 10 personas COMET sin vincular | Decisión humana: vincular al equivocado atribuye minutos oficiales a otra persona. Django admin → «Vínculos jugador COMET». | — |
 | Calendario compartido | Decisión de producto sobre Sub 18 2026 (22 fixtures, 3 equipos). Consultado al club; puede desarmarse SUB-17. | PRD §3.1 |

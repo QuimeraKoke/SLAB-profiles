@@ -419,7 +419,108 @@ eso hoy no lo ve nadie.
 
 ---
 
-## 9. Criterios de aceptación
+## 9. PENDIENTE — Bio-banding y proyección de talla
+
+A diferencia de §8, esto **no está bloqueado por falta de datos**: la
+antropometría juvenil existe, es seriada y está completa. Lo que falta es un
+arreglo de datos, una medición nueva y el código.
+
+### 9.1 Lo que YA hay (verificado 2026-08-22)
+
+`pentacompartimental` (Nutricional) cubre **332 jugadores y 2.388 mediciones**,
+juveniles incluidos, desde 2024-05. Y trae los tres campos que importan:
+
+| Campo | Completitud en juveniles |
+|---|---|
+| `talla` | 1.185 / 1.185 (100 %) |
+| `talla_sentado` | 1.185 / 1.185 (100 %) |
+| `peso` | 1.185 / 1.185 (100 %) |
+
+Mediciones seriadas por categoría: SUB-11 (29 jugadores, 89 mediciones) hasta
+SUB-20 (43, 311). Unos 160 jugadores tienen ≥6 meses de recorrido y ~45 tienen
+≥12 meses.
+
+**Talla + talla sentado + peso + edad es exactamente el insumo de la ecuación de
+Mirwald** (maturity offset, años desde el pico de velocidad de crecimiento). O
+sea que el corazón del bio-banding **es computable hoy**, sin pedirle nada a
+nadie.
+
+### 9.2 ⚠️ BLOQUEANTE: 20 filas con las columnas corridas
+
+Antes de calcular cualquier cosa hay que arreglar esto, porque produce
+velocidades de crecimiento absurdas (SUB-11 promediaba **+62 cm en 4 meses**).
+
+20 filas tienen `talla` por debajo de 100 cm, mínimo **30,25**. Mirando las tres
+columnas juntas el patrón es inequívoco — están **corridas un lugar**:
+
+| Campo | Valor guardado | Lo que realmente es |
+|---|---|---|
+| `peso` | 11,0 · 15,0 | la EDAD |
+| `talla` | 30–68 | el PESO en kg |
+| `talla_sentado` | 131–179 | la TALLA de pie |
+
+Afecta dos lotes concretos: **SUB-11 el 2025-04-07 (10 filas)** y **SUB-14 el
+2026-03-30 (9 filas)**, más 1 en SUB-15. Viene de `import_pentacompartimental`
+con un desalineamiento de columnas en esos archivos.
+
+No lo corregí por inferencia: el mapeo se ve claro, pero reescribir datos
+adivinando la columna de origen es peor que dejarlos marcados. **Hay que
+re-importar esos dos lotes desde el xlsx original.**
+
+Consulta para encontrarlas:
+
+```sql
+SELECT p.first_name, p.last_name, r.recorded_at::date,
+       r.result_data->>'talla', r.result_data->>'talla_sentado', r.result_data->>'peso'
+FROM exams_examresult r
+JOIN exams_examtemplate t ON t.id=r.template_id AND t.slug='pentacompartimental'
+JOIN core_player p ON p.id=r.player_id
+WHERE (r.result_data->>'talla') ~ '^[0-9.]+$'
+  AND (r.result_data->>'talla')::numeric < 100;
+```
+
+Y conviene una validación de rango en el importador: una talla fuera de
+100–220 cm no es un dato, es un error de columna.
+
+### 9.3 Los dos métodos, y qué necesita cada uno
+
+**A. Maturity offset (Mirwald) — feasible YA.** Estima los años que faltan (o
+sobran) para el pico de velocidad de crecimiento a partir de edad, talla, talla
+sentado y peso. Con eso se agrupa por madurez en vez de por año de nacimiento,
+que es el bio-banding propiamente dicho.
+
+**B. Porcentaje de talla adulta predicha (Khamis-Roche) — necesita un dato
+nuevo.** Es el método estándar para bandear por %PAH (85–90 %, 90–95 %…), y
+requiere **la talla de los padres** (mid-parental height), que no está en ningún
+template. Es una medición que se pide una vez por jugador y no cambia nunca —
+buen candidato para un campo en la ficha en lugar de un examen.
+
+**C. Proyección desde la propia curva.** Con talla seriada se estima velocidad de
+crecimiento (cm/año) y se ubica al chico antes, durante o después del PHV. No
+predice talla adulta como Khamis-Roche, pero sí responde "¿está en pleno
+estirón?", que es lo que cambia la carga de entrenamiento. Necesita **≥12 meses
+de recorrido**: hoy lo cumplen ~45 jugadores, y crece solo con el tiempo.
+
+### 9.4 Por qué esto importa junto con §7 y §8
+
+El bio-banding responde la objeción más fuerte al análisis de cohorte de §7: un
+chico que juega por encima de su edad puede estar simplemente **madurando antes**,
+no siendo mejor. Y al revés — el caso que hoy nadie ve — un jugador de maduración
+tardía que rinde en su propia categoría puede ser el más talentoso del grupo, y
+el sistema actual lo lee como promedio.
+
+Con las tres piezas juntas la lectura cambia de "juega arriba" a "juega arriba
+**para su nivel de madurez**", que es una afirmación completamente distinta y
+mucho más difícil de fabricar.
+
+⚠️ Advertencia de método, en la línea de §7 y §8.1: **agrupar por madurez no
+justifica comparar GPS crudo entre bandas.** Todo lo de §8.1 sigue aplicando —
+métricas por minuto, pares de duración comparable, y negarse a dar percentiles
+sobre muestras chicas.
+
+---
+
+## 10. Criterios de aceptación
 
 1. **Participaciones en el bracket natural del jugador ≥ 88 %** en ambas temporadas, y
    **"juega abajo" ≤ 1 %**. Alcanzado en la fase 1: 89,7 % / 88,9 % y 0,9 % / 0,7 %.
