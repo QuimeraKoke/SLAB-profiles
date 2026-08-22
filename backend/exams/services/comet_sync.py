@@ -125,11 +125,37 @@ def _resolve_category(club, comp: dict, roster_by_age: dict[int, Any], default_c
     return (default_category, True) if default_category else (None, False)
 
 
-def _category_index(club) -> dict[int, Any]:
-    """{age_number: Category} from names like 'SUB-15'."""
-    from core.models import Category
+def _category_index(club, season: int | None = None) -> dict[int, Any]:
+    """{bracket_age: Category} — which team to file a competition's matches under.
+
+    Reads the DECLARED `TeamSeason` rows first and only falls back to parsing the
+    category name. That order matters: the fallback reads digits out of the
+    label, so the moment a club renames a team to its cohort ("Serie 2014") the
+    regex would match `20` and file the 2014 kids' matches under Sub 20. Nothing
+    would error — it would just be wrong.
+
+    When several teams compete in the same bracket (Sub 18 2026 has three of this
+    club's), the OLDEST cohort wins. That's a display-level choice only: which
+    team a fixture is labelled with. Who actually turns out is answered by
+    `Event.bracket` plus participation, which is what the calendar reads.
+    """
+    from core.models import Category, TeamSeason
 
     out: dict[int, Any] = {}
+    if season is not None:
+        rows = (
+            TeamSeason.objects
+            .filter(team__club=club, season=season, bracket__age__isnull=False)
+            .select_related("team", "bracket")
+            # NULLs last so a declared cohort always beats an undeclared one.
+            .order_by("bracket__age", "team__cohort_year")
+        )
+        for ts in rows:
+            out.setdefault(ts.bracket.age, ts.team)
+    if out:
+        return out
+
+    # No declared seasons (a club that hasn't been backfilled): parse the label.
     for cat in Category.objects.filter(club=club):
         m = re.search(r"(\d{1,2})", cat.name or "")
         # Skip the women's categories: COMET's feed for this tenant carries no
@@ -495,7 +521,9 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
 
     cutoff = since or (timezone.now() - timedelta(days=integration.lookback_days))
     roster = list(Player.objects.filter(category__club=club).select_related("category"))
-    by_age = _category_index(club)
+    # Season-aware: the same age token means a different team each year, and
+    # the declared TeamSeason is what knows which.
+    by_age = _category_index(club, season=timezone.now().year)
     default_category = by_age.get(0) or next(
         (c for c in {p.category for p in roster if p.category} if c.name == "Primer Equipo"),
         None,
