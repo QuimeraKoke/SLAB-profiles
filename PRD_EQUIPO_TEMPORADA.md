@@ -340,7 +340,86 @@ calendarios, fixtures, bindings de proveedor. Cualquier juicio **sobre un jugado
 
 ---
 
-## 8. Criterios de aceptación
+## 8. PENDIENTE — Detección de talento con variables físicas
+
+**Estado: bloqueado por datos, no por código.** El código está escrito, probado y
+desplegado en local; espera GPS juvenil para tener con qué trabajar.
+
+### Por qué está bloqueado
+
+De los **42 jugadores que juegan por encima de su cohorte, sólo 10 tienen GPS —
+y los 10 ya están en Primer Equipo.** Ninguna categoría juvenil tiene una sola
+fila: las 6.331 del club son de Primer Equipo (4.147) y Selección Nacional
+(2.184). `CatapultIntegration` está habilitado únicamente para Primer Equipo.
+
+Dicho de otro modo: hoy el detector vería sólo a quienes ya fueron promovidos,
+que es exactamente donde la pregunta ya está contestada. La señal falta donde
+más valdría — Marthin Fuentes, Oscar Belmar, Benjamin Garcés: cero filas.
+
+### Qué se necesita para desbloquearlo
+
+**No hace falta Catapult.** 5.830 de las 6.331 filas existentes entraron por
+carga manual, no por la integración, y `/gps-entrenamiento` ya la soporta. Es un
+proceso que el club puede arrancar sin una línea de código.
+
+Umbral de utilidad, derivado de lo medido en §8.2: por categoría juvenil hacen
+falta **≥ 8 jugadores por sesión** (para que haya pares comparables) y
+**≥ 3 apariciones por jugador** en la temporada. Con menos, el análisis va a
+responder "sin datos suficientes", que es correcto pero inútil.
+
+### Qué ya está construido
+
+- `api.development.physical_context(player, season)` — compara contra el plantel
+  con el que jugó, en los mismos partidos, así rival y ritmo quedan controlados.
+- `GET /api/players/{id}/physical-context` — respeta `scope_players`.
+- Tests en `api/test_development.py` que fijan las decisiones de abajo.
+- Falta sólo: enchufarlo a la pantalla `/desarrollo` (panel por jugador).
+
+### 8.1 Las dos confusiones ya resueltas — no re-derivarlas
+
+Ambas medidas sobre datos reales, ambas producen números falsos con cara de
+precisos:
+
+| Trampa | Evidencia |
+|---|---|
+| Las métricas **acumuladas** miden MINUTOS, no capacidad | Jhon Cortés daba percentil **13** en distancia total y **17** en HSR sólo porque entró a los 10 minutos |
+| Las tasas **por minuto** favorecen entradas cortas | Vicente Ramírez pasó de percentil **30 a 55** en velocidad máxima al comparar contra minutos parecidos; su número bajo era el artefacto |
+
+De ahí: sólo `max_vel`, `mpm`, `hsr_min`, `sprint_dist_min` (fijado por test, con
+`tot_dist`/`hsr`/`sprint_dist`/`player_load` explícitamente excluidas), y pares
+acotados a **±35% de la duración típica del propio jugador**.
+
+Y una tercera que conviene tener presente: **comparar GPS crudo entre edades no
+dice nada.** Un 2008 le corre a un 2014 por construcción. La comparación tiene
+que ser contra el plantel con el que jugó, o percentil dentro de su propio
+cohorte — nunca absoluta.
+
+### 8.2 La consecuencia incómoda
+
+Acotar bien **derrumba la muestra justo en los casos interesantes**: Cortés queda
+con UN par comparable. Un "percentil 100 (n=1)" es ruido disfrazado de señal, así
+que por debajo de `MIN_PEERS = 8` la función devuelve los valores crudos **sin
+percentil**, con el motivo. Barrera, que juega 98 minutos, tiene 189 pares y sí
+se puede juzgar.
+
+Esa es la razón de fondo por la que esto queda pendiente en vez de "listo": la
+función es correcta, pero con los datos de hoy responde "sin datos suficientes"
+para casi todos los juveniles, y preferimos eso a un número que haga tomar una
+decisión sobre un chico comparándolo con un solo compañero.
+
+### 8.3 Cuando haya datos, la señal a construir
+
+El talento no es una métrica, es una **conjunción**: juega por encima de su
+cohorte (§7) **y** sostiene el nivel físico del grupo mayor con el que juega
+(§8). El primer término ya está medido y en pantalla; el segundo espera GPS.
+
+El caso a vigilar en la otra dirección es igual de valioso: un chico que juega
+arriba pero **no** sostiene el físico está siendo empujado demasiado rápido, y
+eso hoy no lo ve nadie.
+
+---
+
+## 9. Criterios de aceptación
 
 1. **Participaciones en el bracket natural del jugador ≥ 88 %** en ambas temporadas, y
    **"juega abajo" ≤ 1 %**. Alcanzado en la fase 1: 89,7 % / 88,9 % y 0,9 % / 0,7 %.

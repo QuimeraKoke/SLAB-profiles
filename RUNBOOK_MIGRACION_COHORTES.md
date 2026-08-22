@@ -172,12 +172,47 @@ camino). Hacerlo en una transacción con nombres temporales.
 `Categoría` deja de ser un término único y hay que nombrar **Equipo** y
 **Categoría de competencia** distinto en toda la UI.
 
-## Fase 3 — `Event.bracket` y calendario
+## Fase 3a — `Event.bracket` ✅ HECHA
 
-Pendiente y es el cambio más profundo. Un partido de Sub 18 lo juegan **dos
-equipos a la vez** (cohortes 2009 y 2008), así que `Event.category` como FK único
-no los representa. Requiere decisión de producto: ¿el partido aparece en el
-calendario de los dos equipos o sólo en el del cohorte principal?
+```bash
+python manage.py migrate events          # 0007_event_bracket
+python manage.py backfill_cohorts --club "Universidad de Chile" --commit
+```
+
+538 partidos con bracket: 155 por nombre oficial de competencia (COMET) y 377 por
+la etiqueta del evento, que es segura en las dos temporadas porque **el desfase
+está entre la etiqueta DEL JUGADOR y la temporada, no la del evento**. Los 37 que
+quedan sin bracket son todos femeninos, correcto: el feed no trae esas
+competencias.
+
+⚠️ `SUB-17` tiene 6 partidos y NO existe competencia Sub 17, así que la búsqueda
+por edad exacta los dejaba huérfanos. Usan `bracket_for_age` y caen en Sub 18.
+Debajo de la escalera es al revés: un partido Sub 9 es torneo local y promoverlo
+a Sub 11 inventaría una competencia, así que queda sin resolver a propósito.
+
+También se sincronizan los **fixtures futuros** (`sync_future_fixtures`): 100
+programados, 90 creados y **10 adoptados** — la ventana de ±16 h reconoce los
+eventos que ya había creado `fixtures_sync` en vez de duplicarlos.
+
+## Fase 3b — Semántica del calendario ⏸ espera decisión del club
+
+**El alcance es mucho menor de lo que decía la primera versión de este runbook.**
+Medido: de 17 combinaciones bracket-temporada, **sólo una tiene más de un equipo
+compitiendo** — Sub 18 2026, con SUB-16, SUB-17 y SUB-18. Son **22 partidos** que
+pasarían de 1 a 3 calendarios (a 2 si SUB-17 se desarma).
+
+Los otros ~44 partidos que *parecían* compartidos son préstamos: un equipo dueño
+y otros aportando jugadores sueltos. Eso **ya está resuelto** y no toca el
+calendario del equipo, porque un jugador ve ese partido por ser
+`EventParticipant`, no porque su equipo compita ahí.
+
+Con eso **no hace falta la noción de "equipo principal"**: el partido aparece en
+el calendario de todo equipo cuyo `TeamSeason.bracket` coincida, que es la
+verdad. Ya implementado en `api/fixtures.py`; falta sólo confirmar la regla con
+el club.
+
+Se repite cada temporada en Sub 18 y Sub 20 (los brackets de los huecos), así que
+es permanente pero de volumen chico.
 
 ## Fase 4 — Auditar los filtros por categoría
 
@@ -188,16 +223,39 @@ avisar**. Es el trabajo más tedioso y el que más errores silenciosos deja.
 
 ---
 
+## Pendientes que esperan datos, no código
+
+| Pendiente | Qué falta | Dónde está descrito |
+|---|---|---|
+| Detección de talento con GPS | GPS juvenil (hoy: 0 filas en toda la cantera). No requiere Catapult — 5.830 de 6.331 filas entraron por carga manual, y `/gps-entrenamiento` ya la soporta. Umbral útil: ≥8 jugadores por sesión y ≥3 apariciones por jugador. | PRD §8 |
+| Plantel del cohorte 2015 | Los Sub 11 de 2026 son nacidos en 2015 y no existe ninguno en SLAB, así que sus 6 partidos tienen 0 fichas. | PRD §5 |
+| 10 personas COMET sin vincular | Decisión humana: vincular al equivocado atribuye minutos oficiales a otra persona. Django admin → «Vínculos jugador COMET». | — |
+| Calendario compartido | Decisión de producto sobre Sub 18 2026 (22 fixtures, 3 equipos). Consultado al club; puede desarmarse SUB-17. | PRD §3.1 |
+
 ## Estado actual (2026-08-22)
 
 | | Local | Prod |
 |---|---|---|
-| Datos COMET 2026 | ❌ falta (ver §0) | ✅ 155 eventos / 2.588 fichas |
+| Datos COMET 2026 | ✅ copia de prod (2026-08-22) | ✅ 155 eventos / 2.588 fichas |
 | Migración `core.0019` | ✅ aplicada | ✅ aplicada |
-| Backfill fase 1 | ❌ no corrido | ⚠️ **corrido** (9/19/310/7) |
-| Código en git | sin comitear | `639e1d4` (no conoce estos modelos) |
+| Migración `events.0007` (bracket) | ✅ aplicada | ❌ **pendiente** |
+| Backfill fases 1 + 3a | ✅ corrido y verificado | ⚠️ fase 1 sí, 3a no |
+| Fixtures futuros | ✅ 101 eventos | ❌ pendiente |
+| Código en git | 8 commits locales | `639e1d4` (no conoce estos modelos) |
 
-⚠️ **Prod tiene la base por delante del código.** Es inerte —nada en
-`639e1d4` lee esas tablas— pero conviene igualar antes de desplegar: o se revierte
-la fase 1 en prod (§ "Revertir fase 1") y se rehace después de validar en local,
-o se acepta como adelanto y se valida sobre eso.
+⚠️ **Prod tiene la base por delante del código, y local por delante de prod.**
+Nada en `639e1d4` lee esas tablas, así que todo lo aplicado en prod es inerte.
+Decisión tomada el 2026-08-22: se acepta como adelanto y se valida en local.
+
+Orden al desplegar (las migraciones son aditivas, así que van primero sin riesgo
+para el código viejo):
+
+```bash
+# 1. migraciones
+manage.py migrate core     # 0019 — ya aplicada en prod
+manage.py migrate events   # 0007 — PENDIENTE en prod
+# 2. backfill (incluye brackets de evento y fixtures futuros)
+manage.py backfill_cohorts --club "Universidad de Chile" --commit
+manage.py sync_comet --club "Universidad de Chile" --days 30 --commit
+# 3. push → Railway despliega backend, frontend, Celery y beat
+```
