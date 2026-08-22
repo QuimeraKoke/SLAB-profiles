@@ -91,12 +91,173 @@ class Category(models.Model):
         ),
     )
 
+    cohort_year = models.PositiveIntegerField(
+        null=True, blank=True, db_index=True,
+        help_text=(
+            "Birth year of the group this team IS, for age-group teams. The "
+            "durable identity: the 2012s are the 2012s in every season, while "
+            "the competition they play in changes every year (see TeamSeason). "
+            "Leave empty for teams that aren't an age group — first team, "
+            "women's squads."
+        ),
+    )
+
     class Meta:
         unique_together = ("club", "name")
         verbose_name_plural = "categories"
 
     def __str__(self) -> str:
         return f"{self.club.name} – {self.name}"
+
+    def season_bracket(self, season: int):
+        """The Bracket this team competes in for `season`, or None.
+
+        Reads the declared `TeamSeason` rather than deriving from
+        `cohort_year`: derivation is right 86–100% of the time depending on the
+        cohort, and the club has to be able to fix the rest without fighting a
+        formula.
+        """
+        ts = self.team_seasons.filter(season=season).select_related("bracket").first()
+        return ts.bracket if ts else None
+
+
+class Bracket(models.Model):
+    """A competition age group as the federation publishes it — Sub 15, Primera.
+
+    Deliberately NOT per club: it describes the competition, not who enters it.
+
+    `order` exists because the ANFP ladder HAS GAPS — there is no Sub 17 and no
+    Sub 19, so the real progression is 11→12→13→14→15→16→18→20→Primera. Any
+    "did this player move up?" arithmetic has to walk `order`, never `age`:
+    reading 16→18 as a two-step jump is wrong, and it is the single easiest
+    mistake to make with this data (made twice while analysing it on
+    2026-08-20). Season-over-season level comparison is wrong for the same
+    reason — see PRD_EQUIPO_TEMPORADA.md §6.1.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(
+        max_length=20, unique=True,
+        help_text="Stable key, e.g. 'sub_15', 'primera'.",
+    )
+    name = models.CharField(max_length=40, help_text="Shown to users: 'Sub 15'.")
+    age = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text="Nominal age of the bracket. Empty for senior competitions.",
+    )
+    order = models.PositiveIntegerField(
+        unique=True,
+        help_text=(
+            "Rung on the real ladder, ascending. Consecutive by construction "
+            "even where the ages skip (Sub 16 → Sub 18)."
+        ),
+    )
+
+    class Meta:
+        ordering = ["order"]
+        verbose_name = "Categoría de competencia"
+        verbose_name_plural = "Categorías de competencia"
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class TeamSeason(models.Model):
+    """Which competition a team entered in a given season.
+
+    The bridge that lets one team read correctly across seasons. Before this
+    existed, `Player.category` had to be both the working group and the
+    competition, and a single mutable field cannot describe two seasons at once:
+    on 2026-08-22 the labels matched 93.6% of 2025's participations and 16.8% of
+    2026's, because they were a correct 2025 snapshot never rolled forward.
+    Rolling them would have fixed 2026 and broken the larger 2025 set.
+
+    `external_config` moves here from `Category` because a provider binding is
+    inherently per season — the API-Football shape already carried a `season`
+    key inside it, which is what suggested this model in the first place.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    team = models.ForeignKey(
+        Category, on_delete=models.CASCADE, related_name="team_seasons",
+    )
+    season = models.PositiveIntegerField(db_index=True, help_text="Calendar year.")
+    bracket = models.ForeignKey(
+        Bracket, on_delete=models.PROTECT, related_name="team_seasons",
+    )
+    external_config = models.JSONField(
+        default=dict, blank=True,
+        help_text="Per-season provider binding. Same shape Category used.",
+    )
+    derived = models.BooleanField(
+        default=False,
+        help_text=(
+            "True when a backfill inferred this row instead of a human "
+            "declaring it. Lets a correction be told apart from a guess."
+        ),
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["team", "season"], name="uniq_team_season",
+            ),
+        ]
+        ordering = ["-season"]
+        verbose_name = "Temporada de equipo"
+        verbose_name_plural = "Temporadas de equipo"
+
+    def __str__(self) -> str:
+        return f"{self.team.name} · {self.season} → {self.bracket.name}"
+
+
+class PlayerTeamMembership(models.Model):
+    """A player's spell in a team, with dates — the history `Player.category` lacks.
+
+    `Player.category` stays as the pointer to the current team so the ~280 query
+    sites that filter on it keep working; this table is what makes the history
+    answerable. Without it, moving a player between teams erases that he was
+    ever in the other one, and questions like "when did this kid start playing
+    up?" can only be reconstructed from match participations — which works, but
+    silently loses anyone whose category was edited.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    player = models.ForeignKey(
+        "Player", on_delete=models.CASCADE, related_name="team_memberships",
+    )
+    team = models.ForeignKey(
+        Category, on_delete=models.PROTECT, related_name="player_memberships",
+    )
+    since = models.DateField()
+    until = models.DateField(
+        null=True, blank=True, help_text="Empty = current spell.",
+    )
+    reason = models.CharField(
+        max_length=120, blank=True,
+        help_text="Why the spell started: 'traspaso', 'carga inicial'…",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["player", "until"]),
+            models.Index(fields=["team", "until"]),
+        ]
+        ordering = ["player_id", "-since"]
+        verbose_name = "Pertenencia a equipo"
+        verbose_name_plural = "Pertenencias a equipo"
+
+    def clean(self) -> None:
+        super().clean()
+        if self.until and self.since and self.until < self.since:
+            from django.core.exceptions import ValidationError
+            raise ValidationError({"until": "No puede ser anterior a 'desde'."})
+
+    def __str__(self) -> str:
+        end = self.until.isoformat() if self.until else "vigente"
+        return f"{self.player} · {self.team.name} ({self.since} → {end})"
 
 
 class Position(models.Model):
