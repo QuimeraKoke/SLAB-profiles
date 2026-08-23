@@ -364,6 +364,7 @@ def club_maturation(*, club_id, team_ids=None) -> dict:
             "team": p.category.name if p.category else None,
             "team_id": str(p.category_id) if p.category_id else None,
             "birth_year": p.date_of_birth.year,
+            "female": (p.sex or "M").upper().startswith("F"),
             "measured_on": when,
             "age_years": m.age_years,
             "offset_years": m.offset_years,
@@ -381,9 +382,15 @@ def club_maturation(*, club_id, team_ids=None) -> dict:
             "velocity_days": vel.days if vel else None,
         })
 
+    # Third pass: the reference groups only exist once every player is in.
+    profiles = team_profiles(rows)
+    for r in rows:
+        r["suggestion"] = suggest_team(r, profiles)
+
     rows.sort(key=lambda r: (r["team"] or "", r["offset_years"]))
     return {
         "players": rows,
+        "profiles": sorted(profiles.values(), key=lambda p: p["median_offset"]),
         "bands": [{"key": k, "label": lbl} for k, lbl, _, _ in BANDS],
         "skipped": {
             "senior": skipped_senior,
@@ -423,3 +430,95 @@ def band_summary(rows: list[dict]) -> list[dict]:
         })
     out.sort(key=lambda t: t["team"] or "")
     return out
+
+
+# ---------- "which group does his maturity fit?" ----------
+
+# A squad's median offset is only a reference if the squad is big enough to have
+# one. Same floor as the timing classification.
+MIN_PROFILE_PLAYERS = 8
+
+# How much closer to another squad's median he has to be before it's worth
+# saying anything. Below this the two groups are interchangeable for him and a
+# suggestion would be noise.
+MIN_SUGGESTION_GAIN = 0.75
+
+
+def _median_of(values: list[float]) -> float:
+    s = sorted(values)
+    n = len(s)
+    return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+
+
+def team_profiles(rows: list[dict]) -> dict[str, dict]:
+    """Per team: median maturity offset, size, and sex — the reference groups.
+
+    Sex is carried because a squad's median is only a comparable reference for
+    players of the same sex: the Mirwald equations differ, girls reach PHV about
+    two years earlier, and suggesting a women's squad to a boy (which an
+    unscoped nearest-median search does) is nonsense.
+    """
+    from collections import defaultdict
+
+    buckets: dict = defaultdict(list)
+    female: dict = defaultdict(list)
+    for r in rows:
+        if r.get("team") is None:
+            continue
+        buckets[r["team"]].append(r["offset_years"])
+        female[r["team"]].append(bool(r.get("female")))
+
+    return {
+        team: {
+            "team": team,
+            "median_offset": round(_median_of(v), 2),
+            "players": len(v),
+            # Majority sex — a squad is one or the other in practice.
+            "female": sum(female[team]) * 2 > len(female[team]),
+        }
+        for team, v in buckets.items()
+        if len(v) >= MIN_PROFILE_PLAYERS
+    }
+
+
+def suggest_team(row: dict, profiles: dict[str, dict]) -> dict | None:
+    """The squad whose maturity his own most resembles, when it isn't his.
+
+    Deliberately phrased as a RESEMBLANCE, not a recommendation. Bio-banding is
+    not "promote the early maturer" — in the literature it is often the opposite:
+    group by maturity so the early developer meets equally mature opponents and
+    has to build skill instead of leaning on size, and so the late developer can
+    play without being physically overwhelmed. Which way to act on it is a
+    decision about a child that belongs to the coaching staff, not to a median.
+    """
+    own = profiles.get(row.get("team"))
+    if own is None:
+        return None
+    mine = row["offset_years"]
+    own_distance = abs(mine - own["median_offset"])
+
+    best = None
+    for team, prof in profiles.items():
+        if team == row["team"]:
+            continue
+        if prof["female"] != bool(row.get("female")):
+            continue
+        distance = abs(mine - prof["median_offset"])
+        if best is None or distance < best[1]:
+            best = (prof, distance)
+    if best is None:
+        return None
+
+    prof, distance = best
+    gain = own_distance - distance
+    if gain < MIN_SUGGESTION_GAIN:
+        return None
+    return {
+        "team": prof["team"],
+        "median_offset": prof["median_offset"],
+        "own_median_offset": own["median_offset"],
+        "gain_years": round(gain, 2),
+        # Relative to his CURRENT squad's maturity, not to his age: "up" means a
+        # more mature group.
+        "direction": "up" if prof["median_offset"] > own["median_offset"] else "down",
+    }

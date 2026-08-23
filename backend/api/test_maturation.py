@@ -13,7 +13,7 @@ from django.test import SimpleTestCase
 from api.maturation import (
     CONFIDENT_OFFSET, MAX_PLAUSIBLE_VELOCITY, MIN_VELOCITY_DAYS, VALID_AGE,
     decimal_age, height_velocity, maturity_offset, maturity_timing,
-    plausible_measurement,
+    plausible_measurement, suggest_team, team_profiles,
 )
 
 
@@ -281,3 +281,92 @@ class BandTests(SimpleTestCase):
 
         for (_, _, _, hi), (_, _, lo2, _) in zip(BANDS, BANDS[1:]):
             self.assertEqual(hi, lo2, "las bandas deben ser contiguas")
+
+
+class SuggestTeamTests(SimpleTestCase):
+    """Which squad a player's maturity resembles.
+
+    Framed as resemblance, never as a recommendation: bio-banding in the
+    literature is often the OPPOSITE of "promote the early maturer" — you group
+    by maturity so the early developer meets equally mature opponents and has to
+    build skill instead of leaning on size. What to do about it is a decision
+    about a child, not about a median.
+    """
+
+    PROFILES = {
+        "SUB-12": {"team": "SUB-12", "median_offset": -1.34, "players": 25, "female": False},
+        "SUB-13": {"team": "SUB-13", "median_offset": 0.08, "players": 32, "female": False},
+        "SUB-15": {"team": "SUB-15", "median_offset": 2.03, "players": 32, "female": False},
+        "SUB-19 F": {"team": "SUB-19 F", "median_offset": 3.67, "players": 16, "female": True},
+    }
+
+    def _row(self, team, offset, female=False):
+        return {"team": team, "offset_years": offset, "female": female}
+
+    def test_a_far_ahead_player_is_matched_upward(self):
+        # Santaella: SUB-13 with +2.05, which is SUB-15's median.
+        s = suggest_team(self._row("SUB-13", 2.05), self.PROFILES)
+        self.assertIsNotNone(s)
+        self.assertEqual(s["team"], "SUB-15")
+        self.assertEqual(s["direction"], "up")
+
+    def test_a_lagging_player_is_matched_downward(self):
+        s = suggest_team(self._row("SUB-13", -1.58), self.PROFILES)
+        self.assertEqual(s["team"], "SUB-12")
+        self.assertEqual(s["direction"], "down")
+
+    def test_a_player_at_his_own_median_gets_nothing(self):
+        self.assertIsNone(suggest_team(self._row("SUB-13", 0.08), self.PROFILES))
+
+    def test_a_marginal_difference_gets_nothing(self):
+        # Below the gain floor the two groups are interchangeable for him, and a
+        # suggestion would be noise dressed as insight.
+        s = suggest_team(self._row("SUB-13", 0.5), self.PROFILES)
+        self.assertIsNone(s)
+
+    def test_it_never_suggests_across_sexes(self):
+        # The real bug this guard exists for: an unscoped nearest-median search
+        # matched a boy in SUB-16 to the women's SUB-19 squad. The equations
+        # differ and girls reach PHV ~2 years earlier, so the medians are not
+        # comparable references.
+        s = suggest_team(self._row("SUB-15", 3.6, female=False), self.PROFILES)
+        self.assertNotEqual(s["team"] if s else None, "SUB-19 F")
+
+    def test_a_girl_is_matched_only_to_womens_squads(self):
+        s = suggest_team(self._row("SUB-15", 3.6, female=True), self.PROFILES)
+        # Her own squad isn't in the profiles as female, so either she matches
+        # the women's squad or nothing — never a men's one.
+        if s is not None:
+            self.assertEqual(s["team"], "SUB-19 F")
+
+    def test_a_team_without_a_profile_gets_nothing(self):
+        # Too few players to have a median means no reference to compare against.
+        self.assertIsNone(suggest_team(self._row("SUB-17", 2.0), self.PROFILES))
+
+    def test_the_payload_carries_both_medians(self):
+        s = suggest_team(self._row("SUB-13", 2.05), self.PROFILES)
+        self.assertEqual(s["own_median_offset"], 0.08)
+        self.assertEqual(s["median_offset"], 2.03)
+        self.assertGreater(s["gain_years"], 0)
+
+
+class TeamProfileTests(SimpleTestCase):
+    def test_small_squads_get_no_profile(self):
+        rows = [
+            {"team": "A", "offset_years": 1.0, "female": False} for _ in range(3)
+        ]
+        self.assertEqual(team_profiles(rows), {})
+
+    def test_the_majority_sex_defines_the_squad(self):
+        rows = (
+            [{"team": "A", "offset_years": 1.0, "female": True} for _ in range(7)]
+            + [{"team": "A", "offset_years": 1.0, "female": False}]
+        )
+        self.assertTrue(team_profiles(rows)["A"]["female"])
+
+    def test_the_median_is_the_median(self):
+        rows = [
+            {"team": "A", "offset_years": float(i), "female": False}
+            for i in range(9)
+        ]
+        self.assertEqual(team_profiles(rows)["A"]["median_offset"], 4.0)

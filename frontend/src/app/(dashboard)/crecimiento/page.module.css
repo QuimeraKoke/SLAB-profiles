@@ -99,3 +99,26 @@
   .page { padding: 16px; gap: 16px; }
   .card { padding: 16px; }
 }
+
+/* ── filter chips ────────────────────────────────────────────────────── */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 2px 0 2px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid #e4e7ec; background: #fff; cursor: pointer;
+  font-size: 12px; font-weight: 600; color: #475467;
+  padding: 5px 10px; border-radius: 999px;
+}
+.chip:hover:not(:disabled) { background: #f9fafb; }
+.chip:disabled { opacity: .45; cursor: default; }
+.chipOn { background: #eef4ff; border-color: #c7d7fe; color: #3538cd; }
+.chipCount {
+  font-variant-numeric: tabular-nums; font-weight: 700;
+  font-size: 11px; color: #98a2b3;
+}
+.chipOn .chipCount { color: #3538cd; }
+
+/* ── maturity resemblance ────────────────────────────────────────────── */
+/* Same visual weight in both directions: "resembles an older group" is not
+   better than "resembles a younger one", and the colour must not imply it. */
+.sugUp   { color: #b54708; font-weight: 600; }
+.sugDown { color: #0e7090; font-weight: 600; }

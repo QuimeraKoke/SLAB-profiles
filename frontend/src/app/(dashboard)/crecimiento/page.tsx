@@ -35,6 +35,13 @@ interface TeamRow {
   informative: boolean;
   still_growing: number;
 }
+interface Suggestion {
+  team: string;
+  median_offset: number;
+  own_median_offset: number;
+  gain_years: number;
+  direction: "up" | "down";
+}
 interface PlayerRow {
   player_id: string;
   player_name: string;
@@ -55,6 +62,8 @@ interface PlayerRow {
   velocity_cm_year: number | null;
   velocity_provisional: boolean | null;
   velocity_days: number | null;
+  female: boolean;
+  suggestion: Suggestion | null;
 }
 interface Payload {
   players: PlayerRow[];
@@ -79,6 +88,62 @@ const TIMING_CLASS: Record<string, string> = {
  *  at which training load is worth revisiting. */
 const GROWING_CM = 3.0;
 
+/** Table filters. Each is a question a coach actually asks, and each one the
+ *  data can answer without inventing anything. `sube`/`baja` read off the
+ *  maturity RESEMBLANCE, not a recommendation — see `suggest_team`. */
+const FILTERS: { key: string; label: string; hint: string }[] = [
+  { key: "", label: "Todos", hint: "Todos los jugadores con medición utilizable" },
+  {
+    key: "desalineados",
+    label: "Desalineados",
+    hint: "Su madurez se parece más a la de otro plantel que a la del propio",
+  },
+  {
+    key: "sube",
+    label: "Se parecen a un grupo mayor",
+    hint: "Su madurez está por delante de la mediana de su plantel",
+  },
+  {
+    key: "baja",
+    label: "Se parecen a un grupo menor",
+    hint: "Su madurez está por detrás de la mediana de su plantel",
+  },
+  {
+    key: "temprano",
+    label: "Maduración temprana",
+    hint: "Adelantados respecto a los jugadores de su misma edad",
+  },
+  {
+    key: "tardio",
+    label: "Maduración tardía",
+    hint: "Atrasados respecto a los jugadores de su misma edad",
+  },
+  {
+    key: "estiron",
+    label: "En pleno estirón",
+    hint: `Creciendo ${GROWING_CM} cm/año o más: momento de revisar la carga`,
+  },
+];
+
+function matchesFilter(p: PlayerRow, key: string): boolean {
+  switch (key) {
+    case "desalineados":
+      return p.suggestion !== null;
+    case "sube":
+      return p.suggestion?.direction === "up";
+    case "baja":
+      return p.suggestion?.direction === "down";
+    case "temprano":
+      return p.timing === "early";
+    case "tardio":
+      return p.timing === "late";
+    case "estiron":
+      return (p.velocity_cm_year ?? 0) >= GROWING_CM;
+    default:
+      return true;
+  }
+}
+
 function CrecimientoContent() {
   const router = useRouter();
   const params = useSearchParams();
@@ -88,6 +153,17 @@ function CrecimientoContent() {
   const [settled, setSettled] = useState(false);
 
   const teamFilter = params.get("equipo") ?? "";
+  const situacion = params.get("situacion") ?? "";
+
+  const setSituacion = useCallback(
+    (next: string) => {
+      const qs = new URLSearchParams(Array.from(params.entries()));
+      if (next) qs.set("situacion", next);
+      else qs.delete("situacion");
+      router.replace(qs.toString() ? `?${qs.toString()}` : "?", { scroll: false });
+    },
+    [params, router],
+  );
 
   const setTeam = useCallback(
     (next: string) => {
@@ -130,9 +206,24 @@ function CrecimientoContent() {
 
   const shown = useMemo(
     () =>
-      (data?.players ?? []).filter((p) => !teamFilter || p.team === teamFilter),
-    [data, teamFilter],
+      (data?.players ?? []).filter(
+        (p) =>
+          (!teamFilter || p.team === teamFilter)
+          && matchesFilter(p, situacion),
+      ),
+    [data, teamFilter, situacion],
   );
+
+  // Counts on the chips so an empty filter is visibly empty rather than looking
+  // broken. Computed over the team-filtered set so they agree with what's shown.
+  const counts = useMemo(() => {
+    const base = (data?.players ?? []).filter(
+      (p) => !teamFilter || p.team === teamFilter,
+    );
+    return Object.fromEntries(
+      FILTERS.map((f) => [f.key, base.filter((p) => matchesFilter(p, f.key)).length]),
+    ) as Record<string, number>;
+  }, [data, teamFilter]);
 
   const byBand = useMemo(() => {
     const out = new Map<string, PlayerRow[]>();
@@ -261,6 +352,25 @@ function CrecimientoContent() {
                 </button>
               )}
             </h2>
+            <div className={styles.chips} role="group" aria-label="Filtrar jugadores">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.key || "todos"}
+                  type="button"
+                  title={f.hint}
+                  aria-pressed={situacion === f.key}
+                  disabled={counts[f.key] === 0 && f.key !== ""}
+                  className={`${styles.chip} ${
+                    situacion === f.key ? styles.chipOn : ""
+                  }`}
+                  onClick={() => setSituacion(situacion === f.key ? "" : f.key)}
+                >
+                  {f.label}
+                  <span className={styles.chipCount}>{counts[f.key] ?? 0}</span>
+                </button>
+              ))}
+            </div>
+
             <p className={styles.note}>
               <Info size={12} aria-hidden="true" />
               <span>
@@ -269,6 +379,17 @@ function CrecimientoContent() {
                 de referencia fijo: la estimación se corre con la edad, así que un
                 umbral constante mediría sobre todo cuántos años tiene el chico.
                 Con menos de {data.notes.min_timing_peers} pares no se clasifica.
+              </span>
+            </p>
+            <p className={styles.note}>
+              <Info size={12} aria-hidden="true" />
+              <span>
+                La columna <strong>Se parece a</strong> dice a qué plantel se
+                parece su madurez, no a cuál debería ir. Agrupar por madurez
+                sirve tanto para que el que va adelantado enfrente rivales
+                parejos y tenga que resolver con técnica, como para que el
+                atrasado juegue sin estar en desventaja física — cuál de las dos
+                cosas conviene es una decisión del cuerpo técnico.
               </span>
             </p>
 
@@ -295,6 +416,7 @@ function CrecimientoContent() {
                           <th className={styles.num}>Años del pico</th>
                           <th>Maduración</th>
                           <th className={styles.num}>Crecimiento</th>
+                          <th>Se parece a</th>
                           <th>Medido</th>
                         </tr>
                       </thead>
@@ -354,6 +476,23 @@ function CrecimientoContent() {
                                     </span>
                                   )}
                                 </>
+                              )}
+                            </td>
+                            <td>
+                              {p.suggestion ? (
+                                <span
+                                  className={
+                                    p.suggestion.direction === "up"
+                                      ? styles.sugUp
+                                      : styles.sugDown
+                                  }
+                                  title={`Su madurez (${p.offset_years.toFixed(2)}) está más cerca de la mediana de ${p.suggestion.team} (${p.suggestion.median_offset.toFixed(2)}) que de la de su propio plantel (${p.suggestion.own_median_offset.toFixed(2)}), por ${p.suggestion.gain_years.toFixed(2)} años`}
+                                >
+                                  {p.suggestion.direction === "up" ? "↑" : "↓"}{" "}
+                                  {p.suggestion.team}
+                                </span>
+                              ) : (
+                                <span className={styles.muted}>su plantel</span>
                               )}
                             </td>
                             <td className={styles.muted}>{p.measured_on}</td>
