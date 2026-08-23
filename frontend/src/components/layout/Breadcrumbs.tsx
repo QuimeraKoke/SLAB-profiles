@@ -34,6 +34,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   "gps-entrenamiento": "Cargar GPS",
   daily: "Daily",
   desarrollo: "Desarrollo",
+  crecimiento: "Crecimiento",
 };
 
 function isDynamicSegment(s: string): boolean {

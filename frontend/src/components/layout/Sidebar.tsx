@@ -15,6 +15,7 @@ import {
   ChevronRight,
   LogOut,
   Settings,
+  Ruler,
   Sparkles,
   Sunrise,
   TrendingUp,
@@ -212,6 +213,14 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     href: "/desarrollo",
   };
 
+  // Parallel to Desarrollo rather than nested in it: that one asks "does he play
+  // above his age group?", this one "where is he in his growth?".
+  const crecimientoItem: NavGroup = {
+    label: "Crecimiento",
+    icon: Ruler,
+    href: "/crecimiento",
+  };
+
   const navSections: Array<{ label: string | null; items: NavGroup[] }> = [
     {
       label: "Operativa",
@@ -222,6 +231,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
       items: [
         ...(reportsGroup ? [reportsGroup] : []),
         desarrolloItem,
+        crecimientoItem,
         datosGroup,
         askAiItem,
       ],

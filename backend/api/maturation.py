@@ -276,3 +276,150 @@ def band_for(offset_years: float) -> tuple[str, str]:
         if lo <= offset_years < hi:
             return key, label
     return BANDS[-1][0], BANDS[-1][1]
+
+
+# ---------- club-wide service ----------
+
+# Mirwald is invalid past 18, so the senior squad is out by construction. The
+# growth question is a YOUTH question: "is this boy still growing, and where is
+# he in his spurt?" — meaningless for a 28-year-old.
+_SENIOR_NAMES = {"Primer Equipo", "Selección Nacional"}
+
+_ANTHRO_SLUG = "pentacompartimental"
+
+
+def _reading(result_data: dict) -> tuple[float, float, float] | None:
+    """(talla, talla_sentado, peso) when all three are usable numbers."""
+    out = []
+    for key in ("talla", "talla_sentado", "peso"):
+        v = (result_data or {}).get(key)
+        if not isinstance(v, (int, float)) or isinstance(v, bool):
+            return None
+        out.append(float(v))
+    return tuple(out)          # type: ignore[return-value]
+
+
+def club_maturation(*, club_id, team_ids=None) -> dict:
+    """Maturity + growth for a club's youth players.
+
+    Two passes are unavoidable: the timing classification compares each player
+    against peers of the SAME AGE, so the whole distribution has to exist before
+    anyone can be classified. See `maturity_timing` for why a fixed threshold
+    would mostly measure age.
+    """
+    from collections import defaultdict
+
+    from exams.models import ExamResult
+
+    qs = (
+        ExamResult.objects
+        .filter(template__slug=_ANTHRO_SLUG, player__category__club_id=club_id)
+        .select_related("player", "player__category")
+        .order_by("recorded_at")
+    )
+    if team_ids:
+        qs = qs.filter(player__category_id__in=team_ids)
+
+    latest: dict = {}
+    heights: dict = defaultdict(list)
+    skipped_senior = skipped_no_dob = skipped_unusable = 0
+
+    for r in qs.iterator(chunk_size=2000):
+        p = r.player
+        if p.category is None or p.category.name in _SENIOR_NAMES:
+            skipped_senior += 1
+            continue
+        if p.date_of_birth is None:
+            skipped_no_dob += 1
+            continue
+        read = _reading(r.result_data)
+        if read is None:
+            skipped_unusable += 1
+            continue
+        talla, sentado, peso = read
+        when = r.recorded_at.date()
+        heights[p.id].append((when, talla))
+        m = maturity_offset(
+            age_years=decimal_age(p.date_of_birth, when),
+            talla=talla, talla_sentado=sentado, peso=peso,
+            female=(p.sex or "M").upper().startswith("F"),
+        )
+        # Ordered by date, so the last usable reading wins.
+        if m is not None:
+            latest[p.id] = (p, when, m)
+
+    # Pass 2: the same-age reference, then classify.
+    by_age: dict = defaultdict(list)
+    for _, _, m in latest.values():
+        by_age[int(m.age_years)].append(m.aphv_years)
+
+    rows = []
+    for pid, (p, when, m) in latest.items():
+        timing = maturity_timing(m.aphv_years, by_age[int(m.age_years)])
+        band_key, band_label = band_for(m.offset_years)
+        vel = height_velocity(heights[pid])
+        rows.append({
+            "player_id": str(pid),
+            "player_name": f"{p.first_name} {p.last_name}".strip(),
+            "team": p.category.name if p.category else None,
+            "team_id": str(p.category_id) if p.category_id else None,
+            "birth_year": p.date_of_birth.year,
+            "measured_on": when,
+            "age_years": m.age_years,
+            "offset_years": m.offset_years,
+            "aphv_years": m.aphv_years,
+            "stage": m.stage,
+            "stage_label": m.label,
+            "band": band_key,
+            "band_label": band_label,
+            "confident": m.confident,
+            "timing": timing[0] if timing else None,
+            "timing_label": TIMING_LABELS[timing[0]] if timing else None,
+            "timing_z": timing[1] if timing else None,
+            "velocity_cm_year": vel.cm_per_year if vel else None,
+            "velocity_provisional": vel.provisional if vel else None,
+            "velocity_days": vel.days if vel else None,
+        })
+
+    rows.sort(key=lambda r: (r["team"] or "", r["offset_years"]))
+    return {
+        "players": rows,
+        "bands": [{"key": k, "label": lbl} for k, lbl, _, _ in BANDS],
+        "skipped": {
+            "senior": skipped_senior,
+            "sin_fecha_nacimiento": skipped_no_dob,
+            "medicion_inutilizable": skipped_unusable,
+        },
+    }
+
+
+def band_summary(rows: list[dict]) -> list[dict]:
+    """Per team: how many players sit in each band.
+
+    `informative` is the point of the table. A team whose players all land in one
+    band tells you nothing you didn't know from their birth year — measured on
+    this club, that's every category from SUB-16 up, where everyone is past the
+    peak. SUB-13 spans all four.
+    """
+    from collections import defaultdict
+
+    per_team: dict = defaultdict(lambda: defaultdict(int))
+    still_growing: dict = defaultdict(int)
+    for r in rows:
+        per_team[r["team"]][r["band"]] += 1
+        if (r["velocity_cm_year"] or 0) >= 3.0:
+            still_growing[r["team"]] += 1
+
+    out = []
+    for team, counts in per_team.items():
+        occupied = sum(1 for v in counts.values() if v)
+        out.append({
+            "team": team,
+            "players": sum(counts.values()),
+            "counts": dict(counts),
+            "bands_occupied": occupied,
+            "informative": occupied >= 2,
+            "still_growing": still_growing[team],
+        })
+    out.sort(key=lambda t: t["team"] or "")
+    return out

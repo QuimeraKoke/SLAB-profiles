@@ -5988,3 +5988,52 @@ def player_physical_context(request, player_id: str, season: int | None = None):
     return _dev.physical_context(
         player, season=season or timezone.now().year,
     )
+
+
+@api.get("/maturation/overview")
+def maturation_overview(request, category_id: str | None = None):
+    """Maduración biológica y crecimiento de las categorías formativas.
+
+    Responde la objeción más fuerte al análisis de desarrollo: un chico que juega
+    por encima de su edad puede estar madurando antes, no siendo mejor. Y expone
+    el caso inverso, que hoy no se ve — el de maduración tardía que rinde en su
+    propia categoría y se lee como promedio.
+
+    La clasificación temprano/normal/tardío se hace SIEMPRE contra los pares de
+    la misma edad, nunca contra un umbral fijo: el APHV de Mirwald se sesga hacia
+    la edad actual (deriva medida de +1,19 años entre los 10 y los 17, contra una
+    dispersión intra-edad de 0,55), así que un umbral constante mediría sobre todo
+    la edad. Ver `api.maturation`.
+
+    Sólo formativas: la ecuación no es válida pasados los 18, y la pregunta
+    "¿sigue creciendo?" no tiene sentido para un adulto.
+    """
+    from api import maturation as _mat
+
+    membership = get_membership(request.user)
+    if membership is None:
+        raise HttpError(403, "Sin membresía de club")
+
+    team_ids = None
+    if category_id:
+        team = scope_categories(
+            Category.objects.all(), membership,
+        ).filter(pk=category_id).first()
+        if team is None:
+            raise HttpError(404, "Equipo no encontrado")
+        team_ids = [team.id]
+    elif not has_full_access(membership):
+        team_ids = list(membership.categories.values_list("pk", flat=True))
+
+    data = _mat.club_maturation(club_id=membership.club_id, team_ids=team_ids)
+    return {
+        **data,
+        "teams": _mat.band_summary(data["players"]),
+        # Surfaced so the UI can explain what the numbers can and can't say.
+        "notes": {
+            "min_timing_peers": _mat.MIN_TIMING_PEERS,
+            "valid_age": list(_mat.VALID_AGE),
+            "velocity_min_days": _mat.MIN_VELOCITY_DAYS,
+            "velocity_confident_days": _mat.CONFIDENT_VELOCITY_DAYS,
+        },
+    }

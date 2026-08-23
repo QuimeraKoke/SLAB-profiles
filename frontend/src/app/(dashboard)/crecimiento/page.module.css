@@ -1,0 +1,101 @@
+/* Mirrors desarrollo/page.module.css — the two are parallel modules and should
+   read as siblings. 24px padding is the house value (uso/page.module.css). */
+.page {
+  display: flex; flex-direction: column; gap: 22px;
+  padding: 24px; width: 100%; max-width: 1280px;
+}
+
+.header { display: flex; flex-direction: column; gap: 4px; }
+.title { font-size: 22px; font-weight: 700; color: #101828; margin: 0; }
+.subtitle { font-size: 13px; color: #667085; margin: 5px 0 0; max-width: 70ch; }
+
+.card {
+  background: #fff; border: 1px solid #e4e7ec; border-radius: 12px;
+  padding: 20px 22px; display: flex; flex-direction: column; gap: 14px;
+  box-shadow: 0 1px 2px rgba(16,24,40,.04);
+}
+.cardTitle {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 15px; font-weight: 700; color: #101828; margin: 0 0 2px;
+}
+
+.note {
+  display: flex; align-items: flex-start; gap: 6px;
+  font-size: 11.5px; color: #667085; margin: 0; line-height: 1.5;
+  max-width: 90ch;
+}
+.note svg { flex: 0 0 auto; margin-top: 2px; }
+.note strong { color: #344054; }
+
+.empty { font-size: 13px; color: #98a2b3; margin: 2px 0; }
+.error {
+  background: #fef3f2; border: 1px solid #fecdca; color: #b42318;
+  border-radius: 10px; padding: 10px 14px; font-size: 13px;
+}
+
+/* ── tables ──────────────────────────────────────────────────────────── */
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th {
+  text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .03em; color: #98a2b3; padding: 6px 14px 8px 0;
+  border-bottom: 1px solid #e4e7ec; white-space: nowrap;
+}
+.table td {
+  padding: 9px 14px 9px 0; border-bottom: 1px solid #f2f4f7; color: #475467;
+  white-space: nowrap;
+}
+.table tbody tr:last-child td { border-bottom: none; }
+.rowOn { background: #f9fafb; }
+.strong { color: #101828; font-weight: 600; }
+.muted { color: #98a2b3; }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.linkBtn {
+  border: none; background: none; padding: 0; cursor: pointer;
+  font: inherit; color: #3538cd; font-weight: 600;
+}
+.linkBtn:hover { text-decoration: underline; }
+.linkBtn[aria-pressed="true"] { color: #101828; }
+
+.clear {
+  border: 1px solid #e4e7ec; background: #f9fafb; cursor: pointer;
+  font-size: 11px; font-weight: 600; color: #475467;
+  padding: 2px 8px; border-radius: 999px;
+}
+
+.pillOk {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  background: #ecfdf3; color: #027a48; font-size: 11.5px; font-weight: 600;
+}
+
+/* Growth worth acting on gets a colour; everything else stays quiet. */
+.growing {
+  display: inline-flex; align-items: center; gap: 3px;
+  color: #b54708; font-weight: 600;
+}
+
+/* ── maturity timing ─────────────────────────────────────────────────── */
+/* Neither tail is "good" or "bad" — an early maturer isn't better and a late
+   one isn't worse, which is the whole point. Distinct hues, equal weight. */
+.early   { color: #6941c6; font-weight: 600; }
+.late    { color: #0e7090; font-weight: 600; }
+.onTime  { color: #475467; }
+
+/* ── groups ──────────────────────────────────────────────────────────── */
+.group { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.groupTitle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12.5px; font-weight: 700; color: #344054; margin: 0;
+}
+.count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: #f2f4f7; color: #475467;
+  font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .page { padding: 16px; gap: 16px; }
+  .card { padding: 16px; }
+}
