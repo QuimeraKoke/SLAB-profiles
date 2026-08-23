@@ -232,8 +232,40 @@ avisar**. Es el trabajo más tedioso y el que más errores silenciosos deja.
 | ⚠️ **20 filas de antropometría con columnas corridas** | Re-importar dos lotes desde el xlsx: SUB-11 del 2025-04-07 y SUB-14 del 2026-03-30. Edad→peso, peso→talla, talla→talla_sentado. Produce +62 cm de crecimiento en 4 meses y ya tuerce los gráficos de esos chicos. | PRD §9.2 |
 | Proyección de talla adulta (%PAH) | **Talla de los padres** — no existe en ningún template. Se mide una vez por jugador y no cambia; mejor un campo en la ficha que un examen. | PRD §9.3-B |
 | Plantel del cohorte 2015 | Los Sub 11 de 2026 son nacidos en 2015 y no existe ninguno en SLAB, así que sus 6 partidos tienen 0 fichas. | PRD §5 |
-| 10 personas COMET sin vincular | Decisión humana: vincular al equivocado atribuye minutos oficiales a otra persona. Django admin → «Vínculos jugador COMET». | — |
+| **71 personas COMET sin vincular** | **No se resuelve vinculando: se resuelve cargando planteles.** Con el piso de matcheo real, 70 de las 71 no tienen candidato — 69 llevan dorsal juvenil y el club no tiene ningún nacido en 2015 (el cohorte de Sub 11 2026). La única decidible es GUZMAN DAVID, ambigua entre dos homónimos con RUT distinto. Ver abajo qué pasa cuando los planteles lleguen. | — |
 | Calendario compartido | Decisión de producto sobre Sub 18 2026 (22 fixtures, 3 equipos). Consultado al club; puede desarmarse SUB-17. | PRD §3.1 |
+
+## Cuando lleguen los planteles juveniles que faltan
+
+Lo que pasa **solo**, sin tocar nada: la resolución de jugadores se reintenta en
+cada corrida mientras el vínculo siga vacío (`comet_sync.py`, el guard
+`link.player_id is None and match_method != MANUAL`). Así que el beat de las :45
+engancha a los jugadores nuevos y empieza a escribir sus fichas. Las filas de la
+cola se vacían sin intervención en el admin.
+
+Lo que **sí** hay que correr una vez, porque el beat usa ventana de 30 días y
+sólo cubriría los partidos recientes:
+
+```bash
+python manage.py sync_comet --club "Universidad de Chile" --days 210 --commit
+```
+
+Verificación:
+
+```sql
+-- Debe bajar de 71 hacia 0 (menos los que realmente no son del club).
+SELECT count(*) FROM exams_cometplayerlink WHERE player_id IS NULL;
+-- Y las fichas de las categorías nuevas deben aparecer.
+SELECT c.name, count(*) FROM exams_examresult r
+  JOIN exams_examtemplate t ON t.id=r.template_id AND t.slug='ficha_partido'
+  JOIN core_player p ON p.id=r.player_id
+  JOIN core_category c ON c.id=p.category_id
+ GROUP BY 1 ORDER BY 2 DESC;
+```
+
+En el admin, filtrar «candidatos en el plantel» → *candidato único* para revisar
+lo que el matcheo automático no cerró. Hoy eso da 0 filas, que es la respuesta
+correcta: no hay nada que vincular hasta que existan los jugadores.
 
 ## Estado actual (2026-08-22)
 
