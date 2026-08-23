@@ -598,6 +598,86 @@ class CometCompetitionLinkAdmin(admin.ModelAdmin):
     readonly_fields = ("created_at", "last_seen_at")
 
 
+def _comet_candidates(person_name: str, roster: list) -> list:
+    """Roster players sharing ≥2 name tokens with a COMET person name.
+
+    TWO tokens, not one. On the real queue a single shared token proposed
+    "Octavio Rivero" for RIVERO RAUL and "Emiliano Meneses" for SIMONCELLI
+    EMILIANO — a coincidence of one name, offered as a candidate, invites exactly
+    the wrong link the sync abstained to avoid. Same floor `_resolve_player` uses.
+    """
+    from exams.services.comet_sync import _name_tokens
+
+    tokens = _name_tokens(person_name or "")
+    if not tokens:
+        return []
+    scored = []
+    for p in roster:
+        hits = len(_name_tokens(f"{p.first_name} {p.last_name}") & tokens)
+        if hits >= 2:
+            scored.append((hits, p))
+    if not scored:
+        return []
+    scored.sort(key=lambda t: -t[0])
+    best = scored[0][0]
+    return [p for hits, p in scored if hits == best]
+
+
+class CometCandidateFilter(admin.SimpleListFilter):
+    """Filter the queue by whether a row is actionable at all.
+
+    The point of the queue is work, and most of it isn't workable: on this club's
+    data 70 of 71 unresolved rows have NO candidate, because those players simply
+    aren't in the SLAB roster (69 carry youth shirt numbers, and the club has no
+    2015-born at all — the Sub 11 2026 cohort). Filtering by `match_method`
+    alone hands the reviewer 71 rows of which one can be decided.
+
+    Evaluated in Python because the match is token-based, not a SQL predicate.
+    Scoped to unlinked rows so the cost stays proportional to the queue.
+    """
+
+    title = "candidatos en el plantel"
+    parameter_name = "candidatos"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("unico", "Candidato único (accionable)"),
+            ("ambiguo", "Varios candidatos (hay que elegir)"),
+            ("ninguno", "Sin candidatos (falta cargar el plantel)"),
+        )
+
+    def queryset(self, request, queryset):
+        from core.models import Player
+
+        choice = self.value()
+        if choice not in {"unico", "ambiguo", "ninguno"}:
+            return queryset
+
+        pending = list(
+            queryset.filter(player__isnull=True)
+            .select_related("integration", "integration__club")
+        )
+        if not pending:
+            return queryset.none()
+
+        club_ids = {l.integration.club_id for l in pending}
+        roster = list(
+            Player.objects.filter(category__club_id__in=club_ids)
+            .select_related("category")
+        )
+
+        keep = []
+        for link in pending:
+            n = len(_comet_candidates(link.person_name, roster))
+            if (
+                (choice == "unico" and n == 1)
+                or (choice == "ambiguo" and n > 1)
+                or (choice == "ninguno" and n == 0)
+            ):
+                keep.append(link.pk)
+        return queryset.filter(pk__in=keep)
+
+
 @admin.register(CometPlayerLink)
 class CometPlayerLinkAdmin(admin.ModelAdmin):
     """Review queue: `personId` is stable, so a manual link is permanent.
@@ -618,7 +698,12 @@ class CometPlayerLinkAdmin(admin.ModelAdmin):
         "person_name", "shirt_number", "sugerencia", "player", "match_method",
         "person_id", "last_seen_at",
     )
-    list_filter = ("match_method", "integration__club")
+    list_filter = (
+        CometCandidateFilter,
+        ("player", admin.EmptyFieldListFilter),   # "sin vincular"
+        "match_method",
+        "integration__club",
+    )
     search_fields = (
         "person_name", "person_id", "fifa_id",
         "player__first_name", "player__last_name",
@@ -657,40 +742,23 @@ class CometPlayerLinkAdmin(admin.ModelAdmin):
         flip.
         """
         from django.utils.html import format_html
-        from exams.services.comet_sync import _name_tokens
 
         if obj.player_id:
             return "—"
-        tokens = _name_tokens(obj.person_name or "")
-        if not tokens:
-            return format_html('<span style="color:#999">sin nombre</span>')
+        # Same helper the filter uses, so the column and the filter can never
+        # disagree about what counts as a candidate.
+        found = _comet_candidates(obj.person_name, self._roster(obj))
+        if not found:
+            return format_html('<span style="color:#999">sin candidatos</span>')
 
-        # At least TWO shared tokens. One is a coincidence, not a candidate:
-        # sharing only a surname turns "RIVERO RAUL" into a proposal of "Octavio
-        # Rivero", and sharing only a forename turns "SIMONCELLI EMILIANO" into
-        # "Emiliano Meneses". Offering either invites exactly the wrong link the
-        # sync abstained to avoid — the same floor `_resolve_player` uses.
-        scored = []
-        for p in self._roster(obj):
-            ptoks = _name_tokens(f"{p.first_name} {p.last_name}")
-            hits = len(ptoks & tokens)
-            if hits >= 2:
-                scored.append((hits, p))
-        if not scored:
-            return format_html(
-                '<span style="color:#999">sin candidatos</span>',
-            )
-
-        scored.sort(key=lambda t: -t[0])
-        best = scored[0][0]
-        top = [p for hits, p in scored if hits == best][:4]
+        top = found[:4]
         names = ", ".join(
             f"{p.first_name} {p.last_name} [{p.category.name if p.category else '?'}]"
             for p in top
         )
-        if len(top) > 1:
+        if len(found) > 1:
             return format_html(
                 '<span style="color:#b45309">ambiguo ({}): {}</span>',
-                len(top), names,
+                len(found), names,
             )
         return format_html('<span style="color:#047857">{}</span>', names)

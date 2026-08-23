@@ -442,3 +442,68 @@ class CallUpCohortTests(SimpleTestCase):
                 bracket_age=18, season_year=2026,
             )
         )
+
+
+class _RosterPlayer:
+    def __init__(self, first, last, category="SUB-14"):
+        self.first_name, self.last_name = first, last
+        self.category = type("C", (), {"name": category})()
+
+
+class CometCandidateTests(SimpleTestCase):
+    """Candidates offered to a human reviewing the link queue.
+
+    The two-token floor is the whole point. A first version accepted ONE shared
+    token and, on the real queue, proposed "Octavio Rivero" for RIVERO RAUL and
+    "Emiliano Meneses" for SIMONCELLI EMILIANO. Offering a coincidence as a
+    candidate invites precisely the wrong link the sync abstains to avoid — and a
+    wrong link attributes official match minutes to another person.
+    """
+
+    ROSTER = [
+        _RosterPlayer("Octavio", "Rivero", "Primer Equipo"),
+        _RosterPlayer("Emiliano", "Meneses", "SUB-12"),
+        _RosterPlayer("David", "Guzman", "SUB-14"),
+        _RosterPlayer("David", "Guzman", "SUB-18"),
+        _RosterPlayer("Diego", "Cofre", "Primer Equipo"),
+    ]
+
+    def _cands(self, name):
+        from exams.admin import _comet_candidates
+
+        return _comet_candidates(name, self.ROSTER)
+
+    def test_a_shared_surname_alone_is_not_a_candidate(self):
+        # RIVERO RAUL is not Octavio Rivero.
+        self.assertEqual(self._cands("RIVERO RAUL"), [])
+
+    def test_a_shared_forename_alone_is_not_a_candidate(self):
+        # SIMONCELLI EMILIANO is not Emiliano Meneses.
+        self.assertEqual(self._cands("SIMONCELLI EMILIANO"), [])
+
+    def test_both_names_matching_is_a_candidate(self):
+        found = self._cands("COFRE DIEGO")
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0].last_name, "Cofre")
+
+    def test_order_does_not_matter(self):
+        self.assertEqual(len(self._cands("DIEGO COFRE")), 1)
+
+    def test_genuine_namesakes_come_back_as_several(self):
+        # The one real case in this club's queue: two David Guzmán with
+        # different national IDs, which merge_duplicate_players already refused
+        # to merge. The reviewer has to choose, so both are shown.
+        self.assertEqual(len(self._cands("GUZMAN DAVID")), 2)
+
+    def test_an_unknown_person_has_no_candidates(self):
+        self.assertEqual(self._cands("QUIROGA ESTANISLAO"), [])
+
+    def test_a_blank_name_has_no_candidates(self):
+        self.assertEqual(self._cands(""), [])
+        self.assertEqual(self._cands(None), [])
+
+    def test_accents_and_case_do_not_block_a_match(self):
+        roster = [_RosterPlayer("Nicolás", "Fernández")]
+        from exams.admin import _comet_candidates
+
+        self.assertEqual(len(_comet_candidates("FERNANDEZ NICOLAS", roster)), 1)
