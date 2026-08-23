@@ -507,3 +507,43 @@ class CometCandidateTests(SimpleTestCase):
         from exams.admin import _comet_candidates
 
         self.assertEqual(len(_comet_candidates("FERNANDEZ NICOLAS", roster)), 1)
+
+
+class NoHardcodedSquadNamesTests(SimpleTestCase):
+    """No module may decide anything from a category's NAME.
+
+    Which squad is the first team is a club decision. It used to live as the
+    literal "Primer Equipo" in three modules, so renaming the category silently
+    redirected senior fixtures, flipped an ambiguous anthropometry match, and
+    stopped excluding adults from the growth analysis. It's now
+    `Category.is_senior`, editable in the admin.
+
+    This test guards the decision, not a behaviour: a name here is a bug waiting
+    for the rename.
+    """
+
+    MODULES = (
+        "exams.services.comet_sync",
+        "exams.penta_ingest",
+        "api.maturation",
+        "api.development",
+        "api.fixtures",
+    )
+
+    def test_no_squad_name_appears_in_code(self):
+        import inspect
+        import re
+        from importlib import import_module
+
+        for dotted in self.MODULES:
+            src = inspect.getsource(import_module(dotted))
+            # Strip docstrings and comments — prose may name a squad to explain
+            # itself; only executable code is forbidden from depending on one.
+            code = re.sub(r'"""[\s\S]*?"""', "", src)
+            code = re.sub(r"#[^\n]*", "", code)
+            for name in ("Primer Equipo", "Selección Nacional", "Selección Chilena"):
+                self.assertNotIn(
+                    name, code,
+                    f"{dotted} decide algo con el nombre '{name}'; usá "
+                    "Category.is_senior",
+                )

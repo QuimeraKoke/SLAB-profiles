@@ -210,7 +210,9 @@ class Command(BaseCommand):
                 continue
             ev_name = ev.category.name if ev.category else ""
             age = parse_age(ev_name)
-            code = "primera" if ev_name == "Primer Equipo" else None
+            # `is_senior`, not the name: which squad is the first team is a club
+            # decision and lives in a field the club can edit.
+            code = "primera" if (ev.category and ev.category.is_senior) else None
             if age is not None:
                 b = age_to_bracket.get(age)
                 code = b.code if b else None
@@ -370,7 +372,7 @@ class Command(BaseCommand):
             src = "meta"
             if age is None:
                 name = ev.category.name if ev.category else ""
-                if name == "Primer Equipo":
+                if ev.category and ev.category.is_senior:
                     bracket = by_code["primera"]
                     if commit:
                         ev.bracket = bracket
@@ -384,7 +386,7 @@ class Command(BaseCommand):
                 # A senior competition names no age: Primera, Copa Chile,
                 # CONMEBOL. Fall back to the club's senior bracket only when the
                 # event is actually a senior team's.
-                if comp and ev.category and ev.category.name == "Primer Equipo":
+                if comp and ev.category and ev.category.is_senior:
                     bracket = by_code["primera"]
                 else:
                     unresolved += 1

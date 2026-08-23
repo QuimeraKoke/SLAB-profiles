@@ -91,6 +91,16 @@ class Category(models.Model):
         ),
     )
 
+    is_senior = models.BooleanField(
+        default=False, db_index=True,
+        help_text=(
+            "The club's first team — the squad that enters competitions with no "
+            "age limit. Set exactly one per club. Code used to look for the name "
+            '"Primer Equipo" to answer this, which put a club decision somewhere '
+            "the club couldn't change it: renaming the category silently broke "
+            "which squad received senior fixtures."
+        ),
+    )
     cohort_year = models.PositiveIntegerField(
         null=True, blank=True, db_index=True,
         help_text=(

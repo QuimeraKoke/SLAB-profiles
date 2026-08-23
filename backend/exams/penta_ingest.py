@@ -144,7 +144,8 @@ def build_matcher(club):
     """Name → Player resolver over the club's ENTIRE roster.
 
     Deliberately not category-scoped: youth players are listed alongside the
-    first team in these reports. Ties break toward Primer Equipo.
+    first team in these reports. Ties break toward the squad flagged
+    `is_senior`.
     """
     cand = [
         (p, _tokens(f"{p.first_name} {p.last_name}"))
@@ -156,7 +157,10 @@ def build_matcher(club):
         best, best_score = None, (-1, -1)
         for p, pt in cand:
             score = sum(1 for a in et if any(_tok_match(a, b) for b in pt))
-            pe = 1 if p.category and p.category.name == "Primer Equipo" else 0
+            # Ties break toward the first team, read from the `is_senior` flag
+            # rather than the category NAME — the club owns that decision and a
+            # rename shouldn't quietly change who wins an ambiguous match.
+            pe = 1 if p.category and p.category.is_senior else 0
             if (score, pe) > best_score:
                 best_score, best = (score, pe), p
         return best if best_score[0] >= MIN_NAME_TOKEN_HITS else None

@@ -524,8 +524,11 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
     # Season-aware: the same age token means a different team each year, and
     # the declared TeamSeason is what knows which.
     by_age = _category_index(club, season=timezone.now().year)
+    # Where competitions with NO age token land (Primera, Copa Chile, CONMEBOL).
+    # Read from the `is_senior` flag, never from the name: that decision belongs
+    # to the club, and a rename used to silently redirect senior fixtures.
     default_category = by_age.get(0) or next(
-        (c for c in {p.category for p in roster if p.category} if c.name == "Primer Equipo"),
+        (c for c in {p.category for p in roster if p.category} if c.is_senior),
         None,
     )
     now = timezone.now()
