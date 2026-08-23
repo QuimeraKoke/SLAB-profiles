@@ -70,6 +70,23 @@ interface DevPayload {
   rows: DevRow[];
 }
 
+interface PhysMetric {
+  key: string;
+  label: string;
+  unit: string;
+  value: number;
+  squad_median: number | null;
+  percentile: number | null;
+  peers: number;
+}
+interface PhysContext {
+  available: boolean;
+  reason: string | null;
+  matches?: number;
+  typical_minutes?: number | null;
+  metrics: PhysMetric[];
+}
+
 interface Fixture {
   event_id: string;
   title: string;
@@ -113,6 +130,109 @@ function fmtDate(iso: string): string {
   });
 }
 
+/** Physical output vs the squad he actually played WITH, in the same matches.
+ *
+ *  The only comparison this data supports. Raw GPS across ages says nothing — a
+ *  2008-born outruns a 2014-born by construction — and cumulative metrics
+ *  measure MINUTES, not ability: one player sat at the 13th percentile for total
+ *  distance purely because he came on for 10 minutes. So the backend compares
+ *  per-minute rates against peers of comparable duration, and refuses to give a
+ *  percentile when too few such peers exist. This panel shows that refusal
+ *  instead of hiding it.
+ */
+function PhysicalPanel({
+  state,
+  season,
+}: {
+  state: PhysContext | "loading" | undefined;
+  season: number;
+}) {
+  if (state === undefined || state === "loading") {
+    return <p className={styles.empty}>Cargando contexto físico…</p>;
+  }
+  return (
+    <div className={styles.phys}>
+      <h4 className={styles.physTitle}>
+        Rendimiento físico en {season}
+        {state.matches ? (
+          <span className={styles.muted}>
+            {" "}
+            · {state.matches} partido(s) con GPS
+            {state.typical_minutes ? `, ~${state.typical_minutes}′ típicos` : ""}
+          </span>
+        ) : null}
+      </h4>
+
+      {state.metrics.length === 0 ? (
+        <p className={styles.empty}>{state.reason ?? "Sin datos."}</p>
+      ) : (
+        <>
+          <table className={styles.physTable}>
+            <thead>
+              <tr>
+                <th>Métrica</th>
+                <th className={styles.num}>Él</th>
+                <th className={styles.num}>Plantel</th>
+                <th className={styles.num}>Percentil</th>
+                <th className={styles.num}>Comparables</th>
+              </tr>
+            </thead>
+            <tbody>
+              {state.metrics.map((m) => (
+                <tr key={m.key}>
+                  <td>
+                    {m.label} <span className={styles.muted}>{m.unit}</span>
+                  </td>
+                  <td className={styles.num}>{m.value}</td>
+                  <td className={styles.num}>
+                    {m.squad_median ?? <span className={styles.muted}>—</span>}
+                  </td>
+                  <td className={styles.num}>
+                    {m.percentile === null ? (
+                      <span className={styles.muted}>—</span>
+                    ) : (
+                      <span
+                        className={
+                          m.percentile >= 60
+                            ? styles.physHigh
+                            : m.percentile <= 30
+                              ? styles.physLow
+                              : undefined
+                        }
+                      >
+                        {m.percentile}%
+                      </span>
+                    )}
+                  </td>
+                  <td className={styles.num}>{m.peers}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {!state.available && state.reason && (
+            <p className={styles.note}>
+              <Info size={12} aria-hidden="true" />
+              <span>
+                Se muestran los valores sin percentil: {state.reason} Un
+                percentil sobre pocos compañeros comparables sería ruido con
+                cara de precisión.
+              </span>
+            </p>
+          )}
+          <p className={styles.note}>
+            <Info size={12} aria-hidden="true" />
+            <span>
+              Comparado contra <strong>los mismos partidos</strong>, así rival y
+              ritmo quedan controlados, y sólo con métricas por minuto: las
+              acumuladas miden minutos jugados, no capacidad.
+            </span>
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
 function DesarrolloContent() {
   const router = useRouter();
   const params = useSearchParams();
@@ -126,6 +246,11 @@ function DesarrolloContent() {
   // callbacks, so `loading` can be DERIVED instead of set synchronously inside
   // an effect (react-hooks/set-state-in-effect).
   const [settledSeason, setSettledSeason] = useState<number | null>(null);
+  // Contexto físico bajo demanda: una llamada por jugador, sólo al abrirlo. Con
+  // 180 filas, traerlo todo por adelantado serían 180 consultas para mirar una.
+  const [openPlayer, setOpenPlayer] = useState<string | null>(null);
+  const [phys, setPhys] = useState<Record<string, PhysContext | "loading">>({});
+
 
   // The URL is the source of truth; fall back to the newest season the API
   // reports rather than to a hardcoded year, so a fresh club isn't empty.
@@ -135,6 +260,31 @@ function DesarrolloContent() {
     if (Number.isFinite(n)) return n;
     return teams?.seasons?.[0] ?? null;
   }, [seasonParam, teams]);
+
+const togglePlayer = useCallback(
+    (playerId: string) => {
+      setOpenPlayer((cur) => (cur === playerId ? null : playerId));
+      setPhys((cur) => {
+        if (cur[playerId] !== undefined) return cur;
+        api<PhysContext>(
+          `/players/${playerId}/physical-context${season ? `?season=${season}` : ""}`,
+        )
+          .then((d) => setPhys((c) => ({ ...c, [playerId]: d })))
+          .catch(() =>
+            setPhys((c) => ({
+              ...c,
+              [playerId]: {
+                available: false,
+                reason: "No se pudo cargar el contexto físico.",
+                metrics: [],
+              },
+            })),
+          );
+        return { ...cur, [playerId]: "loading" };
+      });
+    },
+    [season],
+  );
 
   const setSeason = useCallback(
     (next: number) => {
@@ -376,9 +526,22 @@ function DesarrolloContent() {
                         </tr>
                       </thead>
                       <tbody>
-                        {grouped.get(s)!.map((r) => (
-                          <tr key={`${r.player_id}-${r.season}`}>
-                            <td className={styles.strong}>{r.player_name}</td>
+                        {grouped.get(s)!.flatMap((r) => [
+                          <tr
+                            key={`${r.player_id}-${r.season}`}
+                            className={styles.clickable}
+                          >
+                            <td className={styles.strong}>
+                              <button
+                                type="button"
+                                className={styles.linkBtn}
+                                aria-expanded={openPlayer === r.player_id}
+                                onClick={() => togglePlayer(r.player_id)}
+                                title="Ver rendimiento físico contra el plantel con el que jugó"
+                              >
+                                {r.player_name}
+                              </button>
+                            </td>
                             <td>{r.birth_year ?? "—"}</td>
                             <td className={styles.muted}>{r.team ?? "—"}</td>
                             <td>{r.natural_bracket ?? "—"}</td>
@@ -400,8 +563,20 @@ function DesarrolloContent() {
                                 </span>
                               )}
                             </td>
-                          </tr>
-                        ))}
+                          </tr>,
+                          ...(openPlayer === r.player_id
+                            ? [
+                                <tr key={`${r.player_id}-phys`}>
+                                  <td colSpan={6} className={styles.physCell}>
+                                    <PhysicalPanel
+                                      state={phys[r.player_id]}
+                                      season={r.season}
+                                    />
+                                  </td>
+                                </tr>,
+                              ]
+                            : []),
+                        ])}
                       </tbody>
                     </table>
                   </div>

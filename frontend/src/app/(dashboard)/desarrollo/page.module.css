@@ -129,3 +129,33 @@
   .fixtures li { flex-wrap: wrap; gap: 6px; }
   .fxDate { min-width: 0; }
 }
+
+/* ── physical context panel ──────────────────────────────────────────── */
+.clickable td { vertical-align: middle; }
+.linkBtn {
+  border: none; background: none; padding: 0; cursor: pointer;
+  font: inherit; color: #101828; font-weight: 600; text-align: left;
+}
+.linkBtn:hover { color: #3538cd; text-decoration: underline; }
+
+.physCell { background: #f9fafb; padding: 12px 14px 12px 0 !important; }
+.phys { display: flex; flex-direction: column; gap: 8px; }
+.physTitle {
+  font-size: 12.5px; font-weight: 700; color: #344054; margin: 0;
+}
+.physTable { border-collapse: collapse; font-size: 12.5px; }
+.physTable th {
+  text-align: left; font-size: 10.5px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .03em; color: #98a2b3; padding: 4px 16px 5px 0;
+  border-bottom: 1px solid #e4e7ec; white-space: nowrap;
+}
+.physTable td {
+  padding: 5px 16px 5px 0; border-bottom: 1px solid #eaecf0; color: #475467;
+  white-space: nowrap;
+}
+.physTable tbody tr:last-child td { border-bottom: none; }
+
+/* Neither colour is a verdict — 70th percentile among the squad he plays up
+   into is good news, and 20th on a 15-minute cameo may mean nothing. */
+.physHigh { color: #027a48; font-weight: 600; }
+.physLow  { color: #b54708; font-weight: 600; }
