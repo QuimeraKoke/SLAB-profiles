@@ -600,11 +600,23 @@ class CometCompetitionLinkAdmin(admin.ModelAdmin):
 
 @admin.register(CometPlayerLink)
 class CometPlayerLinkAdmin(admin.ModelAdmin):
-    """Review queue: `personId` is stable, so a manual link is permanent."""
+    """Review queue: `personId` is stable, so a manual link is permanent.
+
+    The sync abstains whenever a name is ambiguous, because linking the wrong
+    person attributes OFFICIAL MATCH MINUTES to someone else. That's the right
+    call, but it leaves a queue — 71 rows at the time of writing, of which only
+    about 30 have any counterpart in the roster at all; the rest are players from
+    other clubs, or cohorts that don't exist in SLAB.
+
+    So the job here is confirmation, not investigation: the `sugerencia` column
+    shows the best name candidate the matcher found (including the ones it
+    refused to act on), so a reviewer reads a proposal instead of searching 340
+    players by hand.
+    """
 
     list_display = (
-        "person_name", "shirt_number", "player", "match_method",
-        "person_id", "fifa_id", "last_seen_at",
+        "person_name", "shirt_number", "sugerencia", "player", "match_method",
+        "person_id", "last_seen_at",
     )
     list_filter = ("match_method", "integration__club")
     search_fields = (
@@ -612,5 +624,73 @@ class CometPlayerLinkAdmin(admin.ModelAdmin):
         "player__first_name", "player__last_name",
     )
     list_editable = ("player",)
-    list_select_related = ("player", "integration")
+    list_select_related = ("player", "integration", "integration__club")
+    # Without this the inline picker is a <select> holding every player in the
+    # club — 340 options on each of 71 rows.
+    autocomplete_fields = ("player",)
     readonly_fields = ("created_at", "last_seen_at")
+
+    def get_queryset(self, request):
+        # Roster cached per request: the suggestion column would otherwise query
+        # once per row.
+        qs = super().get_queryset(request)
+        self._roster_cache = None
+        return qs
+
+    def _roster(self, link):
+        from core.models import Player
+
+        if getattr(self, "_roster_cache", None) is None:
+            self._roster_cache = list(
+                Player.objects
+                .filter(category__club=link.integration.club)
+                .select_related("category")
+            )
+        return self._roster_cache
+
+    @admin.display(description="Sugerencia")
+    def sugerencia(self, obj):
+        """Best name candidate, even when the matcher declined to use it.
+
+        Shows ALL candidates when there are several — that ambiguity is exactly
+        why the row is here, and hiding it would push the reviewer toward a coin
+        flip.
+        """
+        from django.utils.html import format_html
+        from exams.services.comet_sync import _name_tokens
+
+        if obj.player_id:
+            return "—"
+        tokens = _name_tokens(obj.person_name or "")
+        if not tokens:
+            return format_html('<span style="color:#999">sin nombre</span>')
+
+        # At least TWO shared tokens. One is a coincidence, not a candidate:
+        # sharing only a surname turns "RIVERO RAUL" into a proposal of "Octavio
+        # Rivero", and sharing only a forename turns "SIMONCELLI EMILIANO" into
+        # "Emiliano Meneses". Offering either invites exactly the wrong link the
+        # sync abstained to avoid — the same floor `_resolve_player` uses.
+        scored = []
+        for p in self._roster(obj):
+            ptoks = _name_tokens(f"{p.first_name} {p.last_name}")
+            hits = len(ptoks & tokens)
+            if hits >= 2:
+                scored.append((hits, p))
+        if not scored:
+            return format_html(
+                '<span style="color:#999">sin candidatos</span>',
+            )
+
+        scored.sort(key=lambda t: -t[0])
+        best = scored[0][0]
+        top = [p for hits, p in scored if hits == best][:4]
+        names = ", ".join(
+            f"{p.first_name} {p.last_name} [{p.category.name if p.category else '?'}]"
+            for p in top
+        )
+        if len(top) > 1:
+            return format_html(
+                '<span style="color:#b45309">ambiguo ({}): {}</span>',
+                len(top), names,
+            )
+        return format_html('<span style="color:#047857">{}</span>', names)
