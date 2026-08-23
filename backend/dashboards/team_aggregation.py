@@ -2789,10 +2789,18 @@ def _resolve_team_goal_progress(
 
     sources = list(widget.data_sources.all().select_related("template"))
 
-    # Build the goals queryset.
+    # Roster FIRST, because it's what the goals are scoped to. Filtering the
+    # goals by `player__category` instead would silently drop every called-up
+    # player's objectives: the rows below are framed by `_roster_query`, which
+    # INCLUDES call-ups, so a borrowed player appeared in the table with an
+    # empty `cells` dict — reading as "has no objectives" when he has them. With
+    # loans at 26% of youth appearances that's a quarter of some squads.
+    roster = list(_roster_query(category, position_id, player_ids))
+    roster_ids = {p.id for p in roster}
+
     goals_qs = (
         Goal.objects
-        .filter(player__category=category, status="active")
+        .filter(player_id__in=roster_ids, status="active")
         .select_related("template", "player")
     )
     if sources:
@@ -2802,10 +2810,7 @@ def _resolve_team_goal_progress(
     else:
         goals_qs = goals_qs.filter(template__department_id=department.id)
 
-    # Limit to the active roster (respecting position + explicit subset).
-    roster = list(_roster_query(category, position_id, player_ids))
-    roster_ids = {p.id for p in roster}
-    goals = [g for g in goals_qs if g.player_id in roster_ids]
+    goals = list(goals_qs)
 
     if not goals:
         return {

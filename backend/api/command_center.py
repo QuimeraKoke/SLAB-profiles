@@ -15,6 +15,7 @@ from typing import Any
 
 from django.utils import timezone
 
+from api.scoping import players_in_category
 from core.models import Player
 from events.models import Event
 from exams.models import ExamResult, ExamTemplate
@@ -34,8 +35,12 @@ _STATUS_LABEL = {
 
 def build_command_center(category) -> dict:
     now = timezone.now()
+    # Same reasoning as the daily report: this is an operational view of the
+    # squad the staff works with, so active call-ups belong in it. A plain
+    # `category=` filter is the COUNTING scope, not the working one.
     players = list(
-        Player.objects.filter(category=category, is_active=True)
+        players_in_category(category)
+        .filter(is_active=True)
         .select_related("position")
     )
     player_ids = [p.id for p in players]

@@ -22,6 +22,7 @@ from typing import Any
 
 from django.utils import timezone
 
+from api.scoping import players_in_category
 from core.models import DailyNote, Player
 from exams.episode_lifecycle import stage_label as _stage_label
 from exams.models import Episode
@@ -76,8 +77,15 @@ def parse_date(raw: str) -> date_cls:
 
 def build_daily_report(category, target_date: date_cls, user) -> dict:
     now = timezone.now()
+    # `players_in_category`, not a plain `category=` filter: this is the squad
+    # the staff WORKS WITH, and a called-up player trains here — his alerts, his
+    # kine plan and his notes belong in this meeting. The plain filter excludes
+    # call-ups by construction (see api.scoping), which with loans at 26% of
+    # youth appearances could silently drop a quarter of some squads from the
+    # morning meeting.
     players = list(
-        Player.objects.filter(category=category, is_active=True)
+        players_in_category(category)
+        .filter(is_active=True)
         .select_related("position")
         .order_by("last_name", "first_name")
     )
@@ -261,10 +269,14 @@ def serialize_kine(e) -> dict:
 
 
 def _kine_entries(category, target_date) -> list[dict]:
+    # `players_in_category` as a subquery, not `player__category`: a called-up
+    # player trains with this squad, so his kine plan and his notes belong in
+    # this meeting. Same reasoning for every note query below — the plain filter
+    # is the COUNTING scope (api.scoping), and this view is operational.
     from core.models import KineDailyEntry
     entries = (
         KineDailyEntry.objects
-        .filter(date=target_date, player__category=category)
+        .filter(date=target_date, player__in=players_in_category(category))
         .select_related("player")
         .order_by("player__last_name", "player__first_name")
     )
@@ -499,12 +511,12 @@ def _last_daily(category, pids, target_date) -> dict | None:
 
     note_dates = set(
         DailyNote.objects.filter(
-            player__category=category, kind=DailyNote.KIND_PAUTA, date__lt=target_date,
+            player__in=players_in_category(category), kind=DailyNote.KIND_PAUTA, date__lt=target_date,
         ).values_list("date", flat=True)
     )
     kine_dates = set(
         KineDailyEntry.objects.filter(
-            player__category=category, date__lt=target_date,
+            player__in=players_in_category(category), date__lt=target_date,
         ).values_list("date", flat=True)
     )
     dates = note_dates | kine_dates
@@ -514,10 +526,10 @@ def _last_daily(category, pids, target_date) -> dict | None:
     return {
         "date": d.isoformat(),
         "notes": DailyNote.objects.filter(
-            player__category=category, kind=DailyNote.KIND_PAUTA, date=d,
+            player__in=players_in_category(category), kind=DailyNote.KIND_PAUTA, date=d,
         ).count(),
         "kine": KineDailyEntry.objects.filter(
-            player__category=category, date=d,
+            player__in=players_in_category(category), date=d,
         ).count(),
         "wellness_responded": len(_responded_on(category, pids, d)),
         "wellness_expected": len(pids),
@@ -528,7 +540,7 @@ def _notes(category, target_date, user) -> tuple[dict, list]:
     """Meeting notes for the date: ({player_id: [note, ...]}, flat list)."""
     notes = list(
         DailyNote.objects.filter(
-            player__category=category, date=target_date, kind=DailyNote.KIND_PAUTA,
+            player__in=players_in_category(category), date=target_date, kind=DailyNote.KIND_PAUTA,
         )
         .select_related("player", "department", "created_by")
         .order_by("created_at")
@@ -549,7 +561,7 @@ def plans_by_player(category, target_date, per_player: int = 3, user=None) -> di
     can offer delete on one's own entries."""
     plans = list(
         DailyNote.objects.filter(
-            player__category=category, kind=DailyNote.KIND_PLAN, date__lte=target_date,
+            player__in=players_in_category(category), kind=DailyNote.KIND_PLAN, date__lte=target_date,
         )
         .select_related("player", "department", "created_by")
         .order_by("-date", "-created_at")
