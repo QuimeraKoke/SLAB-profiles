@@ -202,3 +202,77 @@ def height_velocity(
         from_talla=h0,
         to_talla=h1,
     )
+
+
+# ---------- maturity timing (bio-banding) ----------
+
+# Mirwald's estimate is biased toward the child's CURRENT age — the regression
+# includes age on both sides, so APHV drifts upward as the sample ages. Measured
+# on this club: the median APHV moves +1.19 years between ages 10 and 17, while
+# the spread WITHIN a single age is only ~0.55. The bias is more than double the
+# signal.
+#
+# The consequence is not subtle: an APHV of 14.0 is EARLY for a 17-year-old here
+# (median 14.46) and LATE for a 14-year-old (median 13.38). The same number means
+# opposite things, so a literature threshold like "APHV < 13.0 = early maturer"
+# would mostly measure how old the boy is.
+#
+# Hence: always classify against peers of the SAME age, never against a constant.
+TIMING_Z = 1.0            # standard deviations from the age-group median
+MIN_TIMING_PEERS = 8      # below this the reference distribution is noise
+
+TIMING_LABELS = {
+    "early": "Maduración temprana",
+    "on_time": "Maduración normal",
+    "late": "Maduración tardía",
+}
+
+
+def maturity_timing(
+    aphv: float, peer_aphvs: list[float],
+) -> tuple[str, float] | None:
+    """(classification, z) for one player against same-age peers, or None.
+
+    A LOW APHV means he reaches peak growth younger — an early maturer.
+    Returns None when the reference group is too small to define a spread.
+    """
+    peers = [v for v in peer_aphvs if v is not None]
+    if len(peers) < MIN_TIMING_PEERS:
+        return None
+    n = len(peers)
+    mean = sum(peers) / n
+    var = sum((v - mean) ** 2 for v in peers) / n
+    sd = var ** 0.5
+    if sd <= 0:
+        return None
+    z = (aphv - mean) / sd
+    if z <= -TIMING_Z:
+        return "early", round(z, 2)
+    if z >= TIMING_Z:
+        return "late", round(z, 2)
+    return "on_time", round(z, 2)
+
+
+# Bands for grouping by maturity instead of birth year — the point of
+# bio-banding. Offset is years from PHV, so these are training-relevant stages
+# rather than arbitrary slices.
+#
+# NOTE: the textbook method bands by PERCENTAGE OF PREDICTED ADULT HEIGHT
+# (85–90%, 90–95%…), which needs Khamis-Roche and therefore parental stature.
+# That isn't recorded anywhere in this system, so offset bands are the honest
+# substitute — they answer "who is at the same point in their growth?" without
+# pretending to predict adult height.
+BANDS: list[tuple[str, str, float, float]] = [
+    ("pre_lejano", "Lejos del pico (< −1 año)", float("-inf"), -1.0),
+    ("pre_cercano", "Acercándose al pico (−1 a 0)", -1.0, 0.0),
+    ("post_cercano", "Recién pasado el pico (0 a +1)", 0.0, 1.0),
+    ("post_lejano", "Pasado el pico (> +1 año)", 1.0, float("inf")),
+]
+
+
+def band_for(offset_years: float) -> tuple[str, str]:
+    """(key, label) of the maturity band an offset falls in."""
+    for key, label, lo, hi in BANDS:
+        if lo <= offset_years < hi:
+            return key, label
+    return BANDS[-1][0], BANDS[-1][1]

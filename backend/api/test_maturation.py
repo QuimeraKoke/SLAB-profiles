@@ -12,7 +12,8 @@ from django.test import SimpleTestCase
 
 from api.maturation import (
     CONFIDENT_OFFSET, MAX_PLAUSIBLE_VELOCITY, MIN_VELOCITY_DAYS, VALID_AGE,
-    decimal_age, height_velocity, maturity_offset, plausible_measurement,
+    decimal_age, height_velocity, maturity_offset, maturity_timing,
+    plausible_measurement,
 )
 
 
@@ -203,3 +204,80 @@ class HeightVelocityTests(SimpleTestCase):
 
     def test_the_interval_floor_is_at_least_a_season(self):
         self.assertGreaterEqual(MIN_VELOCITY_DAYS, 150)
+
+
+class MaturityTimingTests(SimpleTestCase):
+    """Early / on-time / late, classified against same-age peers only.
+
+    Mirwald's APHV is biased toward the child's current age. Measured on this
+    club: the median APHV drifts +1.19 years between ages 10 and 17 while the
+    spread within one age is ~0.55 — the bias is more than double the signal. So
+    an APHV of 14.0 is EARLY for a 17-year-old (median 14.46) and LATE for a
+    14-year-old (median 13.38). Any fixed threshold would mostly measure age.
+    """
+
+    # A realistic same-age reference: 14-year-olds, median ≈ 13.4.
+    PEERS = [12.9, 13.1, 13.2, 13.3, 13.4, 13.4, 13.5, 13.6, 13.8, 14.0]
+
+    def test_a_low_aphv_is_an_early_maturer(self):
+        out = maturity_timing(12.2, self.PEERS)
+        self.assertIsNotNone(out)
+        self.assertEqual(out[0], "early")
+        self.assertLess(out[1], -1.0)
+
+    def test_a_high_aphv_is_a_late_maturer(self):
+        self.assertEqual(maturity_timing(14.8, self.PEERS)[0], "late")
+
+    def test_the_middle_is_on_time(self):
+        self.assertEqual(maturity_timing(13.4, self.PEERS)[0], "on_time")
+
+    def test_the_same_value_flips_meaning_with_the_reference(self):
+        # The whole reason this takes a peer list instead of a constant. 14.0 is
+        # LATE among 14-year-olds and EARLY among 17-year-olds.
+        younger = [12.9, 13.1, 13.2, 13.3, 13.4, 13.4, 13.5, 13.6, 13.8, 14.0]
+        older = [13.9, 14.1, 14.3, 14.4, 14.5, 14.5, 14.6, 14.7, 14.9, 15.1]
+        self.assertEqual(maturity_timing(14.0, younger)[0], "late")
+        self.assertEqual(maturity_timing(14.0, older)[0], "early")
+
+    def test_too_few_peers_abstains(self):
+        self.assertIsNone(maturity_timing(13.0, self.PEERS[:3]))
+        self.assertIsNone(maturity_timing(13.0, []))
+
+    def test_a_reference_with_no_spread_abstains(self):
+        # Identical peers give sd=0; a z-score would divide by zero and any
+        # answer would be invented.
+        self.assertIsNone(maturity_timing(13.0, [13.4] * 10))
+
+    def test_nones_in_the_reference_are_ignored(self):
+        self.assertIsNotNone(maturity_timing(13.4, self.PEERS + [None] * 3))
+
+    def test_every_classification_has_a_label(self):
+        from api.maturation import TIMING_LABELS
+
+        for value in (12.0, 13.4, 15.0):
+            key, _ = maturity_timing(value, self.PEERS)
+            self.assertIn(key, TIMING_LABELS)
+
+
+class BandTests(SimpleTestCase):
+    def test_the_bands_cover_the_line_without_gaps(self):
+        from api.maturation import band_for
+
+        for offset in (-9.0, -1.0001, -1.0, -0.5, 0.0, 0.5, 1.0, 9.0):
+            key, label = band_for(offset)
+            self.assertTrue(key and label, offset)
+
+    def test_the_boundaries_land_where_documented(self):
+        from api.maturation import band_for
+
+        self.assertEqual(band_for(-2.0)[0], "pre_lejano")
+        self.assertEqual(band_for(-0.5)[0], "pre_cercano")
+        self.assertEqual(band_for(0.0)[0], "post_cercano")
+        self.assertEqual(band_for(0.99)[0], "post_cercano")
+        self.assertEqual(band_for(1.0)[0], "post_lejano")
+
+    def test_bands_are_ordered_and_contiguous(self):
+        from api.maturation import BANDS
+
+        for (_, _, _, hi), (_, _, lo2, _) in zip(BANDS, BANDS[1:]):
+            self.assertEqual(hi, lo2, "las bandas deben ser contiguas")

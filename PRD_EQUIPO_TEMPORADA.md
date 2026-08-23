@@ -501,7 +501,44 @@ predice talla adulta como Khamis-Roche, pero sí responde "¿está en pleno
 estirón?", que es lo que cambia la carga de entrenamiento. Necesita **≥12 meses
 de recorrido**: hoy lo cumplen ~45 jugadores, y crece solo con el tiempo.
 
-### 9.4 Por qué esto importa junto con §7 y §8
+### 9.4 Alcance real, medido (2026-08-22)
+
+Implementado y validado. Dos hallazgos que **acotan** la función, y conviene
+tenerlos antes de diseñar pantalla:
+
+**El APHV de Mirwald se sesga hacia la edad actual.** La mediana deriva
+**+1,19 años** entre los 10 y los 17, mientras la dispersión dentro de una misma
+edad es de ~0,55. La deriva es más del doble de la señal. Consecuencia concreta:
+un APHV de 14,0 es TEMPRANO para un chico de 17 (mediana 14,46) y TARDÍO para uno
+de 14 (mediana 13,38) — el mismo número significa lo opuesto. **Clasificar contra
+un umbral de literatura mediría sobre todo la edad.** Por eso `maturity_timing`
+exige la lista de pares de la misma edad y se abstiene con menos de 8.
+
+**El bio-banding sólo informa de SUB-12 a SUB-15.** Cruzando banda de madurez
+contra categoría cronológica:
+
+| Equipo | Lejos del pico | Acercándose | Recién pasado | Pasado | Bandas |
+|---|---|---|---|---|---|
+| SUB-11 | 29 | 0 | 0 | 0 | 1 |
+| SUB-12 | 17 | 8 | 0 | 0 | 2 |
+| **SUB-13** | 3 | 12 | 14 | 3 | **4** |
+| SUB-14 | 0 | 2 | 9 | 21 | 3 |
+| SUB-15 | 0 | 1 | 2 | 29 | 3 |
+| SUB-16 y más | 0 | 0 | 0 | todos | 1 |
+
+SUB-13 tiene 32 chicos de la misma edad en las cuatro bandas: ahí el bio-banding
+cambia una decisión. De SUB-16 hacia arriba están todos pasados del pico y las
+bandas colapsan a una, así que una pantalla que ofrezca bandas para SUB-18
+promete algo que el dato no tiene.
+
+Validaciones que dan confianza en la implementación: el offset mediano por
+cohorte sale perfectamente monótono (SUB-11 −2,40 → SUB-18 +3,01), la edad
+estimada del pico cae en **13,4–14,5 años** —el rango publicado para varones,
+sobre una ecuación ajustada en otra población— y la clasificación reparte 32
+tempranos / 143 normales / 36 tardíos, o sea 15 % y 17 % en las colas, que es lo
+que produce un umbral de ±1 desviación.
+
+### 9.5 Por qué esto importa junto con §7 y §8
 
 El bio-banding responde la objeción más fuerte al análisis de cohorte de §7: un
 chico que juega por encima de su edad puede estar simplemente **madurando antes**,
