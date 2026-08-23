@@ -23,6 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from django.utils import timezone
+
 # Mirwald et al. (2002), "An assessment of maturity from anthropometric
 # measurements", Med Sci Sports Exerc 34(4):689-694. Sex-specific regressions
 # predicting YEARS FROM peak height velocity.
@@ -283,7 +285,16 @@ def band_for(offset_years: float) -> tuple[str, str]:
 # Mirwald is invalid past 18, so the senior squad is out by construction. The
 # growth question is a YOUTH question: "is this boy still growing, and where is
 # he in his spurt?" — meaningless for a 28-year-old.
-_SENIOR_NAMES = {"Primer Equipo", "Selección Nacional"}
+# Filtered by AGE, never by team name. Two reasons, both concrete:
+#
+#   * Names get renamed — the cohort rename is a planned migration — and a
+#     name-based exclusion would silently stop excluding anything.
+#   * The question is about age regardless of squad. An 18-year-old promoted to
+#     the first team is still growing: the previous name check dropped 3 such
+#     players, who are exactly the interesting cases.
+#
+# A team is not the unit here. A birth year is.
+MAX_GROWTH_AGE = 19
 
 _ANTHRO_SLUG = "pentacompartimental"
 
@@ -311,9 +322,18 @@ def club_maturation(*, club_id, team_ids=None) -> dict:
 
     from exams.models import ExamResult
 
+    # Cheap birth-year prefilter so the adults never leave the database. The
+    # per-row `maturity_offset` still applies Mirwald's exact age window; this
+    # only keeps the query from dragging 500+ senior assessments through Python
+    # to abstain on them.
+    oldest_birth_year = timezone.now().year - MAX_GROWTH_AGE
     qs = (
         ExamResult.objects
-        .filter(template__slug=_ANTHRO_SLUG, player__category__club_id=club_id)
+        .filter(
+            template__slug=_ANTHRO_SLUG,
+            player__category__club_id=club_id,
+            player__date_of_birth__year__gte=oldest_birth_year,
+        )
         .select_related("player", "player__category")
         .order_by("recorded_at")
     )
@@ -322,13 +342,10 @@ def club_maturation(*, club_id, team_ids=None) -> dict:
 
     latest: dict = {}
     heights: dict = defaultdict(list)
-    skipped_senior = skipped_no_dob = skipped_unusable = 0
+    skipped_no_dob = skipped_unusable = 0
 
     for r in qs.iterator(chunk_size=2000):
         p = r.player
-        if p.category is None or p.category.name in _SENIOR_NAMES:
-            skipped_senior += 1
-            continue
         if p.date_of_birth is None:
             skipped_no_dob += 1
             continue
@@ -361,8 +378,12 @@ def club_maturation(*, club_id, team_ids=None) -> dict:
         rows.append({
             "player_id": str(pid),
             "player_name": f"{p.first_name} {p.last_name}".strip(),
+            # El equipo se identifica por AÑO DE NACIMIENTO, que es inmutable;
+            # la etiqueta es una función de (cohorte, año) y se deriva para
+            # mostrar. `team` viaja sólo como referencia del plantel actual.
             "team": p.category.name if p.category else None,
             "team_id": str(p.category_id) if p.category_id else None,
+            "cohort_year": p.date_of_birth.year,
             "birth_year": p.date_of_birth.year,
             "female": (p.sex or "M").upper().startswith("F"),
             "measured_on": when,
@@ -393,7 +414,6 @@ def club_maturation(*, club_id, team_ids=None) -> dict:
         "profiles": sorted(profiles.values(), key=lambda p: p["median_offset"]),
         "bands": [{"key": k, "label": lbl} for k, lbl, _, _ in BANDS],
         "skipped": {
-            "senior": skipped_senior,
             "sin_fecha_nacimiento": skipped_no_dob,
             "medicion_inutilizable": skipped_unusable,
         },

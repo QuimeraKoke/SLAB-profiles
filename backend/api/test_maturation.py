@@ -370,3 +370,54 @@ class TeamProfileTests(SimpleTestCase):
             for i in range(9)
         ]
         self.assertEqual(team_profiles(rows)["A"]["median_offset"], 4.0)
+
+
+class GrowthAgeScopeTests(SimpleTestCase):
+    """Who the growth analysis is about: an age, never a team name.
+
+    The first version excluded squads by NAME (`{"Primer Equipo", "Selección
+    Nacional"}`), which was wrong twice over. Names get renamed — the cohort
+    rename is a planned migration — so the exclusion would have silently stopped
+    excluding. And it asked the wrong question: an 18-year-old promoted to the
+    first team is still growing. Two real players (Jhon Cortés and Andrés
+    Bolaño, both 18, still growing 1.5 and 1.1 cm/year) were being dropped
+    because of the squad they had been promoted into.
+    """
+
+    def test_the_ceiling_covers_mirwalds_window(self):
+        # The prefilter must not cut below what the equation itself accepts,
+        # or players would vanish before `maturity_offset` could judge them.
+        from api.maturation import MAX_GROWTH_AGE, VALID_AGE
+
+        self.assertGreaterEqual(MAX_GROWTH_AGE, VALID_AGE[1])
+
+    def test_no_team_name_is_hardcoded_anywhere(self):
+        # The regression guard: a squad name in this module is a bug waiting for
+        # the rename.
+        import inspect
+
+        from api import maturation
+
+        src = inspect.getsource(maturation)
+        for name in ("Primer Equipo", "Selección Nacional", "SUB-20", "SUB-18"):
+            self.assertNotIn(
+                f'"{name}"', src,
+                f"'{name}' hardcodeado: la fase 2 lo renombra y esto se rompe en silencio",
+            )
+
+    def test_an_eighteen_year_old_is_still_a_growth_question(self):
+        # Cortés's real numbers.
+        from api.maturation import maturity_offset
+
+        m = maturity_offset(
+            age_years=18.0, talla=176.0, talla_sentado=92.0, peso=72.0,
+        )
+        self.assertIsNotNone(m)
+        self.assertEqual(m.stage, "post_phv")
+
+    def test_an_adult_is_not(self):
+        from api.maturation import maturity_offset
+
+        self.assertIsNone(maturity_offset(
+            age_years=28.0, talla=180.0, talla_sentado=94.0, peso=78.0,
+        ))
