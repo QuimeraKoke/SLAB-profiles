@@ -102,6 +102,32 @@ debe poder corregir el resto sin pelear con una fórmula.
 `Category.external_config` **ya contiene `season`** (el binding de API-Football), lo que
 confirma que la temporada quiere vivir en esta tabla y no en la categoría.
 
+#### La temporada es el AÑO CALENDARIO, no la fase del torneo
+
+Decidido y verificado el 2026-08-23. Las competencias traen la fase en el nombre
+—`Sub 20 Nacional Clausura 2026`— y en algún momento pareció que `(equipo, año)`
+era demasiado grueso, que un equipo podría estar en Apertura y no en Clausura.
+Los datos dicen que el año es la unidad correcta:
+
+| Mes | Partidos juveniles |
+|---|---|
+| 2025-11 | 21 |
+| **2025-12** | **0** |
+| **2026-01** | **0** |
+| 2026-02 | 6 |
+
+**El receso cae exactamente en el cambio de año**, así que el año calendario
+contiene un ciclo competitivo completo y agrupar por año nunca parte una
+temporada al medio. Apertura y Clausura son fases *dentro* del año.
+
+Modelarlas como temporadas separadas agregaría una dimensión que el club no usa
+para planificar, y forzaría a decidir a qué "temporada" pertenece un jugador que
+juega las dos — una pregunta inventada por el modelo, no por el fútbol.
+
+La fase no se pierde: `CometCompetitionLink` sigue mapeando competencia por
+competencia y queda en `Event.metadata.competition_phase` si alguna vez hace falta
+filtrar por ella. Lo que no existe es un equipo distinto por fase.
+
 ### 2.4 `PlayerTeamMembership` — la pertenencia con fecha
 
 La pieza que hace posible todo el análisis de desarrollo. Sin ella, un traspaso borra
