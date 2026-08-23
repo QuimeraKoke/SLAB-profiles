@@ -64,9 +64,19 @@ interface PlayerRow {
   velocity_days: number | null;
   female: boolean;
   suggestion: Suggestion | null;
+  cohort_year: number;
+  cohort_label: string;
+}
+interface Cohort {
+  cohort_year: number;
+  label: string;
+  players: number;
 }
 interface Payload {
   players: PlayerRow[];
+  season: number;
+  seasons: number[];
+  cohorts: Cohort[];
   bands: Band[];
   teams: TeamRow[];
   skipped: Record<string, number>;
@@ -154,6 +164,19 @@ function CrecimientoContent() {
 
   const teamFilter = params.get("equipo") ?? "";
   const situacion = params.get("situacion") ?? "";
+  // Sin `?temporada=` el backend usa el año en curso, que es lo que se quiere ver
+  // por defecto; el selector sólo hace explícito lo que ya estaba pasando.
+  const seasonParam = params.get("temporada") ?? "";
+
+  const setParam = useCallback(
+    (key: string, next: string) => {
+      const qs = new URLSearchParams(Array.from(params.entries()));
+      if (next) qs.set(key, next);
+      else qs.delete(key);
+      router.replace(qs.toString() ? `?${qs.toString()}` : "?", { scroll: false });
+    },
+    [params, router],
+  );
 
   const setSituacion = useCallback(
     (next: string) => {
@@ -175,9 +198,16 @@ function CrecimientoContent() {
     [params, router],
   );
 
+  const cohortParam = params.get("cohorte") ?? "";
+
   useEffect(() => {
     let cancelled = false;
-    api<Payload>("/maturation/overview")
+    const qs = new URLSearchParams();
+    if (seasonParam) qs.set("season", seasonParam);
+    if (cohortParam) qs.set("cohort", cohortParam);
+    api<Payload>(
+      `/maturation/overview${qs.toString() ? `?${qs.toString()}` : ""}`,
+    )
       .then((d) => {
         if (!cancelled) {
           setData(d);
@@ -197,7 +227,7 @@ function CrecimientoContent() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [seasonParam, cohortParam]);
 
   const teams = data?.teams ?? [];
   // Memoised because `?? []` allocates a fresh array every render, which would
@@ -242,7 +272,68 @@ function CrecimientoContent() {
             antes o después que sus pares de la misma edad.
           </p>
         </div>
+        {data && data.seasons.length > 0 && (
+          <div className={styles.tabs} role="tablist" aria-label="Temporada">
+            {data.seasons.map((y) => (
+              <button
+                key={y}
+                role="tab"
+                type="button"
+                aria-selected={y === data.season}
+                className={`${styles.tab} ${y === data.season ? styles.tabOn : ""}`}
+                onClick={() => setParam("temporada", String(y))}
+              >
+                {y}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
+
+      {data && data.cohorts.length > 0 && (
+        <section className={styles.card}>
+          <h2 className={styles.cardTitle}>Equipo</h2>
+          <p className={styles.note}>
+            <Info size={12} aria-hidden="true" />
+            <span>
+              Un equipo es un <strong>año de nacimiento</strong>, que no cambia.
+              La categoría en que compite sí — se deriva del año, así que los de
+              2013 son <strong>Sub 12 en 2025</strong> y{" "}
+              <strong>Sub 13 en 2026</strong>. Por eso el selector es por
+              cohorte y no por etiqueta.
+            </span>
+          </p>
+          <div className={styles.chips} role="group" aria-label="Cohorte">
+            <button
+              type="button"
+              aria-pressed={cohortParam === ""}
+              className={`${styles.chip} ${cohortParam === "" ? styles.chipOn : ""}`}
+              onClick={() => setParam("cohorte", "")}
+            >
+              Todos
+              <span className={styles.chipCount}>
+                {data.cohorts.reduce((n, c) => n + c.players, 0)}
+              </span>
+            </button>
+            {data.cohorts.map((c) => (
+              <button
+                key={c.cohort_year}
+                type="button"
+                title={`Nacidos en ${c.cohort_year} · en ${data.season} compiten en ${c.label}`}
+                aria-pressed={cohortParam === String(c.cohort_year)}
+                className={`${styles.chip} ${
+                  cohortParam === String(c.cohort_year) ? styles.chipOn : ""
+                }`}
+                onClick={() => setParam("cohorte", String(c.cohort_year))}
+              >
+                {c.cohort_year}
+                <span className={styles.chipLabel}>{c.label}</span>
+                <span className={styles.chipCount}>{c.players}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
 
       {error && (
         <div className={styles.error} role="alert">
@@ -411,7 +502,8 @@ function CrecimientoContent() {
                       <thead>
                         <tr>
                           <th>Jugador</th>
-                          <th>Equipo</th>
+                          <th>Cohorte</th>
+                          <th>Plantel</th>
                           <th className={styles.num}>Edad</th>
                           <th className={styles.num}>Años del pico</th>
                           <th>Maduración</th>
@@ -424,6 +516,12 @@ function CrecimientoContent() {
                         {rows.map((p) => (
                           <tr key={p.player_id}>
                             <td className={styles.strong}>{p.player_name}</td>
+                            <td>
+                              {p.cohort_year}
+                              <span className={styles.derived}>
+                                {p.cohort_label}
+                              </span>
+                            </td>
                             <td className={styles.muted}>{p.team}</td>
                             <td className={styles.num}>
                               {p.age_years.toFixed(1)}

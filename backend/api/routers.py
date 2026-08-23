@@ -6002,7 +6002,10 @@ def player_physical_context(request, player_id: str, season: int | None = None):
 
 
 @api.get("/maturation/overview")
-def maturation_overview(request, category_id: str | None = None):
+def maturation_overview(
+    request, category_id: str | None = None, cohort: int | None = None,
+    season: int | None = None,
+):
     """Maduración biológica y crecimiento de las categorías formativas.
 
     Responde la objeción más fuerte al análisis de desarrollo: un chico que juega
@@ -6036,7 +6039,14 @@ def maturation_overview(request, category_id: str | None = None):
     elif not has_full_access(membership):
         team_ids = list(membership.categories.values_list("pk", flat=True))
 
-    data = _mat.club_maturation(club_id=membership.club_id, team_ids=team_ids)
+    data = _mat.club_maturation(
+        club_id=membership.club_id, team_ids=team_ids, season=season,
+    )
+    # El cohorte filtra DESPUÉS de calcular, no antes: la clasificación
+    # temprano/tardío compara contra pares de la misma edad de todo el club, así
+    # que restringir la consulta cambiaría la referencia y con ella el resultado.
+    if cohort is not None:
+        data["players"] = [p for p in data["players"] if p["cohort_year"] == cohort]
     return {
         **data,
         "teams": _mat.band_summary(data["players"]),

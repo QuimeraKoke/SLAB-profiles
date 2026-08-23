@@ -310,8 +310,28 @@ def _reading(result_data: dict) -> tuple[float, float, float] | None:
     return tuple(out)          # type: ignore[return-value]
 
 
-def club_maturation(*, club_id, team_ids=None) -> dict:
-    """Maturity + growth for a club's youth players.
+def cohort_label(cohort_year: int, season: int, ladder: list) -> str:
+    """`(cohorte, año)` → la categoría en que compite. Derivada, nunca leída.
+
+    This is the whole point of the cohort model: the 2013s are the 2013s in every
+    season, and their label is a FUNCTION of the year. Asking for "Sub 13 today"
+    is asking for those born 13 years ago — invertible, so the label never has to
+    be stored and can never go stale. This club's stored labels are a frozen 2025
+    snapshot precisely because they were stored.
+    """
+    age = season - cohort_year
+    for b in ladder:
+        if b.age is not None and b.age >= age:
+            return b.name
+    return ladder[-1].name if ladder else f"Sub {age}"
+
+
+def club_maturation(*, club_id, team_ids=None, season: int | None = None) -> dict:
+    """Maturity + growth for a club's youth players, as of the end of `season`.
+
+    `season` defaults to the current year. It caps the measurements considered so
+    the view is "where was this cohort at the end of that year" — you cannot know
+    a boy's future growth, so a past season must not be told with later data.
 
     Two passes are unavoidable: the timing classification compares each player
     against peers of the SAME AGE, so the whole distribution has to exist before
@@ -326,13 +346,18 @@ def club_maturation(*, club_id, team_ids=None) -> dict:
     # per-row `maturity_offset` still applies Mirwald's exact age window; this
     # only keeps the query from dragging 500+ senior assessments through Python
     # to abstain on them.
-    oldest_birth_year = timezone.now().year - MAX_GROWTH_AGE
+    season = season or timezone.now().year
+    # Age relative to the SEASON, not to today: a 2013-born was 12 in 2025 and is
+    # 13 now, and the 2025 view has to judge him as the 12-year-old he was.
+    oldest_birth_year = season - MAX_GROWTH_AGE
     qs = (
         ExamResult.objects
         .filter(
             template__slug=_ANTHRO_SLUG,
             player__category__club_id=club_id,
             player__date_of_birth__year__gte=oldest_birth_year,
+            # Nothing after the selected season — you can't know future growth.
+            recorded_at__year__lte=season,
         )
         .select_related("player", "player__category")
         .order_by("recorded_at")
@@ -370,6 +395,9 @@ def club_maturation(*, club_id, team_ids=None) -> dict:
     for _, _, m in latest.values():
         by_age[int(m.age_years)].append(m.aphv_years)
 
+    from core.models import Bracket
+    ladder = sorted(Bracket.objects.all(), key=lambda b: b.order)
+
     rows = []
     for pid, (p, when, m) in latest.items():
         timing = maturity_timing(m.aphv_years, by_age[int(m.age_years)])
@@ -384,6 +412,8 @@ def club_maturation(*, club_id, team_ids=None) -> dict:
             "team": p.category.name if p.category else None,
             "team_id": str(p.category_id) if p.category_id else None,
             "cohort_year": p.date_of_birth.year,
+            # La etiqueta que le corresponde ESA temporada, derivada del cohorte.
+            "cohort_label": cohort_label(p.date_of_birth.year, season, ladder),
             "birth_year": p.date_of_birth.year,
             "female": (p.sex or "M").upper().startswith("F"),
             "measured_on": when,
@@ -408,9 +438,34 @@ def club_maturation(*, club_id, team_ids=None) -> dict:
     for r in rows:
         r["suggestion"] = suggest_team(r, profiles)
 
-    rows.sort(key=lambda r: (r["team"] or "", r["offset_years"]))
+    # Cohorte antes que etiqueta: es la identidad durable del equipo.
+    rows.sort(key=lambda r: (-r["cohort_year"], r["offset_years"]))
+
+    # Temporadas con antropometría, para poblar el selector sin adivinar. No se
+    # limita a `season` porque el selector tiene que ofrecer las otras.
+    seasons = sorted(
+        {
+            d.year
+            for d in ExamResult.objects
+            .filter(template__slug=_ANTHRO_SLUG, player__category__club_id=club_id)
+            .values_list("recorded_at", flat=True)
+        },
+        reverse=True,
+    )
+    cohorts = sorted({r["cohort_year"] for r in rows}, reverse=True)
+
     return {
         "players": rows,
+        "season": season,
+        "seasons": seasons,
+        "cohorts": [
+            {
+                "cohort_year": c,
+                "label": cohort_label(c, season, ladder),
+                "players": sum(1 for r in rows if r["cohort_year"] == c),
+            }
+            for c in cohorts
+        ],
         "profiles": sorted(profiles.values(), key=lambda p: p["median_offset"]),
         "bands": [{"key": k, "label": lbl} for k, lbl, _, _ in BANDS],
         "skipped": {
