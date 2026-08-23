@@ -4756,12 +4756,17 @@ def _serialize_goal(goal: Goal) -> dict:
 
 
 def _scoped_goals(membership):
+    """Goals for every player this user may access — call-ups included.
+
+    Same reasoning as `_scoped_alerts`: the player predicate comes from
+    `scope_players` so it can't drift from the access rule. The DEPARTMENT filter
+    stays, because that's a different axis — which discipline's objectives you
+    may read, not which players.
+    """
     qs = Goal.objects.select_related("template", "player__category")
     if membership is None:
         return qs
-    qs = qs.filter(player__category__club=membership.club)
-    if not membership.all_categories:
-        qs = qs.filter(player__category__in=membership.categories.all())
+    qs = qs.filter(player__in=scope_players(Player.objects.all(), membership))
     if not membership.all_departments:
         qs = qs.filter(template__department__in=membership.departments.all())
     return qs
@@ -4915,13 +4920,19 @@ def delete_goal(request, goal_id: UUID):
 
 
 def _scoped_alerts(membership):
+    """Alerts for every player this user may access — call-ups included.
+
+    Delegates the player predicate to `scope_players` instead of repeating a
+    `player__category__in` filter. That repetition was narrower than the real
+    access rule: `list_player_alerts` (which uses `scope_players`) would serve a
+    called-up player's alerts on his profile while this list silently omitted
+    them, so the alert existed, was reachable, and was never seen where anyone
+    looks for it. For a safety signal that's the worst place to disagree.
+    """
     qs = Alert.objects.select_related("player__category")
     if membership is None:
         return qs
-    qs = qs.filter(player__category__club=membership.club)
-    if not membership.all_categories:
-        qs = qs.filter(player__category__in=membership.categories.all())
-    return qs
+    return qs.filter(player__in=scope_players(Player.objects.all(), membership))
 
 
 @api.get("/players/{player_id}/alerts", response=list[AlertOut])
