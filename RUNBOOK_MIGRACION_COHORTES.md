@@ -214,6 +214,84 @@ el club.
 Se repite cada temporada en Sub 18 y Sub 20 (los brackets de los huecos), así que
 es permanente pero de volumen chico.
 
+## Fase 3c — Re-apuntar los partidos COMET ✅ HECHA en local (2026-08-24)
+
+**El hallazgo más grave de toda la migración, y no estaba en el PRD.** De los
+**215 partidos juveniles COMET de 2026, cero** estaban archivados en el equipo
+correcto. Todos corridos exactamente un escalón hacia abajo.
+
+Causa: `_resolve_category` leía el token "Sub NN" del nombre de la competencia y
+lo emparejaba con la categoría SLAB de los mismos dígitos. Los nombres de los
+equipos son la foto congelada de 2025, así que el emparejamiento por nombre
+archiva mal por definición. El calendario de `SUB-12` mostraba los partidos que
+jugaron los chicos de `SUB-11`.
+
+Cómo se comprobó, sin circularidad — qué años de nacimiento aparecen realmente
+en cada competencia según las nóminas de COMET:
+
+| Competencia 2026 | Nacidos que juegan | SLAB lo llamaba |
+|---|---|---|
+| Sub 12 | **2014** (239 de 239) | `SUB-11` |
+| Sub 13 | **2013** (191 de 191) | `SUB-12` |
+| Sub 14 | 2012 dominante | `SUB-13` |
+| Sub 15 | 2011 | `SUB-14` |
+| Sub 16 | 2010 | `SUB-15` |
+| Sub 18 | 2009 + 2008 | `SUB-16` y `SUB-18` |
+
+⚠️ **El arreglo de `_category_index` no sana lo ya sincronizado.**
+`_competition_link` sólo re-resuelve un link cuya categoría sigue en NULL, así
+que un `CometCompetitionLink` archivado por el camino viejo se queda con su
+categoría equivocada para siempre y cada partido nuevo la hereda. De ahí que
+haga falta un comando y no baste con re-sincronizar.
+
+```bash
+python manage.py repoint_comet_events --club "Universidad de Chile"            # dry run
+python manage.py repoint_comet_events --club "Universidad de Chile" --commit
+```
+
+Resultado en local: **183 eventos re-apuntados, 16 competencias re-vinculadas**
+(154 movidos de equipo + 29 desprendidos), 43 senior intactos, 62 ya correctos.
+
+Lo que **no** toca, a propósito:
+
+- **Primer Equipo.** Las competencias senior (Primera, Copa Chile, CONMEBOL) no
+  llevan token de edad y se resuelven por `is_senior`, que nunca tuvo el
+  corrimiento. El equipo senior es atemporal: no tiene cohorte y nada de esta
+  aritmética le aplica.
+- **Links que resolvió una persona** (`auto_resolved=False`) o que están
+  aparcados (`ignored=True`).
+- **`Event.bracket`.** Ya estaba bien: sale del nombre oficial de la competencia,
+  no del nombre del equipo.
+
+**Huérfanos.** Los 29 partidos de "Sub 11" 2026 se **desprenden**
+(`category=None`), no se borran. Esa competencia es de la serie 2015, plantel que
+SLAB no tiene cargado — y la prueba es que 17 ya se jugaron sin una sola nómina,
+mientras todos los demás escalones sí las tienen. Desprenderlos es lo que evita
+que inflen el calendario de `SUB-11` con partidos que sus chicos nunca jugaron.
+Si algún día entra el plantel 2015, se re-corre el comando y se enganchan.
+
+La temporada se lee **por evento**, no por link: el mapeo cohorte→bracket es
+específico del año, así que un partido de 2025 y uno de 2026 del mismo equipo
+resuelven por índices distintos.
+
+### Verificación de fase 3c
+
+```bash
+# antes: 0 coherentes / 122 cohorte distinta / 93 sin nómina  (de 215)
+# ahora: 101 coherentes / 23 cohorte distinta / 62 sin nómina (de 186)
+```
+
+Los 62 sin nómina son todos de fecha futura: COMET no publicó la alineación
+todavía. Los 23 que quedan son **la ambigüedad 2008/2009 en Sub 18**, y no es un
+bug: las dos cohortes compiten en el mismo bracket y `_category_index` se queda
+con la más vieja. Resolverlo requiere que el club diga **si la serie 2008 y la
+2009 son un plantel o dos** — ver fase 3b.
+
+⚠️ **Orden en prod:** este comando depende de que `TeamSeason` ya esté poblada,
+así que va **después** de `backfill_cohorts --commit` (fase 1), nunca antes. Sin
+`TeamSeason` el índice cae al parseo del nombre y el comando reproduce el mismo
+error que viene a arreglar.
+
 ## Fase 4 — Auditar los filtros por categoría
 
 Pendiente. 146 sitios `category=`, 67 `category__`, 51 `player__category`. Cada
