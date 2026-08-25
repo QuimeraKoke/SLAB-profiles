@@ -171,6 +171,22 @@ class Bracket(models.Model):
     def __str__(self) -> str:
         return self.name
 
+    @property
+    def is_senior(self) -> bool:
+        """A senior competition — Primera, Copa. No nominal age, no cohort maths.
+
+        Deliberately NOT a stored flag: `age is None` already IS the signal, and
+        a second column could contradict it. This property exists so callers say
+        what they mean instead of open-coding `age is None` (or worse
+        `code == "primera"`, which is a hardcoded name and was here before).
+        """
+        return self.age is None
+
+    @classmethod
+    def senior(cls):
+        """The senior rung. Top of the ladder, so `order` decides if several."""
+        return cls.objects.filter(age__isnull=True).order_by("-order").first()
+
 
 class TeamSeason(models.Model):
     """Which competition a team entered in a given season.

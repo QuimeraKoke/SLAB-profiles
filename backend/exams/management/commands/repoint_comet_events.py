@@ -2,32 +2,35 @@
 
 Why this exists
 ---------------
-`Event.category` for COMET matches was resolved by reading the "Sub NN" token
-out of the competition name and matching it to the SLAB category with the same
-digits. That is wrong by exactly one rung for this club's youth teams, because
-the team NAMES are a frozen 2025 snapshot: the squad still called `SUB-11` is
-the 2014 cohort, and in 2026 the 2014 cohort competes in **Sub 12**.
+`Event.category` for COMET matches used to be resolved by reading the "Sub NN"
+token out of the competition name and matching it to the SLAB category with the
+same digits. That is wrong by exactly one rung for this club's youth teams,
+because the team NAMES are a frozen 2025 snapshot: the squad still called
+`SUB-11` is the 2014 cohort, and in 2026 the 2014 cohort competes in **Sub 12**.
 
 Measured on Universidad de Chile, 2026: of 215 synced youth matches, **zero**
 were filed under the right team. Every played match sat one rung too low —
 `SUB-12`'s calendar showed the matches `SUB-11`'s kids played (2014-born, 239
 of 239 appearances in the Sub 12 competition).
 
-The sync itself was fixed when `_category_index` learned to read `TeamSeason`
-first. This command exists because that fix cannot heal the existing rows:
-`_competition_link` only re-resolves a link whose category is still NULL, so a
-`CometCompetitionLink` filed by the old name-matching path keeps its wrong
-category forever and every match inherits it.
+This is a ONE-OFF repair of rows written before `CometCompetitionLink` stored
+the bracket instead of the team. New syncs cannot reproduce the fault: the team
+is now computed per season by `resolve_link_category` and never cached, so
+correcting a `TeamSeason` re-points every match with no command at all. Keep
+this around for the historical rows and for clubs migrating late.
 
 What it does NOT touch
 ---------------------
-* **Senior competitions.** Primera, Copa Chile and CONMEBOL carry no age token
-  and resolve through the `is_senior` flag, which was always right. The senior
-  team is atemporal — it has no cohort and none of this arithmetic applies.
-* **Links a human resolved** (`auto_resolved=False`) or parked
-  (`ignored=True`). A person's decision outranks this command.
+* **Senior competitions.** Primera, Copa Chile and CONMEBOL carry no age token,
+  so their bracket is the senior rung and they resolve through `is_senior` —
+  which never had the off-by-one. The senior team is atemporal: it has no cohort
+  and none of this arithmetic applies to it.
+* **Competitions parked by a human** (`ignored=True`).
 * **`Event.bracket`.** Already correct: it comes from the federation's own
   competition label, not from the team's name.
+
+A human's `category_override` is not "untouched" so much as *obeyed*: resolution
+returns it, so events move TO the pinned team rather than away from it.
 
 Orphans
 -------
@@ -40,9 +43,8 @@ club loads the 2015 squad later they attach by re-running this. Detaching is
 what stops them from padding `SUB-11`'s calendar with matches its kids never
 played.
 
-Season is read per EVENT, not per link. The cohort→bracket mapping is
-season-specific, so a 2025 match and a 2026 match of the same team resolve
-through different indexes.
+Season is read per EVENT. The cohort→bracket mapping is season-specific, so a
+2025 match and a 2026 match of the same team resolve through different indexes.
 
     python manage.py repoint_comet_events                    # dry run
     python manage.py repoint_comet_events --commit
@@ -58,14 +60,7 @@ from django.db import transaction
 from core.models import Club
 from events.models import Event, EventParticipant
 from exams.models import CometCompetitionLink, CometIntegration
-from exams.services.comet_sync import _category_from_names, _category_index
-
-
-def _senior_default(club):
-    """The team senior competitions belong to, via the flag — never the name."""
-    from core.models import Category
-
-    return Category.objects.filter(club=club, is_senior=True).first()
+from exams.services.comet_sync import _season_index_cache, resolve_link_category
 
 
 class Command(BaseCommand):
@@ -103,19 +98,11 @@ class Command(BaseCommand):
         club = integ.club
         self._say(self.style.MIGRATE_HEADING(f"\n=== {club.name} ==="))
 
-        senior = _senior_default(club)
-        indexes: dict[int, dict] = {}
-
-        def index_for(year: int) -> dict:
-            if year not in indexes:
-                indexes[year] = _category_index(club, season=year)
-            return indexes[year]
-
-        # Competition id → link, for joining events by metadata.
+        index_for = _season_index_cache(club)
         links = {
             l.competition_id: l
             for l in CometCompetitionLink.objects.filter(
-                integration=integ).select_related("category")
+                integration=integ).select_related("bracket", "category_override")
         }
 
         events = Event.objects.filter(
@@ -128,31 +115,26 @@ class Command(BaseCommand):
         stats = Counter()
 
         for ev in events:
-            meta = ev.metadata or {}
-            comp_id = meta.get("competition_id")
+            comp_id = (ev.metadata or {}).get("competition_id")
             link = links.get(int(comp_id)) if comp_id is not None else None
 
-            # A human's call, or a parked competition: hands off.
-            if link is not None and (link.ignored or not link.auto_resolved):
-                stats["respetado"] += 1
+            if link is None:
+                # No link row: nothing to resolve through. Report, never guess.
+                stats["sin competencia"] += 1
                 continue
-
-            name = meta.get("competition") or (link.competition_name if link else "") or ""
-            parent = meta.get("competition_phase") or (link.parent_name if link else "") or ""
-            age = _category_from_names(name, parent)
-
-            if age is None:
-                # Senior: no age token. Always was right, leave it.
-                stats["senior"] += 1
+            if link.ignored:
+                stats["aparcada"] += 1
                 continue
 
             year = ev.starts_at.year
-            target = index_for(year).get(age)
+            target = resolve_link_category(
+                link, club, season=year, by_age=index_for(year),
+            )
+            label = link.competition_name or str(link.competition_id)
 
             if target is None:
-                # No squad declared in that bracket that season.
                 if ev.category_id is not None:
-                    moves[(ev.category.name, "— (sin plantel)", name, year)].append(ev)
+                    moves[(ev.category.name, "— (sin plantel)", label, year)].append(ev)
                     stats["huérfano"] += 1
                 else:
                     stats["ya suelto"] += 1
@@ -162,16 +144,20 @@ class Command(BaseCommand):
                 stats["ya correcto"] += 1
                 continue
 
-            moves[(ev.category.name if ev.category else "—", target.name, name, year)].append(ev)
+            src = ev.category.name if ev.category else "—"
+            moves[(src, target.name, label, year)].append(ev)
             stats["re-apuntado"] += 1
 
-        self._report(moves, stats, senior)
+        self._report(moves, stats, club)
 
         if commit and moves:
-            self._apply(moves, integ, club, index_for)
+            self._apply(moves, club, index_for, links)
 
     # ------------------------------------------------------------------
-    def _report(self, moves, stats, senior):
+    def _report(self, moves, stats, club):
+        from core.models import Category
+
+        senior = Category.objects.filter(club=club, is_senior=True).first()
         if senior:
             self._say(f"equipo senior (atemporal, intacto): {senior.name}")
 
@@ -195,64 +181,20 @@ class Command(BaseCommand):
         ))
 
     # ------------------------------------------------------------------
-    def _apply(self, moves, integ, club, index_for):
+    def _apply(self, moves, club, index_for, links):
+        touched = 0
         with transaction.atomic():
-            touched = 0
-            for (_src, _dst, _comp, _year), evs in moves.items():
+            for _key, evs in moves.items():
                 for ev in evs:
-                    meta = ev.metadata or {}
-                    age = _category_from_names(
-                        meta.get("competition") or "", meta.get("competition_phase") or "",
+                    comp_id = (ev.metadata or {}).get("competition_id")
+                    link = links.get(int(comp_id)) if comp_id is not None else None
+                    if link is None:
+                        continue
+                    year = ev.starts_at.year
+                    ev.category = resolve_link_category(
+                        link, club, season=year, by_age=index_for(year),
                     )
-                    target = index_for(ev.starts_at.year).get(age) if age is not None else None
-                    ev.category = target
                     ev.save(update_fields=["category", "updated_at"])
                     touched += 1
 
-            # Refresh the cached links too, or the next sync re-files new matches
-            # under the old category. Season comes from the competition's own
-            # label when it carries one — that is what makes a 2025 link resolve
-            # through the 2025 index.
-            relinked = 0
-            for link in CometCompetitionLink.objects.filter(
-                integration=integ, ignored=False, auto_resolved=True,
-            ):
-                age = _category_from_names(link.competition_name or "", link.parent_name or "")
-                if age is None:
-                    continue
-                year = _season_from_label(link.competition_name, link.parent_name)
-                if year is None:
-                    year = _dominant_season(link, club)
-                if year is None:
-                    continue
-                target = index_for(year).get(age)
-                if link.category_id != (target.id if target else None):
-                    link.category = target
-                    link.save(update_fields=["category"])
-                    relinked += 1
-
-        self._say(self.style.SUCCESS(
-            f"\nOK: {touched} eventos re-apuntados, {relinked} competencias re-vinculadas."
-        ))
-
-
-def _season_from_label(*labels) -> int | None:
-    """`Sub 15 Nacional Apertura 2026` → 2026. None when the label carries none."""
-    import re
-
-    for text in labels:
-        m = re.search(r"\b(20\d{2})\b", text or "")
-        if m:
-            return int(m.group(1))
-    return None
-
-
-def _dominant_season(link, club) -> int | None:
-    """Fallback: the season most of this competition's matches were played in."""
-    years = Counter(
-        e.starts_at.year
-        for e in Event.objects.filter(
-            club=club, metadata__competition_id=link.competition_id,
-        ).only("starts_at")
-    )
-    return years.most_common(1)[0][0] if years else None
+        self._say(self.style.SUCCESS(f"\nOK: {touched} eventos re-apuntados."))

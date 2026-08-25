@@ -1509,11 +1509,32 @@ class CometIntegration(models.Model):
 
 
 class CometCompetitionLink(models.Model):
-    """Maps a COMET competition to a SLAB Category.
+    """Maps a COMET competition to the BRACKET it is played in.
 
-    Auto-created (and auto-resolved when the name carries a "Sub NN" token) on
-    every sync, so it doubles as the review queue: a competition with no
-    category is REPORTED and its matches skipped, never guessed at.
+    Note what it does NOT store: which team plays it. That was the original
+    design and it was wrong in a way worth spelling out, because the same
+    mistake is easy to make again.
+
+    "Which team plays this competition" is not a fact about the competition — it
+    is a JOIN, `bracket ⋈ TeamSeason(season)`. It changes every January, for
+    every team, without anything about the competition changing. Storing the
+    join result meant that correcting either side left the stored answer stale,
+    with nothing raising a hand. Measured on Universidad de Chile 2026: all 215
+    synced youth matches sat one rung too low, and fixing the resolver healed
+    none of them — the cached rows kept the wrong answer, so a one-off repair
+    command (`repoint_comet_events`) had to exist.
+
+    The bracket, by contrast, IS a fact about the competition: the federation
+    publishes it and it never changes. Store the fact, compute the join at read
+    time, and the whole class of staleness cannot happen — see
+    `resolve_link_category`.
+
+    `category_override` is the escape hatch, and only that. Some brackets hold
+    more than one of a club's teams (Sub 18 2026 has three, because the ANFP
+    ladder has no Sub 17), so the join genuinely cannot decide. A human pins it
+    here and the override always wins. Non-null IS the mark of a human decision,
+    which is why the old `auto_resolved` flag is gone: there is no longer any
+    machine-written value for it to distinguish.
 
     Resolution has to consider `parent_name` too — for cup and CONMEBOL ties the
     competition `name` is only the phase ("Semifinales", "GRUPO D") and the real
@@ -1528,18 +1549,25 @@ class CometCompetitionLink(models.Model):
     competition_id = models.BigIntegerField(help_text="ID de la competencia en COMET.")
     competition_name = models.CharField(max_length=200, blank=True)
     parent_name = models.CharField(max_length=200, blank=True)
-    category = models.ForeignKey(
+    bracket = models.ForeignKey(
+        "core.Bracket", null=True, blank=True, on_delete=models.PROTECT,
+        related_name="comet_competition_links",
+        help_text=(
+            "Categoría de competencia de la federación. Vacío = sin resolver: "
+            "los partidos se omiten y la competencia queda en la cola de revisión."
+        ),
+    )
+    category_override = models.ForeignKey(
         "core.Category", null=True, blank=True, on_delete=models.SET_NULL,
         related_name="comet_competition_links",
-        help_text="Vacío = sin resolver: los partidos de esta competencia se omiten.",
+        help_text=(
+            "Sólo para excepciones: fija el equipo a mano cuando el bracket "
+            "tiene más de uno del club. Vacío = se calcula por temporada."
+        ),
     )
     ignored = models.BooleanField(
         default=False,
         help_text="Marcar para omitir esta competencia sin que aparezca como pendiente.",
-    )
-    auto_resolved = models.BooleanField(
-        default=False,
-        help_text="La categoría la dedujo la sincronización (no un humano).",
     )
     last_seen_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -1555,7 +1583,14 @@ class CometCompetitionLink(models.Model):
         ]
 
     def __str__(self) -> str:
-        target = self.category or ("ignorada" if self.ignored else "SIN RESOLVER")
+        if self.ignored:
+            target = "ignorada"
+        elif self.category_override_id:
+            target = f"{self.category_override} (fijada a mano)"
+        elif self.bracket_id:
+            target = str(self.bracket)
+        else:
+            target = "SIN RESOLVER"
         return f"{self.competition_name or self.competition_id} → {target}"
 
 

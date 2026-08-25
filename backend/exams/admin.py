@@ -585,17 +585,44 @@ class CometIntegrationAdmin(admin.ModelAdmin):
 
 @admin.register(CometCompetitionLink)
 class CometCompetitionLinkAdmin(admin.ModelAdmin):
-    """Review queue: a competition with no category has its matches skipped."""
+    """Review queue: a competition with no bracket has its matches skipped.
+
+    The editable columns are `bracket` (the federation's fact) and
+    `category_override` (the exception). `equipo` is computed and read-only on
+    purpose — showing what the join currently produces is what makes an override
+    a decision instead of a guess: you can see that Sub 18 resolves to the 2008
+    squad before deciding to pin it to the 2009 one.
+    """
 
     list_display = (
-        "competition_name", "parent_name", "category", "auto_resolved",
-        "ignored", "competition_id", "last_seen_at",
+        "competition_name", "parent_name", "bracket", "equipo",
+        "category_override", "ignored", "competition_id", "last_seen_at",
     )
-    list_filter = ("ignored", "auto_resolved", "category", "integration__club")
+    list_filter = ("ignored", "bracket", "integration__club")
     search_fields = ("competition_name", "parent_name", "competition_id")
-    list_editable = ("category", "ignored")
-    list_select_related = ("category", "integration")
+    list_editable = ("bracket", "category_override", "ignored")
+    list_select_related = ("bracket", "category_override", "integration")
+    autocomplete_fields = ("category_override",)
     readonly_fields = ("created_at", "last_seen_at")
+
+    @admin.display(description="Equipo (calculado)")
+    def equipo(self, obj):
+        """The team this resolves to for the current season, or why it doesn't."""
+        from django.utils import timezone
+
+        from exams.services.comet_sync import resolve_link_category
+
+        if obj.ignored:
+            return "—"
+        season = timezone.now().year
+        team = resolve_link_category(
+            obj, obj.integration.club, season=season,
+        )
+        if team is None:
+            return "SIN RESOLVER" if obj.bracket_id is None else f"sin equipo en {season}"
+        if obj.category_override_id:
+            return f"{team} (fijado)"
+        return f"{team} ({season})"
 
 
 def _comet_candidates(person_name: str, roster: list) -> list:

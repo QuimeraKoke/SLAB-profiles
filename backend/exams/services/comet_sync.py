@@ -85,13 +85,17 @@ def _competition_link(
     integration, club, comp: dict, by_age, default_category, report,
     *, dry_run: bool, now,
 ):
-    """The `CometCompetitionLink` for a competition, resolving it if it's unset.
+    """The `CometCompetitionLink` for a competition, resolving its BRACKET if unset.
 
     NOT `get_or_create`: that writes even on a dry run, and it used to persist
     the row with a NULL category (the in-memory resolution was never saved),
     which then poisoned every later run because a pre-existing row skipped
     resolution entirely. Shared by the played-match and fixture loops so that
     subtlety lives in exactly one place.
+
+    What it resolves is the bracket and nothing else. The team is computed per
+    season by `resolve_link_category`, so there is no cached answer here that a
+    later correction could fail to reach.
     """
     link = CometCompetitionLink.objects.filter(
         integration=integration, competition_id=comp.get("id"),
@@ -103,26 +107,82 @@ def _competition_link(
             parent_name=comp.get("parentName") or "",
         )
         report["competitions_new"] += 1
-    # Retry resolution whenever it's still unset — a row created before a
-    # category existed must be able to resolve later. `ignored` is how a human
-    # says "leave this alone".
-    if link.category_id is None and not link.ignored:
-        cat, auto = _resolve_category(club, comp, by_age, default_category)
-        link.category, link.auto_resolved = cat, auto
+    # Retry whenever it's still unset — a row created before the brackets were
+    # seeded must be able to resolve later. `ignored` is how a human says
+    # "leave this alone".
+    if link.bracket_id is None and not link.ignored:
+        link.bracket = _bracket_from_names(
+            comp.get("name") or "", comp.get("parentName") or "",
+        )
     link.last_seen_at = now
     if not dry_run:
         link.save()
     return link
 
 
-def _resolve_category(club, comp: dict, roster_by_age: dict[int, Any], default_category):
-    """(category, auto) for a COMET competition dict."""
-    age = _category_from_names(comp.get("name") or "", comp.get("parentName") or "")
-    if age is not None:
-        cat = roster_by_age.get(age)
-        return (cat, True) if cat else (None, False)
-    # No age token → a senior competition (Primera, Copa Chile, CONMEBOL…).
-    return (default_category, True) if default_category else (None, False)
+def _bracket_from_names(*names: str):
+    """The federation's bracket for a competition, from its own name.
+
+    A fact about the competition, which is why it is safe to store. The old
+    resolver went straight from this age to a TEAM and cached that instead —
+    see `CometCompetitionLink`'s docstring for what that cost.
+    """
+    from core.models import Bracket
+
+    age = _category_from_names(*names)
+    if age is None:
+        # No age token → senior (Primera, Copa Chile, CONMEBOL…).
+        return Bracket.senior()
+    rungs = sorted(
+        (b for b in Bracket.objects.all() if b.age is not None), key=lambda b: b.age,
+    )
+    # First rung that admits the age: the ANFP ladder has no Sub 17, so a
+    # "Sub 17" competition is played in Sub 18.
+    return next((b for b in rungs if b.age >= age), Bracket.senior())
+
+
+def _season_index_cache(club):
+    """`year → {bracket_age: Category}`, memoised.
+
+    Resolution is per match now (a December fixture belongs to that December's
+    season, not to whatever year the sync happens to run in), so without this
+    every match would re-query `TeamSeason`.
+    """
+    cache: dict[int, dict] = {}
+
+    def get(year: int) -> dict:
+        if year not in cache:
+            cache[year] = _category_index(club, season=year)
+        return cache[year]
+
+    return get
+
+
+def resolve_link_category(link, club, *, season: int, by_age=None, senior_team=None):
+    """Which of the club's teams plays this competition, in `season`.
+
+    COMPUTED, never stored — that is the whole point of the redesign. The team
+    is `bracket ⋈ TeamSeason(season)`, so it changes every January while nothing
+    about the competition does. Because it is derived, correcting a `TeamSeason`
+    row instantly re-points every match of that competition, with no repair
+    command and no window where the two disagree.
+
+    A human's `category_override` wins, and has to: some brackets hold more than
+    one of a club's teams — Sub 18 2026 has three, because the ladder has no
+    Sub 17 — so the join cannot decide and should not pretend to.
+    """
+    if link.category_override_id:
+        return link.category_override
+    if link.bracket_id is None:
+        return None
+    if link.bracket.is_senior:
+        if senior_team is not None:
+            return senior_team
+        from core.models import Category
+
+        return Category.objects.filter(club=club, is_senior=True).first()
+    index = by_age if by_age is not None else _category_index(club, season=season)
+    return index.get(link.bracket.age)
 
 
 def _category_index(club, season: int | None = None) -> dict[int, Any]:
@@ -523,7 +583,8 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
     roster = list(Player.objects.filter(category__club=club).select_related("category"))
     # Season-aware: the same age token means a different team each year, and
     # the declared TeamSeason is what knows which.
-    by_age = _category_index(club, season=timezone.now().year)
+    index_for = _season_index_cache(club)
+    by_age = index_for(timezone.now().year)
     # Where competitions with NO age token land (Primera, Copa Chile, CONMEBOL).
     # Read from the `is_senior` flag, never from the name: that decision belongs
     # to the club, and a rename used to silently redirect senior fixtures.
@@ -560,7 +621,11 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
 
             if link.ignored:
                 continue
-            if link.category is None:
+            category = resolve_link_category(
+                link, club, season=kickoff.year,
+                by_age=index_for(kickoff.year), senior_team=default_category,
+            )
+            if category is None:
                 report["skipped_unmapped_competition"] += 1
                 label = comp.get("parentName") or comp.get("name")
                 if label and label not in report["unmapped_competitions"]:
@@ -569,7 +634,7 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
 
             try:
                 got = _ingest_match(
-                    client, integration, template, match, kickoff, link.category,
+                    client, integration, template, match, kickoff, category,
                     roster, report, dry_run=dry_run, now=now,
                     # The bracket, not the SLAB label: this club's youth
                     # categories are a stale cohort snapshot (its "SUB-11" holds
@@ -591,6 +656,7 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
         try:
             sync_future_fixtures(
                 client, integration, report, by_age=by_age,
+                index_for=index_for,
                 default_category=default_category,
                 # Same department the played-match path uses: Event.department is
                 # NOT NULL, and the ficha template's is the only one this
@@ -765,7 +831,7 @@ def _ingest_match(
 
 def sync_future_fixtures(
     client, integration, report, *, by_age, default_category, department,
-    dry_run: bool, now,
+    dry_run: bool, now, index_for=None,
 ) -> None:
     """Scheduled matches → Events, so the calendar has something to plan against.
 
@@ -780,11 +846,9 @@ def sync_future_fixtures(
     it. Without `bracket` on the Event there is no way to answer "is this ours?"
     for those.
     """
-    from core.models import Bracket
-
     club = integration.club
-    brackets = {b.age: b for b in Bracket.objects.all() if b.age is not None}
-    senior = Bracket.objects.filter(code="primera").first()
+    if index_for is None:
+        index_for = _season_index_cache(club)
 
     for match in client.future_matches(utc_offset=integration.utc_offset):
         ts = match.get("dateTimeUTC")
@@ -799,7 +863,11 @@ def sync_future_fixtures(
         )
         if link.ignored:
             continue
-        if link.category is None:
+        category = resolve_link_category(
+            link, club, season=kickoff.year,
+            by_age=index_for(kickoff.year), senior_team=default_category,
+        )
+        if category is None:
             report["fixtures_unmapped"] += 1
             continue
 
@@ -807,16 +875,13 @@ def sync_future_fixtures(
         if side is None:
             continue
 
-        age = _category_from_names(comp.get("name") or "", comp.get("parentName") or "")
-        bracket = brackets.get(age) if age is not None else senior
-        if bracket is None and age is not None:
-            # A competition naming an age the federation doesn't run (there is no
-            # Sub 17): fall to the first rung that admits it, same as everywhere.
-            bracket = next(
-                (b for a, b in sorted(brackets.items()) if a >= age), senior,
-            )
+        # The link already carries it, resolved once by `_bracket_from_names`
+        # (which handles the ladder gaps — there is no Sub 17). Re-deriving it
+        # here from the name was a second copy of that rule, and it reached for
+        # `code="primera"`, a hardcoded name.
+        bracket = link.bracket
 
-        event = _find_event(club, link.category, kickoff, match.get("id"))
+        event = _find_event(club, category, kickoff, match.get("id"))
         if event is None and not integration.create_missing_events:
             report["fixtures_no_event"] += 1
             continue
@@ -832,7 +897,7 @@ def sync_future_fixtures(
         with transaction.atomic():
             if event is None:
                 Event.objects.create(
-                    club=club, category=link.category,
+                    club=club, category=category,
                     department=department, bracket=bracket,
                     event_type=Event.TYPE_MATCH, scope=Event.SCOPE_CATEGORY,
                     title=f"{home} vs {away}", starts_at=kickoff,

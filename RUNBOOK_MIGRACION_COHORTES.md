@@ -292,6 +292,67 @@ así que va **después** de `backfill_cohorts --commit` (fase 1), nunca antes. S
 `TeamSeason` el índice cae al parseo del nombre y el comando reproduce el mismo
 error que viene a arreglar.
 
+## Fase 3d — Competencia → bracket ✅ HECHA en local (2026-08-25)
+
+El arreglo de fondo de la fase 3c. Esa reparó 183 filas; esta hace que la falla
+**no pueda volver a ocurrir**.
+
+`CometCompetitionLink.category` guardaba *"qué equipo juega esta competencia"*,
+que no es un hecho de la competencia sino un **cruce**: `bracket ⋈
+TeamSeason(temporada)`. Su lado izquierdo no cambia nunca; el derecho cambia cada
+enero. Guardar el resultado del cruce es lo que hizo que corregir
+`_category_index` no sanara ni una fila.
+
+Lo que se guarda ahora es el hecho:
+
+| Columna | Antes | Ahora |
+|---|---|---|
+| `bracket` | no existía | **el hecho** de la federación, resuelto del nombre |
+| `category` → `category_override` | cache automática **y** override humano, distinguidos por `auto_resolved` | **sólo** override humano |
+| `auto_resolved` | marcaba la cache | **eliminada**: el override no-nulo ya es la marca |
+
+El equipo lo calcula `resolve_link_category(link, club, season=…)` al leer. Sin
+cache no hay nada que pueda quedar viejo — es la clase de bug entera, no una
+instancia.
+
+```bash
+python manage.py migrate exams   # 0031_comet_competition_bracket
+```
+
+La migración de datos deriva el bracket del nombre de cada competencia y
+**descarta** las categorías que había escrito la máquina, conservando sólo las que
+puso una persona. Tiene `backward`, que re-deriva la cache para que el código
+viejo tenga qué leer.
+
+### Verificación de fase 3d
+
+Los 26 links del club quedaron con bracket; 23 resuelven a equipo y 3 no — los
+"Sub 11", correcto, porque no hay plantel 2015. Las senior (Primera División,
+GRUPO D, Primera Fase) resuelven a Primer Equipo por el flag `is_senior`.
+
+Y lo importante: `repoint_comet_events` en seco dice **"sin cambios: todo ya está
+archivado donde corresponde"** (259 ya correctos, 29 sueltos). La resolución
+calculada coincide exactamente con lo que la fase 3c había dejado, o sea que el
+rediseño no cambia comportamiento sobre datos reales.
+
+### Dos nombres hardcodeados que se fueron
+
+- `Bracket.objects.filter(code="primera")` → `Bracket.senior()`, que busca por
+  `age IS NULL`. `Bracket.is_senior` es **propiedad derivada, no columna**: `age
+  is None` ya es la señal y un flag guardado podría contradecirla.
+- El bucle de fixtures re-derivaba el bracket del nombre — segunda copia de la
+  regla de los huecos de la escalera. Ahora lee `link.bracket`.
+
+### Lo que sigue necesitando una persona
+
+El override existe para los brackets que tienen más de un equipo del club. Hoy
+eso es **Sub 18 2026**, con las series 2008 y 2009. El cruce se queda con la más
+vieja; si el club dice que son dos planteles distintos, se fija en el admin
+(columna `category_override`) y listo — una fila, no una regla en el código.
+
+El admin muestra una columna `Equipo (calculado)` de sólo lectura al lado, para
+que se vea qué produce el cruce **antes** de decidir fijarlo.
+
 ## Fase 4 — Auditar los filtros por categoría
 
 Pendiente. 146 sitios `category=`, 67 `category__`, 51 `player__category`. Cada
