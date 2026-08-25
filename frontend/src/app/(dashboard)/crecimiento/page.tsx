@@ -273,19 +273,31 @@ function CrecimientoContent() {
           </p>
         </div>
         {data && data.seasons.length > 0 && (
-          <div className={styles.tabs} role="tablist" aria-label="Temporada">
-            {data.seasons.map((y) => (
-              <button
-                key={y}
-                role="tab"
-                type="button"
-                aria-selected={y === data.season}
-                className={`${styles.tab} ${y === data.season ? styles.tabOn : ""}`}
-                onClick={() => setParam("temporada", String(y))}
-              >
-                {y}
-              </button>
-            ))}
+          /* A visible label, not just `aria-label`: bare year buttons give a
+             sighted user nothing to go on. `aria-labelledby` points at the same
+             words on screen so the accessible name and the visible one match. */
+          <div className={styles.seasonPicker}>
+            <span className={styles.seasonLabel} id="crecimiento-temporada">
+              Temporada
+            </span>
+            <div
+              className={styles.tabs}
+              role="tablist"
+              aria-labelledby="crecimiento-temporada"
+            >
+              {data.seasons.map((y) => (
+                <button
+                  key={y}
+                  role="tab"
+                  type="button"
+                  aria-selected={y === data.season}
+                  className={`${styles.tab} ${y === data.season ? styles.tabOn : ""}`}
+                  onClick={() => setParam("temporada", String(y))}
+                >
+                  {y}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </header>

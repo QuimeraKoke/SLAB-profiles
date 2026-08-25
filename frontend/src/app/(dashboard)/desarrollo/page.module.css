@@ -13,6 +13,13 @@
 .subtitle { font-size: 13px; color: #667085; margin: 5px 0 0; }
 
 /* ── season tabs ─────────────────────────────────────────────────────── */
+/* No margin-top here, unlike crecimiento's: this header is a row and the picker
+   sits at the top right, already aligned with the title. */
+.seasonPicker { display: inline-flex; align-items: center; gap: 8px; }
+.seasonLabel {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .03em; color: #98a2b3;
+}
 .tabs {
   display: inline-flex; gap: 4px;
   background: #f2f4f7; border: 1px solid #e4e7ec; border-radius: 10px; padding: 4px;

@@ -371,19 +371,30 @@ const togglePlayer = useCallback(
           </p>
         </div>
         {seasons.length > 0 && (
-          <div className={styles.tabs} role="tablist" aria-label="Temporada">
-            {seasons.map((s) => (
-              <button
-                key={s}
-                role="tab"
-                type="button"
-                aria-selected={s === season}
-                className={`${styles.tab} ${s === season ? styles.tabOn : ""}`}
-                onClick={() => setSeason(s)}
-              >
-                {s}
-              </button>
-            ))}
+          /* Visible label, matching crecimiento: a row of bare years doesn't
+             say what it switches. */
+          <div className={styles.seasonPicker}>
+            <span className={styles.seasonLabel} id="desarrollo-temporada">
+              Temporada
+            </span>
+            <div
+              className={styles.tabs}
+              role="tablist"
+              aria-labelledby="desarrollo-temporada"
+            >
+              {seasons.map((s) => (
+                <button
+                  key={s}
+                  role="tab"
+                  type="button"
+                  aria-selected={s === season}
+                  className={`${styles.tab} ${s === season ? styles.tabOn : ""}`}
+                  onClick={() => setSeason(s)}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </header>
