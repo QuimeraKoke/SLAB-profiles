@@ -15,6 +15,7 @@ from typing import Any, Optional
 from django.db import transaction
 from django.utils import timezone
 
+from core.rosters import players_in_category
 from core.models import Player, PlayerAlias
 from events.models import Competition, Event, EventParticipant
 from exams.models import ExamResult
@@ -100,14 +101,19 @@ def run(
     is_match = mode == "match"
     do_events = is_match and create_events
 
-    # Player index: alias first, then full name (scoped to the category).
+    # Player index: alias first, then full name. The WORKING GROUP — home
+    # players plus active call-ups — because a called-up player appears in the
+    # provider's export for the squad he played with, and matching only the home
+    # roster silently binned his rows as "unmatched". 26% of youth appearances
+    # in 2026 are loans. `active_only=False`: a historical file may name someone
+    # who has since left, and dropping those rows would lose real data.
+    squad = list(players_in_category(category, active_only=False))
     by_name = {
-        G.normalize(f"{p.first_name} {p.last_name}"): p
-        for p in Player.objects.filter(category=category)
+        G.normalize(f"{p.first_name} {p.last_name}"): p for p in squad
     }
     by_alias = {
         G.normalize(a.value): a.player
-        for a in PlayerAlias.objects.filter(player__category=category).select_related("player")
+        for a in PlayerAlias.objects.filter(player__in=squad).select_related("player")
     }
 
     def resolve(label: str):
@@ -133,15 +139,21 @@ def run(
         })
 
     # Idempotency: match keyed (player, day); training keyed (player, day, session).
+    # Keyed over the SAME squad the index resolved from, not `player__category`:
+    # a called-up player's existing rows hang off his HOME category, so scoping
+    # the dedup by category would miss them and write every row again on the
+    # next run. Fixing the match and leaving this alone just moves the bug from
+    # "loses data" to "duplicates data".
+    squad_ids = [p.id for p in squad]
     existing: set = set()
     if is_match:
         for pid, rec in ExamResult.objects.filter(
-            template=template, player__category=category, event__isnull=False,
+            template=template, player_id__in=squad_ids, event__isnull=False,
         ).values_list("player_id", "recorded_at"):
             existing.add((pid, rec.date()))
     else:
         for pid, rec, data in ExamResult.objects.filter(
-            template=template, player__category=category, event__isnull=True,
+            template=template, player_id__in=squad_ids, event__isnull=True,
         ).values_list("player_id", "recorded_at", "result_data"):
             existing.add((pid, rec.date(), (data or {}).get("sesion")))
 

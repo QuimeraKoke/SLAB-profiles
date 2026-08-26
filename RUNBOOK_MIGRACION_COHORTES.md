@@ -353,6 +353,69 @@ vieja; si el club dice que son dos planteles distintos, se fija en el admin
 El admin muestra una columna `Equipo (calculado)` de sólo lectura al lado, para
 que se vea qué produce el cruce **antes** de decidir fijarlo.
 
+## Fase 3e — Rutas de ingesta que ignoraban a los citados ✅ HECHA en local (2026-08-26)
+
+**Sin migración: es sólo código.** Pero tiene una consecuencia operativa en prod
+que no es obvia — ver "Recuperar lo perdido" más abajo.
+
+Encontrado contando los sitios de la fase 4. `bulk_ingest` emparejaba nombres
+contra el plantel de trabajo (casa ∪ citados activos); `gps_session_ingest`,
+`wellness_ingest` y `catapult_sync` **no**. Un citado aparece en el export del
+plantel con el que efectivamente entrenó, así que sus filas caían en `unmatched`
+y se descartaban.
+
+Magnitud real, con 56 citaciones activas en el club:
+
+| Equipo | Plantel de casa | Plantel de trabajo |
+|---|---|---|
+| SUB-18 | 16 | **35** |
+| SUB-20 | 43 | 56 |
+| SUB-15 | 33 | 42 |
+| SUB-14 | 32 | 40 |
+| SUB-16 | 26 | 30 |
+| Primer Equipo | 30 | 33 |
+
+O sea que un import de GPS para SUB-18 emparejaba contra **menos de la mitad**
+del plantel que estuvo en la cancha.
+
+### Eran dos bugs, no uno
+
+En el GPS había que mover dos cosas juntas:
+
+1. **El índice de nombres**, o la fila nunca resuelve → se pierde el dato.
+2. **La clave de deduplicación**, que filtraba por `player__category=category`.
+   Las filas de un citado cuelgan de su categoría de CASA, así que el dedup no
+   las veía y las reescribía en cada corrida → se duplica el dato.
+
+Arreglar sólo el primero convierte una pérdida silenciosa en una duplicación
+silenciosa. Los dos están fijados en `exams/test_ingest_call_ups.py`, y verifiqué
+que los tests **fallan** con el filtro viejo (3 de 5) — si no, no prueban nada.
+
+### La regla vive en un solo lugar
+
+Nuevo `core/rosters.py` con `players_in_category` / `player_ids_in_category`.
+`api.scoping.players_in_category` ahora delega ahí (sus ~80 usos siguen igual).
+Está en `core` y no en `api` justamente porque los importadores no podían
+importarlo, y un helper que no se puede importar se reimplementa — que es
+exactamente lo que había pasado.
+
+`active_only=False` en los dos importadores de archivo: un archivo histórico
+puede nombrar a alguien que ya se fue, y descartar esas filas pierde dato real.
+
+### Recuperar lo perdido (prod)
+
+⚠️ **El arreglo evita la pérdida futura; no reimporta lo ya descartado.** Según
+la fuente:
+
+| Fuente | ¿Se recupera? | Cómo |
+|---|---|---|
+| Catapult | ✅ sí | re-sincronizar: es API y deduplica, así que levanta las filas que antes quedaron sin emparejar |
+| Wellness (Google Form) | ✅ sí | re-sincronizar la planilla; la idempotencia es por timestamp |
+| GPS entrenamiento (subida manual) | ❌ no | el club tiene que volver a subir los archivos |
+
+Conviene correr los dos re-sync **después** de desplegar y comparar el conteo de
+`ExamResult` antes/después, para saber cuánto se recuperó.
+
 ## Fase 4 — Auditar los filtros por categoría
 
 Pendiente. 146 sitios `category=`, 67 `category__`, 51 `player__category`. Cada

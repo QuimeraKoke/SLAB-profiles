@@ -31,6 +31,7 @@ from datetime import date, datetime, timedelta, timezone as dt_timezone
 
 from django.utils import timezone as djtz
 
+from core.rosters import players_in_category
 from core.models import Player, PlayerAlias
 from events.models import Event
 from exams.calculations import compute_result_data
@@ -171,7 +172,11 @@ class CategoryPlan:
 # ── roster resolution ──────────────────────────────────────────────────────
 
 def _roster_index(category):
-    players = list(Player.objects.filter(category=category))
+    # Working group: Catapult tags a session with the squad that trained,
+    # so a called-up player's row arrives under the host category and has to
+    # resolve there. `active_only=False` keeps historical backfills matching
+    # players who have since left.
+    players = list(players_in_category(category, active_only=False))
     by_dob: dict[str, list] = {}
     by_name: dict[str, object] = {}
     for p in players:

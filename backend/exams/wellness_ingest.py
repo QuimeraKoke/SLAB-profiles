@@ -21,6 +21,7 @@ from typing import Any, Optional
 
 from django.utils import timezone
 
+from core.rosters import players_in_category
 from core.models import Player
 from exams.models import ExamResult, ExamTemplate
 
@@ -160,7 +161,10 @@ def normalize_molestia(raw: Any, valid_codes: set[str]) -> tuple[list[str], list
 # ---------- player matching ----------
 
 def _build_matcher(category):
-    roster = list(Player.objects.filter(category=category, is_active=True))
+    # Working group, not the home roster: the wellness form is filled by
+    # whoever trained with the squad, so a called-up player's check-in has to
+    # resolve too. Matching the home roster only dropped it as unknown.
+    roster = list(players_in_category(category))
     idx = []
     for p in roster:
         t = _norm(f"{p.first_name} {p.last_name}").split()

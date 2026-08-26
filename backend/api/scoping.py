@@ -90,16 +90,14 @@ def players_in_category(category, *, include_call_ups: bool = True) -> QuerySet:
     plain `category=` filter) — call-ups are shown flagged, never counted.
 
     Callers can tell a call-up apart with `p.category_id != category.id`.
-    """
-    from core.models import Player
 
-    qs = Player.objects.filter(is_active=True)
-    if include_call_ups:
-        return qs.filter(
-            Q(category=category)
-            | Q(call_ups__category=category, call_ups__active=True)
-        ).distinct()
-    return qs.filter(category=category)
+    Thin delegate to `core.rosters`, which is where the rule now lives so the
+    ingest paths can share it instead of each growing their own copy. Kept here
+    because ~80 call sites import it from this module.
+    """
+    from core.rosters import players_in_category as _impl
+
+    return _impl(category, include_call_ups=include_call_ups)
 
 
 def scope_players_for_roster(qs: QuerySet, membership: StaffMembership | None) -> QuerySet:
