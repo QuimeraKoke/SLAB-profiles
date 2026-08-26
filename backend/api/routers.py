@@ -678,7 +678,8 @@ def get_category(request, category_id: str):
     return {
         "id": category.id,
         "name": category.name,
-        "label": category.season_label(),
+        "label": category.season_label_parts()[0],
+        "label_hint": category.season_label_parts()[1],
         "club_id": category.club_id,
         "departments": getattr(
             category,

@@ -338,7 +338,9 @@ function CrecimientoContent() {
                 }`}
                 onClick={() => setParam("cohorte", String(c.cohort_year))}
               >
-                {c.cohort_year}
+                {/* "Serie", el nombre que eligió el club para los equipos
+                  * temporales. El año solo obligaba a traducirlo mentalmente. */}
+                Serie {c.cohort_year}
                 <span className={styles.chipLabel}>{c.label}</span>
                 <span className={styles.chipCount}>{c.players}</span>
               </button>

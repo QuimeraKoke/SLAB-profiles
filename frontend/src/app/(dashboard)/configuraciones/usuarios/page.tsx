@@ -563,7 +563,15 @@ export default function UsersAdminPage() {
                             setScope("category_ids", c.id, e.target.checked)
                           }
                         />
-                        <span>{c.label || c.name}</span>
+                        {/* Acá SÍ se puede estilar, así que el Sub del año va
+                          * chico y gris como pidió el club, en vez de unido con
+                          * un guión como en los <option>. */}
+                        <span>
+                          {c.label || c.name}
+                          {c.label_hint && (
+                            <span className={styles.labelHint}> {c.label_hint}</span>
+                          )}
+                        </span>
                       </label>
                     ))
                   )}

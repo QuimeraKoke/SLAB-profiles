@@ -10,6 +10,7 @@ import type {
   PlayerSummary,
 } from "@/lib/types";
 import styles from "./MatchForm.module.css";
+import { categoryLabel } from "@/lib/categoryLabel";
 
 interface MatchFormProps {
   /** When provided, the form runs in edit mode and prefills from this event. */
@@ -267,7 +268,7 @@ export default function MatchForm({
           >
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.label || c.name}
+                {categoryLabel(c)}
               </option>
             ))}
           </select>

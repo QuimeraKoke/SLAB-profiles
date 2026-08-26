@@ -174,20 +174,34 @@ Las dos advertencias que tenía esta sección, resueltas:
 - Pertenencias reales (`PlayerTeamMembership`) — las escribe la fase 1. El
   renombre **no mueve a ningún jugador**.
 
-### ⚠️ Lo que este renombre dejó abierto
+### Vocabulario — decidido con el club (2026-08-26)
 
-Sigue vivo el choque con la regla de IA nº 3 de `AGENTS.md` ("una etiqueta = un
-significado"): **`Categoría` ahora significa dos cosas distintas** en la UI.
+| Tipo de equipo | Cómo se llama | Qué se lee | Texto chico |
+|---|---|---|---|
+| Primer equipo (atemporal) | **Equipo** | `Primer Equipo` | — |
+| Los temporales, con cohorte | **Serie** | `Serie 2014` | `Sub 12` |
+| Sin cohorte (Sub 20, femeninos) | el nombre guardado | `Sub 20` | — |
 
-| En el código | En la UI hoy | Debería decir |
-|---|---|---|
-| `Category` (el equipo, `Serie 2014`) | "Categoría" | **Equipo** |
-| `Bracket` (la competencia, `Sub 12`) | "Categoría de competencia" | **Categoría** o **Serie** |
+**La serie va primero y el bracket es la aclaración**, al revés de la primera
+versión que hice: yo había puesto el bracket adelante porque es lo que la gente
+dice en voz alta, y el club eligió que el nombre durable sea lo que se lee y el
+escalón de la temporada el recordatorio al lado.
 
-El selector global dice "Categoría" y lista equipos; el admin dice "Categoría de
-competencia" y lista brackets. Un usuario que lea las dos pantallas no tiene
-forma de saber que son cosas distintas. Es trabajo de vocabulario, no de
-modelo — y hay que decidirlo con el club, porque son ellos los que hablan.
+Implementado como **dos campos**, no un string: `season_label_parts()` devuelve
+`("Serie 2014", "Sub 12")`, y `CategoryOut` los expone como `label` y
+`label_hint`. Es necesario porque quien decide la tipografía es el consumidor, y
+uno de ellos no puede: **un `<option>` nativo no puede estilar parte de su
+texto**. Ahí se unen con raya (`Serie 2014 — Sub 12`) vía
+`lib/categoryLabel.ts`; en una tabla o un chip el `label_hint` va chico y gris.
+
+`season_label()` sigue existiendo para texto plano (PDFs, exports, emails) y
+devuelve `Serie 2014 (Sub 12)` — paréntesis porque el bracket es una aclaración
+sobre la temporada, no un segundo nombre.
+
+⚠️ **Lo que sigue abierto:** el selector global sigue rotulado "Categoría", y con
+este vocabulario esa palabra ya no describe lo que lista (un *Equipo* y varias
+*Series*). No lo cambié porque el club no dijo qué palabra usar para el conjunto
+— "Equipo" quedó reservado para el primer equipo. Falta esa sola decisión.
 
 ## Fase 3a — `Event.bracket` ✅ HECHA
 

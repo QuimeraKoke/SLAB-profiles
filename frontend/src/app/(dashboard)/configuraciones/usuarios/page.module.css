@@ -350,3 +350,11 @@
 .cancelBtn:hover:not(:disabled) {
   background: #f9fafb;
 }
+
+/* El Sub de la temporada en curso, al lado de la serie. Aclaración, no segundo
+   nombre: más chico y gris para que no compita con "Serie 2014". */
+.labelHint {
+  font-size: 0.78em;
+  color: #98a2b3;
+  font-variant-numeric: tabular-nums;
+}

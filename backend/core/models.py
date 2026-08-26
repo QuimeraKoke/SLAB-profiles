@@ -140,39 +140,52 @@ class Category(models.Model):
         ts = self.team_seasons.filter(season=season).select_related("bracket").first()
         return ts.bracket if ts else None
 
-    def season_label(self, season: int | None = None) -> str:
-        """What to show a user for this team in `season`. Defaults to this year.
+    def season_label_parts(self, season: int | None = None) -> tuple[str, str]:
+        """`(nombre, aclaración)` for `season`. Defaults to the current year.
 
-        A stored name cannot describe an age-group team, because the group moves
-        up a rung every January while the name sits still. On 2026-08-25 the
-        club's labels were a full season stale: the squad called `SUB-11` was
-        competing in Sub 12, confirmed by 239 of 239 appearances in that
-        competition being 2014-born.
+        The club's vocabulary, decided by the team on 2026-08-26: the first team
+        is an **Equipo** (atemporal, its name is its identity), everything else
+        is a **Serie** named by birth year. Alongside the serie they asked for a
+        small note saying which Sub it is *this* year.
 
-        So the bracket comes first — it is what staff actually say — and the
-        cohort follows it, because the bracket alone is ambiguous: in 2026 both
-        the 2008s and the 2009s play Sub 18, and a picker showing "Sub 18" twice
-        is unusable.
+        So the serie leads and the bracket is the aside — the reverse of the
+        first cut of this method, which put the bracket first on the grounds that
+        it is what staff say out loud. The club chose the durable name as the
+        thing you read and the season's rung as the reminder.
 
-        Teams that aren't an age group fall back to their name, and that is not
-        an exception carved out for them — it is the same rule. A team is named
-        after whatever is invariant about it. For a cohort team that's the birth
-        year; for Sub 20 or the first team, which recycle players every season,
-        the stored name is the invariant. Sub 20 has no cohort for a real reason:
-        its 2026 appearances are 2006, 2007 and 2008: a genuinely mixed squad,
-        not missing data.
+        Returned as two pieces rather than one string because the caller decides
+        the typography, and one of them cannot: a native `<option>` has no way to
+        style part of its text, so the picker joins them while a table can put
+        the aside in small grey type.
+
+        Both are needed. `Serie 2014` alone makes a coach translate a birth year
+        into an age group in their head; `Sub 12` alone is ambiguous, because in
+        2026 the 2008s and the 2009s both play Sub 18 and a list showing "Sub 18"
+        twice is unusable.
+
+        Teams that are neither fall back to their stored name, and that is the
+        same rule rather than an exception: a team is named after whatever is
+        invariant about it. Sub 20 has no cohort for a real reason — its 2026
+        appearances are 2006, 2007 and 2008, a genuinely mixed squad.
         """
         from django.utils import timezone
 
         season = season or timezone.now().year
         bracket = self.season_bracket(season)
         if self.is_senior:
-            return self.name
-        if bracket is None:
-            return f"Serie {self.cohort_year}" if self.cohort_year else self.name
+            return self.name, ""
         if self.cohort_year is None:
-            return bracket.name
-        return f"{bracket.name} · Serie {self.cohort_year}"
+            return (bracket.name if bracket else self.name), ""
+        return f"Serie {self.cohort_year}", (bracket.name if bracket else "")
+
+    def season_label(self, season: int | None = None) -> str:
+        """The two parts joined, for plain-text contexts (PDFs, exports, emails).
+
+        Parentheses rather than a separator: the bracket is an aside about the
+        season, not a second name.
+        """
+        name, hint = self.season_label_parts(season)
+        return f"{name} ({hint})" if hint else name
 
 
 class Bracket(models.Model):

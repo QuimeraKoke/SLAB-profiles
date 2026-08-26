@@ -9,6 +9,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useCategoryContext } from "@/context/CategoryContext";
 import type { AlertWithPlayer } from "@/lib/types";
 import styles from "./Navbar.module.css";
+import { categoryLabel } from "@/lib/categoryLabel";
 
 interface NavbarProps {
   /** Toggles the sidebar — only used on tablet/mobile, the hamburger
@@ -190,7 +191,7 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
               aria-label="Seleccionar categoría"
             >
               {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.label || c.name}</option>
+                <option key={c.id} value={c.id}>{categoryLabel(c)}</option>
               ))}
             </select>
           </label>

@@ -158,20 +158,31 @@ class CategoryOut(Schema):
     id: UUID
     name: str
     label: str
+    label_hint: str = ""
     club_id: UUID
     departments: list[DepartmentOut] = []
 
     @staticmethod
     def resolve_label(obj) -> str:
-        """Season-aware display name — "Sub 12 · Serie 2014", not "SUB-11".
+        """What to READ: "Serie 2014", or "Primer Equipo" for the senior team.
 
-        `name` stays in the payload because it's the stored identity and some
-        admin surfaces edit it. Anything a user READS should use `label`: the
-        stored name goes stale every January, this doesn't.
+        `name` stays in the payload because it's the stored identity and the
+        admin edits it. Everything user-facing uses `label`.
         """
         if isinstance(obj, dict):
             return obj.get("label") or obj.get("name", "")
-        return obj.season_label()
+        return obj.season_label_parts()[0]
+
+    @staticmethod
+    def resolve_label_hint(obj) -> str:
+        """Which Sub the serie is THIS year — "Sub 12". Empty for the first team.
+
+        Separate from `label` because only the caller knows if it can be styled:
+        a native `<option>` has to join them, a table can set it in small grey.
+        """
+        if isinstance(obj, dict):
+            return obj.get("label_hint", "")
+        return obj.season_label_parts()[1]
 
 
 class PositionOut(Schema):

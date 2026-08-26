@@ -56,13 +56,17 @@ export interface Category {
   /** Stored identity. Goes stale every January — don't show it to users. */
   name: string;
   /**
-   * Season-aware display name: "Sub 12 · Serie 2014". Show THIS.
-   * `name` is the 2025 snapshot the club never rolled forward, so the squad
-   * stored as "SUB-11" is competing in Sub 12. The cohort follows the bracket
-   * because the bracket alone is ambiguous — in 2026 both the 2008s and the
-   * 2009s play Sub 18.
+   * What to READ: "Serie 2014", or "Primer Equipo" for the senior team.
+   * Vocabulary set by the club: the first team is an *Equipo*, everything else
+   * is a *Serie* named by birth year.
    */
   label: string;
+  /**
+   * Which Sub the serie is THIS year — "Sub 12". Empty for the first team.
+   * Render it small and muted next to `label`; a native <option> can't style
+   * part of its text, so there it gets joined with a separator instead.
+   */
+  label_hint: string;
   club_id: string;
   departments: Department[];
 }

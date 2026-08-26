@@ -23,20 +23,25 @@ class SeasonLabelTests(TestCase):
         self.primera = Bracket.objects.create(
             code="primera", name="Primera", age=None, order=9)
 
-    def test_the_bracket_comes_first_because_that_is_what_staff_say(self):
+    def test_the_serie_leads_and_the_bracket_is_the_aside(self):
+        # Vocabulary the club chose on 2026-08-26: the durable name is what you
+        # read, the season's rung is the reminder beside it. The reverse of this
+        # method's first cut, which led with the bracket.
         team = Category.objects.create(
-            club=self.club, name="SUB-11", cohort_year=2014)
+            club=self.club, name="Serie 2014", cohort_year=2014)
         TeamSeason.objects.create(team=team, season=2026, bracket=self.sub12)
-        self.assertEqual(team.season_label(2026), "Sub 12 · Serie 2014")
+        self.assertEqual(team.season_label_parts(2026), ("Serie 2014", "Sub 12"))
+        self.assertEqual(team.season_label(2026), "Serie 2014 (Sub 12)")
 
     def test_the_same_team_reads_differently_next_season(self):
         # The whole point: one team, one cohort, a label that moves.
         team = Category.objects.create(
-            club=self.club, name="SUB-11", cohort_year=2014)
+            club=self.club, name="Serie 2014", cohort_year=2014)
         TeamSeason.objects.create(team=team, season=2026, bracket=self.sub12)
         TeamSeason.objects.create(team=team, season=2027, bracket=self.sub13)
-        self.assertEqual(team.season_label(2026), "Sub 12 · Serie 2014")
-        self.assertEqual(team.season_label(2027), "Sub 13 · Serie 2014")
+        # The name never moves; only the aside does. That is the whole model.
+        self.assertEqual(team.season_label_parts(2026), ("Serie 2014", "Sub 12"))
+        self.assertEqual(team.season_label_parts(2027), ("Serie 2014", "Sub 13"))
 
     def test_the_cohort_disambiguates_a_shared_bracket(self):
         # In 2026 both the 2008s and the 2009s play Sub 18. A picker showing
@@ -48,29 +53,34 @@ class SeasonLabelTests(TestCase):
             club=self.club, name="SUB-16", cohort_year=2009)
         for t in (older, younger):
             TeamSeason.objects.create(team=t, season=2026, bracket=self.sub18)
+        # Both are "Sub 18" this season, so the aside alone cannot tell them
+        # apart — the serie is what makes the list usable.
+        self.assertEqual(older.season_label_parts(2026)[1],
+                         younger.season_label_parts(2026)[1])
         self.assertNotEqual(older.season_label(2026), younger.season_label(2026))
 
     def test_a_senior_team_keeps_its_name(self):
         team = Category.objects.create(
             club=self.club, name="Primer Equipo", is_senior=True)
         TeamSeason.objects.create(team=team, season=2026, bracket=self.primera)
-        self.assertEqual(team.season_label(2026), "Primer Equipo")
+        # An *Equipo*, in the club's words: atemporal, so no aside at all.
+        self.assertEqual(team.season_label_parts(2026), ("Primer Equipo", ""))
 
     def test_a_bracket_team_with_no_cohort_shows_just_the_bracket(self):
         # Sub 20 has no cohort for a real reason: its squad is genuinely mixed
         # (2006, 2007 and 2008 in 2026), not missing data.
         team = Category.objects.create(club=self.club, name="SUB-20")
         TeamSeason.objects.create(team=team, season=2026, bracket=self.sub20)
-        self.assertEqual(team.season_label(2026), "Sub 20")
+        self.assertEqual(team.season_label_parts(2026), ("Sub 20", ""))
 
     def test_an_undeclared_season_falls_back_to_the_cohort(self):
         team = Category.objects.create(
             club=self.club, name="SUB-11", cohort_year=2014)
-        self.assertEqual(team.season_label(2099), "Serie 2014")
+        self.assertEqual(team.season_label_parts(2099), ("Serie 2014", ""))
 
     def test_a_team_that_is_neither_falls_back_to_its_name(self):
         team = Category.objects.create(club=self.club, name="PEF - Femenino")
-        self.assertEqual(team.season_label(2026), "PEF - Femenino")
+        self.assertEqual(team.season_label_parts(2026), ("PEF - Femenino", ""))
 
     def test_the_default_season_is_the_current_year(self):
         from django.utils import timezone
@@ -79,7 +89,7 @@ class SeasonLabelTests(TestCase):
             club=self.club, name="SUB-11", cohort_year=2014)
         TeamSeason.objects.create(
             team=team, season=timezone.now().year, bracket=self.sub12)
-        self.assertEqual(team.season_label(), "Sub 12 · Serie 2014")
+        self.assertEqual(team.season_label_parts(), ("Serie 2014", "Sub 12"))
 
     def _label_queries(self, n_teams: int) -> int:
         """Queries needed to label `n_teams`, each with a declared season."""
@@ -189,4 +199,4 @@ class RenameCohortTeamsMigrationTests(TestCase):
         self._run_forward()
         team.refresh_from_db()
         self.assertEqual(team.season_label(2026), before)
-        self.assertEqual(before, "Sub 12 · Serie 2014")
+        self.assertEqual(before, "Serie 2014 (Sub 12)")
