@@ -23,6 +23,24 @@ logger = logging.getLogger(__name__)
 
 # Committed raster of frontend/public/slab-logo.svg (email clients don't
 # render SVG). Read at send time; missing file just omits the logo.
+#
+# Being a committed copy, it goes stale silently — and did: it was rasterised at
+# 520×370, the dimensions of an old hand-written viewBox that cropped 15 of the
+# logo's 147 dots, so every welcome email went out with both diamond tips sliced
+# off. To regenerate after any change to the SVG (needs no extra tooling —
+# `sharp` ships with the frontend and rasterises SVG via libvips):
+#
+#   cd frontend && node -e '
+#     const sharp=require("sharp"), fs=require("fs");
+#     const svg=fs.readFileSync("public/slab-logo.svg","utf8")
+#       .replace(/fill="currentColor"/,"fill=\"#0b1525\"");
+#     const H=320, W=Math.round(H*537.46/437.38);
+#     sharp(Buffer.from(svg)).resize(W,H,{fit:"contain",
+#       background:{r:0,g:0,b:0,alpha:0}}).png()
+#       .toFile("../backend/core/assets/slab-logo.png");'
+#
+# Rasterised in the brand navy with alpha, not black on white: the email body is
+# light and a baked white box would show as a rectangle on any other backdrop.
 SLAB_LOGO_PATH = Path(__file__).resolve().parent / "assets" / "slab-logo.png"
 
 

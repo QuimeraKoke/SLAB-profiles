@@ -70,6 +70,27 @@
   font-family: var(--font-audiowide), sans-serif;
 }
 
+/* El logo es un semitono de 147 puntos: por debajo de ~40px se fusionan en una
+   mancha gris (verificado a 28px, que era el tamaño del placeholder anterior).
+   40px es el mínimo en que se leen los dos rombos, y entra en la barra de 64px.
+   La relación 1.229:1 es la del viewBox — deformarla arruina la retícula. */
+.slabMark {
+  flex: 0 0 auto;
+  width: 49px;
+  height: 40px;
+  background-color: currentColor;
+  -webkit-mask: url("/slab-logo.svg") no-repeat center;
+  mask: url("/slab-logo.svg") no-repeat center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+@media (max-width: 640px) {
+  /* Antes de encogerlo por debajo del mínimo legible, se cae entero: media
+     mancha gris dice menos que sólo la palabra. */
+  .slabMark { display: none; }
+}
+
 .teamDivider {
   width: 1px;
   height: 32px;

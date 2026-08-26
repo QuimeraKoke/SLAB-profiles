@@ -149,19 +149,14 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
          * <h1> to <p> so each page's own H1 can own the document outline. */}
         <Link href="/centro-de-mando" className={styles.brandLink} aria-label="Ir al inicio (Centro de mando)">
           <span className={styles.slabLogo}>
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-            >
-              <path d="M12 2L17 7L12 12L7 7L12 2Z" stroke="white" strokeWidth="1.5" />
-              <path d="M12 12L17 17L12 22L7 17L12 12Z" stroke="white" strokeWidth="1.5" />
-              <path d="M7 7L12 12L7 17L2 12L7 7Z" stroke="white" strokeWidth="1.5" />
-              <path d="M17 7L22 12L17 17L12 12L17 7Z" stroke="white" strokeWidth="1.5" />
-            </svg>
+            {/* El logo real, en lugar de los cuatro rombos dibujados a mano que
+              * hacían de placeholder. Va por CSS `mask` y no como <img>: el
+              * archivo es monocromo, así que enmascarándolo toma `currentColor`
+              * y se ve blanco sobre la barra oscura sin duplicar el SVG en
+              * claro y en oscuro. Y quedándose externo, sus 36 KB no entran al
+              * bundle de JS. L7: decorativo — el texto "SLAB" es el nombre
+              * accesible. */}
+            <span className={styles.slabMark} aria-hidden="true" />
             SLAB
           </span>
           <span className={styles.teamDivider} aria-hidden="true"></span>

@@ -61,11 +61,15 @@ export default function LoginPage() {
       {/* Login Form */}
       <div className={styles.loginBox}>
         <div className={styles.logoContainer}>
+          {/* 100×81 es la relación real del viewBox (537.46 : 437.38 = 1.229).
+            * Antes decía 100×71, que era 1.408 — la relación del viewBox viejo,
+            * el que recortaba 15 de los 147 puntos. Con la caja corregida esos
+            * números dejaban el logo descentrado dentro de su hueco. */}
           <Image
             src="/slab-logo.svg"
             alt="SLAB Logo"
             width={100}
-            height={71}
+            height={81}
             className={styles.logoImage}
             priority
           />
