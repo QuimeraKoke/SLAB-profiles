@@ -416,6 +416,89 @@ la fuente:
 Conviene correr los dos re-sync **después** de desplegar y comparar el conteo de
 `ExamResult` antes/después, para saber cuánto se recuperó.
 
+## Fase 2 — Renombrar equipos a cohorte ✅ HECHA en local (2026-08-26)
+
+⚠️ **El orden es al revés del obvio, y esto es lo importante de la fase.**
+Primero la etiqueta derivada, después el renombre. Renombrar primero deja a todo
+el mundo leyendo "Serie 2014" cuando dice "Sub 12": dato correcto, app inusable.
+Con la etiqueta ya desplegada, el renombre es **invisible** para el usuario.
+(Misma lección que desacoplar antes de renombrar, de más arriba en esta
+migración.)
+
+### Paso 1 — etiqueta derivada (sin migración)
+
+`Category.season_label(season=None)` → `"Sub 12 · Serie 2014"`. Por defecto usa
+el año actual. El bracket va primero porque es lo que la gente dice; la cohorte
+lo sigue porque **el bracket solo es ambiguo**: en 2026 las series 2008 y 2009
+juegan las dos Sub 18, y un selector que muestre "Sub 18" dos veces no se puede
+usar.
+
+`CategoryOut` gana un campo `label` (resolver en `api/schemas.py`). `name` se
+queda en el payload porque es la identidad guardada y el admin la edita, pero
+**todo lo que un usuario LEE usa `label`**.
+
+Frontend: selector global (`Navbar`), `configuraciones/jugadores`,
+`configuraciones/usuarios`, `MatchForm`. El tipo `Category` documenta cuál usar.
+
+⚠️ `season_bracket` lee la caché de `prefetch_related` cuando existe. Sin eso el
+selector cuesta **una consulta por equipo**: `.filter()` sobre una relación
+prefetcheada emite consulta igual, y el prefetch queda de adorno. Fijado por
+`test_labelling_does_not_cost_a_query_per_team`, que compara 3 y 12 equipos en
+vez de afirmar un número — un número fijo también pasaría si estuviera fijo en el
+valor equivocado. Verifiqué que falla sin la lectura de caché (6 ≠ 3).
+
+### Paso 2 — la migración
+
+```bash
+python manage.py migrate core   # 0022_rename_cohort_teams
+```
+
+Resultado en local, 7 de 16 equipos renombrados:
+
+| Antes | Ahora | Etiqueta que se ve |
+|---|---|---|
+| `SUB-11` | `Serie 2014` | Sub 12 · Serie 2014 |
+| `SUB-12` | `Serie 2013` | Sub 13 · Serie 2013 |
+| `SUB-13` | `Serie 2012` | Sub 14 · Serie 2012 |
+| `SUB-14` | `Serie 2011` | Sub 15 · Serie 2011 |
+| `SUB-15` | `Serie 2010` | Sub 16 · Serie 2010 |
+| `SUB-16` | `Serie 2009` | Sub 18 · Serie 2009 |
+| `SUB-18` | `Serie 2008` | Sub 18 · Serie 2008 |
+
+**Los otros 9 no se tocan, y no es una excepción: es la misma regla.** Un equipo
+se llama como aquello que en él es invariante. Para un equipo de cohorte, el año
+de nacimiento; para Sub 20 o el Primer Equipo, que reciclan jugadores cada
+temporada, el nombre guardado *es* el invariante. Sub 20 no tiene cohorte por una
+razón real: sus apariciones 2026 son 2006, 2007 y 2008 — plantel genuinamente
+mezclado, no dato faltante.
+
+Por qué es seguro ahora: **nada en el código lee dígitos del nombre.** Antes sí
+—`re.search(r"(\d{1,2})")` sobre el nombre de la categoría, que lee "Serie 2014"
+como **20** y habría archivado los partidos de esos chicos en Sub 20 sin un solo
+error. Hoy `_category_index` lee `TeamSeason`, con
+`test_a_cohort_name_does_not_poison_the_mapping` para que siga así.
+
+La migración salta colisiones en vez de fallar (`unique_together = (club, name)`):
+un equipo sin renombrar sigue leyéndose bien por `season_label`, mientras una
+migración caída bloquea el deploy entero. Es idempotente y tiene `backward`, que
+reconstruye un `SUB-NN` desde el bracket declarado — no exacto por construcción,
+porque los nombres viejos eran una foto vieja, pero estable al revertir y volver a
+aplicar.
+
+### Lo que queda por rotular
+
+Estas superficies muestran el nombre de la categoría desde **otros** esquemas
+(embebido en el evento, en el jugador, en el PDF), así que no reciben `label`
+todavía y siguen mostrando el nombre guardado:
+
+- `/partidos/[id]` y `ProfileEvents` → `event.category.name`
+- Fichas PDF: `player_triage`, `team_report`, `daily_deck`
+- `/daily`, `/centro-de-mando`, `/reportes/[dept]`, `/uso`
+
+Tras el renombre esas leen "Serie 2014" en vez de "Sub 12 · Serie 2014": quedan
+**incompletas, no equivocadas**, que era el punto de renombrar. Rotularlas es
+trabajo mecánico por esquema y va en una tanda aparte.
+
 ## Fase 4 — Auditar los filtros por categoría
 
 Pendiente. 146 sitios `category=`, 67 `category__`, 51 `player__category`. Cada

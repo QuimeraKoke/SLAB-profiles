@@ -157,8 +157,21 @@ class DepartmentOut(Schema):
 class CategoryOut(Schema):
     id: UUID
     name: str
+    label: str
     club_id: UUID
     departments: list[DepartmentOut] = []
+
+    @staticmethod
+    def resolve_label(obj) -> str:
+        """Season-aware display name — "Sub 12 · Serie 2014", not "SUB-11".
+
+        `name` stays in the payload because it's the stored identity and some
+        admin surfaces edit it. Anything a user READS should use `label`: the
+        stored name goes stale every January, this doesn't.
+        """
+        if isinstance(obj, dict):
+            return obj.get("label") or obj.get("name", "")
+        return obj.season_label()
 
 
 class PositionOut(Schema):

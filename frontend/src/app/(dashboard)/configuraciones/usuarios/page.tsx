@@ -563,7 +563,7 @@ export default function UsersAdminPage() {
                             setScope("category_ids", c.id, e.target.checked)
                           }
                         />
-                        <span>{c.name}</span>
+                        <span>{c.label || c.name}</span>
                       </label>
                     ))
                   )}

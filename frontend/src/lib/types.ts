@@ -53,7 +53,16 @@ export interface Department {
 
 export interface Category {
   id: string;
+  /** Stored identity. Goes stale every January — don't show it to users. */
   name: string;
+  /**
+   * Season-aware display name: "Sub 12 · Serie 2014". Show THIS.
+   * `name` is the 2025 snapshot the club never rolled forward, so the squad
+   * stored as "SUB-11" is competing in Sub 12. The cohort follows the bracket
+   * because the bracket alone is ambiguous — in 2026 both the 2008s and the
+   * 2009s play Sub 18.
+   */
+  label: string;
   club_id: string;
   departments: Department[];
 }

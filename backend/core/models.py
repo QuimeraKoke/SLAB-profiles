@@ -127,8 +127,52 @@ class Category(models.Model):
         cohort, and the club has to be able to fix the rest without fighting a
         formula.
         """
+        # Read a prefetched `team_seasons` in Python when there is one: calling
+        # `.filter()` on a prefetched relation issues a fresh query anyway, so
+        # without this branch `prefetch_related("team_seasons__bracket")` is
+        # dead weight and the category picker costs one query per team.
+        cache = getattr(self, "_prefetched_objects_cache", None) or {}
+        if "team_seasons" in cache:
+            return next(
+                (ts.bracket for ts in self.team_seasons.all() if ts.season == season),
+                None,
+            )
         ts = self.team_seasons.filter(season=season).select_related("bracket").first()
         return ts.bracket if ts else None
+
+    def season_label(self, season: int | None = None) -> str:
+        """What to show a user for this team in `season`. Defaults to this year.
+
+        A stored name cannot describe an age-group team, because the group moves
+        up a rung every January while the name sits still. On 2026-08-25 the
+        club's labels were a full season stale: the squad called `SUB-11` was
+        competing in Sub 12, confirmed by 239 of 239 appearances in that
+        competition being 2014-born.
+
+        So the bracket comes first — it is what staff actually say — and the
+        cohort follows it, because the bracket alone is ambiguous: in 2026 both
+        the 2008s and the 2009s play Sub 18, and a picker showing "Sub 18" twice
+        is unusable.
+
+        Teams that aren't an age group fall back to their name, and that is not
+        an exception carved out for them — it is the same rule. A team is named
+        after whatever is invariant about it. For a cohort team that's the birth
+        year; for Sub 20 or the first team, which recycle players every season,
+        the stored name is the invariant. Sub 20 has no cohort for a real reason:
+        its 2026 appearances are 2006, 2007 and 2008: a genuinely mixed squad,
+        not missing data.
+        """
+        from django.utils import timezone
+
+        season = season or timezone.now().year
+        bracket = self.season_bracket(season)
+        if self.is_senior:
+            return self.name
+        if bracket is None:
+            return f"Serie {self.cohort_year}" if self.cohort_year else self.name
+        if self.cohort_year is None:
+            return bracket.name
+        return f"{bracket.name} · Serie {self.cohort_year}"
 
 
 class Bracket(models.Model):

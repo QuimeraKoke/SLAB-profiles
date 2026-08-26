@@ -195,7 +195,7 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
               aria-label="Seleccionar categoría"
             >
               {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+                <option key={c.id} value={c.id}>{c.label || c.name}</option>
               ))}
             </select>
           </label>

@@ -267,7 +267,7 @@ export default function MatchForm({
           >
             {categories.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {c.label || c.name}
               </option>
             ))}
           </select>

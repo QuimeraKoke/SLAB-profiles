@@ -648,7 +648,9 @@ def list_categories(request, club_id: str | None = None):
     """List categories visible to the user. Optional `club_id` filter."""
     membership = get_membership(request.user)
     qs = scope_categories(
-        Category.objects.prefetch_related("departments"),
+        # `team_seasons__bracket` too: CategoryOut.label reads the season's
+        # bracket, so without it the picker costs one query per team.
+        Category.objects.prefetch_related("departments", "team_seasons__bracket"),
         membership,
     )
     if club_id:
@@ -676,6 +678,7 @@ def get_category(request, category_id: str):
     return {
         "id": category.id,
         "name": category.name,
+        "label": category.season_label(),
         "club_id": category.club_id,
         "departments": getattr(
             category,

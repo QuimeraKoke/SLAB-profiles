@@ -293,7 +293,7 @@ export default function PlayersAdminPage() {
           >
             <option value="">Todas</option>
             {categories.map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
+              <option key={c.id} value={c.id}>{c.label || c.name}</option>
             ))}
           </select>
         </label>
@@ -439,7 +439,7 @@ export default function PlayersAdminPage() {
                 >
                   <option value="">— Seleccionar —</option>
                   {categories.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
+                    <option key={c.id} value={c.id}>{c.label || c.name}</option>
                   ))}
                 </select>
               </label>
