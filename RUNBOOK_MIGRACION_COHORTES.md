@@ -407,14 +407,19 @@ puede nombrar a alguien que ya se fue, y descartar esas filas pierde dato real.
 ⚠️ **El arreglo evita la pérdida futura; no reimporta lo ya descartado.** Según
 la fuente:
 
-| Fuente | ¿Se recupera? | Cómo |
-|---|---|---|
-| Catapult | ✅ sí | re-sincronizar: es API y deduplica, así que levanta las filas que antes quedaron sin emparejar |
-| Wellness (Google Form) | ✅ sí | re-sincronizar la planilla; la idempotencia es por timestamp |
-| GPS entrenamiento (subida manual) | ❌ no | el club tiene que volver a subir los archivos |
+| Fuente | ¿Se recupera? | Cómo | Alcance real |
+|---|---|---|---|
+| Catapult | ✅ sí | re-sincronizar: es API y deduplica | **sólo Primer Equipo** — es la única integración configurada, y son 3 citados de 56 |
+| Wellness (Google Form) | ✅ sí | tarea Celery en modo `all` | todos los equipos |
+| GPS entrenamiento (subida manual) | ❌ no | el club tiene que volver a subir los archivos | **el resto de los 56** |
 
-Conviene correr los dos re-sync **después** de desplegar y comparar el conteo de
-`ExamResult` antes/después, para saber cuánto se recuperó.
+⚠️ **El grueso no se recupera solo.** Los juveniles no usan Catapult — su GPS
+entra por subida manual, y son justamente los equipos con más citados (Serie
+2008: 16 de casa, 35 de trabajo). Esos archivos los tiene que volver a subir el
+club, y conviene pedírselos apenas esté desplegado.
+
+Corré los re-sync **después** de desplegar y compará el conteo de `ExamResult`
+antes/después para saber cuánto se recuperó.
 
 ## Fase 2 — Renombrar equipos a cohorte ✅ HECHA en local (2026-08-26)
 
@@ -552,30 +557,81 @@ En el admin, filtrar «candidatos en el plantel» → *candidato único* para re
 lo que el matcheo automático no cerró. Hoy eso da 0 filas, que es la respuesta
 correcta: no hay nada que vincular hasta que existan los jugadores.
 
-## Estado actual (2026-08-22)
+## Estado actual (2026-08-26)
 
 | | Local | Prod |
 |---|---|---|
 | Datos COMET 2026 | ✅ copia de prod (2026-08-22) | ✅ 155 eventos / 2.588 fichas |
-| Migración `core.0019` | ✅ aplicada | ✅ aplicada |
-| Migración `events.0007` (bracket) | ✅ aplicada | ❌ **pendiente** |
-| Backfill fases 1 + 3a | ✅ corrido y verificado | ⚠️ fase 1 sí, 3a no |
+| `core.0019` (bracket/cohorte/pertenencias) | ✅ | ✅ aplicada |
+| `core.0020` + `0021` (`is_senior`) | ✅ | ❌ **pendiente** |
+| `core.0022` (renombre a cohorte) | ✅ | ❌ **pendiente** |
+| `events.0007` (`Event.bracket`) | ✅ | ❌ **pendiente** |
+| `exams.0031` (competencia → bracket) | ✅ | ❌ **pendiente** |
+| Backfill fases 1 + 3a | ✅ verificado | ⚠️ fase 1 sí, 3a no |
+| Re-apuntado de partidos (3c) | ✅ 183 eventos | ❌ pendiente |
 | Fixtures futuros | ✅ 101 eventos | ❌ pendiente |
-| Código en git | 8 commits locales | `639e1d4` (no conoce estos modelos) |
+| Código en git | **30 commits locales** | `639e1d4` (no conoce estos modelos) |
+| Tests | **557 OK** | — |
 
 ⚠️ **Prod tiene la base por delante del código, y local por delante de prod.**
-Nada en `639e1d4` lee esas tablas, así que todo lo aplicado en prod es inerte.
-Decisión tomada el 2026-08-22: se acepta como adelanto y se valida en local.
+Nada en `639e1d4` lee esas tablas, así que lo ya aplicado en prod es inerte.
+Decisión del 2026-08-22: se acepta como adelanto y se valida en local.
 
-Orden al desplegar (las migraciones son aditivas, así que van primero sin riesgo
-para el código viejo):
+### Orden de despliegue
+
+Las migraciones son aditivas y van primero sin riesgo para el código viejo. La
+única excepción es `core.0022`, el renombre: **no la corras antes de que el
+código nuevo esté desplegado**, porque el `639e1d4` que hay hoy en prod todavía
+lee dígitos del nombre de la categoría y leería "Serie 2014" como Sub 20.
 
 ```bash
-# 1. migraciones
-manage.py migrate core     # 0019 — ya aplicada en prod
-manage.py migrate events   # 0007 — PENDIENTE en prod
-# 2. backfill (incluye brackets de evento y fixtures futuros)
+# ── 1. migraciones seguras con el código viejo ────────────────────────────
+manage.py migrate core     # 0020, 0021  (0019 ya está)
+manage.py migrate events   # 0007
+manage.py migrate exams    # 0031
+
+# ── 2. backfill: brackets, TeamSeason, pertenencias ──────────────────────
 manage.py backfill_cohorts --club "Universidad de Chile" --commit
+
+# ── 3. re-apuntar los partidos ya sincronizados (fase 3c) ────────────────
+#     DESPUÉS del backfill: sin TeamSeason cae al parseo del nombre y
+#     reproduce el error que viene a arreglar. Corré primero en seco.
+manage.py repoint_comet_events --club "Universidad de Chile"
+manage.py repoint_comet_events --club "Universidad de Chile" --commit
+
+# ── 4. push → Railway despliega backend, frontend, Celery y beat ─────────
+
+# ── 5. SÓLO con el código nuevo arriba: el renombre ──────────────────────
+manage.py migrate core     # 0022
+
+# ── 6. recuperar lo que la ingesta vieja descartó (fase 3e) ──────────────
+#     Contá ExamResult antes y después para saber cuánto se recuperó.
+#     Catapult va POR CATEGORÍA (no acepta --club) y sólo hay UNA integración
+#     configurada: Primer Equipo. Los juveniles no usan Catapult, su GPS entra
+#     por subida manual — así que ahí no hay nada que recuperar por API.
+#     Alcance real: 3 citados de los 56.
+manage.py sync_catapult --category "Primer Equipo" --commit
 manage.py sync_comet --club "Universidad de Chile" --days 30 --commit
-# 3. push → Railway despliega backend, frontend, Celery y beat
+
+#     Wellness no tiene comando: es una tarea Celery. Los modos son
+#     today | reconcile | all — para recuperar hace falta el completo:
+manage.py shell -c "from exams.tasks import sync_wellness_responses; \
+print(sync_wellness_responses(mode='all'))"
 ```
+
+### Verificaciones después de desplegar
+
+| Qué | Cómo | Esperado |
+|---|---|---|
+| Partidos bien archivados | `repoint_comet_events` en seco | "sin cambios" |
+| Competencias resueltas | admin → Competencias COMET | bracket en todas; sólo "Sub 11" sin equipo |
+| Etiquetas | selector global | "Sub 12 · Serie 2014", no "SUB-11" |
+| Senior intacto | `/partidos` con Primer Equipo | los 43 eventos senior siguen ahí |
+
+### Lo que sigue esperando al club
+
+- **¿Las series 2008 y 2009 son un plantel o dos?** Son los 23 partidos Sub 18
+  sin resolver. Se arregla con una fila en `category_override`.
+- Plantel 2015 (engancharía los 29 partidos desprendidos de "Sub 11").
+- Volver a subir los archivos de GPS de entrenamiento que la ingesta vieja
+  descartó — esos no se recuperan solos.
