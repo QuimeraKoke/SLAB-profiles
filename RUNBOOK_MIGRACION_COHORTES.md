@@ -159,18 +159,35 @@ COMMIT;
 
 ---
 
-## Fase 2 — Renombrar equipos + pertenencias reales
+## Fase 2 — Renombrar equipos
 
-Pendiente. `SUB-11` → `Serie 2014`, etc. Sólo cambia `Category.name`; **ningún
-jugador se mueve**. Reversible con el mapeo inverso.
+➡️ **Hecha.** Ver "Fase 2 — Renombrar equipos a cohorte" más abajo, después de
+la 3e: el renombre depende de la etiqueta derivada y del rediseño
+competencia→bracket, así que está documentado en el orden en que se ejecuta, no
+en el orden en que se numeró.
 
-⚠️ `Category` tiene `unique_together = ("club", "name")`: renombrar en cascada
-puede chocar transitoriamente (dos equipos queriendo llamarse igual a mitad de
-camino). Hacerlo en una transacción con nombres temporales.
+Las dos advertencias que tenía esta sección, resueltas:
 
-⚠️ Toca la regla de IA nº 3 de `AGENTS.md` ("una etiqueta = un significado"):
-`Categoría` deja de ser un término único y hay que nombrar **Equipo** y
-**Categoría de competencia** distinto en toda la UI.
+- `unique_together = ("club", "name")` — la migración **salta** las colisiones en
+  vez de usar nombres temporales. Un equipo sin renombrar sigue leyéndose bien
+  por `season_label`; una migración caída bloquea el deploy entero.
+- Pertenencias reales (`PlayerTeamMembership`) — las escribe la fase 1. El
+  renombre **no mueve a ningún jugador**.
+
+### ⚠️ Lo que este renombre dejó abierto
+
+Sigue vivo el choque con la regla de IA nº 3 de `AGENTS.md` ("una etiqueta = un
+significado"): **`Categoría` ahora significa dos cosas distintas** en la UI.
+
+| En el código | En la UI hoy | Debería decir |
+|---|---|---|
+| `Category` (el equipo, `Serie 2014`) | "Categoría" | **Equipo** |
+| `Bracket` (la competencia, `Sub 12`) | "Categoría de competencia" | **Categoría** o **Serie** |
+
+El selector global dice "Categoría" y lista equipos; el admin dice "Categoría de
+competencia" y lista brackets. Un usuario que lea las dos pantallas no tiene
+forma de saber que son cosas distintas. Es trabajo de vocabulario, no de
+modelo — y hay que decidirlo con el club, porque son ellos los que hablan.
 
 ## Fase 3a — `Event.bracket` ✅ HECHA
 
