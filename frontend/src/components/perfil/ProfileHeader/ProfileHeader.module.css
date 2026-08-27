@@ -194,3 +194,14 @@
 .verMasBtn:hover {
   background-color: #2563eb;
 }
+
+/* El Sub de la temporada al lado del nombre del equipo. Aclaración, no segundo
+   nombre: sin mayúsculas y más tenue para que no compita con "SERIE 2014". */
+.tagHint {
+  margin-left: 6px;
+  font-size: 0.82em;
+  font-weight: 500;
+  text-transform: none;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}

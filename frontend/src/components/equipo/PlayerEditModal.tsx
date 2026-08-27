@@ -123,7 +123,7 @@ export default function PlayerEditModal({
               <input value={form.last_name} onChange={(e) => set("last_name", e.target.value)} />
             </label>
             <label className={styles.field}>
-              <span>Categoría</span>
+              <span>Equipo o serie</span>
               <select value={form.category_id} onChange={(e) => set("category_id", e.target.value)}>
                 <option value="">—</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}

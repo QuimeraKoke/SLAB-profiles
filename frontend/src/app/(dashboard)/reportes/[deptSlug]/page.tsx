@@ -244,7 +244,7 @@ export default function ReportePage({ params }: PageProps) {
                 sections={layout.sections}
                 meta={{
                   departmentName: department.name,
-                  categoryName: layout.category.name,
+                  categoryName: layout.category.label,
                   filters: {
                     positionLabel: filterPositionLabel(filters.positionId, positions),
                     playerNames: filterPlayerNames(filters.playerIds, players),
@@ -257,7 +257,9 @@ export default function ReportePage({ params }: PageProps) {
             {layout && categoryId && (
               <DownloadPdfButton
                 endpoint={`/reports/${department.slug}/team.docx?${teamDocxQuery(categoryId, filters)}`}
-                filename={`reporte-${department.slug}-${layout.category.name}.docx`.replace(/\s+/g, "_")}
+                // Nombre de ARCHIVO: el guardado, no la etiqueta. "Serie 2014 — Sub 12"
+                  // metería espacios y una raya en el nombre del archivo.
+                  filename={`reporte-${department.slug}-${layout.category.name}.docx`.replace(/\s+/g, "_")}
               />
             )}
             {editMode && categoryId && (

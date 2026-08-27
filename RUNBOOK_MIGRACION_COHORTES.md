@@ -521,19 +521,46 @@ reconstruye un `SUB-NN` desde el bracket declarado — no exacto por construcci�
 porque los nombres viejos eran una foto vieja, pero estable al revertir y volver a
 aplicar.
 
-### Lo que queda por rotular
+### Rotulado ✅ COMPLETO (2026-08-27)
 
-Estas superficies muestran el nombre de la categoría desde **otros** esquemas
-(embebido en el evento, en el jugador, en el PDF), así que no reciben `label`
-todavía y siguen mostrando el nombre guardado:
+**PDFs y DOCX (8 archivos).** Todos pasaron a `season_label()`, que devuelve
+`Serie 2014 (Sub 12)`. Verificado extrayendo el texto de los PDFs generados con
+`pdftotext`: los tres traen "Serie 2014" y "Sub 12", y ninguno "SUB-11".
 
-- `/partidos/[id]` y `ProfileEvents` → `event.category.name`
-- Fichas PDF: `player_triage`, `team_report`, `daily_deck`
-- `/daily`, `/centro-de-mando`, `/reportes/[dept]`, `/uso`
+⚠️ Ojo con el método: buscar la cadena en los bytes del PDF **no sirve** —
+`player_triage` usa fuentes embebidas con codificación propia, así que ni el
+apellido del jugador aparece en crudo ni descomprimiendo los streams. Hace falta
+un extractor de verdad.
 
-Tras el renombre esas leen "Serie 2014" en vez de "Sub 12 · Serie 2014": quedan
-**incompletas, no equivocadas**, que era el punto de renombrar. Rotularlas es
-trabajo mecánico por esquema y va en una tanda aparte.
+**14 pantallas.** La mayoría fue cambiar una palabra: `EventOut.category`,
+`PlayerDetailOut.category` y `TeamReportLayoutOut.category` ya eran `CategoryOut`,
+que trae `label` desde el paso 1. Sólo la alerta necesitó backend
+(`player_category_name` → `player_category_label`).
+
+Dos casos con criterio:
+
+- **El nombre de archivo** de los reportes sigue usando el nombre guardado: una
+  etiqueta con espacios y raya (`Serie 2014 — Sub 12`) no va en un filename.
+- **El badge del perfil** muestra `SERIE 2014` en mayúsculas con el `Sub 12`
+  chico al lado, sin mayúsculas: es la aclaración, no parte del nombre.
+
+**Rótulos de selector → "Equipo o serie"** en el navbar, `configuraciones/jugadores`,
+`configuraciones/usuarios`, `MatchForm`, `PlayerEditModal`, `/uso` y las cabeceras
+de tabla de `/partidos`. "Categoría" ya no describía lo que la lista contiene (un
+Equipo y varias Series), y "Equipo" solo tampoco sirve porque quedó reservado
+para el primer equipo.
+
+⚠️ **La misma palabra significa TRES cosas** y el barrido no puede ser un
+find/replace. En `chart_data_tables.py` y `docx/_docx.py`, `["Categoría", "Valor",
+"%"]` son las **porciones de un gráfico de torta** — ahí no se toca. Sólo cambió
+`scaffold.py`, que era el equipo del reporte.
+
+### Lo que queda de vocabulario
+
+~40 menciones en **prosa** ("Seleccioná una categoría", "Sin jugadores en esta
+categoría", "No hay plantillas para esta categoría"). Todas significan el equipo,
+así que son renombrables, pero es un barrido de redacción y conviene hacerlo de
+una sola pasada para que quede consistente.
 
 ## Fase 2b — Borrar las categorías vacías ✅ HECHA en local (2026-08-26)
 

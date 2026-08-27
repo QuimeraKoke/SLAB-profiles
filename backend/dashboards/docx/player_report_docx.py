@@ -91,7 +91,7 @@ def _render(player, department, payload, narrative, date_from, date_to) -> bytes
         title=f"{player.first_name} {player.last_name}".strip(),
         subtitle=f"Reporte de {department.name}",
         meta=[
-            ("Categoría", category.name if category else ""),
+            ("Equipo", category.season_label() if category else ""),
             ("Período", _format_period(date_from, date_to)),
             ("Generado", timezone.now().astimezone(_DISPLAY_TZ).strftime("%d/%m/%Y · %H:%M")),
         ],

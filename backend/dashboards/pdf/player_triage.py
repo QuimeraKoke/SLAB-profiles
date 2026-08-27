@@ -468,7 +468,7 @@ def _ficha_header(player: Player, club, payload: dict, fs: dict) -> list:
     if player.position:
         bio_bits.append(_esc(player.position.name))
     if player.category:
-        bio_bits.append(_esc(player.category.name))
+        bio_bits.append(_esc(player.category.season_label()))
     if bio_bits:
         out.append(Paragraph("  ·  ".join(bio_bits), fs["bio"]))
 

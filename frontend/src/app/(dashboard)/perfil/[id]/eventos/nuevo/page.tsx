@@ -231,7 +231,7 @@ export default function NuevoEventoPage({ params }: PageProps) {
         </Link>
         <div className={styles.titles}>
           <span className={styles.eyebrow}>
-            {player.first_name} {player.last_name} · {player.category.name}
+            {player.first_name} {player.last_name} · {player.category.label}
           </span>
           <h1 className={styles.title}>Nuevo evento</h1>
         </div>
@@ -356,7 +356,7 @@ export default function NuevoEventoPage({ params }: PageProps) {
               onChange={() => setScope("category")}
             />
             <span>
-              Toda la categoría: {player.category.name}{" "}
+              Todo el equipo: {player.category.label}{" "}
               <span className={styles.dim}>
                 ({categoryParticipantCount} jugadores)
               </span>

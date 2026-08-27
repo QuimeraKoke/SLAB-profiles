@@ -145,7 +145,8 @@ def build_department_payload(
                 })
     payload = {
         "department": department.name,
-        "category": category.name if category else None,
+        "category": category.season_label(date_to.year if date_to else None)
+        if category else None,
         "items": items,
         # Source-labeled references per metric (internal bands + external
         # norms + squad percentile) so the agent compares against trustworthy,
@@ -359,7 +360,7 @@ def render_player_pdf(
         "club_logo": logo_image_for_club(category.club) if category else None,
         "title": f"{player.first_name} {player.last_name}".strip(),
         "subtitle": f"Reporte de {department.name}",
-        "category_name": category.name if category else "",
+        "category_name": category.season_label() if category else "",
         "period_label": _format_period(date_from, date_to),
         "generated_at": timezone.now().astimezone(_DISPLAY_TZ),
     }

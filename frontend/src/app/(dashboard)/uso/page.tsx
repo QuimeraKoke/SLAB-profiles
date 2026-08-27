@@ -229,7 +229,7 @@ export default function UsoPage() {
 
       <div className={styles.controls}>
         <label className={styles.field}>
-          <span className={styles.label}>Categoría</span>
+          <span className={styles.label}>Equipo o serie</span>
           <select
             value={categoryId}
             onChange={(e) => setCategoryId(e.target.value)}

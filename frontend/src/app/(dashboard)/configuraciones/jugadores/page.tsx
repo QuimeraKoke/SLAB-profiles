@@ -287,7 +287,7 @@ export default function PlayersAdminPage() {
 
       <div className={styles.toolbar}>
         <label className={styles.field}>
-          <span className={styles.label}>Categoría</span>
+          <span className={styles.label}>Equipo o serie</span>
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value)}
@@ -329,7 +329,7 @@ export default function PlayersAdminPage() {
             <thead>
               <tr>
                 <th>Jugador</th>
-                <th>Categoría</th>
+                <th>Equipo</th>
                 <th>Posición</th>
                 <th>Nacimiento</th>
                 <th>Peso</th>

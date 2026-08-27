@@ -124,7 +124,7 @@ def render_team_pdf(
         "club_logo": logo_image_for_club(category.club),
         "title": f"Reporte de {department.name}",
         "subtitle": "Vista de equipo",
-        "category_name": category.name,
+        "category_name": category.season_label(date_to.year if date_to else None),
         "period_label": period_label,
         "generated_at": timezone.now().astimezone(_DISPLAY_TZ),
     }

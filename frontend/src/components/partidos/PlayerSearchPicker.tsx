@@ -9,7 +9,7 @@ import type { PlayerSummary } from "@/lib/types";
 import styles from "./PlayerSearchPicker.module.css";
 
 interface Props {
-  /** Map category_id → category_name. Drives the `[Categoría]` badge
+  /** Map category_id → etiqueta del equipo (label + Sub del año). Drives the `[Categoría]` badge
    *  shown next to each search result. Parent fetches once and reuses. */
   categoriesById: Record<string, string>;
   /** Player IDs already in the roster — excluded from the dropdown so

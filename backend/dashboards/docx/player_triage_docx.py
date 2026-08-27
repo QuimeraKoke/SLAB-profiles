@@ -73,7 +73,7 @@ def _render(triage: dict, analysis: dict, player: Player, narrative: dict | None
     )[0]
     gen = triage["generated_at"].astimezone(_DISPLAY_TZ)
     number = player_squad_number(player)
-    meta = [("Categoría", player.category.name if player.category else "")]
+    meta = [("Equipo", player.category.season_label() if player.category else "")]
     if number:
         meta.append(("Dorsal", f"#{number}"))
     meta += [

@@ -106,7 +106,12 @@ export default function ProfileHeader({ player }: ProfileHeaderProps) {
         </div>
         <div className={styles.info}>
           <span className={styles.tag}>
-            {player.category.name.toUpperCase()}
+            {player.category.label.toUpperCase()}
+            {player.category.label_hint && (
+              /* El Sub del año, chico y sin mayúsculas: es la aclaración, no
+                 parte del nombre del equipo. */
+              <span className={styles.tagHint}>{player.category.label_hint}</span>
+            )}
             {player.status && (
               <span
                 className={`${styles.statusPill} ${styles[`status_${player.status}`] ?? ''}`}

@@ -222,7 +222,7 @@ function EventCard({
       <div className={styles.footer}>
         {event.scope === "category" && event.category ? (
           <span className={styles.scopeTag}>
-            {event.category.name} · {event.participants.length} participantes
+            {event.category.label} · {event.participants.length} participantes
           </span>
         ) : event.scope === "individual" ? (
           <span className={styles.scopeTag}>Individual</span>

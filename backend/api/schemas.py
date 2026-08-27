@@ -508,7 +508,7 @@ class AlertWithPlayerOut(AlertOut):
 
     player_first_name: str = ""
     player_last_name: str = ""
-    player_category_name: str = ""
+    player_category_label: str = ""
 
 
 class AlertPatchIn(Schema):

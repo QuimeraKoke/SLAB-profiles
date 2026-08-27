@@ -609,7 +609,7 @@ export interface Alert {
 export interface AlertWithPlayer extends Alert {
   player_first_name: string;
   player_last_name: string;
-  player_category_name: string;
+  player_category_label: string;
 }
 
 // ---------- Bulk ingest preview/commit response ----------

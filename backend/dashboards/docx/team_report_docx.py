@@ -135,7 +135,7 @@ def _render(department, category, exec_stats, by_status, resolved, narrative,
         title=f"Reporte de {department.name}",
         subtitle="Vista de equipo",
         meta=[
-            ("Categoría", category.name if category else ""),
+            ("Equipo", category.season_label() if category else ""),
             ("Período", period_label),
             ("Generado", timezone.now().astimezone(_DISPLAY_TZ).strftime("%d/%m/%Y · %H:%M")),
         ],
@@ -219,7 +219,7 @@ def _team_payload(department, category, exec_stats, resolved, *, filters) -> dic
         "scope": "team",
         "report_type": "Reporte de equipo",
         "department": department.name,
-        "category": category.name if category else None,
+        "category": category.season_label() if category else None,
         "filters": filters,
         "executive": exec_stats,
         "items": [

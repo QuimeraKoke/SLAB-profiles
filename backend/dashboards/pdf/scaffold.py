@@ -190,7 +190,10 @@ def cover_page(meta: dict[str, Any], pagesize: tuple[float, float]) -> list:
     # Meta table — 2 columns key/value
     meta_rows: list[tuple[str, str]] = []
     if meta.get("category_name"):
-        meta_rows.append(("Categoría", meta["category_name"]))
+        # "Equipo", no "Categoría": es el equipo del reporte. Ojo que en
+        # chart_data_tables la misma palabra significa otra cosa — las
+        # porciones de un gráfico de torta — y ahí NO se toca.
+        meta_rows.append(("Equipo", meta["category_name"]))
     if meta.get("period_label"):
         meta_rows.append(("Período", meta["period_label"]))
     if meta.get("generated_at"):

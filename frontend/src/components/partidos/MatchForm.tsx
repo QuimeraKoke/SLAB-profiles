@@ -260,7 +260,7 @@ export default function MatchForm({
     <form className={styles.form} onSubmit={handleSubmit}>
       <div className={styles.row}>
         <label className={styles.field}>
-          <span className={styles.label}>Categoría</span>
+          <span className={styles.label}>Equipo o serie</span>
           <select
             required
             value={categoryId}

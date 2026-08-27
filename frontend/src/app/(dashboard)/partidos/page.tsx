@@ -182,7 +182,7 @@ export default function PartidosPage() {
               <tr>
                 <th>Fecha</th>
                 <th>Partido</th>
-                <th>Categoría</th>
+                <th>Equipo</th>
                 <th>Departamento</th>
                 <th>Lugar</th>
                 <th className={styles.numericCell}>Convocados</th>

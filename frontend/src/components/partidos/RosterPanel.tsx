@@ -8,13 +8,14 @@ import type { Category, PlayerSummary } from "@/lib/types";
 
 import PlayerSearchPicker from "./PlayerSearchPicker";
 import styles from "./RosterPanel.module.css";
+import { categoryLabel } from "@/lib/categoryLabel";
 
 export interface RosterEntry {
   player_id: string;
   first_name: string;
   last_name: string;
   category_id: string | null;
-  category_name: string;
+  category_label: string;
   match_role: string;
   absence_reason: string;
   position_played_id: string | null;
@@ -73,7 +74,9 @@ export default function RosterPanel({ eventId, refreshKey, onSaved, onEntriesCha
       .then((cats) => {
         if (cancelled) return;
         const map: Record<string, string> = {};
-        for (const c of cats) map[c.id] = c.name;
+        // El mapa alimenta las filas del plantel y el buscador, así que
+        // rotularlo acá cubre los dos.
+        for (const c of cats) map[c.id] = categoryLabel(c);
         setCategoriesById(map);
       })
       .catch(() => {
@@ -146,7 +149,7 @@ export default function RosterPanel({ eventId, refreshKey, onSaved, onEntriesCha
       first_name: player.first_name,
       last_name: player.last_name,
       category_id: player.category_id,
-      category_name: categoriesById[player.category_id] || "",
+      category_label: categoriesById[player.category_id] || "",
       match_role: addAs,
       absence_reason: "",
       position_played_id: null,
@@ -293,8 +296,8 @@ export default function RosterPanel({ eventId, refreshKey, onSaved, onEntriesCha
               <span className={styles.rowName} title={`${e.first_name} ${e.last_name}`}>
                 {e.last_name}, {e.first_name}
               </span>
-              {e.category_name && (
-                <span className={styles.rowCategory}>{e.category_name}</span>
+              {e.category_label && (
+                <span className={styles.rowCategory}>{e.category_label}</span>
               )}
               <select
                 className={styles.rowRole}

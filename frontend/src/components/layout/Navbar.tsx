@@ -183,12 +183,16 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
       <div className={styles.rightSection}>
         {categories.length > 0 && (
           <label className={styles.categoryPicker}>
-            <span className={styles.categoryPickerHint}>Categoría</span>
+            {/* "Equipo o serie", no "Categoría": con el vocabulario del club esa
+              * palabra ya no describe lo que la lista contiene — un Equipo (el
+              * primero) y varias Series. Y "Equipo" solo tampoco sirve, porque
+              * quedó reservado para el primer equipo. */}
+            <span className={styles.categoryPickerHint}>Equipo o serie</span>
             <select
               className={styles.categorySelect}
               value={categoryId ?? ""}
               onChange={(e) => setCategoryId(e.target.value)}
-              aria-label="Seleccionar categoría"
+              aria-label="Seleccionar equipo o serie"
             >
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>{categoryLabel(c)}</option>
@@ -246,9 +250,9 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
                           <span className={styles.playerName}>
                             {a.player_first_name} {a.player_last_name}
                           </span>
-                          {a.player_category_name && (
+                          {a.player_category_label && (
                             <span className={styles.playerCategory}>
-                              · {a.player_category_name}
+                              · {a.player_category_label}
                             </span>
                           )}
                           <span className={styles.alertWhen}>

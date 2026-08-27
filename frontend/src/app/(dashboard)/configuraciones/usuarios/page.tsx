@@ -536,7 +536,7 @@ export default function UsersAdminPage() {
 
             {/* Scope: categories */}
             <div className={`${styles.field} ${styles.scopeGroup}`}>
-              <span className={styles.label}>Categorías</span>
+              <span className={styles.label}>Equipos y series</span>
               {canGrantAllCats && (
                 <label className={styles.checkboxRow}>
                   <input

@@ -4997,7 +4997,7 @@ def list_all_alerts(request, status: str | None = "active", limit: int = 50):
             "dismissed_at": a.dismissed_at,
             "player_first_name": a.player.first_name,
             "player_last_name": a.player.last_name,
-            "player_category_name": a.player.category.name,
+            "player_category_label": a.player.category.season_label(),
         }
         for a in qs
     ]

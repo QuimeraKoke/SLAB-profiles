@@ -136,7 +136,7 @@ export default function PartidoDetailPage({ params }: PageProps) {
                 {event.location && <span className={styles.dot}>·</span>}
                 {event.location && <span>{event.location}</span>}
                 {event.category && <span className={styles.dot}>·</span>}
-                {event.category && <span>{event.category.name}</span>}
+                {event.category && <span>{event.category.label}</span>}
               </p>
             )}
           </div>

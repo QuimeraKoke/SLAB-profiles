@@ -304,7 +304,8 @@ def _cover_slide(data: dict, category, target_date: date_cls, s: dict) -> list:
     out.append(Paragraph("DAILY", s["deck_title"]))
     out.append(Spacer(1, 2 * mm))
     out.append(Paragraph(
-        f"{category.club.name} · {category.name}<br/>{_long_date(target_date)}",
+        f"{category.club.name} · {category.season_label(target_date.year)}"
+        f"<br/>{_long_date(target_date)}",
         s["deck_sub"],
     ))
     out.append(Spacer(1, 12 * mm))
@@ -592,7 +593,7 @@ def render_daily_deck(category, target_date: date_cls, user=None) -> bytes:
 
     return build_pdf(
         orientation="landscape",
-        cover={"title": f"Daily — {category.name}",
+        cover={"title": f"Daily — {category.season_label(target_date.year)}",
                "club_name": category.club.name},
         flowables=story,
     )
