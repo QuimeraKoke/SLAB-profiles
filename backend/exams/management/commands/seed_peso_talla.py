@@ -19,6 +19,8 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from exams.bulk_ingest import mapping_from_schema
+
 from core.models import Category, Club, Department
 
 
@@ -64,6 +66,16 @@ INPUT_CONFIG: dict = {
     # single, team-table, and file flows) instead of defaulting to "now".
     "modifiers": {"allow_custom_date": True},
     "team_table": {"shared_fields": []},
+    # ⚠️ Mismo olvido que en `pentacompartimental`: `bulk_ingest` estaba en
+    # `input_modes` sin `column_mapping`, así que la subida y la descarga de la
+    # plantilla devolvían 400 — el modo se ofrecía en la UI y no funcionaba.
+    "bulk_ingest": {
+        "help": (
+            "Carga la planilla con una fila por jugador. Bajá la plantilla para "
+            "tener los encabezados exactos; el IMC se calcula acá."
+        ),
+    },
+    "column_mapping": mapping_from_schema(SCHEMA),
 }
 
 NAME = "Peso y Talla"

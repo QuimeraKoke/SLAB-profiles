@@ -45,6 +45,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from exams.bulk_ingest import mapping_from_schema
 from core.models import Category, Club, Department
 from exams.models import ExamTemplate
 
@@ -72,8 +73,13 @@ from exams.models import ExamTemplate
 PENTACOMPARTIMENTAL_SCHEMA: dict = {
     "fields": [
         # ─── Datos básicos ─────────────────────────────────────────────
-        {"key": "peso",          "label": "Peso",                 "type": "number", "unit": "kg", "group": "Datos básicos", "required": True},
-        {"key": "talla",         "label": "Talla",                "type": "number", "unit": "cm", "group": "Datos básicos", "required": True},
+        {"key": "peso",          "label": "Peso",                 "type": "number", "unit": "kg", "group": "Datos básicos", "required": True,
+         # Mismos rangos que `penta_ingest.PESO_RANGE`/`TALLA_RANGE`: son un
+         # control de ALINEACIÓN, no clínico. Ahora también los usa la carga
+         # por archivo, que antes no validaba nada.
+         "min": 25, "max": 150},
+        {"key": "talla",         "label": "Talla",                "type": "number", "unit": "cm", "group": "Datos básicos", "required": True,
+         "min": 100, "max": 220},
         {"key": "talla_sentado", "label": "Talla sentado",        "type": "number", "unit": "cm", "group": "Datos básicos",
          "help_text": "Necesario para masa residual (referencia Phantom 89.92 cm)."},
         {"key": "sexo",          "label": "Sexo (1=M, 2=F)",      "type": "number",               "group": "Datos básicos", "required": True},
@@ -459,6 +465,30 @@ class Command(BaseCommand):
                     modes.append(m)
             cfg["input_modes"] = modes
             cfg.setdefault("team_table", {"shared_fields": []})
+            # ⚠️ El mapping va JUNTO al modo. Antes esto agregaba `bulk_ingest`
+            # a `input_modes` y nunca definía `column_mapping`, así que tanto la
+            # subida como la descarga de la plantilla devolvían 400: el modo
+            # aparecía en la UI y no funcionaba.
+            #
+            # Derivado del SCHEMA y no escrito a mano: son 31 columnas, y una
+            # lista paralela se desincroniza en la primera edición del examen.
+            #
+            # `sexo` queda afuera (es un código 1/2, no una medición, y ninguna
+            # fórmula lo usa) igual que `objetivo` y `notas`, que son texto y por
+            # eso no los toma `mapping_from_schema`.
+            cfg["column_mapping"] = mapping_from_schema(PENTACOMPARTIMENTAL_SCHEMA, exclude=("sexo",))
+            bulk = cfg.setdefault("bulk_ingest", {})
+            # La partición de Kerr se controla a sí misma: masas positivas que
+            # sumen el peso medido. Es el único chequeo que atrapa un set de
+            # mediciones incoherente entre sí, donde peso y talla son plausibles.
+            bulk["validate"] = "anthropometry_masses"
+            bulk.setdefault("help", (
+                "Carga la planilla de la evaluación: una fila por jugador. "
+                "Bajá la plantilla para tener los encabezados exactos — se leen "
+                "POR NOMBRE, así que una columna de más ya no corre las "
+                "mediciones como pasó con las 20 evaluaciones corrompidas en "
+                "2026-08. Las masas se calculan acá desde las mediciones."
+            ))
             template.input_config = cfg
             update_fields.append("input_config")
             if unlock and template.is_locked:

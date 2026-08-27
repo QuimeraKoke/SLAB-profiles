@@ -35,6 +35,29 @@ class IngestError(ValueError):
     """Raised when the file or column_mapping can't be processed."""
 
 
+def _validate_anthropometry_masses(result_data: dict) -> str | None:
+    """La partición de Kerr como control de sí misma.
+
+    El modelo reparte la masa corporal, así que cada componente tiene que ser
+    positivo y la suma tiene que dar aproximadamente el peso medido. Un rango
+    por campo no alcanza para esto: en la prueba, peso 78 kg y talla 178 cm eran
+    ambos plausibles y la masa muscular salió **negativa** porque el RESTO de las
+    31 mediciones era incoherente entre sí. Sin este chequeo eso se guardaba y
+    entraba a los gráficos del jugador.
+    """
+    from exams.penta_ingest import implausible_masses
+
+    return implausible_masses(result_data, result_data.get("peso"))
+
+
+# Validadores que una plantilla puede pedir con
+# `input_config["bulk_ingest"]["validate"]`. Un dict explícito y no un import
+# dinámico: lo que puede correr acá tiene que poder leerse de una sola mirada.
+POST_VALIDATORS = {
+    "anthropometry_masses": _validate_anthropometry_masses,
+}
+
+
 # ---------- step 1: parse ----------
 
 @dataclass
@@ -271,6 +294,40 @@ def transform_rows(resolved: list[ResolvedRow], mapping: dict) -> dict[str, Play
 
 # ---------- step 4: orchestrate ----------
 
+def mapping_from_schema(
+    schema: dict, *, player_column: str = "Jugador", exclude: tuple = (),
+) -> dict:
+    """`column_mapping` derivado de los campos del propio examen.
+
+    Existe porque la alternativa —tipear 31 encabezados a mano en un seed— se
+    desincroniza del template en la primera edición, y porque habilitar
+    `bulk_ingest` sin mapping deja la carga Y la descarga devolviendo 400. Pasó
+    exactamente eso en `pentacompartimental` y `peso_talla`: el seed agregaba el
+    modo a `input_modes` y nunca definía el mapping.
+
+    Toma sólo los campos `number`. Los `calculated` los recalcula el motor, y un
+    archivo de mediciones no lleva texto libre ni checkboxes.
+
+    Los encabezados son `"Etiqueta (unidad)"` — la misma etiqueta que el club ve
+    en la app, más la unidad. La unidad no es decoración: la clase de error que
+    corrompe una antropometría es una talla en metros, y el encabezado que dice
+    "(cm)" es la primera defensa contra eso.
+    """
+    field_map: dict[str, dict] = {}
+    for f in (schema or {}).get("fields", []):
+        key = f.get("key")
+        if not key or key in exclude or f.get("type") != "number":
+            continue
+        unit = (f.get("unit") or "").strip()
+        label = f.get("label") or key
+        header = f"{label} ({unit})" if unit else label
+        field_map[header] = {"template_key": key}
+    return {
+        "player_lookup": {"column": player_column, "kind": "alias"},
+        "field_map": field_map,
+    }
+
+
 def blank_workbook(template) -> bytes:
     """El .xlsx vacío que este parser espera, generado desde el mapping.
 
@@ -353,11 +410,56 @@ def run_ingest(
     resolved = match_rows(parsed, mapping, category)
     by_player = transform_rows(resolved, mapping)
 
+    limits = {
+        f["key"]: (f.get("min"), f.get("max"))
+        for f in (template.config_schema or {}).get("fields", [])
+        if f.get("type") == "number" and (f.get("min") is not None or f.get("max") is not None)
+    }
+
+    post_validator = POST_VALIDATORS.get(
+        ((template.input_config or {}).get("bulk_ingest") or {}).get("validate")
+    )
+
     matched: list[dict] = []
+    rejected: list[dict] = []
     for payload in by_player.values():
+        # Rango declarado por el propio campo. Sin esto, un archivo con la talla
+        # en metros pasaba entero: 78 kg / 0,30 m² dio un IMC de 866, y una
+        # antropometría desalineada dio masa muscular NEGATIVA — y ambos se
+        # guardaban sin una queja, directo a los gráficos del jugador. Es la
+        # misma clase de daño que corrompió 20 evaluaciones en 2026-08; los
+        # encabezados por nombre eliminan el corrimiento de columnas, no un
+        # valor mal tipeado.
+        out_of_range = []
+        for key, (lo, hi) in limits.items():
+            v = payload.raw_data.get(key)
+            if not isinstance(v, (int, float)):
+                continue
+            if (lo is not None and v < lo) or (hi is not None and v > hi):
+                rng = f"{lo if lo is not None else '−∞'}–{hi if hi is not None else '∞'}"
+                out_of_range.append(f"{key}={v} (esperado {rng})")
+        if out_of_range:
+            rejected.append({
+                "player_name": (
+                    f"{payload.player.first_name} {payload.player.last_name}"
+                ),
+                "issues": out_of_range,
+            })
+            continue
+
         result_data, inputs_snapshot = compute_result_data(
             template, payload.raw_data, player=payload.player,
         )
+        if post_validator is not None:
+            why = post_validator(result_data)
+            if why:
+                rejected.append({
+                    "player_name": (
+                        f"{payload.player.first_name} {payload.player.last_name}"
+                    ),
+                    "issues": [why],
+                })
+                continue
         matched.append({
             "player_id": str(payload.player.id),
             "player_name": f"{payload.player.first_name} {payload.player.last_name}",
@@ -383,6 +485,7 @@ def run_ingest(
 
     response: dict = {
         "matched": matched,
+        "rejected": rejected,
         "unmatched": list(unmatched.values()),
         "total_rows": len(resolved),
         "matched_players": len(matched),
