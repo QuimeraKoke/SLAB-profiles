@@ -1,0 +1,230 @@
+[
+  {
+    "id": "5e9beb80-314c-4b7f-8671-f594c16fed8e",
+    "club": "Universidad de Chile",
+    "name": "SUB-10",
+    "is_senior": false,
+    "cohort_year": null,
+    "external_config": {},
+    "load_config": {},
+    "departments": [],
+    "exam_templates": [
+      "notas_diarias_fisico",
+      "rendimiento_de_partido",
+      "notas_diarias_nutricional",
+      "notas_diarias_psicosocial",
+      "notas_diarias_tactico",
+      "notas_diarias_medico",
+      "hoja_diaria_medico",
+      "fase_densidad",
+      "molestias"
+    ],
+    "briefing_snapshots": [
+      {
+        "data_hash": "871aabd37e32cb735e3832ffa4914129107dac07cfd3f13e6c7f51341ae74648",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:12.608613+00:00"
+      },
+      {
+        "data_hash": "3a8c77728993cfbd8fc75eb22c55c8d9eecb458f9b64079a44702ec53540b74e",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:14.155464+00:00"
+      },
+      {
+        "data_hash": "626e7ce54c9d24ff65ba1cd721b2bebde9bb2ff9c0c5fd7ca6e986be67c0cde0",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:14.459325+00:00"
+      },
+      {
+        "data_hash": "7cfd3d3aa98013517b1a6977cf0599cf153053cc6f19010f567e6ccdd8eb7584",
+        "model": "claude-opus-4-8",
+        "items": [
+          {
+            "tags": [
+              "Wellness",
+              "Adherencia",
+              "Datos"
+            ],
+            "title": "Sin datos de Check-IN en SUB-10",
+            "timing": "Hoy",
+            "players": [],
+            "evidence": [
+              "Wellness sin datos: value null, status 'Sin datos'",
+              "Completitud wellness 0 de 0 esperados",
+              "Sin plantilla de wellness para la categoría"
+            ],
+            "priority": "media",
+            "cta_label": "Reforzar adherencia",
+            "confidence": 70,
+            "department": "psicosocial",
+            "owner_role": "Ciencias del deporte",
+            "recommendation": "Activar y reforzar la captura del cuestionario de bienestar para poder generar índices válidos.",
+            "department_label": "Wellness"
+          }
+        ],
+        "created_at": "2026-08-27T03:23:16.923774+00:00"
+      },
+      {
+        "data_hash": "dfe5c8dc8283cba63aa46814ca2dda049b0fcba6857660606eee4d7e147ed15c",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:18.875942+00:00"
+      }
+    ]
+  },
+  {
+    "id": "d153b5a0-5abc-4d4b-b2be-8494b83a4c8b",
+    "club": "Universidad de Chile",
+    "name": "SUB-9",
+    "is_senior": false,
+    "cohort_year": null,
+    "external_config": {},
+    "load_config": {},
+    "departments": [],
+    "exam_templates": [
+      "notas_diarias_fisico",
+      "rendimiento_de_partido",
+      "notas_diarias_nutricional",
+      "notas_diarias_psicosocial",
+      "notas_diarias_tactico",
+      "notas_diarias_medico",
+      "hoja_diaria_medico",
+      "fase_densidad",
+      "molestias"
+    ],
+    "briefing_snapshots": [
+      {
+        "data_hash": "8ec9dcc9b04bc9be6ded094a4c47b34b8f863b1277368ac9d2756c165ee65b3e",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:25.181748+00:00"
+      },
+      {
+        "data_hash": "463c88434cc4e160219376b166f7c79460427850a525c87aaf7afd3afd36378d",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:26.418523+00:00"
+      },
+      {
+        "data_hash": "3054666d29d38fdaff0160582883e4a005974b27da573388b281b3e547496e40",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:26.549344+00:00"
+      },
+      {
+        "data_hash": "2863918554e63bc3236589aaf22909a8f81be56e782e076c60aff2b696930a3b",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:26.889080+00:00"
+      },
+      {
+        "data_hash": "148d6fe5181de8963a1a0b00443595f7c8f6186ed77128717c554e577b5e7d0b",
+        "model": "claude-opus-4-8",
+        "items": [
+          {
+            "tags": [
+              "Wellness",
+              "Adherencia",
+              "Datos"
+            ],
+            "title": "Sin datos de Check-IN en SUB-9",
+            "timing": "Hoy",
+            "players": [],
+            "evidence": [
+              "Wellness sin datos (0 dimensiones)",
+              "Completitud wellness: 0 de 0 esperados",
+              "Sin plantilla de Wellness registrada"
+            ],
+            "priority": "media",
+            "cta_label": "Reforzar adherencia",
+            "confidence": 60,
+            "department": "psicosocial",
+            "owner_role": "Ciencias del deporte",
+            "recommendation": "Implementar y reforzar la carga del cuestionario de bienestar para habilitar el monitoreo.",
+            "department_label": "Wellness"
+          }
+        ],
+        "created_at": "2026-08-27T03:23:28.825067+00:00"
+      }
+    ]
+  },
+  {
+    "id": "3b7299f6-ff3e-49c0-afd5-93cb2c11c7d3",
+    "club": "Universidad de Chile",
+    "name": "SUB-8",
+    "is_senior": false,
+    "cohort_year": null,
+    "external_config": {},
+    "load_config": {},
+    "departments": [],
+    "exam_templates": [
+      "notas_diarias_fisico",
+      "rendimiento_de_partido",
+      "notas_diarias_nutricional",
+      "notas_diarias_psicosocial",
+      "notas_diarias_tactico",
+      "notas_diarias_medico",
+      "hoja_diaria_medico",
+      "fase_densidad",
+      "molestias"
+    ],
+    "briefing_snapshots": [
+      {
+        "data_hash": "2d34cf9f9b39306484117dd4d7db2eca76f2684a7f584a36abd054c1dda30379",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:22.522607+00:00"
+      },
+      {
+        "data_hash": "6273745802a41121d00689ed521b176742dab627b2a37492c51d394c5ade999e",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:23.773079+00:00"
+      },
+      {
+        "data_hash": "1cd6de78a0b93dc2897b50a11ab42a665ad832ff495fed1a9a1870433d4d03b4",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:23.869550+00:00"
+      },
+      {
+        "data_hash": "72e32b46c9b5263804d71d7490963f749e1643faf7b1d610820a380a132a3447",
+        "model": "claude-opus-4-8",
+        "items": [],
+        "created_at": "2026-08-27T03:23:24.099293+00:00"
+      },
+      {
+        "data_hash": "c8645a8f8ef5c4d3f2fe9226cf4a4d3463b72129f3d0c3294c4f51f7f3d8aee7",
+        "model": "claude-opus-4-8",
+        "items": [
+          {
+            "tags": [
+              "Adherencia",
+              "Wellness",
+              "Calidad de dato"
+            ],
+            "title": "Sin datos de Check-IN en SUB-8",
+            "timing": "Hoy",
+            "players": [],
+            "evidence": [
+              "Wellness sin datos (0 dimensiones)",
+              "Completitud wellness 0 de 0 esperados",
+              "Sin plantilla de Wellness registrada"
+            ],
+            "priority": "media",
+            "cta_label": "Reforzar adherencia",
+            "confidence": 70,
+            "department": "psicosocial",
+            "owner_role": "Ciencias del deporte",
+            "recommendation": "Configurar y reforzar el envío del cuestionario de bienestar para poder monitorear la categoría.",
+            "department_label": "Wellness"
+          }
+        ],
+        "created_at": "2026-08-27T03:23:26.409971+00:00"
+      }
+    ]
+  }
+]

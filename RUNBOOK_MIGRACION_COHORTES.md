@@ -535,6 +535,56 @@ Tras el renombre esas leen "Serie 2014" en vez de "Sub 12 · Serie 2014": quedan
 **incompletas, no equivocadas**, que era el punto de renombrar. Rotularlas es
 trabajo mecánico por esquema y va en una tanda aparte.
 
+## Fase 2b — Borrar las categorías vacías ✅ HECHA en local (2026-08-26)
+
+`SUB-8`, `SUB-9` y `SUB-10` de la U: sin jugadores (ni inactivos), sin
+citaciones, sin pertenencias, sin temporadas declaradas, sin eventos. Ningún seed
+las crea — vienen de la migración legacy o las hizo alguien a mano.
+
+Por qué convenía sacarlas y no tolerarlas:
+
+- La escalera de la ANFP **arranca en Sub 11**. Abajo no existe competencia, así
+  que el feed de COMET nunca va a traer nada para ellas.
+- Ocupaban 3 de 16 lugares del selector global y eran indistinguibles de un
+  equipo real hasta hacer clic en una pantalla vacía.
+- Bajo el modelo de cohortes un equipo real llega como `Serie YYYY` con su año de
+  nacimiento. Estas no tenían `cohort_year`, así que tampoco podían alojar al
+  plantel 2015 que el club todavía debe.
+- ⚠️ **El job de briefings corría sobre ellas.** Cada una tenía 5
+  `BriefingSnapshot` con `model="claude-opus-4-8"` e `items: []` — una llamada a
+  Opus por categoría por corrida, para planteles con cero jugadores.
+
+```bash
+python manage.py migrate core   # 0023_delete_empty_categories
+```
+
+### Se eligen por VALOR, nunca por nombre
+
+Verificado antes de escribirla: en **toda** la base hay exactamente tres
+categorías que cumplen la condición, así que la regla no necesita lista de
+nombres ni señala la costumbre de nomenclatura de un club.
+
+### Falla-segura por construcción
+
+El chequeo recorre `Category._meta.related_objects` y trata como bloqueante
+**cualquier** relación que no reconozca explícitamente. Si alguien agrega un FK a
+`Category` el año que viene y se olvida de este archivo, una categoría con filas
+ahí deja de ser borrable en vez de irse en cascada. Una lista fija de cosas a
+revisar se desactualiza justo en la dirección que pierde datos.
+
+Sólo tres relaciones se aceptan como colateral: los dos M2M
+(`StaffMembership.categories`, `ExamTemplate.applicable_categories`) y
+`BriefingSnapshot`, que es caché de LLM y se regenera.
+
+⚠️ **Prod puede no verse como local.** Si allá alguna de esas categorías tiene
+jugadores, la migración **la salta** y sigue: es un guard, no un `DELETE`.
+
+### Respaldo
+
+`backend/core/fixtures/deleted_categories_2026-08-26.json` — nombre, configs,
+departamentos, plantillas y snapshots de las tres. `backward` es un `pass` a
+propósito: recrearlas inventaría UUIDs nuevos, que no es lo mismo que deshacer.
+
 ## Fase 4 — Auditar los filtros por categoría
 
 Pendiente. 146 sitios `category=`, 67 `category__`, 51 `player__category`. Cada
