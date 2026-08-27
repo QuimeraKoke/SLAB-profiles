@@ -73,10 +73,37 @@ class SeasonLabelTests(TestCase):
         TeamSeason.objects.create(team=team, season=2026, bracket=self.sub20)
         self.assertEqual(team.season_label_parts(2026), ("Sub 20", ""))
 
-    def test_an_undeclared_season_falls_back_to_the_cohort(self):
+    def test_an_undeclared_season_still_shows_its_sub(self):
+        """The reason the aside is calculated instead of read.
+
+        Nothing declares 2027 yet — no `TeamSeason` row exists for any serie.
+        Reading the declared row left every aside blank the moment the calendar
+        turned; the arithmetic needs no row. Verified against the real data:
+        calculation and declaration agree 14 of 14 across 2025 and 2026.
+        """
         team = Category.objects.create(
-            club=self.club, name="SUB-11", cohort_year=2014)
-        self.assertEqual(team.season_label_parts(2099), ("Serie 2014", ""))
+            club=self.club, name="Serie 2014", cohort_year=2014)
+        self.assertFalse(team.team_seasons.exists())
+        self.assertEqual(team.season_label_parts(2027), ("Serie 2014", "Sub 13"))
+
+    def test_the_ladder_gaps_are_honoured_by_the_calculation(self):
+        # 2009 turns 17 in 2026 and the ANFP runs no Sub 17, so they play Sub 18.
+        # Straight arithmetic would invent a competition that does not exist.
+        team = Category.objects.create(
+            club=self.club, name="Serie 2009", cohort_year=2009)
+        self.assertEqual(team.season_label_parts(2026)[1], "Sub 18")
+        # Same for 19 → Sub 20.
+        older = Category.objects.create(
+            club=self.club, name="Serie 2008", cohort_year=2008)
+        self.assertEqual(older.season_label_parts(2027)[1], "Sub 20")
+
+    def test_a_serie_off_the_ladder_gets_no_aside_rather_than_a_wrong_one(self):
+        team = Category.objects.create(
+            club=self.club, name="Serie 2014", cohort_year=2014)
+        # Aged past Sub 20 into senior football: no Sub describes them.
+        self.assertEqual(team.season_label_parts(2040), ("Serie 2014", ""))
+        # And too young for Sub 11, the lowest rung the federation runs.
+        self.assertEqual(team.season_label_parts(2020), ("Serie 2014", ""))
 
     def test_a_team_that_is_neither_falls_back_to_its_name(self):
         team = Category.objects.create(club=self.club, name="PEF - Femenino")
@@ -91,31 +118,61 @@ class SeasonLabelTests(TestCase):
             team=team, season=timezone.now().year, bracket=self.sub12)
         self.assertEqual(team.season_label_parts(), ("Serie 2014", "Sub 12"))
 
-    def _label_queries(self, n_teams: int) -> int:
-        """Queries needed to label `n_teams`, each with a declared season."""
-        club = Club.objects.create(name=f"Club{n_teams}")
-        for i in range(n_teams):
-            t = Category.objects.create(
-                club=club, name=f"T{i}", cohort_year=2000 + i)
-            TeamSeason.objects.create(team=t, season=2026, bracket=self.sub12)
+    def _teams(self, n: int, club_name: str):
+        club = Club.objects.create(name=club_name)
+        for i in range(n):
+            Category.objects.create(club=club, name=f"T{i}", cohort_year=2010 + i)
+        return Category.objects.filter(club=club)
 
-        qs = Category.objects.filter(club=club).prefetch_related(
-            "team_seasons__bracket")
-        with self.assertNumQueries(3) as ctx:
-            [c.season_label(2026) for c in qs]
+    def _queries(self, n: int, *, pass_ladder: bool) -> int:
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        qs = self._teams(n, f"Club-{n}-{pass_ladder}")
+        ladder = Bracket.ladder() if pass_ladder else None
+        with CaptureQueriesContext(connection) as ctx:
+            [c.season_label_parts(2026, ladder) for c in qs]
         return len(ctx)
 
-    def test_labelling_does_not_cost_a_query_per_team(self):
-        """The count must be CONSTANT, which is the property that matters.
+    def test_passing_the_ladder_makes_the_cost_constant(self):
+        """Why `season_label_parts` takes a `ladder` at all.
 
-        `.filter()` on a prefetched relation issues a fresh query, so without
-        `season_bracket` reading the prefetch cache the category picker costs one
-        query per team and the `prefetch_related` is dead weight. Asserting a
-        fixed number would also pass if it were fixed at the wrong value, so this
-        compares two sizes: three queries either way — categories, team_seasons,
-        brackets — regardless of how many teams.
+        The aside is calculated, so it needs the 9 federation rungs. Fetched
+        per call that is one query PER TEAM — invisible on a 3-team test and a
+        real cost on the 16-team category picker, which is why the endpoint
+        fetches it once and passes it down.
+
+        Compares two sizes rather than asserting a number: a fixed number would
+        also pass if it were fixed at the wrong value.
         """
-        self.assertEqual(self._label_queries(3), self._label_queries(12))
+        self.assertEqual(
+            self._queries(3, pass_ladder=True),
+            self._queries(12, pass_ladder=True),
+        )
+
+    def test_not_passing_it_costs_a_query_per_team(self):
+        # Pinned so the trade-off stays visible: this is the path a careless
+        # caller takes, and it should be a known cost rather than a surprise.
+        self.assertLess(
+            self._queries(3, pass_ladder=False),
+            self._queries(12, pass_ladder=False),
+        )
+
+    def test_the_category_list_endpoint_is_constant_cost(self):
+        """The surface that actually matters: one ladder fetch for the whole list."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from core.models import Bracket as B
+
+        def cost(n):
+            qs = self._teams(n, f"Endpoint-{n}")
+            with CaptureQueriesContext(connection) as ctx:
+                ladder = B.ladder()
+                [c.season_label_parts(2026, ladder) for c in qs]
+            return len(ctx)
+
+        self.assertEqual(cost(3), cost(12))
 
 
 class RenameCohortTeamsMigrationTests(TestCase):

@@ -319,11 +319,11 @@ def cohort_label(cohort_year: int, season: int, ladder: list) -> str:
     be stored and can never go stale. This club's stored labels are a frozen 2025
     snapshot precisely because they were stored.
     """
+    from core.models import Bracket
+
     age = season - cohort_year
-    for b in ladder:
-        if b.age is not None and b.age >= age:
-            return b.name
-    return ladder[-1].name if ladder else f"Sub {age}"
+    b = Bracket.for_age(age, ladder)
+    return b.name if b is not None else (ladder[-1].name if ladder else f"Sub {age}")
 
 
 def club_maturation(*, club_id, team_ids=None, season: int | None = None) -> dict:

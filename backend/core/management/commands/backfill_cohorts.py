@@ -63,11 +63,13 @@ MIN_SEASON_SHARE = 0.60
 
 
 def bracket_for_age(age: int, brackets: list[Bracket]) -> Bracket:
-    """First rung that still admits a player of `age` — brackets are a ceiling."""
-    for b in brackets:
-        if b.age is not None and b.age >= age:
-            return b
-    return brackets[-1]                # senior
+    """First rung that still admits a player of `age` — brackets are a ceiling.
+
+    Delegates: the rule lives on the model now, because it existed in three
+    places and a ladder with gaps read three ways is how you get 15 dots' worth
+    of quiet disagreement.
+    """
+    return Bracket.for_age(age, brackets) or brackets[-1]
 
 
 def parse_age(category_name: str) -> int | None:

@@ -646,16 +646,28 @@ def list_club_positions(request, club_id: str):
 @api.get("/categories", response=list[CategoryOut])
 def list_categories(request, club_id: str | None = None):
     """List categories visible to the user. Optional `club_id` filter."""
+    from core.models import Bracket
+
     membership = get_membership(request.user)
     qs = scope_categories(
-        # `team_seasons__bracket` too: CategoryOut.label reads the season's
-        # bracket, so without it the picker costs one query per team.
-        Category.objects.prefetch_related("departments", "team_seasons__bracket"),
+        Category.objects.prefetch_related("departments"),
         membership,
     )
     if club_id:
         qs = qs.filter(club_id=club_id)
-    return list(qs.order_by("name"))
+
+    # The ladder once for the whole list, not once per team. The label's aside is
+    # calculated from `cohort_year`, which is a column on the row itself, so no
+    # per-team TeamSeason query is needed at all any more.
+    ladder = Bracket.ladder()
+    out = []
+    for cat in qs.order_by("name"):
+        label, hint = cat.season_label_parts(ladder=ladder)
+        out.append({
+            "id": cat.id, "name": cat.name, "label": label, "label_hint": hint,
+            "club_id": cat.club_id, "departments": list(cat.departments.all()),
+        })
+    return out
 
 
 @api.get("/categories/{category_id}", response=CategoryOut)
@@ -675,11 +687,13 @@ def get_category(request, category_id: str):
         category._prefetched_departments = [
             d for d in category.departments.all() if d.pk in allowed
         ]
+    _label = category.season_label_parts()
     return {
         "id": category.id,
         "name": category.name,
-        "label": category.season_label_parts()[0],
-        "label_hint": category.season_label_parts()[1],
+        # One call, not two: each one would walk the ladder again.
+        "label": _label[0],
+        "label_hint": _label[1],
         "club_id": category.club_id,
         "departments": getattr(
             category,

@@ -140,7 +140,9 @@ class Category(models.Model):
         ts = self.team_seasons.filter(season=season).select_related("bracket").first()
         return ts.bracket if ts else None
 
-    def season_label_parts(self, season: int | None = None) -> tuple[str, str]:
+    def season_label_parts(
+        self, season: int | None = None, ladder: list | None = None,
+    ) -> tuple[str, str]:
         """`(nombre, aclaración)` for `season`. Defaults to the current year.
 
         The club's vocabulary, decided by the team on 2026-08-26: the first team
@@ -167,24 +169,56 @@ class Category(models.Model):
         same rule rather than an exception: a team is named after whatever is
         invariant about it. Sub 20 has no cohort for a real reason — its 2026
         appearances are 2006, 2007 and 2008, a genuinely mixed squad.
+
+        The aside is CALCULATED from `season - cohort_year`, walked onto the
+        ladder — deliberately not read from the declared `TeamSeason`. Those two
+        answer different questions and only one of them can be trusted for a
+        label:
+
+          * `TeamSeason` is a fact about which competition the squad ENTERED, so
+            it is what event filing must use — a team can and does play up.
+          * The aside only says which Sub this serie is THIS year, which is a
+            function of arithmetic and needs no row to exist.
+
+        Reading the declared row made the aside disappear the moment a season
+        went undeclared. Checked against the real data: calculation and
+        declaration agree 14 times out of 14 across 2025 and 2026, while 2027 has
+        no declared rows at all — so in January every serie would have shown a
+        blank where its Sub goes.
+
+        Pass `ladder` when labelling several teams; otherwise each call fetches
+        the 9 reference rows again.
         """
         from django.utils import timezone
 
         season = season or timezone.now().year
-        bracket = self.season_bracket(season)
         if self.is_senior:
             return self.name, ""
         if self.cohort_year is None:
+            # No cohort, so no arithmetic. The declared season is all there is.
+            bracket = self.season_bracket(season)
             return (bracket.name if bracket else self.name), ""
-        return f"Serie {self.cohort_year}", (bracket.name if bracket else "")
 
-    def season_label(self, season: int | None = None) -> str:
+        rungs = ladder if ladder is not None else Bracket.ladder()
+        youth = [b for b in rungs if b.age is not None]
+        age = season - self.cohort_year
+        hint = ""
+        if youth and youth[0].age <= age <= youth[-1].age:
+            # Inside the ANFP ladder. Outside it there is no competition to
+            # name: a serie too young for Sub 11, or one that has aged past
+            # Sub 20 into senior football, gets no aside rather than a wrong one.
+            bracket = Bracket.for_age(age, rungs)
+            if bracket is not None and not bracket.is_senior:
+                hint = bracket.name
+        return f"Serie {self.cohort_year}", hint
+
+    def season_label(self, season: int | None = None, ladder: list | None = None) -> str:
         """The two parts joined, for plain-text contexts (PDFs, exports, emails).
 
         Parentheses rather than a separator: the bracket is an aside about the
         season, not a second name.
         """
-        name, hint = self.season_label_parts(season)
+        name, hint = self.season_label_parts(season, ladder)
         return f"{name} ({hint})" if hint else name
 
 
@@ -243,6 +277,37 @@ class Bracket(models.Model):
     def senior(cls):
         """The senior rung. Top of the ladder, so `order` decides if several."""
         return cls.objects.filter(age__isnull=True).order_by("-order").first()
+
+    @classmethod
+    def ladder(cls) -> list["Bracket"]:
+        """Every rung, ascending. Pass the result around; it is reference data.
+
+        Not cached at module level on purpose: under `TestCase` a rollback
+        removes rows without firing a delete signal, so a process-wide memo
+        would serve brackets that no longer exist. Callers that label many teams
+        fetch this once and pass it down instead.
+        """
+        return list(cls.objects.order_by("order"))
+
+    @classmethod
+    def for_age(cls, age: int, ladder: list["Bracket"] | None = None):
+        """First rung that admits a player of `age` — brackets are a CEILING.
+
+        The one implementation of this rule. It used to exist three times over
+        (`backfill_cohorts.bracket_for_age`, `maturation.cohort_label`, and
+        inline in `comet_sync`), which is how a ladder with gaps gets read
+        inconsistently.
+
+        The gaps are the whole reason it can't be arithmetic: the ANFP runs no
+        Sub 17 and no Sub 19, so a 17-year-old plays Sub 18 and a 19-year-old
+        plays Sub 20. Falls through to the senior rung when the age is above
+        every youth rung.
+        """
+        rungs = ladder if ladder is not None else cls.ladder()
+        for b in rungs:
+            if b.age is not None and b.age >= age:
+                return b
+        return next((b for b in reversed(rungs) if b.age is None), None)
 
 
 class TeamSeason(models.Model):
