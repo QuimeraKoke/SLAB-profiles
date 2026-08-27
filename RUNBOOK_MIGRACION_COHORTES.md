@@ -585,6 +585,71 @@ jugadores, la migración **la salta** y sigue: es un guard, no un `DELETE`.
 departamentos, plantillas y snapshots de las tres. `backward` es un `pass` a
 propósito: recrearlas inventaría UUIDs nuevos, que no es lo mismo que deshacer.
 
+## Fase 2c — Disolver SUB-17 ✅ HECHA en local (2026-08-27)
+
+Apareció mirando por qué el selector mostraba **tres cosas que decían "Sub 18"**.
+Dos eran correctas y una era un cajón.
+
+**Las correctas:** Serie 2008 cumple 18 en 2026, y Serie 2009 cumple 17 — y la
+ANFP **no corre Sub 17 ni Sub 19**, así que los del 2009 suben a Sub 18 y
+comparten competencia. Se repite todos los años en Sub 18 y Sub 20, y es
+exactamente por esto que la serie tiene que ir adelante en la etiqueta: con el
+bracket primero esas dos entradas serían "Sub 18" y "Sub 18".
+
+**El cajón:** `SUB-17` no era un equipo. Tenía 2 jugadores y **6 partidos del
+Sudamericano Sub-17 2025 de la selección chilena**. Se veía como un "Sub 18"
+pelado porque al mezclar un 2008 con un 2009 el backfill no pudo darle cohorte
+(50/50, bajo el umbral de 70 %).
+
+La pista de cómo debía estar modelado estaba en los mismos datos: un **tercer**
+jugador de esos 6 partidos, Benjamín Díaz, conservó su equipo real (SUB-20) y
+figura sólo como `EventParticipant`. Eso es lo correcto, y es lo que a los otros
+dos no se les hizo.
+
+```bash
+python manage.py migrate core   # 0024 y 0025
+```
+
+| | |
+|---|---|
+| Renato Nuñez (2008) | → Serie 2008 |
+| Andher Gonzalez (2009) | → Serie 2009 |
+| Los 6 partidos de selección | desprendidos (`category=NULL`) |
+| Pertenencias | re-apuntadas a la serie real |
+| `TeamSeason` 2026 derivada | borrada |
+| `SUB-17` | borrado por la regla de 0023 |
+
+Nadie pierde nada: los 6 partidos siguen en el perfil de los tres jugadores
+porque el calendario resuelve **por participación, nunca por `Event.category`**.
+Verificado después de migrar: Nuñez conserva 43 exámenes y Gonzalez 38, y los 6
+partidos siguen listando a los tres.
+
+### Por qué va por IDs y no por regla
+
+La generalización obvia —"mové cada jugador a la Serie de su año de
+nacimiento"— era peligrosa, y la base lo dice:
+
+| Categoría sin cohorte | Jugadores | Nacimientos |
+|---|---|---|
+| SUB-20 | 43 | 2004–2009 ← equipo real, se habría desarmado en 6 series |
+| PEF - Femenino | 20 | 1985–1997 |
+| SUB-19 F - Femenino | 16 | 2005–2008 |
+| **SUB-16 F - Femenino** | **1** | **2009** ← se habría ido a Serie 2009, masculina |
+
+Así que es una corrección puntual registrada como dato, que es para lo que sirve
+una migración. Las guardas son lo que la hace segura en vez de confiar en los
+ids: **cada movimiento vuelve a verificar el hecho que lo justifica** (año de
+nacimiento, club, y sexo contra el plantel destino) y se omite si ya no se
+cumple. Prod es la fuente de verdad y puede no verse como local.
+
+⚠️ 0025 existe porque 0024 **se negó** a borrar el cajón: quedaban 2
+pertenencias y 1 temporada apuntando ahí. Esa negativa fue la guarda funcionando.
+Ninguno de los dos era dato real —las pertenencias las había escrito el backfill
+con `since` = fecha del primer partido del Sudamericano, y la temporada era
+`derived=True`— así que 0025 las corrige y vuelve a pasar el cajón por la misma
+regla de 0023. **Una sola definición de "no tiene nada", aplicada desde tres
+migraciones.**
+
 ## Fase 4 — Auditar los filtros por categoría
 
 Pendiente. 146 sitios `category=`, 67 `category__`, 51 `player__category`. Cada
