@@ -29,7 +29,7 @@ from events.models import Event
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 
-from exams.bulk_ingest import IngestError, run_ingest
+from exams.bulk_ingest import IngestError, blank_workbook, run_ingest
 from exams.calculations import compute_result_data
 from exams.models import ExamResult, ExamTemplate
 
@@ -1571,6 +1571,49 @@ def _serialize_result(result: ExamResult) -> dict:
     }
 
 
+@api.get("/templates/{template_id}/bulk-template.xlsx")
+def bulk_template_download(request, template_id: str):
+    """El .xlsx en blanco con las columnas que esta plantilla espera.
+
+    Se GENERA desde el `column_mapping`, no es un archivo guardado: así no
+    existe la posibilidad de que la plantilla descargable diga una cosa y el
+    parser lea otra. Si mañana el club agrega una columna al mapping, este
+    archivo la trae sin que nadie se acuerde de actualizar un adjunto.
+
+    Sólo trae las columnas que el parser LEE. Las que la planilla del club
+    calcula sola no van: el texto de ayuda ya dice que se pueden dejar y que se
+    ignoran, y ponerlas acá invitaría a llenarlas para nada.
+    """
+    membership = get_membership(request.user)
+    template = scope_templates(
+        ExamTemplate.objects.all(), membership,
+    ).filter(id=template_id).first()
+    if template is None:
+        raise HttpError(404, "Template not found")
+    if "bulk_ingest" not in (template.input_config or {}).get("input_modes", []):
+        raise HttpError(400, "Esta plantilla no admite carga masiva.")
+
+    from django.http import HttpResponse
+
+    try:
+        content = blank_workbook(template)
+    except IngestError as exc:
+        raise HttpError(400, str(exc))
+
+    slug = template.slug or "plantilla"
+    response = HttpResponse(
+        content,
+        content_type=(
+            "application/vnd.openxmlformats-officedocument"
+            ".spreadsheetml.sheet"
+        ),
+    )
+    response["Content-Disposition"] = (
+        f'attachment; filename="plantilla-{slug}.xlsx"'
+    )
+    return response
+
+
 @api.post("/results/bulk")
 @require_perm("exams.add_examresult")
 def bulk_results(
@@ -1629,6 +1672,21 @@ def bulk_results(
             recorded_dt = datetime.fromisoformat(recorded_at)
         except ValueError:
             raise HttpError(400, "recorded_at debe ser una fecha ISO 8601.")
+        if recorded_dt.tzinfo is None:
+            # `BulkIngestForm` manda "YYYY-MM-DDT12:00:00", sin offset, así que
+            # esto salía naive. Al guardar, el post_save de goals llama
+            # `timezone.localtime(result.recorded_at)` y lanzaba ValueError →
+            # 500 a mitad de la carga. Nunca se había disparado porque ninguna
+            # plantilla tenía `column_mapping`: este camino no se había
+            # ejercido completo jamás.
+            #
+            # `make_aware` y no `replace(tzinfo=…)`: el string es hora LOCAL del
+            # club, y make_aware la interpreta en la zona activa. Pegarle un
+            # tzinfo a mano la reetiquetaría como UTC y correría la fecha varias
+            # horas — que en una toma de las 22:00 cambia el día del resultado.
+            from django.utils import timezone as _tz
+
+            recorded_dt = _tz.make_aware(recorded_dt)
 
     try:
         file_bytes = file.read()

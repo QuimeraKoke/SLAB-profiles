@@ -364,6 +364,11 @@ export interface ExamInputConfig {
   modifiers?: ExamInputModifiers;
   /** Optional column-mapping config used by bulk_ingest mode. */
   column_mapping?: Record<string, unknown>;
+  /** Opciones del modo bulk_ingest. `help` es la bajada del formulario: cada
+   *  plantilla describe SU archivo, porque el texto genérico decía "exportado
+   *  por el sistema GPS" y se mostraba igual en plantillas que no tienen nada
+   *  que ver con GPS. */
+  bulk_ingest?: { help?: string };
   /** Optional team-table config: which fields are shared (asked once)
    *  vs per-row (one column per). */
   team_table?: ExamTeamTableConfig;

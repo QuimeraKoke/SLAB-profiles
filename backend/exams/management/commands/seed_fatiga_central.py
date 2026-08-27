@@ -120,9 +120,58 @@ SCHEMA: dict = {
 }
 
 INPUT_CONFIG: dict = {
-    "input_modes": ["team_table", "single"],
+    "input_modes": ["team_table", "single", "bulk_ingest"],
     "default_input_mode": "team_table",
     "team_table": {"shared_fields": []},
+    # Carga de archivo por sesión: una fila por jugador, y la fecha la elige
+    # quien sube (el endpoint recibe `recorded_at`). Los encabezados son los
+    # de la planilla que usa el club.
+    #
+    # Sólo se mapean las CINCO columnas que son entrada real. Las otras cuatro
+    # que trae la planilla —CFF mean, CFF basal, Δ% vs basal, Var % intra-sesión—
+    # se omiten a propósito, por dos razones independientes:
+    #
+    #   1. Son campos `calculated`. `compute_result_data` hace
+    #      `out = dict(raw_data)` y después escribe cada campo calculado encima,
+    #      así que mapearlas sería literalmente un no-op: el motor las pisa.
+    #   2. No son confiables. El importador histórico
+    #      (`import_fatiga_central`) ya documentó que esas celdas traen
+    #      artefactos de planilla —fechas donde van números— y por eso las
+    #      recalcula desde I1–I3. Misma decisión acá.
+    #
+    # "N° alertas" tampoco se mapea: no existe campo para eso, y no debería.
+    # SLAB cuenta sus propias alertas con `seed_fatiga_alert_rules` a partir de
+    # las bandas clínicas del propio template. Importar el conteo de la planilla
+    # crearía una segunda fuente de la misma conclusión, que nadie mantiene.
+    #
+    # `actualizar_basal` no viene en el archivo, así que ninguna fila sube el
+    # basal. Cada una usa el basal previo del jugador y la primera cae a su
+    # propia media (Δ% = 0), que es la fórmula documentada arriba. Para fijar un
+    # basal nuevo se usa el formulario individual, que es donde está la decisión.
+    "bulk_ingest": {
+        "help": (
+            "Carga la planilla de la sesión: una fila por jugador, con las "
+            "columnas Jugador · I1 (Hz) · I2 (Hz) · I3 (Hz) · PR · EA. "
+            "Las columnas calculadas de la planilla (CFF mean, CFF basal, "
+            "Δ% vs basal, Var % intra-sesión) se recalculan acá desde I1–I3, "
+            "así que podés dejarlas: se ignoran."
+        ),
+    },
+    "column_mapping": {
+        # alias primero, después nombre completo normalizado. Ojo: el pipeline
+        # genérico NO hace el matcheo por tokens del importador histórico, así
+        # que una etiqueta con apellido materno ("FABIAN HORMAZABAL BERRIOS")
+        # no cae sola — se resuelve cargándole un alias al jugador, que es
+        # justamente para lo que existe PlayerAlias.
+        "player_lookup": {"column": "Jugador", "kind": "alias"},
+        "field_map": {
+            "I1 (Hz)": {"template_key": "i1"},
+            "I2 (Hz)": {"template_key": "i2"},
+            "I3 (Hz)": {"template_key": "i3"},
+            "PR": {"template_key": "pr"},
+            "EA": {"template_key": "ea"},
+        },
+    },
 }
 
 NAME = "Fatiga Central (CFF)"

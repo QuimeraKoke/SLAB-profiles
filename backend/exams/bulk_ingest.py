@@ -22,6 +22,7 @@ from typing import Any
 import openpyxl
 from openpyxl.utils.exceptions import InvalidFileException
 
+from django.db import transaction
 from django.db.models import Q
 
 from core.models import Category, Player, PlayerAlias, PlayerCallUp
@@ -270,6 +271,62 @@ def transform_rows(resolved: list[ResolvedRow], mapping: dict) -> dict[str, Play
 
 # ---------- step 4: orchestrate ----------
 
+def blank_workbook(template) -> bytes:
+    """El .xlsx vacío que este parser espera, generado desde el mapping.
+
+    Vive acá, al lado de `parse_xlsx`/`match_rows`, para que el archivo que se
+    descarga y el que se lee no puedan divergir: si alguien cambia una columna
+    del `column_mapping`, la plantilla descargable cambia con ella.
+
+    ⚠️ El orden NO puede salir de `field_map`. `input_config` es un JSONField y
+    Postgres lo guarda como `jsonb`, que reordena las claves (por largo y luego
+    bytewise) — la de Fatiga Central vuelve como `EA, PR, I1, I2, I3`. Así que
+    el orden viene del orden de los campos del examen, que además es el orden en
+    que el equipo los mide.
+    """
+    mapping = (template.input_config or {}).get("column_mapping") or {}
+    field_map = mapping.get("field_map") or {}
+    if not field_map:
+        raise IngestError("La plantilla no tiene un column_mapping configurado.")
+
+    order = {
+        f.get("key"): i
+        for i, f in enumerate((template.config_schema or {}).get("fields", []))
+    }
+
+    def position(spec_and_col):
+        col, spec = spec_and_col
+        key = spec.get("template_key") or spec.get("template_key_pattern") or ""
+        # Los patrones segmentados llevan `{segment}`; se ordenan por el prefijo.
+        key = key.split("{")[0].rstrip("_")
+        return (order.get(key, len(order)), col.lower())
+
+    headers: list[str] = []
+    player_col = (mapping.get("player_lookup") or {}).get("column")
+    if player_col:
+        headers.append(player_col)
+    for block in ("segment", "session_label"):
+        col = (mapping.get(block) or {}).get("column")
+        if col:
+            headers.append(col)
+    headers += [col for col, _ in sorted(field_map.items(), key=position)]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Datos"
+    for j, h in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=j, value=h)
+        cell.font = openpyxl.styles.Font(bold=True)
+        # Ancho al encabezado: son largos ("Var % intra-sesión") y la columna
+        # por defecto los corta, que es justo lo que hace dudar del formato.
+        ws.column_dimensions[cell.column_letter].width = max(12, len(h) + 4)
+    ws.freeze_panes = "A2"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 def run_ingest(
     file_bytes: bytes,
     template: ExamTemplate,
@@ -334,15 +391,22 @@ def run_ingest(
     }
 
     if not dry_run and matched:
-        for entry in matched:
-            ExamResult.objects.create(
-                player_id=entry["player_id"],
-                template=template,
-                recorded_at=recorded_at,
-                result_data=entry["result_data"],
-                inputs_snapshot=entry.get("inputs_snapshot") or {},
-                event=event,
-            )
+        # Atómico: cada `create` dispara señales post_save (evaluación de
+        # objetivos y de umbrales), así que una fila que falla a mitad de la
+        # carga dejaba las anteriores escritas y devolvía 500 — el usuario veía
+        # un error y la mitad de sus datos adentro, sin forma de saber cuál
+        # mitad. Verificado: pasó al habilitar la primera plantilla con
+        # column_mapping (200 → 201 resultados y una excepción).
+        with transaction.atomic():
+            for entry in matched:
+                ExamResult.objects.create(
+                    player_id=entry["player_id"],
+                    template=template,
+                    recorded_at=recorded_at,
+                    result_data=entry["result_data"],
+                    inputs_snapshot=entry.get("inputs_snapshot") or {},
+                    event=event,
+                )
         response["created_results"] = len(matched)
     if event is not None:
         response["event"] = {

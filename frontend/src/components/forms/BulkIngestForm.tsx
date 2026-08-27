@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, getToken } from "@/lib/api";
 import type { BulkIngestResponse, CalendarEvent, ExamTemplate } from "@/lib/types";
 import styles from "./BulkIngestForm.module.css";
 
@@ -34,6 +34,7 @@ export default function BulkIngestForm({
   onCancel,
 }: BulkIngestFormProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [downloading, setDownloading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [recordedAt, setRecordedAt] = useState<string>(todayISO());
   const [stage, setStage] = useState<Stage>("idle");
@@ -255,6 +256,34 @@ export default function BulkIngestForm({
   }
 
   // ---------- idle / form screen ----------
+  async function downloadTemplate() {
+    setDownloading(true);
+    try {
+      const base =
+        process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "")
+        ?? "http://localhost:8000/api";
+      const token = getToken();
+      const headers = new Headers();
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+      const res = await fetch(
+        `${base}/templates/${template.id}/bulk-template.xlsx`, { headers },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const url = URL.createObjectURL(await res.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `plantilla-${template.slug ?? "examen"}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      setError("No se pudo generar la plantilla. Intentá nuevamente.");
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   return (
     <form
       className={styles.wrapper}
@@ -264,10 +293,27 @@ export default function BulkIngestForm({
       }}
     >
       <div className={styles.intro}>
-        Carga el archivo .xlsx exportado por el sistema GPS. Antes de guardar,
-        verás una vista previa con los jugadores reconocidos y cualquier código
-        sin coincidencia.
+        {/* La bajada la pone la plantilla, porque describe SU archivo. Estaba
+          * fija en "exportado por el sistema GPS", que era cierto cuando la
+          * carga masiva sólo servía para GPS y falso en cuanto se habilitó otra
+          * plantilla. El fallback no nombra ninguna fuente. */}
+        {template.input_config?.bulk_ingest?.help ??
+          "Carga el archivo .xlsx con una fila por jugador."}{" "}
+        Antes de guardar verás una vista previa con los jugadores reconocidos y
+        los nombres sin coincidencia.
       </div>
+
+      {/* La plantilla en blanco se GENERA desde el column_mapping de este
+        * examen, así que siempre trae exactamente las columnas que el parser
+        * lee. No hay un .xlsx guardado que pueda quedar desactualizado. */}
+      <button
+        type="button"
+        className={styles.templateLink}
+        onClick={downloadTemplate}
+        disabled={downloading}
+      >
+        {downloading ? "Preparando…" : "Descargar plantilla (.xlsx)"}
+      </button>
 
       <label className={styles.field}>
         <span className={styles.label}>Archivo</span>
