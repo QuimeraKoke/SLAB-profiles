@@ -792,27 +792,78 @@ En el admin, filtrar «candidatos en el plantel» → *candidato único* para re
 lo que el matcheo automático no cerró. Hoy eso da 0 filas, que es la respuesta
 correcta: no hay nada que vincular hasta que existan los jugadores.
 
-## Estado actual (2026-08-27)
+## Estado actual — ✅ DESPLEGADO EN PROD (2026-08-27)
 
 | | Local | Prod |
 |---|---|---|
-| Datos COMET 2026 | ✅ copia de prod (2026-08-22) | ✅ 155 eventos / 2.588 fichas |
-| `core.0019` (bracket/cohorte/pertenencias) | ✅ | ✅ aplicada |
-| `core.0020` + `0021` (`is_senior`) | ✅ | ❌ **pendiente** |
-| `core.0022` (renombre a cohorte) | ✅ | ❌ **pendiente** |
-| `core.0023` (borrar categorías vacías) | ✅ | ❌ **pendiente** |
-| `core.0024` + `0025` (disolver SUB-17) | ✅ | ❌ **pendiente** |
-| `events.0007` (`Event.bracket`) | ✅ | ❌ **pendiente** |
-| `exams.0031` (competencia → bracket) | ✅ | ❌ **pendiente** |
-| Backfill fases 1 + 3a | ✅ verificado | ⚠️ fase 1 sí, 3a no |
-| Re-apuntado de partidos (3c) | ✅ 183 eventos | ❌ pendiente |
-| Fixtures futuros | ✅ 101 eventos | ❌ pendiente |
-| Código en git | **38 commits locales** | `639e1d4` (no conoce estos modelos) |
-| Tests | **581 OK** | — |
+| `core.0019` … `0026` | ✅ | ✅ **aplicadas** |
+| `events.0007` | ✅ | ✅ |
+| `exams.0031` | ✅ | ✅ |
+| Backfill (fases 1 + 3a) | ✅ | ✅ 550 partidos con bracket |
+| Re-apuntado (3c) | ✅ | ✅ 121 eventos |
+| Código en git | — | ✅ `76e84f3` |
+| Tests | 589 OK | — |
 
-⚠️ **Prod tiene la base por delante del código, y local por delante de prod.**
-Nada en `639e1d4` lee esas tablas, así que lo ya aplicado en prod es inerte.
-Decisión del 2026-08-22: se acepta como adelanto y se valida en local.
+### Lo que pasó en el deploy, y en qué orden
+
+⚠️ **El orden que este runbook tenía documentado estaba mal**, y se descubrió al
+ejecutarlo. Dos correcciones que importan si hay que repetirlo en otro club:
+
+1. **`core.0026` no se puede aplicar "con las aditivas".** Va después de
+   0022–0025 en la cadena, así que lo máximo seguro antes del push es
+   `migrate core 0021`.
+2. **`exams.0031` NO es segura con el código viejo.** Renombra
+   `category`→`category_override` y borra `auto_resolved`, dos campos que el
+   `comet_sync` viejo lee. Va **después** del push, no antes.
+
+El orden que funcionó:
+
+```bash
+# A — aditivas, seguras con el código viejo (desde el contenedor LOCAL,
+#     porque el de prod todavía no tiene estas migraciones)
+migrate events 0007
+migrate core 0021
+
+# B — push → Railway construye y despliega
+
+# C — con el código nuevo arriba, ya desde `railway ssh`
+migrate exams                    # 0031
+migrate core                     # 0022 … 0026
+backfill_cohorts --club "Universidad de Chile" --commit
+repoint_comet_events --club "Universidad de Chile"           # seco
+repoint_comet_events --club "Universidad de Chile" --commit
+```
+
+**Acceso a prod sin secretos.** `railway ssh --service backend "<cmd>"` corre
+dentro del contenedor, donde las variables ya están. Requiere registrar la clave
+una vez con `railway ssh keys add` (no hace falta browser). Para lo que necesita
+el código NUEVO antes del push, `railway run --service Postgres` inyecta las
+variables y se pasan al contenedor local por el proxy TCP público:
+
+```bash
+railway run --service Postgres -- sh -c '
+docker compose run --rm --no-deps -T \
+  -e POSTGRES_HOST="$RAILWAY_TCP_PROXY_DOMAIN" -e POSTGRES_PORT="$RAILWAY_TCP_PROXY_PORT" \
+  -e POSTGRES_DB="$PGDATABASE" -e POSTGRES_USER="$PGUSER" -e POSTGRES_PASSWORD="$PGPASSWORD" \
+  backend python manage.py <cmd>'
+```
+
+⚠️ **NUNCA** `railway variables` sin filtrar: imprime los valores en crudo y el
+`--json`/`--kv` también. Para ver sólo nombres, pasarlo por
+`python3 -c "print(*json.load(sys.stdin).keys())"`.
+
+### Verificado en prod después del deploy
+
+| Qué | Resultado |
+|---|---|
+| Etiquetas | `Serie 2008 — Sub 18` … `Serie 2014 — Sub 12`, `Primer Equipo`, `Sub 20` |
+| Categorías | 12 (se fueron SUB-8, SUB-9, SUB-10 y SUB-17) |
+| Partidos bien archivados | re-corrida en seco: "sin cambios" (182 correctos, 18 sueltos) |
+| Competencias COMET | 26 links, 26 con bracket |
+| Permiso `core.view_development` | 0 grupos, 0 grants, sólo 4 superusuarios |
+| Recuperación wellness | **68 filas creadas** de 1936 (las que la ingesta vieja descartaba) |
+| `uchile.s-lab.cl` | 200 |
+
 
 ### Orden de despliegue
 
