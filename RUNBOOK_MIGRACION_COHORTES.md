@@ -703,7 +703,7 @@ En el admin, filtrar «candidatos en el plantel» → *candidato único* para re
 lo que el matcheo automático no cerró. Hoy eso da 0 filas, que es la respuesta
 correcta: no hay nada que vincular hasta que existan los jugadores.
 
-## Estado actual (2026-08-26)
+## Estado actual (2026-08-27)
 
 | | Local | Prod |
 |---|---|---|
@@ -711,13 +711,15 @@ correcta: no hay nada que vincular hasta que existan los jugadores.
 | `core.0019` (bracket/cohorte/pertenencias) | ✅ | ✅ aplicada |
 | `core.0020` + `0021` (`is_senior`) | ✅ | ❌ **pendiente** |
 | `core.0022` (renombre a cohorte) | ✅ | ❌ **pendiente** |
+| `core.0023` (borrar categorías vacías) | ✅ | ❌ **pendiente** |
+| `core.0024` + `0025` (disolver SUB-17) | ✅ | ❌ **pendiente** |
 | `events.0007` (`Event.bracket`) | ✅ | ❌ **pendiente** |
 | `exams.0031` (competencia → bracket) | ✅ | ❌ **pendiente** |
 | Backfill fases 1 + 3a | ✅ verificado | ⚠️ fase 1 sí, 3a no |
 | Re-apuntado de partidos (3c) | ✅ 183 eventos | ❌ pendiente |
 | Fixtures futuros | ✅ 101 eventos | ❌ pendiente |
-| Código en git | **30 commits locales** | `639e1d4` (no conoce estos modelos) |
-| Tests | **557 OK** | — |
+| Código en git | **38 commits locales** | `639e1d4` (no conoce estos modelos) |
+| Tests | **581 OK** | — |
 
 ⚠️ **Prod tiene la base por delante del código, y local por delante de prod.**
 Nada en `639e1d4` lee esas tablas, así que lo ya aplicado en prod es inerte.
@@ -747,8 +749,11 @@ manage.py repoint_comet_events --club "Universidad de Chile" --commit
 
 # ── 4. push → Railway despliega backend, frontend, Celery y beat ─────────
 
-# ── 5. SÓLO con el código nuevo arriba: el renombre ──────────────────────
-manage.py migrate core     # 0022
+# ── 5. SÓLO con el código nuevo arriba: renombre y limpieza ──────────────
+#     0022 renombra; 0023 borra las vacías; 0024+0025 disuelven SUB-17.
+#     Las tres últimas son guards: si prod tiene datos donde local no, se
+#     saltan solas y lo informan.
+manage.py migrate core     # 0022, 0023, 0024, 0025
 
 # ── 6. recuperar lo que la ingesta vieja descartó (fase 3e) ──────────────
 #     Contá ExamResult antes y después para saber cuánto se recuperó.
