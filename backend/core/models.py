@@ -115,6 +115,25 @@ class Category(models.Model):
     class Meta:
         unique_together = ("club", "name")
         verbose_name_plural = "categories"
+        permissions = [
+            # Feature permission for the Desarrollo + Crecimiento modules. It
+            # hangs off Category because both read across cohorts and seasons,
+            # which is what a Category now IS — there is no "development" table
+            # to own it, and inventing an empty model to host one permission
+            # costs more than it explains.
+            #
+            # ONE codename for both screens on purpose: they answer two halves
+            # of the same question (does he play above his age group / where is
+            # he in his growth), and splitting them would let someone see the
+            # judgement without the context.
+            #
+            # ⚠️ Granted to NOBODY by default, and that is deliberate. Checked
+            # before adding it: `seed_role_groups` resolves group permissions
+            # from an explicit `f"{action}_{model}"` list, so `view_development`
+            # can never be swept into Editor or Solo Lectura by a re-run.
+            # Superusers still pass, via `_has_perm`'s bypass.
+            ("view_development", "Puede ver los módulos Desarrollo y Crecimiento"),
+        ]
 
     def __str__(self) -> str:
         return f"{self.club.name} – {self.name}"

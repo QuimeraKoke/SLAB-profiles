@@ -6,6 +6,7 @@ import { Info, TrendingUp } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import styles from "./page.module.css";
+import { usePermission } from "@/lib/permissions";
 
 /** Maduración y crecimiento.
  *
@@ -155,6 +156,7 @@ function matchesFilter(p: PlayerRow, key: string): boolean {
 }
 
 function CrecimientoContent() {
+  const canViewDevelopment = usePermission("core.view_development");
   const router = useRouter();
   const params = useSearchParams();
 
@@ -261,6 +263,18 @@ function CrecimientoContent() {
     for (const p of shown) out.get(p.band)?.push(p);
     return out;
   }, [shown, bands]);
+
+  // Módulo detrás de permiso: `core.view_development`, hoy otorgado a nadie.
+  // La verdad la impone el backend — los cinco endpoints llevan
+  // @require_perm — así que esto sólo evita mostrar una pantalla que iba a
+  // devolver 403. Los superusuarios pasan, por el bypass de `_has_perm`.
+  if (!canViewDevelopment) {
+    return (
+      <div className={styles.page}>
+        <p className={styles.empty}>No tenés permiso para ver este módulo.</p>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.page}>

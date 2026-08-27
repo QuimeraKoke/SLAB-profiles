@@ -5843,6 +5843,7 @@ def admin_usage(
 
 
 @api.get("/development/cohorts")
+@require_perm("core.view_development")  # cohortes por temporada
 def development_cohorts(
     request, season: int | None = None, category_id: str | None = None,
 ):
@@ -5894,6 +5895,7 @@ def development_cohorts(
 
 
 @api.get("/fixtures/upcoming")
+@require_perm("core.view_development")  # calendario en capas
 def fixtures_upcoming(
     request, player_id: str | None = None, category_id: str | None = None,
     days: int = 45, include_context: bool = True,
@@ -5941,6 +5943,7 @@ def fixtures_upcoming(
 
 
 @api.get("/teams")
+@require_perm("core.view_development")  # tabla de equipos y sus temporadas
 def teams_with_seasons(request):
     """Los equipos del club con su cohorte y en qué compiten cada temporada.
 
@@ -5990,6 +5993,7 @@ def teams_with_seasons(request):
 
 
 @api.get("/players/{player_id}/physical-context")
+@require_perm("core.view_development")  # contexto físico GPS
 def player_physical_context(request, player_id: str, season: int | None = None):
     """Rendimiento físico del jugador comparado con el plantel con el que jugó.
 
@@ -6014,12 +6018,17 @@ def player_physical_context(request, player_id: str, season: int | None = None):
     )
     if player is None:
         raise HttpError(404, "Jugador no encontrado")
+    # `timezone_now()`, el helper de este archivo: `timezone` NUNCA se importa a
+    # nivel de módulo acá (el resto usa alias locales), así que esto lanzaba
+    # NameError cada vez que se llamaba sin `?season=`. El frontend siempre lo
+    # manda, así que el bug estuvo latente hasta que un test lo omitió.
     return _dev.physical_context(
-        player, season=season or timezone.now().year,
+        player, season=season or timezone_now().year,
     )
 
 
 @api.get("/maturation/overview")
+@require_perm("core.view_development")  # maduración y crecimiento
 def maturation_overview(
     request, category_id: str | None = None, cohort: int | None = None,
     season: int | None = None,

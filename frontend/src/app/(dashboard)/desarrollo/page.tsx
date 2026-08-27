@@ -7,6 +7,7 @@ import { ArrowUp, ArrowDown, Info, Minus, Star } from "lucide-react";
 import { api, ApiError } from "@/lib/api";
 import { useCategoryContext } from "@/context/CategoryContext";
 import styles from "./page.module.css";
+import { usePermission } from "@/lib/permissions";
 
 /** Desarrollo por cohorte.
  *
@@ -234,6 +235,7 @@ function PhysicalPanel({
 }
 
 function DesarrolloContent() {
+  const canViewDevelopment = usePermission("core.view_development");
   const router = useRouter();
   const params = useSearchParams();
   const { categoryId } = useCategoryContext();
@@ -360,6 +362,18 @@ const togglePlayer = useCallback(
   }, [dev]);
 
   const seasons = teams?.seasons ?? dev?.seasons ?? [];
+
+  // Módulo detrás de permiso: `core.view_development`, hoy otorgado a nadie.
+  // La verdad la impone el backend — los cinco endpoints llevan
+  // @require_perm — así que esto sólo evita mostrar una pantalla que iba a
+  // devolver 403. Los superusuarios pasan, por el bypass de `_has_perm`.
+  if (!canViewDevelopment) {
+    return (
+      <div className={styles.page}>
+        <p className={styles.empty}>No tenés permiso para ver este módulo.</p>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.page}>

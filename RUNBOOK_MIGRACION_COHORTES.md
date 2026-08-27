@@ -677,6 +677,68 @@ con `since` = fecha del primer partido del Sudamericano, y la temporada era
 regla de 0023. **Una sola definición de "no tiene nada", aplicada desde tres
 migraciones.**
 
+## Fase 2d — Desarrollo y Crecimiento detrás de permiso ✅ (2026-08-27)
+
+Pedido antes del deploy: los dos módulos quedan cerrados con un permiso que hoy
+**no tiene nadie**.
+
+```bash
+python manage.py migrate core   # 0026_category_view_development_perm
+```
+
+`core.view_development` — "Puede ver los módulos Desarrollo y Crecimiento".
+
+**Un solo permiso para las dos pantallas**, a propósito: contestan dos mitades de
+la misma pregunta (¿juega por encima de su edad? / ¿en qué punto de su
+crecimiento está?), y separarlas dejaría ver el juicio sin el contexto.
+
+Vive en `Category.Meta.permissions` porque ambas leen a través de cohortes y
+temporadas, que es lo que una Category ahora *es*. No hay tabla "development" que
+lo aloje, e inventar un modelo vacío para hospedar un permiso cuesta más de lo
+que explica.
+
+**Los cinco endpoints** llevan `@require_perm`, que es la puerta real:
+
+| Endpoint | Módulo |
+|---|---|
+| `/development/cohorts` | Desarrollo |
+| `/fixtures/upcoming` | Desarrollo |
+| `/teams` | Desarrollo |
+| `/players/{id}/physical-context` | Desarrollo |
+| `/maturation/overview` | Crecimiento |
+
+Los cinco son exclusivos de estas dos páginas — verificado antes de cerrarlos, un
+uso cada uno en el frontend, sin daño colateral. En el frontend se ocultan los
+links del sidebar y las páginas muestran "No tenés permiso": cosmético, pero un
+link que lleva a un 403 es peor que no tenerlo.
+
+### Verificado sobre los datos reales
+
+- grupos que lo tienen: **ninguno**
+- grants directos: **ninguno**
+- **13 usuarios no-superusuario bloqueados**, incluido `diego.molina@udechile.cl`
+
+⚠️ **Pasan 4 superusuarios**, y uno es del club: `juanignacio.cuevas@udechile.cl`.
+Es el bypass estándar de Django que sigue `_has_perm`, y es lo que permite
+verificar que las pantallas funcionan mientras nadie más entra. Si hace falta que
+sea "nadie" de verdad, hay que quitarle el superusuario a esa cuenta o chequear el
+permiso sin el bypass — decisión del club.
+
+### No se puede colar
+
+`seed_role_groups` resuelve los permisos de grupo desde una lista explícita
+`f"{action}_{model}"`, así que `view_development` **no puede** entrar a Editor ni
+a Solo Lectura por una re-corrida. Fijado con un test que corre el seed dos veces
+y verifica que ningún grupo lo recibió.
+
+### De paso, un bug latente
+
+El test destapó que `/players/{id}/physical-context` lanzaba `NameError` cuando se
+lo llamaba **sin** `?season=`: `timezone` nunca se importa a nivel de módulo en
+`routers.py` (el resto usa alias locales o el helper `timezone_now()`). El
+frontend siempre manda el parámetro, así que estuvo latente. Era la única
+ocurrencia del archivo.
+
 ## Fase 4 — Auditar los filtros por categoría
 
 Pendiente. 146 sitios `category=`, 67 `category__`, 51 `player__category`. Cada
