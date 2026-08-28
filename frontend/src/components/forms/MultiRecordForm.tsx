@@ -3,7 +3,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 import { api, ApiError } from "@/lib/api";
-import { categoryLabel } from "@/lib/categoryLabel";
 import type { ExamField, ExamTemplate, PlayerSummary } from "@/lib/types";
 import {
   FieldInput,
@@ -41,6 +40,20 @@ interface Block {
   uid: number;
   playerId: string;
   values: Record<string, FormValue>;
+}
+
+/** Campos que necesitan el ancho completo de la fila.
+ *
+ *  El resto entra en una grilla de columnas: con 8 campos por bloque, uno por
+ *  fila hacía que dos registros no cupieran en la pantalla. Se decide por TIPO
+ *  y no por una lista de claves, así que un examen nuevo no necesita tocar esto.
+ */
+function isWide(f: ExamField): boolean {
+  return (
+    (f.type === "text" && f.multiline === true)
+    || f.type === "file"
+    || f.type === "bodymap"
+  );
 }
 
 function todayISO(): string {
@@ -199,7 +212,7 @@ export default function MultiRecordForm({
             {b.playerId && ` · ${nameOf(b.playerId)}`}
           </legend>
 
-          <label className={styles.field}>
+          <label className={`${styles.field} ${styles.playerField}`}>
             <span className={styles.label}>Jugador</span>
             <select
               value={b.playerId}
@@ -230,18 +243,23 @@ export default function MultiRecordForm({
           {groups.map((g) => (
             <div key={g.group ?? "__none__"} className={styles.group}>
               {g.group && <h4 className={styles.groupTitle}>{g.group}</h4>}
-              {g.items.map((f) => (
-                <label key={f.key} className={styles.field}>
-                  <span className={styles.label}>
-                    {f.unit ? `${f.label} [${f.unit}]` : f.label}
-                  </span>
-                  <FieldInput
-                    field={f}
-                    value={b.values[f.key] ?? null}
-                    onChange={(v) => setValue(b.uid, f.key, v)}
-                  />
-                </label>
-              ))}
+              <div className={styles.grid}>
+                {g.items.map((f) => (
+                  <label
+                    key={f.key}
+                    className={`${styles.field} ${isWide(f) ? styles.wide : ""}`}
+                  >
+                    <span className={styles.label}>
+                      {f.unit ? `${f.label} [${f.unit}]` : f.label}
+                    </span>
+                    <FieldInput
+                      field={f}
+                      value={b.values[f.key] ?? null}
+                      onChange={(v) => setValue(b.uid, f.key, v)}
+                    />
+                  </label>
+                ))}
+              </div>
             </div>
           ))}
 

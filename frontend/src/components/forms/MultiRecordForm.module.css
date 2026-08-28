@@ -1,49 +1,75 @@
-.wrapper { display: flex; flex-direction: column; gap: 16px; }
+.wrapper { display: flex; flex-direction: column; gap: 14px; }
 
 .intro {
-  font-size: 13px; color: #475467; background: #f9fafb;
-  border: 1px solid #e4e7ec; border-radius: 10px; padding: 10px 14px;
+  font-size: 12.5px; color: #475467; background: #f9fafb;
+  border: 1px solid #e4e7ec; border-radius: 10px; padding: 9px 13px;
 }
+
+/* ── campos ──────────────────────────────────────────────────────────── */
+/* Con 8 campos por bloque, uno por fila hacía que dos registros no cupieran en
+   la pantalla — y el punto de este modo es ver varios a la vez. La grilla se
+   adapta al ancho disponible: 3 columnas en escritorio, 2 en tablet, 1 en
+   teléfono, sin media queries. */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 8px 14px;
+  align-items: start;
+}
+.field { display: block; min-width: 0; }
+/* Los multilínea, archivos y bodymap necesitan el ancho completo: comprimirlos
+   a una columna los vuelve inutilizables. */
+.wide { grid-column: 1 / -1; }
+/* El jugador identifica el bloque, así que no comparte fila con los datos. */
+.playerField { max-width: 320px; margin-bottom: 10px; }
 
 .label {
-  display: block; font-size: 12px; font-weight: 600; color: #344054;
-  margin-bottom: 4px;
+  display: block; font-size: 11px; font-weight: 600; color: #475467;
+  margin-bottom: 2px; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis;
 }
-.hint { display: block; font-size: 11.5px; color: #98a2b3; margin-top: 4px; }
-.warn { display: block; font-size: 11.5px; color: #b54708; margin-top: 4px; }
-
-.field { display: block; margin-bottom: 12px; }
 .field input, .field select, .field textarea {
-  width: 100%; padding: 8px 10px; font-size: 13px;
-  border: 1px solid #d0d5dd; border-radius: 8px; background: #fff;
+  width: 100%; padding: 5px 8px; font-size: 12.5px; line-height: 1.35;
+  border: 1px solid #d0d5dd; border-radius: 6px; background: #fff;
+  min-width: 0;
 }
-.dateField { display: block; max-width: 340px; }
+.field textarea { min-height: 46px; resize: vertical; }
+.field input[type="checkbox"] { width: auto; }
 
-/* Cada registro es una tarjeta con su número: el usuario tiene que poder
-   contar cuántos va a guardar de un vistazo. */
+.hint { display: block; font-size: 11px; color: #98a2b3; margin-top: 3px; }
+.warn { display: block; font-size: 11px; color: #b54708; margin-top: 3px; }
+
+.dateField { display: block; max-width: 240px; }
+.dateField input {
+  width: 100%; padding: 5px 8px; font-size: 12.5px;
+  border: 1px solid #d0d5dd; border-radius: 6px;
+}
+.dateField .label { white-space: normal; }
+
+/* ── bloques ─────────────────────────────────────────────────────────── */
 .block {
-  border: 1px solid #e4e7ec; border-radius: 12px; padding: 16px 18px 8px;
+  border: 1px solid #e4e7ec; border-radius: 10px; padding: 10px 14px 8px;
   margin: 0; background: #fff;
 }
 .blockTitle {
-  font-size: 13px; font-weight: 700; color: #101828; padding: 0 6px;
+  font-size: 12px; font-weight: 700; color: #101828; padding: 0 5px;
 }
-.group { margin-bottom: 4px; }
+.group { margin-bottom: 2px; }
 .groupTitle {
-  font-size: 11px; font-weight: 700; text-transform: uppercase;
-  letter-spacing: .03em; color: #98a2b3; margin: 12px 0 8px;
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .03em; color: #98a2b3; margin: 8px 0 5px;
 }
 
 .remove {
-  border: none; background: none; padding: 0; margin-bottom: 10px;
-  font: inherit; font-size: 12px; color: #b42318; cursor: pointer;
+  border: none; background: none; padding: 0; margin: 6px 0 4px;
+  font: inherit; font-size: 11.5px; color: #b42318; cursor: pointer;
   text-decoration: underline;
 }
 
-.addRow { display: flex; gap: 14px; flex-wrap: wrap; }
+.addRow { display: flex; gap: 10px; flex-wrap: wrap; }
 .add, .addCopy {
-  border: 1px dashed #d0d5dd; background: #fff; border-radius: 10px;
-  padding: 9px 14px; font: inherit; font-size: 13px; font-weight: 600;
+  border: 1px dashed #d0d5dd; background: #fff; border-radius: 8px;
+  padding: 7px 12px; font: inherit; font-size: 12.5px; font-weight: 600;
   color: #3538cd; cursor: pointer;
 }
 .add:hover, .addCopy:hover { background: #f5f6ff; border-color: #a5b4fc; }
@@ -51,16 +77,18 @@
 
 .error {
   background: #fef3f2; border: 1px solid #fecdca; color: #b42318;
-  border-radius: 10px; padding: 10px 14px; font-size: 13px;
+  border-radius: 10px; padding: 9px 13px; font-size: 12.5px;
 }
 
-.actions { display: flex; gap: 12px; justify-content: flex-end; }
+.actions { display: flex; gap: 10px; justify-content: flex-end; }
 .save {
   background: #4f46e5; color: #fff; border: none; border-radius: 8px;
-  padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer;
+  padding: 9px 16px; font: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer;
 }
 .save:disabled { background: #c7c9f5; cursor: default; }
 .cancel {
   background: #fff; color: #475467; border: 1px solid #d0d5dd;
-  border-radius: 8px; padding: 10px 18px; font: inherit; cursor: pointer;
+  border-radius: 8px; padding: 9px 16px; font: inherit; font-size: 13px;
+  cursor: pointer;
 }
