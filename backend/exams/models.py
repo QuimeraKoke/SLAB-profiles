@@ -67,8 +67,16 @@ class ExamTemplate(models.Model):
     MODE_TEAM_TABLE = "team_table"
     MODE_QUICK_LIST = "quick_list"
     MODE_BULK_INGEST = "bulk_ingest"
+    # Varios registros INDEPENDIENTES en una pantalla: el formulario individual
+    # apilado N veces, cada bloque con su jugador y todos sus campos, más un
+    # botón para agregar otro. Distinto de `team_table`, que impone UNA carga
+    # compartida repartida entre jugadores — sirve para "peso de todo el
+    # plantel" y se siente forzado para medicación, donde cada indicación es su
+    # propia receta con su droga, su dosis y sus fechas.
+    MODE_MULTI = "multi"
     INPUT_MODE_CHOICES = [
         (MODE_SINGLE, "Single player"),
+        (MODE_MULTI, "Varios registros (individual apilado)"),
         (MODE_TEAM_TABLE, "Team table"),
         (MODE_QUICK_LIST, "Quick list (categorical roster)"),
         (MODE_BULK_INGEST, "Bulk ingest (paste / file upload)"),

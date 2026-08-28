@@ -241,35 +241,21 @@ def _build_schema() -> dict:
 
 
 INPUT_CONFIG = {
-    "input_modes": ["single", "team_table"],
-    # `single` sigue siendo el default: la mayoría de las indicaciones son a un
-    # jugador. `team_table` es para lo que se receta a varios de una vez —
-    # vacunación, un suplemento, un antiinflamatorio después de un partido.
+    # `multi` y NO `team_table`. Los dos cargan varios jugadores, pero resuelven
+    # problemas distintos y para medicación sólo uno sirve:
+    #
+    #   team_table = UNA carga compartida repartida entre jugadores. Anda para
+    #     "peso de todo el plantel": un dato por persona, el resto en común.
+    #   multi      = N registros INDEPENDIENTES en la misma pantalla, cada uno
+    #     con su jugador y todos sus campos.
+    #
+    # Cada indicación es su propia receta —su droga, su dosis, sus fechas— así
+    # que la grilla forzaba a fingir que había una receta común. Se probó y la
+    # experiencia era forzada; queda fuera a propósito, no por olvido.
+    "input_modes": ["single", "multi"],
     "default_input_mode": "single",
-    "team_table": {
-        # La RECETA se pregunta una vez arriba: es la misma para todos, y ahí
-        # está el ahorro. Repetir 6 selectores por jugador es lo que hace que
-        # nadie use la carga por equipo.
-        "shared_fields": [
-            "medicamento", "tipo", "via_admin",
-            "fecha_inicio", "fecha_fin", "motivo",
-        ],
-        # `dosis` es la única columna por jugador, por dos razones que coinciden:
-        #
-        #   1. Es lo que legítimamente varía. La dosis por peso es práctica
-        #      corriente, y dejarla compartida invitaría a asumir que todos
-        #      llevan la misma sin haberlo decidido.
-        #   2. La grilla NO tiene checkbox por fila: incluye a un jugador cuando
-        #      alguna celda suya tiene dato (`isRowBlank`). O sea que la columna
-        #      es también el selector de a quién se le receta. Con `row_fields`
-        #      vacío no habría forma de elegir a nadie.
-        "row_fields": ["dosis"],
-        # `adjuntos` queda fuera de las dos listas a propósito. Es `type: file`,
-        # y ni la celda ni el campo compartido saben renderizar eso: caen al
-        # input de texto, así que se vería como una caja donde escribir el
-        # nombre de un archivo. Los adjuntos siguen en el formulario individual.
-    },
 }
+
 
 
 class Command(BaseCommand):

@@ -337,7 +337,8 @@ export type ExamInputMode =
   | "single"
   | "team_table"
   | "quick_list"
-  | "bulk_ingest";
+  | "bulk_ingest"
+  | "multi";
 
 export interface ExamInputModifiers {
   prefill_from_last?: boolean;

@@ -1426,8 +1426,23 @@ def create_team_results(request, payload: TeamResultsIn):
         raise HttpError(404, "Template not found")
 
     cfg = template.input_config or {}
-    if ExamTemplate.MODE_TEAM_TABLE not in (cfg.get("input_modes") or []):
-        raise HttpError(400, "This template does not enable team_table input mode.")
+    # Este endpoint sirve a DOS formas de carga, no a una. Las dos mandan una
+    # fila por jugador y difieren sólo en de dónde viene el dato:
+    #
+    #   team_table → `shared_data` con lo común + celdas por fila (una carga
+    #     compartida repartida entre jugadores).
+    #   multi      → `shared_data` vacío y cada fila con todos sus campos
+    #     (N registros independientes en la misma pantalla).
+    #
+    # Por eso no hace falta un endpoint nuevo: la fusión `shared_data + row` ya
+    # cubre las dos. Lo que sí hubo que arreglar es `is_blank`, que sólo contaba
+    # `row_fields` y descartaba en silencio los registros de `multi`.
+    allowed_modes = {ExamTemplate.MODE_TEAM_TABLE, ExamTemplate.MODE_MULTI}
+    if not allowed_modes & set(cfg.get("input_modes") or []):
+        raise HttpError(
+            400,
+            "Esta plantilla no habilita carga por equipo ni varios registros.",
+        )
     if template.is_episodic:
         raise HttpError(
             400,
@@ -1473,10 +1488,15 @@ def create_team_results(request, payload: TeamResultsIn):
     declared_row_fields = set(team_cfg.get("row_fields") or [])
 
     def is_blank(row_data: dict) -> bool:
-        # If row_fields are declared, only those count toward "is the doctor
-        # actually entering anything". Otherwise fall back to "any non-null
-        # value in result_data".
-        keys = declared_row_fields or set(row_data.keys())
+        # Vacío = la fila no trae NADA. Antes contaba sólo `row_fields`, que es
+        # correcto para la grilla —ahí una fila jamás lleva otra cosa que sus
+        # celdas— pero descartaba en silencio registros del modo `multi`, donde
+        # cada fila trae todos los campos: una medicación con droga y sin dosis
+        # desaparecía sin una palabra.
+        #
+        # La unión deja el comportamiento de la grilla idéntico y arregla el
+        # otro caso.
+        keys = declared_row_fields | set(row_data.keys())
         for key in keys:
             value = row_data.get(key)
             if value not in (None, "", []):

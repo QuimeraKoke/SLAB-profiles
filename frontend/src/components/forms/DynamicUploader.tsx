@@ -50,7 +50,7 @@ interface DynamicUploaderProps {
   onCancel?: () => void;
 }
 
-type FormValue = string | number | boolean | null | BodyMapValue;
+export type FormValue = string | number | boolean | null | BodyMapValue;
 
 function todayISO(): string {
   const d = new Date();
@@ -72,14 +72,14 @@ function localDateInput(iso?: string | null): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-function defaultValue(field: ExamField): FormValue {
+export function defaultValue(field: ExamField): FormValue {
   if (field.type === "boolean") return false;
   if (field.type === "date") return todayISO();
   if (field.type === "bodymap") return emptyBodyMapValue();
   return "";
 }
 
-function groupFields(fields: ExamField[]): { group: string | null; items: ExamField[] }[] {
+export function groupFields(fields: ExamField[]): { group: string | null; items: ExamField[] }[] {
   const groups = new Map<string | null, ExamField[]>();
   for (const f of fields) {
     if (f.type === "calculated") continue; // never rendered as input
@@ -582,7 +582,7 @@ interface FieldInputProps {
   onChange: (value: FormValue) => void;
 }
 
-function FieldInput({ field, value, onChange }: FieldInputProps) {
+export function FieldInput({ field, value, onChange }: FieldInputProps) {
   const id = `field-${field.key}`;
   const label = field.unit ? `${field.label} [${field.unit}]` : field.label;
 

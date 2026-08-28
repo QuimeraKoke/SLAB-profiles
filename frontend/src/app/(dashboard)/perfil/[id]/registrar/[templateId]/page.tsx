@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import BulkIngestForm from "@/components/forms/BulkIngestForm";
+import MultiRecordForm from "@/components/forms/MultiRecordForm";
 import BulkIngestPlaceholder from "@/components/forms/BulkIngestPlaceholder";
 import DynamicUploader from "@/components/forms/DynamicUploader";
 import MatchPicker from "@/components/forms/MatchPicker";
@@ -43,6 +44,7 @@ const MODE_LABELS: Record<ExamInputMode, string> = {
   bulk_ingest: "Por equipo · subir archivo",
   team_table: "Por equipo · tabla",
   quick_list: "Lista rápida",
+  multi: "Varios registros",
 };
 
 interface PageProps {
@@ -199,7 +201,8 @@ export default function RegistrarExamPage({ params }: PageProps) {
 
   // Team-table and bulk-ingest render wide grids; let the registrar
   // claim most of the viewport instead of the 960px default.
-  const wideMode = mode === "team_table" || mode === "bulk_ingest";
+  const wideMode =
+    mode === "team_table" || mode === "bulk_ingest" || mode === "multi";
   const containerClass = wideMode
     ? `${styles.container} ${styles.containerWide}`
     : styles.container;
@@ -269,6 +272,16 @@ export default function RegistrarExamPage({ params }: PageProps) {
           ) : (
             <BulkIngestPlaceholder template={template} />
           )
+        ) : mode === "multi" ? (
+          /* Varios registros independientes, sin salir de la pantalla. El
+           * jugador del perfil arranca el primer bloque. */
+          <MultiRecordForm
+            template={template}
+            categoryId={player.category.id}
+            initialPlayerId={player.id}
+            onSaved={() => router.push(backHref)}
+            onCancel={() => router.push(backHref)}
+          />
         ) : mode === "team_table" ? (
           template.link_to_match ? (
             <MatchScopedTeamTable
