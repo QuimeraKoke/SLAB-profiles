@@ -2,7 +2,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, getToken } from "@/lib/api";
+import DeferredFilePicker from "@/components/forms/DeferredFilePicker";
 import type { ExamField, ExamTemplate, PlayerSummary } from "@/lib/types";
 import {
   FieldInput,
@@ -40,6 +41,8 @@ interface Block {
   uid: number;
   playerId: string;
   values: Record<string, FormValue>;
+  /** Archivos encolados por campo, subidos recién cuando existe el resultado. */
+  files: Record<string, File[]>;
 }
 
 /** Campos que necesitan el ancho completo de la fila.
@@ -70,9 +73,22 @@ export default function MultiRecordForm({
   onSaved,
   onCancel,
 }: Props) {
+  /** Campos que viajan en `result_data`.
+   *
+   *  Sin los calculados (los resuelve el backend) y sin los `file`: un adjunto
+   *  no es un valor, se sube después contra `/attachments` con el id del
+   *  resultado. Antes estaban acá y `FieldInput` —que no sabe de archivos— los
+   *  dibujaba como CAJA DE TEXTO, y ese texto se guardaba como si fuera el
+   *  adjunto.
+   */
   const fields = useMemo<ExamField[]>(
-    // Los calculados los resuelve el backend; mostrarlos invitaría a escribirlos.
-    () => (template.config_schema.fields ?? []).filter((f) => f.type !== "calculated"),
+    () => (template.config_schema.fields ?? []).filter(
+      (f) => f.type !== "calculated" && f.type !== "file",
+    ),
+    [template],
+  );
+  const fileFields = useMemo<ExamField[]>(
+    () => (template.config_schema.fields ?? []).filter((f) => f.type === "file"),
     [template],
   );
   const groups = useMemo(() => groupFields(fields), [fields]);
@@ -81,6 +97,7 @@ export default function MultiRecordForm({
     uid: Math.random(),
     playerId,
     values: Object.fromEntries(fields.map((f) => [f.key, defaultValue(f)])),
+    files: {},
   });
 
   const [blocks, setBlocks] = useState<Block[]>([blank(initialPlayerId ?? "")]);
@@ -120,7 +137,8 @@ export default function MultiRecordForm({
     setBlocks((bs) => [
       ...bs,
       copyFrom
-        ? { uid: Math.random(), playerId: "", values: { ...copyFrom.values } }
+        // Los archivos NO se copian: un adjunto pertenece a un registro.
+        ? { uid: Math.random(), playerId: "", values: { ...copyFrom.values }, files: {} }
         : blank(),
     ]);
 
@@ -138,6 +156,47 @@ export default function MultiRecordForm({
     return dup;
   }, [usable]);
 
+  /** Sube los archivos encolados, ya con los resultados creados.
+   *
+   *  El mapeo es lo delicado: el servidor OMITE las filas sin datos, así que
+   *  `results` no tiene por qué alinearse con los bloques por índice. Se rehace
+   *  la misma regla de "vacío" del lado del cliente y se zipean en orden, que es
+   *  el orden en que el servidor crea. Por eso funciona incluso con el mismo
+   *  jugador en dos bloques, donde mapear por `player_id` sería ambiguo.
+   */
+  const uploadAttachments = async (
+    rows: { player_id: string; result_data: Record<string, FormValue> }[],
+    results: { id: string; player_id: string }[],
+  ) => {
+    const isBlank = (v: FormValue) => v === null || v === "" || v === undefined;
+    const nonBlank = usable.filter((b, i) =>
+      Object.values(rows[i].result_data).some((v) => !isBlank(v)),
+    );
+    if (nonBlank.length !== results.length) return;   // no adivinar
+
+    const token = getToken();
+    const base =
+      process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "")
+      ?? "http://localhost:8000/api";
+    for (let i = 0; i < nonBlank.length; i++) {
+      const block = nonBlank[i];
+      for (const [fieldKey, list] of Object.entries(block.files)) {
+        for (const file of list) {
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("source_type", "exam_field");
+          fd.append("source_id", results[i].id);
+          fd.append("field_key", fieldKey);
+          await fetch(`${base}/attachments`, {
+            method: "POST",
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            body: fd,
+          });
+        }
+      }
+    }
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -146,11 +205,19 @@ export default function MultiRecordForm({
       return;
     }
     setSaving(true);
+    const rows = usable.map((b) => ({
+      player_id: b.playerId,
+      result_data: b.values,
+    }));
     try {
       // `/results/team` con `shared_data` vacío: cada fila lleva TODO lo suyo,
       // que es exactamente la forma que este modo produce. No hace falta un
       // endpoint nuevo.
-      const res = await api<{ created: number; skipped: number }>(
+      const res = await api<{
+        created: number;
+        skipped: number;
+        results: { id: string; player_id: string }[];
+      }>(
         "/results/team",
         {
           method: "POST",
@@ -159,13 +226,11 @@ export default function MultiRecordForm({
             category_id: categoryId,
             recorded_at: `${recordedDate}T12:00:00`,
             shared_data: {},
-            rows: usable.map((b) => ({
-              player_id: b.playerId,
-              result_data: b.values,
-            })),
+            rows,
           }),
         },
       );
+      await uploadAttachments(rows, res.results ?? []);
       if (res.skipped > 0 && res.created === 0) {
         setError(
           "No se guardó nada: los registros no tienen datos además del jugador.",
@@ -260,6 +325,24 @@ export default function MultiRecordForm({
                   </label>
                 ))}
               </div>
+            </div>
+          ))}
+
+          {fileFields.map((f) => (
+            <div key={f.key} className={styles.fileField}>
+              <span className={styles.label}>{f.label}</span>
+              <DeferredFilePicker
+                value={b.files[f.key] ?? []}
+                onChange={(list) =>
+                  setBlocks((bs) =>
+                    bs.map((x) =>
+                      x.uid === b.uid
+                        ? { ...x, files: { ...x.files, [f.key]: list } }
+                        : x,
+                    ),
+                  )
+                }
+              />
             </div>
           ))}
 

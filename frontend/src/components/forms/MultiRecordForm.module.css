@@ -92,3 +92,7 @@
   border-radius: 8px; padding: 9px 16px; font: inherit; font-size: 13px;
   cursor: pointer;
 }
+
+/* Adjuntos: fila completa y separados de la grilla. Un dropzone comprimido a
+   una columna no se puede usar. */
+.fileField { margin: 10px 0 4px; }

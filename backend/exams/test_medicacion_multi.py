@@ -205,3 +205,28 @@ class MedicacionMultiTests(TestCase):
                       dosis="1 g"),
         ])
         self.assertEqual(r.status_code, 400)
+
+    def test_the_response_only_carries_created_rows_and_keeps_their_order(self):
+        """De esto depende que un adjunto termine en el registro correcto.
+
+        El componente sube los archivos DESPUÉS, contra el id de cada resultado.
+        El servidor omite las filas vacías, así que `results` no se alinea con
+        los bloques por índice — hay que rehacer la regla de "vacío" del lado del
+        cliente y zipear en orden. Si el servidor dejara de devolverlos en orden
+        de creación, los adjuntos se pegarían al jugador equivocado y nada
+        fallaría a la vista.
+        """
+        med = self._drug("PERMITIDO")
+        r = self._post([
+            self._row(self.players[0]),                                  # vacía
+            self._row(self.players[1], medicamento=med, dosis="1 g",
+                      fecha_inicio="2026-08-27"),
+            self._row(self.players[2], medicamento=med, dosis="2 g",
+                      fecha_inicio="2026-08-27"),
+        ])
+        body = r.json()
+        self.assertEqual((body["created"], body["skipped"]), (2, 1))
+        self.assertEqual(
+            [row["player_id"] for row in body["results"]],
+            [str(self.players[1].id), str(self.players[2].id)],
+        )
