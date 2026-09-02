@@ -5,10 +5,20 @@ Phase 2 of PLAN_FORMATIVO.md. Reads the CSV produced by
 already in the database. Dry-run by default:
 
     docker compose exec backend python manage.py import_formativo_master \\
-        --csv /tmp/maestro.csv --club "Universidad de Chile" --season 2026
-    # ... read the report, then:
-    docker compose exec backend python manage.py import_formativo_master \\
-        --csv /tmp/maestro.csv --club "Universidad de Chile" --season 2026 --commit
+        --csv /tmp/maestro.csv --club "Universidad de Chile" --season 2026 \\
+        --top-bucket "SUB-20"
+    # ... read the report, then add --commit
+
+Speak the club's vocabulary
+---------------------------
+`--top-bucket` exists because the first run created Serie 2004, 2005, 2006 and
+2007 alongside the club's own `SUB-20`, which already holds that whole squad.
+The result was four categories of 0–5 players competing with the real one for
+the same 43 people: a cleaner data model that nobody at the club could use.
+
+The Sub 20 squad spans four birth years and its staff call it `SUB-20`, so that
+is what it is. Cohort series are added only where the club actually thinks in
+cohorts (Serie 2008 and below).
 
 Matching: birth date first, name second
 ---------------------------------------
@@ -105,6 +115,10 @@ class Command(BaseCommand):
                             help="Move matched players to their cohort's category.")
         parser.add_argument("--overwrite-dob", action="store_true",
                             help="Let the file's birth date win over the database's.")
+        parser.add_argument(
+            "--top-bucket", default=None, metavar="NOMBRE",
+            help=("Categoría única donde va el plantel mayor (p. ej. 'SUB-20'), "
+                  "en vez de una Serie por cohorte. Es el vocabulario del club."))
 
     def handle(self, *args, **opts):
         club = Club.objects.filter(name=opts["club"]).first()
@@ -120,6 +134,7 @@ class Command(BaseCommand):
             raise CommandError("El CSV no trae filas de plantel con cohorte.")
 
         season = opts["season"]
+        self.top_bucket = opts["top_bucket"]
         ladder = Bracket.ladder()
         report: dict[str, list] = defaultdict(list)
 
@@ -139,11 +154,48 @@ class Command(BaseCommand):
         self._print(report, opts, len(rows))
 
     # ── categories ──────────────────────────────────────────────────────
+    def _top_bucket_cohorts(self, rows, season, ladder) -> set[int]:
+        """Cohorts the club keeps in one squad instead of one series each.
+
+        The club's Sub 20 is a single group spanning four birth years, and
+        `SUB-20` is the label its staff uses. Splitting it into Serie 2004…2007
+        produced four categories of 0–5 players competing with the real squad
+        for the same 43 players — technically tidier, and unusable.
+
+        Membership is decided by asking the ladder, not by comparing ages:
+        `season - cohort >= 20` looks equivalent and drops the 2007 cohort,
+        which is 19 and plays Sub 20 precisely because there is no Sub 19.
+        """
+        top = max((b.age for b in ladder if b.age is not None), default=None)
+        if top is None:
+            return set()
+        cohorts = set()
+        for row in rows:
+            cohort = int(row["cohorte"])
+            bracket = Bracket.for_age(season - cohort, ladder)
+            if bracket is None or bracket.is_senior or bracket.age == top:
+                cohorts.add(cohort)
+        return cohorts
+
     def _ensure_categories(self, club, rows, season, ladder, report):
         by_cohort: dict[int, Category] = {
             c.cohort_year: c for c in Category.objects.filter(
                 club=club, cohort_year__isnull=False)
         }
+        bucket_cohorts: set[int] = set()
+        bucket = None
+        if self.top_bucket:
+            bucket = Category.objects.filter(club=club, name=self.top_bucket).first()
+            if bucket is None:
+                raise CommandError(
+                    f"No existe la categoría '{self.top_bucket}' en {club.name}.")
+            bucket_cohorts = self._top_bucket_cohorts(rows, season, ladder)
+            for cohort in sorted(bucket_cohorts):
+                by_cohort[cohort] = bucket
+            report["al_bucket"].append(
+                f"cohortes {min(bucket_cohorts)}–{max(bucket_cohorts)} → "
+                f"{self.top_bucket} (sin Serie propia)" if bucket_cohorts else "")
+
         for cohort in sorted({int(r["cohorte"]) for r in rows}):
             if cohort in by_cohort:
                 continue
@@ -165,6 +217,10 @@ class Command(BaseCommand):
         # ladder gives — never `season - cohort`, which invents Sub 17/19/21.
         for cohort, category in by_cohort.items():
             if cohort not in {int(r["cohorte"]) for r in rows}:
+                continue
+            if cohort in bucket_cohorts:
+                # The bucket is one squad with its own TeamSeason; adding one
+                # per cohort would claim four teams in the same bracket.
                 continue
             age = season - cohort
             youngest = min((b.age for b in ladder if b.age is not None), default=None)
@@ -284,12 +340,12 @@ class Command(BaseCommand):
                     f"{row['nombre']} sigue en {player.category.name}")
             elif opts["reassign"]:
                 report["recategorizado"].append(
-                    f"{row['nombre']}: {player.category.name} → Serie {cohort}")
+                    f"{row['nombre']}: base={player.category.name} archivo={category.name}")
                 player.category = category
                 updates.append("categoría")
             else:
                 report["categoria_distinta"].append(
-                    f"{row['nombre']}: base={player.category.name} archivo=Serie {cohort}")
+                    f"{row['nombre']}: base={player.category.name} archivo={category.name}")
         if updates:
             report["jugador_actualizado"].append(
                 f"{row['nombre']} ({how}): {', '.join(updates)}")
@@ -301,6 +357,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.MIGRATE_HEADING(
             f"\n{modo} · {total} filas de plantel · temporada {opts['season']}\n"))
         orden = [
+            ("al_bucket", "Al plantel único del club", self.style.SUCCESS),
             ("categoria_creada", "Categorías creadas", self.style.SUCCESS),
             ("categoria_adoptada", "Categorías adoptadas (se les fijó cohorte)", self.style.SUCCESS),
             ("temporada_creada", "TeamSeason creadas", self.style.SUCCESS),

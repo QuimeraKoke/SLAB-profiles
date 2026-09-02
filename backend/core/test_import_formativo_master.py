@@ -187,6 +187,66 @@ class ImportFormativoTests(TestCase):
             l for l in t.splitlines() if "SIMULACIÓN" not in l and "APLICADO" not in l)
         self.assertEqual(quitar(seco), quitar(firme))
 
+    # ── el plantel único del club ───────────────────────────────────────
+    def test_las_cohortes_del_plantel_mayor_van_al_bucket_del_club(self):
+        """El club llama `SUB-20` a un plantel de cuatro años de nacimiento.
+
+        Partirlo en Serie 2004…2007 dio cuatro categorías de 0 a 5 jugadores
+        compitiendo con el plantel real por los mismos 43. El nombre del club
+        es el que manda.
+        """
+        bucket = Category.objects.create(club=self.club, name="SUB-20")
+        salida = self.correr(csv_con(
+            "MARIO SILVA ROJAS;2004;2004-05-05;Serie 2004;MEDIOCAMPISTA;plantel;;;;",
+            "IVAN LEIVA SOTO;2006;2006-05-05;Serie 2006;EXTREMO;plantel;;;;",
+            "PABLO MORA DIAZ;2007;2007-05-05;Serie 2007;GUARDAMETA;plantel;;;;",
+        ), "--commit", "--top-bucket", "SUB-20")
+        self.assertEqual(Player.objects.filter(category=bucket).count(), 3)
+        for cohorte in (2004, 2006, 2007):
+            self.assertFalse(
+                Category.objects.filter(club=self.club, cohort_year=cohorte).exists(),
+                f"no debía crear Serie {cohorte}",
+            )
+        self.assertIn("SUB-20", salida)
+
+    def test_la_cohorte_de_19_anos_tambien_va_al_bucket(self):
+        """El caso que la aritmética se comía.
+
+        `season - cohorte >= 20` deja fuera a la cohorte 2007, que tiene 19 en
+        2026 y juega Sub 20 justamente porque no existe Sub 19. La pertenencia
+        se decide preguntándole a la escalera.
+        """
+        bucket = Category.objects.create(club=self.club, name="SUB-20")
+        self.correr(csv_con(
+            "PABLO MORA DIAZ;2007;2007-05-05;Serie 2007;GUARDAMETA;plantel;;;;",
+        ), "--commit", "--top-bucket", "SUB-20")
+        self.assertEqual(Player.objects.filter(category=bucket).count(), 1)
+
+    def test_el_bucket_no_recibe_una_TeamSeason_por_cohorte(self):
+        # Cuatro cohortes en el bucket serían cuatro equipos en el mismo
+        # bracket si cada una trajera su propia TeamSeason.
+        bucket = Category.objects.create(club=self.club, name="SUB-20")
+        self.correr(csv_con(
+            "MARIO SILVA ROJAS;2005;2005-05-05;Serie 2005;MEDIOCAMPISTA;plantel;;;;",
+            "IVAN LEIVA SOTO;2006;2006-05-05;Serie 2006;EXTREMO;plantel;;;;",
+            "PABLO MORA DIAZ;2007;2007-05-05;Serie 2007;GUARDAMETA;plantel;;;;",
+        ), "--commit", "--top-bucket", "SUB-20")
+        self.assertLessEqual(bucket.team_seasons.filter(season=2026).count(), 1)
+
+    def test_un_bucket_inexistente_es_error_y_no_un_silencio(self):
+        with self.assertRaises(Exception):
+            self.correr(csv_con(
+                "MARIO SILVA ROJAS;2005;2005-05-05;Serie 2005;MEDIOCAMPISTA;plantel;;;;",
+            ), "--commit", "--top-bucket", "NO-EXISTE")
+
+    def test_sin_top_bucket_cada_cohorte_tiene_su_serie(self):
+        # El comportamiento por defecto no cambia: el bucket es opt-in.
+        self.correr(csv_con(
+            "IVAN LEIVA SOTO;2006;2006-05-05;Serie 2006;EXTREMO;plantel;;;;",
+        ), "--commit")
+        self.assertTrue(
+            Category.objects.filter(club=self.club, cohort_year=2006).exists())
+
     # ── nombres ─────────────────────────────────────────────────────────
     def test_el_nombre_compuesto_no_se_parte_mal(self):
         self.correr(csv_con(
