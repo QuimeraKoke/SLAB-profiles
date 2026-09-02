@@ -21,7 +21,7 @@ Ninguna es opinión mía: cada una cambia lo que se construye.
 | ~~0.2~~ | ✅ **RESUELTA (2026-09-02): se crean.** Criterio del cliente: *manda lo que entregaron, se borran si no hay info*. Y hay — ver §2.3 | — |
 | ~~0.3~~ | ✅ **RESUELTA (2026-09-02): se queda `Serie XXXX - Sub YY`.** Es lo que ya produce `season_label_parts()`, así que **no hay migración** ni cambio de código | — |
 | ~~0.4~~ | ⚠️ **SUPUESTO (2026-09-02): se tratan como equivalentes.** Decisión del cliente para no bloquear. Es un SUPUESTO, no un hecho verificado — ver §3.4 |
-| 0.5 | **Las 5 fechas de nacimiento en conflicto** (ver §1) | Alimentan el maturity offset: un error de meses corre la edad decimal |
+| ~~0.5~~ | ✅ **RESUELTA (2026-09-02)** por el club, las cinco. Ver §1.1 | — |
 
 ---
 
@@ -31,15 +31,69 @@ Ninguna es opinión mía: cada una cambia lo que se construye.
 cálculos de maduración; un nombre mal escrito crea un jugador fantasma y una
 fecha invertida corre un cálculo.
 
-### 1.1 Fechas de nacimiento contradictorias entre los dos archivos
+### 1.1 Fechas de nacimiento contradictorias ✅ RESUELTAS (2026-09-02)
 
-| Jugador | GPS | Evaluaciones | Lectura |
+Confirmadas por el club una por una:
+
+| Jugador | GPS | Evaluaciones | **Correcta** | Ganó |
+|---|---|---|---|---|
+| `ALONSO MUÑOZ` | 2014-08-02 | 2014-02-08 | **2014-02-08** | Evaluaciones |
+| `VICENTE NILO` | 2015-12-02 | 2015-02-12 | **2015-12-02** | GPS |
+| `IVO IBARRA` | 2012-01-14 | 2012-01-16 | **2012-01-16** | Evaluaciones |
+| `BRANKO GEZAN GARCIA` | 2006-08-03 | 2006-02-17 | **2006-08-03** | GPS |
+| `DAVID GUZMAN VIVANCO` | 2008-06-09 | 2008-06-09 | **2008-06-09** | ambos |
+
+⚠️ **Ninguno de los dos archivos es autoritativo para la fecha de nacimiento.**
+Dos respuestas salieron de cada uno, así que **no existe la regla fácil** de
+"ante conflicto gana tal archivo": cada caso se resuelve preguntando. Vale para
+los conflictos que aparezcan al importar el resto.
+
+Las cinco respuestas eligieron uno de los dos candidatos existentes — ninguna
+trajo una fecha nueva, lo que sugiere que las buscaron en la ficha y no las
+estimaron.
+
+### 1.1.b Los dos David Guzmán
+
+Confirmado: **son dos jugadores distintos**, y se distinguen por apellido
+materno.
+
+| Nombre real | Nacimiento | Categoría | Posición |
 |---|---|---|---|
-| `DAVID GUZMAN VIVANCO` | 2008-06-09 | 2011-02-10 | **Son DOS jugadores distintos.** Tres años de diferencia. Resuelve el único caso "decidible" de la cola COMET, que estaba ambiguo por homónimos con RUT distinto |
-| `ALONSO MUÑOZ` | 2014-08-02 | 2014-02-08 | día/mes invertidos |
-| `VICENTE NILO` | 2015-12-02 | 2015-02-12 | día/mes invertidos |
-| `IVO IBARRA` | 2012-01-14 | 2012-01-16 | 2 días |
-| `BRANKO GEZAN GARCIA` | 2006-08-03 | 2006-02-17 | distinta, sin patrón |
+| `DAVID GUZMAN VIVANCO` | 2008-06-09 | U18 | Centro delantero |
+| `DAVID GUZMAN BASCUR` | 2011-02-10 | U15 | Mediocampista |
+
+⚠️ **El archivo de GPS tiene un error**: en la fila del U15 lo registra como
+`DAVID GUZMAN VIVANCO` cuando es `BASCUR`. Al importar hay que **corregir ese
+nombre**, no sólo separar las fechas — si se importa tal cual, el nombre sigue
+apuntando a dos personas.
+
+Esto también resuelve el único caso decidible de la cola de 72 personas COMET sin
+vincular, que llevaba días ambiguo por dos homónimos con RUT distinto.
+
+### 1.1.c ⚠️ Los homónimos NO son un caso aislado — cambia el criterio de emparejamiento
+
+Buscando las fechas faltantes apareció que **el nombre no identifica a un
+jugador** en este club. Además de los dos David, hay al menos **6 más**:
+
+| Nombre | Una categoría | La otra |
+|---|---|---|
+| `TOMAS MANDIOLA` | U20 | U13 (2013-01-23) |
+| `BENJAMIN ARELLANO` | U20 | U13 (2013-07-12) |
+| `CRISTOBAL CAMPOS` | U20 | U13 (2013-03-14) |
+| `SAMUEL PEREZ` | U21 | U15 (2010-10-25) |
+| `JOAQUIN DIAZ` | U21 | U13 (2012-10-09) |
+| `TOMAS DE ARAYA` | U21 | U13 (2013-04-09) |
+| `SAMUEL ACEVEDO` | U21 | U14 (2012-01-21) |
+
+En un club formativo con 433 jugadores y hermanos, es esperable. Pero
+**invalida emparejar sólo por nombre**, que es lo que hace el pipeline genérico
+de importación (alias, y si no nombre completo exacto).
+
+**Consecuencia para la fase 1:** el emparejamiento va por **nombre + categoría**,
+y con RUT donde el club lo tenga. Un cruce por nombre solo le habría puesto a un
+`TOMAS MANDIOLA` de Sub 20 la fecha de un chico de 13 años — pasó al armar el
+listado de fechas faltantes, y se detectó sólo porque la edad resultante era
+absurda para la categoría.
 
 ### 1.2 Nombres de wellness sin respaldo en el maestro
 
