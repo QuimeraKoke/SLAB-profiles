@@ -70,30 +70,48 @@ apuntando a dos personas.
 Esto también resuelve el único caso decidible de la cola de 72 personas COMET sin
 vincular, que llevaba días ambiguo por dos homónimos con RUT distinto.
 
-### 1.1.c ⚠️ Los homónimos NO son un caso aislado — cambia el criterio de emparejamiento
+### 1.1.c La columna `CATEGORÍA` es derivada y volátil — no se importa
 
-Buscando las fechas faltantes apareció que **el nombre no identifica a un
-jugador** en este club. Además de los dos David, hay al menos **6 más**:
+Sostuve acá que había 7 homónimos más además de los dos David. **Era falso**, y
+la causa está en la propia planilla. `CATEGORÍA` (columna D de `JUGADORES`) es:
 
-| Nombre | Una categoría | La otra |
-|---|---|---|
-| `TOMAS MANDIOLA` | U20 | U13 (2013-01-23) |
-| `BENJAMIN ARELLANO` | U20 | U13 (2013-07-12) |
-| `CRISTOBAL CAMPOS` | U20 | U13 (2013-03-14) |
-| `SAMUEL PEREZ` | U21 | U15 (2010-10-25) |
-| `JOAQUIN DIAZ` | U21 | U13 (2012-10-09) |
-| `TOMAS DE ARAYA` | U21 | U13 (2013-04-09) |
-| `SAMUEL ACEVEDO` | U21 | U14 (2012-01-21) |
+```
+=IFS(C>18.9,"U21", C>16.9,"U18", C>15.9,"U16", C>14.9,"U15",
+     C>13.9,"U14", C>12.9,"U13", C>11.9,"U12", C>10.9,"U11")
+donde  C = YEARFRAC(B, TODAY())
+```
 
-En un club formativo con 433 jugadores y hermanos, es esperable. Pero
-**invalida emparejar sólo por nombre**, que es lo que hace el pipeline genérico
-de importación (alias, y si no nombre completo exacto).
+Dos fallas independientes salen de ahí:
 
-**Consecuencia para la fase 1:** el emparejamiento va por **nombre + categoría**,
-y con RUT donde el club lo tenga. Un cruce por nombre solo le habría puesto a un
-`TOMAS MANDIOLA` de Sub 20 la fecha de un chico de 13 años — pasó al armar el
-listado de fechas faltantes, y se detectó sólo porque la edad resultante era
-absurda para la categoría.
+1. **Fecha vacía → `U21`/`U20`.** `YEARFRAC(vacío, TODAY())` cuenta desde 1900 y
+   da **126,67 años**, así que dispara el primer peldaño. Las 16 filas sin fecha
+   están etiquetadas U20/U21 por eso, no porque alguien lo decidiera. Los 7
+   "homónimos de Sub 20" eran **filas duplicadas** de chicos de U13–U15 que sí
+   tienen fecha: las hojas de plantel (`U13`, `U14`, `U15`) los listan una sola
+   vez. La fecha del chico **sí** hay que copiarla a esa fila.
+2. **Sin peldaño bajo 10.9 → `#N/A`.** Los 4 sin categoría son nacidos entre
+   octubre y diciembre de 2015 (10,68–10,89 años hoy) y se caen del `IFS`. Sus
+   19 compañeros de cohorte 2015 dicen `U11`, y la hoja `U11` los incluye a los
+   cuatro. Con `TODAY()` esto se "arregla" solo en unas semanas, lo que es peor
+   que si quedara roto: la etiqueta es función del reloj, no un dato.
+
+**Consecuencia:** SLAB importa **`FECHA NACIMIENTO`** —el hecho— y calcula la
+etiqueta Sub N por temporada recorriendo `Bracket.order`, que es lo que ya hace
+`Category.season_label_parts()`. La `CATEGORÍA` del archivo se usa sólo como
+contraste, nunca como fuente. Es el mismo antipatrón que corregimos en
+`CometCompetitionLink`: guardar un join en vez del hecho.
+
+El emparejamiento va por **nombre + categoría deducida de la cohorte**, con RUT
+donde el club lo tenga. Medido sobre el maestro: 0 colisiones reales una vez
+aplicadas las 5 fechas que confirmó el club, y el único homónimo verdadero del
+club son los dos David (§1.1.b), que se separan por apellido materno.
+
+**Fechas cruzadas:** de 299 jugadores presentes en los dos archivos con fecha,
+**294 coinciden**. Los 5 que discrepan son los que el club ya resolvió; dos eran
+día/mes invertido (`ALONSO MUNOZ`, `VICENTE NILO`) y no siguen un patrón
+sistemático. Residuo no verificable: 113 de 299 tienen día y mes ≤ 12, así que
+una inversión idéntica en ambos archivos no se detectaría. No hay indicio de que
+exista.
 
 ### 1.2 Nombres de wellness sin respaldo en el maestro
 
@@ -105,15 +123,27 @@ check-ins) contra `JOHN LAURENT` (765, en el maestro, 2009-03-14, U18).
 la lista de etiquetas sin jugador. Sirve para dos cosas: que el club limpie la
 planilla, y que carguemos los alias que SLAB necesita para emparejar.
 
-### 1.3 Huecos del maestro
+### 1.3 Huecos del maestro — 20 filas, 13 resueltas en local
 
-- **13 de 433** jugadores sin fecha de nacimiento → sin maturity offset posible
-- **4** con categoría `#N/A`
+De las 16 filas sin fecha de nacimiento y las 4 con `#N/A`, sólo **7 requieren
+al club**. Las otras 13 se resuelven con las hojas de plantel del propio archivo:
+
+| Caso | Filas | Resolución |
+|---|---|---|
+| Categoría `#N/A` | 4 | **U11** (Serie 2015). Confirmado dos veces: hoja `U11` + cohorte 2015 → Sub 11 en 2026 |
+| Fila duplicada de un chico que sí tiene fecha | 7 | Copiar su fecha. Arellano/Campos/de Araya/Mandiola → U13, Díaz/Acevedo → U14, Pérez → U15 |
+| Jugador **a prueba**, no del plantel | 2 | `LUCAS GONZALEZ`, `RENATO LOPEZ` — sólo en `REGISTRO JUGADORES A PRUEBA`. No se importan como plantel |
+| Jugador real de plantel, falta la fecha | 3 | `CRISTOBAL GUERRERO` (U20), `SANTINO RIVERA` (U15), `TOMAS VALDES` (U16) → **pedir al club** |
+| Sin plantel ni fecha | 4 | `DAWUD BAKHIT`, `GONZALO AHUMADA`, `JOAQUIN CAMUS`, `VICENTE MUÑOZ` → **pedir fecha y confirmar si son plantel o prueba** |
+
+Detalle con archivo · hoja · fila: `~/Downloads/formativo_datos_faltantes.csv`.
 
 ### Criterio de salida de la fase 1
 
-Un CSV canónico `jugador → fecha nac. → categoría → posición` con **cero**
-conflictos y cero `#N/A`, revisado por el club. Nada se importa antes.
+Un CSV canónico `jugador → fecha nac. → cohorte → posición` (sin columna de
+categoría: se calcula) con **cero** conflictos de fecha, revisado por el club.
+Las 7 filas pendientes no bloquean la importación del resto: entran con cohorte
+nula y quedan listadas para completar. Sí bloquean el maturity offset de esos 7.
 
 ---
 
