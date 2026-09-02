@@ -18,9 +18,9 @@ Ninguna es opinión mía: cada una cambia lo que se construye.
 | # | Decisión | Por qué bloquea |
 |---|---|---|
 | ~~0.1~~ | ✅ **RESUELTA (2026-09-02): es Sub 20.** El cliente confirma que para ellos es Sub 20; "Sub 21" es sólo cómo nombran el archivo. **No se agrega ninguna fila a `Bracket`** y el archivo `SUB 21 - 2026 - CAT 07-05` alimenta el bracket Sub 20 que ya existe | — |
-| 0.2 | **¿Recreamos U8, U9 y U10?** Se borraron el 2026-08-26 por estar vacías (y lo estaban). El maestro tiene **55 jugadores** en esas tres | Sin ellas, 55 jugadores no tienen dónde entrar |
-| 0.3 | **¿"Categoría 2014" o "Serie 2014"?** El club usa "categoría" (dicen *"cat 2008"*); nosotros renombramos a "Serie" el 2026-08-26 | Es una migración de datos; conviene hacerla una sola vez |
-| 0.4 | **HSR: ¿>20 o >19,8 km/h?** El formativo mide >20, `gps_sesion` dice >19,8 | Si el umbral difiere, los números **no son comparables** con los del plantel profesional. Es definicional, no cosmético |
+| ~~0.2~~ | ✅ **RESUELTA (2026-09-02): se crean.** Criterio del cliente: *manda lo que entregaron, se borran si no hay info*. Y hay — ver §2.3 | — |
+| ~~0.3~~ | ✅ **RESUELTA (2026-09-02): se queda `Serie XXXX - Sub YY`.** Es lo que ya produce `season_label_parts()`, así que **no hay migración** ni cambio de código | — |
+| **0.4** | **HSR: ¿>20 o >19,8 km/h?** El formativo mide >20, `gps_sesion` dice >19,8 | Si el umbral difiere, los números **no son comparables** con los del plantel profesional. Es definicional, no cosmético |
 | 0.5 | **Las 5 fechas de nacimiento en conflicto** (ver §1) | Alimentan el maturity offset: un error de meses corre la edad decimal |
 
 ---
@@ -103,8 +103,30 @@ un 2008 que aparece en un partido Sub 20 no es un dato malo, es un ascenso.
 | Qué | Cuánto | Nota |
 |---|---|---|
 | Categoría 2015 (Sub 11 2026) | **38 jugadores**, ninguno en SLAB | Engancha los 25 partidos desprendidos y ~69 de las 72 personas COMET sin vincular |
-| U8, U9, U10 | 55 jugadores | Sujeto a 0.2 |
+| U8, U9, U10 | **58 jugadores** | Se recrean (ver abajo) |
 | Jugadores nuevos del maestro | del orden de 100+ | Contar exacto tras la fase 1 |
+
+#### U8, U9 y U10: se recrean, y con menos de lo que uno supondría
+
+Se habían borrado el 2026-08-26 por estar completamente vacías, y lo estaban.
+Ahora la data entregada las respalda:
+
+| | Jugadores | Carreras | Neuromuscular | Resistencia | Fuerza | GPS | Wellness |
+|---|---|---|---|---|---|---|---|
+| U8 | 17 | 34 | 16 | — | — | — | — |
+| U9 | 20 | 38 | 15 | — | — | — | — |
+| U10 | 21 | 48 | 27 | — | — | — | — |
+
+**178 filas de examen** entre 2026-03-11 y 2026-07-08. Tres consecuencias:
+
+1. **Sólo se les cuelgan dos plantillas**, Carreras y Neuromuscular. No hay una
+   sola fila de Resistencia ni de Fuerza para estas tres — coherente con que esos
+   tests arrancan en U12 y U13. Es exactamente para lo que sirve
+   `applicable_categories`.
+2. **No hay hojas de GPS** para U8–U10. La cantera chica no usa GPS.
+3. **No hay archivo de wellness** tampoco (la carpeta arranca en SUB 11), así que
+   su plantel sale **del maestro** y no de una `Lista Check In`. Es la única parte
+   del plan donde el maestro es la única fuente de plantel.
 
 ### 2.4 Pertenencias con fechas reales
 
