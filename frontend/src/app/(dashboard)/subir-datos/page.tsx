@@ -8,23 +8,35 @@ import { useCategoryContext } from "@/context/CategoryContext";
 import { useToast } from "@/components/ui/Toast/Toast";
 import BulkIngestForm from "@/components/forms/BulkIngestForm";
 import TeamTableForm from "@/components/forms/TeamTableForm";
+import MultiRecordForm from "@/components/forms/MultiRecordForm";
 import DynamicUploader from "@/components/forms/DynamicUploader";
 import type { ExamTemplate } from "@/lib/types";
 import styles from "./page.module.css";
 
-type Mode = "team_table" | "bulk_ingest" | "single";
+type Mode = "team_table" | "bulk_ingest" | "multi" | "single";
 const MODE_LABEL: Record<Mode, string> = {
   team_table: "Tabla por equipo",
   bulk_ingest: "Subir archivo",
+  multi: "Varios registros",
   single: "Individual",
 };
 
-/** Every exam is enterable per-player (Individual). Templates that opt into
- *  team_table / bulk_ingest also offer those. So the picker lists ALL exams. */
+/** Modos que ESTA pantalla sabe dibujar, en el orden en que se ofrecen.
+ *
+ *  La lista existe para que un modo declarado en la plantilla pero sin
+ *  componente acá no se ofrezca (pasaría con `quick_list`, que está declarado en
+ *  el modelo y nunca se implementó). Y para que agregar uno sea UN lugar: antes
+ *  el filtro decía `["team_table", "bulk_ingest"]` a mano, así que `multi` no
+ *  aparecía en esta pantalla aunque la plantilla lo declarara.
+ */
+const RENDERABLE: Mode[] = ["team_table", "bulk_ingest", "multi"];
+
+/** Todo examen se puede cargar por jugador (Individual), así que el listado
+ *  muestra TODOS. Los demás modos salen de lo que la plantilla declare, cruzado
+ *  con lo que esta pantalla sabe dibujar. */
 function availableModes(t: ExamTemplate): Mode[] {
-  const modes = t.input_config?.input_modes ?? [];
-  const team = (["team_table", "bulk_ingest"] as Mode[]).filter((m) => modes.includes(m));
-  return [...team, "single"];
+  const declared = t.input_config?.input_modes ?? [];
+  return [...RENDERABLE.filter((m) => declared.includes(m)), "single"];
 }
 
 /**
@@ -144,6 +156,16 @@ export default function SubirDatosPage() {
             template={selected}
             categoryId={categoryId}
             onCommitted={done}
+            onCancel={reset}
+          />
+        )}
+        {mode === "multi" && (
+          /* Sin `initialPlayerId`: acá no se entró desde un perfil, así que el
+           * primer bloque arranca con el jugador vacío. */
+          <MultiRecordForm
+            template={selected}
+            categoryId={categoryId}
+            onSaved={done}
             onCancel={reset}
           />
         )}
