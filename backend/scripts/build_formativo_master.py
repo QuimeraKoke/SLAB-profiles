@@ -260,6 +260,45 @@ def read_book(path: Path, observations: dict[str, list[Observation]],
     book.close()
 
 
+def _majority_dob(obs: list[Observation]) -> date | None:
+    votes = Counter(o.dob for o in obs if o.dob)
+    return votes.most_common(1)[0][0] if votes else None
+
+
+def _fold_short_names(observations: dict[str, list[Observation]],
+                      nominal: dict[str, dict]) -> None:
+    """Collapse `ALVARO BARRERA` into `ALVARO BARRERA CALDERON`.
+
+    The club writes some players with the maternal surname and some without,
+    in the same sheet, so the master ends up holding one person twice. 13 pairs
+    do this. Left alone they become 13 duplicate players, and phase 2 matched
+    both rows to the same existing record.
+
+    **The shared birth date is what licenses the merge**, not the prefix. Two
+    prefix pairs here are genuinely different people — `ALONSO MORALES` (2014)
+    versus `ALONSO MORALES ESPINOZA` (2016), and `DIEGO DIAZ` (2015) versus
+    `DIEGO DIAZ PENALVER` (2017) — most likely brothers. Merging on the name
+    alone would have destroyed two players.
+    """
+    keys = sorted(set(observations) | set(nominal), key=len, reverse=True)
+    dobs = {k: _majority_dob(observations.get(k, [])) for k in keys}
+    for short in list(keys):
+        if short not in dobs or dobs[short] is None:
+            continue
+        longer = [k for k in keys
+                  if k != short and k.startswith(short + " ") and dobs.get(k) == dobs[short]]
+        if len(longer) != 1:
+            continue
+        target = longer[0]
+        observations[target].extend(observations.pop(short, []))
+        if short in nominal:
+            entry = nominal.setdefault(target, {"positions": Counter(), "rows": []})
+            entry["positions"].update(nominal[short]["positions"])
+            entry["rows"].extend(nominal[short]["rows"])
+            del nominal[short]
+        dobs.pop(short, None)
+
+
 def resolve_dob(key: str, obs: list[Observation]) -> tuple[date | None, str]:
     if key in CLUB_CONFIRMED:
         return CLUB_CONFIRMED[key], "club (confirmada por correo)"
@@ -353,6 +392,8 @@ def main() -> int:
         if len(matches) == 1:
             observations[matches[0]].extend(observations.pop(key))
 
+    _fold_short_names(observations, nominal)
+
     canonical, pending, aliases = [], [], []
     for key in sorted(set(nominal) | set(observations)):
         obs = observations.get(key, [])
@@ -440,6 +481,19 @@ def main() -> int:
     by_cohort = Counter((r["cohorte"], r[bracket_col]) for r in plantel)
     for (cohort, rung), count in sorted(by_cohort.items(), reverse=True):
         print(f"  Serie {cohort:<6} {rung or '—':<24} {count}")
+
+    # A birth date shared by three or more players is usually a filled-down
+    # cell, not a coincidence. It does not block the import — matching guards
+    # against merging same-date players whose names differ — but the club
+    # should see it.
+    compartidas = Counter(r["fecha_nacimiento"] for r in plantel if r["fecha_nacimiento"])
+    sospechosas = {f: n for f, n in compartidas.items() if n >= 3}
+    if sospechosas:
+        print(f"\nfechas compartidas por 3+ jugadores (revisar con el club): "
+              f"{len(sospechosas)}")
+        for fecha, n in sorted(sospechosas.items(), key=lambda kv: -kv[1]):
+            quienes = [r["nombre"] for r in plantel if r["fecha_nacimiento"] == fecha]
+            print(f"  {fecha} ×{n}  {', '.join(q[:24] for q in quienes)}")
 
     subieron = [r for r in canonical if r["promocion"]]
     print(f"\njugadores que jugaron sobre su serie en {args.season}: {len(subieron)}")
