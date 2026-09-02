@@ -309,7 +309,12 @@ class AlertRule(models.Model):
             '"threshold_pct": float?, "threshold_units": float?, '
             '"direction": "any"|"increase"|"decrease"} — at least one threshold required. '
             'band: {} (auto-detect alert band via color heuristic) or '
-            '{"trigger_labels": ["Elevado", ...]} to fire on specific bands.'
+            '{"trigger_labels": ["Elevado", ...]} to fire on specific bands. '
+            'Optional "ranges": same shape as the field\'s reference_ranges, '
+            'carrying the RULE\'s own thresholds. Es lo que hace posible tener '
+            'umbrales por categoria: el club mide el mismo test con bandas '
+            'distintas por edad. Sin "ranges" se usan las del campo, asi que '
+            'las reglas existentes no cambian.'
         ),
     )
     severity = models.CharField(
@@ -483,10 +488,25 @@ class AlertRule(models.Model):
                             "band labels (e.g. [\"Elevado\"])."
                         )
                     })
+            # Bandas propias de la regla: mismo shape que
+            # `TemplateField.reference_ranges`, validado con el MISMO código —
+            # si divergieran, una banda válida en un lado sería inválida en el
+            # otro y nadie sabría cuál manda.
+            own = cfg.get("ranges")
+            if own is not None:
+                from exams.models import TemplateField
+
+                probe = TemplateField(
+                    key=self.field_key or "x", label="x",
+                    type=TemplateField.TYPE_NUMBER, reference_ranges=own,
+                )
+                probe._validate_reference_ranges()
+
             # Also surface the upfront error if the bound field has no
             # reference_ranges configured — otherwise the rule would silently
-            # never fire and confuse the admin.
-            if self.template_id and self.field_key:
+            # never fire and confuse the admin. Con `ranges` propias no aplica:
+            # la regla trae sus umbrales y no depende del campo.
+            if self.template_id and self.field_key and not own:
                 schema = self.template.config_schema or {}
                 for f in schema.get("fields", []) or []:
                     if isinstance(f, dict) and f.get("key") == self.field_key:

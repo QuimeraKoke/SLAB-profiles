@@ -1037,8 +1037,24 @@ def _band_evaluation(
       config carries `trigger_labels`, that wins. Otherwise we fall back
       to `exams.bands.alert_bands()` (the reddest-band heuristic).
     """
-    field_def = _field_definition(rule)
-    ranges = list((field_def or {}).get("reference_ranges") or [])
+    # Las bandas de la REGLA ganan sobre las del campo. Sin esto, una regla
+    # para Sub 11 y otra para Sub 20 leían los MISMOS umbrales: `AlertRule` ya
+    # era por categoría, pero los números vivían en el campo compartido.
+    #
+    # El club mide el mismo test con umbrales distintos por edad — en su propia
+    # planilla, "Muy Deficiente" en RM Back Squat es <68,3 kg para Sub 13 y
+    # <125 kg para Sub 18. Con las bandas en el campo, una plantilla compartida
+    # le decía a un Sub 11 que 100 kg es "Regular", el umbral de un Sub 20. Y
+    # estas bandas son las que disparan alertas.
+    #
+    # Sin `ranges` en la config, cae a las del campo: toda regla existente
+    # sigue comportándose igual.
+    cfg_ranges = (rule.config or {}).get("ranges")
+    if isinstance(cfg_ranges, list) and cfg_ranges:
+        ranges = list(cfg_ranges)
+    else:
+        field_def = _field_definition(rule)
+        ranges = list((field_def or {}).get("reference_ranges") or [])
     if not ranges:
         return None, []
 

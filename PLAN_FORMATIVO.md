@@ -187,7 +187,44 @@ decisión deliberada y no un accidente.
 `LOCALIA`, `CALIDAD OPONENTE` y `RESULTADO` indican que parte de esas filas son
 **partidos**, no sesiones → van a `gps_partido`.
 
-### 3.3 El único desarrollo nuevo: bandas por categoría
+### 3.3 Bandas por categoría ✅ HECHO en local (2026-09-02)
+
+Resultó **mucho más chico de lo planeado**, porque media pieza ya estaba: al
+mirar el código, `AlertRule` **ya era por categoría** (tiene FK a `Category`) —
+lo que faltaba es que los umbrales salieran de la regla y no del campo
+compartido. `_band_evaluation` hacía:
+
+```python
+field_def = _field_definition(rule)
+ranges = list((field_def or {}).get("reference_ranges") or [])
+```
+
+Así que una regla para Sub 11 y otra para Sub 20 leían **los mismos números**.
+
+**El cambio**: una regla BAND puede traer `config["ranges"]` con sus propios
+umbrales; sin eso cae a las del campo, así que **ninguna regla existente
+cambia**. Cero modelos nuevos, cero migración de datos (sólo el help_text).
+
+Se validan con el **mismo** validador que `TemplateField.reference_ranges` — si
+divergieran, una banda válida en un lado sería inválida en el otro y nadie
+sabría cuál manda.
+
+Y se relajó un chequeo que ahora estorbaba: `clean()` exigía que el campo
+tuviera bandas, porque sin ellas la regla nunca dispararía. Con umbrales propios
+eso ya no es cierto, y seguir exigiéndolo bloqueaba justamente el caso nuevo.
+
+El test que sostiene todo es `test_el_mismo_valor_cae_en_bandas_distintas_por_categoria`:
+90 kg de RM Back Squat es "Regular" para un Sub 13 y "Muy Deficiente" para un
+Sub 18, con las bandas reales de las hojas del club. Verificado que **falla sin
+el arreglo** — una alerta con el umbral equivocado se ve igual que una correcta,
+así que sin ese test nadie lo notaría.
+
+⚠️ **Lo que NO cubre**: el lado de la VISUALIZACIÓN. Los gráficos siguen leyendo
+`reference_ranges` del campo, así que la banda que se dibuja es la del default.
+Se atacó primero la alerta porque es la que carga una decisión; el gráfico es
+informativo. Queda anotado como pendiente.
+
+#### El problema original, para referencia
 
 Las hojas `FORMATO CONDICIONAL` del club son el mismo test con umbrales
 distintos por edad:
