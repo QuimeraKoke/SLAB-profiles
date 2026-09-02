@@ -388,7 +388,7 @@ Cada fase termina con una verificación que se puede correr.
 | **3** | ✅ Pertenencias con fecha real de primera aparición | 469 de 479 con spell; 394 con fecha del dato del club, no estimada |
 | **4** | ✅ Plantillas (5) + 2 campos de pulso + `applicable_categories` | Carreras/Neuromuscular en 12 categorías, Fuerza/Resistencia en 7 (Sub 13+), GPS en 10 (Sub 11+) |
 | **5** | ✅ Bandas por categoría | Un Sub 11 y un Sub 20 con el mismo valor caen en bandas distintas |
-| **6** | Importar evaluaciones físicas (~15k filas), en seco y después en firme | Conteos por familia y categoría contra la planilla |
+| **6** | ✅ Importar evaluaciones físicas | 5061 resultados en 396 jugadores, 2024-01-22 → 2026-07-15; conteos verificados contra la planilla |
 | **7** | Importar GPS (~13k filas) | Ídem, y los partidos van a `gps_partido` |
 | **8** | Re-verificar los módulos que dependen de esto | `/crecimiento` y `/desarrollo` con datos juveniles reales |
 
@@ -529,3 +529,63 @@ Devuelve Sub 11 para un chico de 8 años, correcto para su pregunta ("¿cuál es
 el peldaño más bajo que lo admite?") y equivocado para ésta. Sin guard, las
 Series 2016–2018 pasaban un corte de "Sub 11 y más" y quedaban con GPS, que
 nunca corrieron. Cubierto por test en los tres lugares.
+
+---
+
+## 8. Fase 6 — cuatro bugs de parseo, los cuatro silenciosos
+
+Cada uno dejaba el reporte limpio mientras perdía o corrompía datos. Van
+anotados porque el archivo del club los va a volver a traer:
+
+| Hoja | Qué pasaba | Efecto si no se detectaba |
+|---|---|---|
+| `CARRERAS` | La columna que nombra el test está titulada **`NEUROMUSCULAR`** — el club armó la hoja copiando la otra | 0 de 4341 filas leídas, reporte en verde |
+| `PRESS DE BANCO` | Encabezado con un `FECHA` fantasma al frente: los datos arrancan en `JUGADOR` | `PESO CORPORAL` se leía de la columna de la posición |
+| `FUERZA` | Las cargas no intentadas vienen en **0**, no vacías | 678 de 682 sesiones rechazadas por el piso de 0,1 m/s |
+| varias | 200 filas sin fecha (119 en `PRESS DE BANCO`, 62 en `1000 METROS`) | se descartaban sin decir nada |
+
+El corrimiento se detecta **por tipo, no por nombre de hoja**: la columna del
+jugador tiene que traer texto y la de nacimiento una fecha. Así una hoja que el
+club arregle (o rompa) después se maneja sin editar código.
+
+### Qué se cargó
+
+| Plantilla | Resultados |
+|---|---|
+| `carreras` | 2119 |
+| `neuromuscular` | 1413 |
+| `resistencia` | 853 |
+| `fuerza` | 666 |
+| `resistencia_1000m` | 10 |
+
+**5061 resultados, 396 jugadores, del 2024-01-22 al 2026-07-15.** Verificado
+contra la planilla: `t10_best` en 1297 resultados contra 1338 filas T10 en el
+origen, COD 870 contra 876, CMJ 1293 contra 1322. La diferencia son los 16
+nombres que no resuelven a un jugador.
+
+Re-correrlo crea 0: el dedup va por `result_data["origen_id"]`.
+
+### Rango: se descarta el valor, no la sesión
+
+7 valores imposibles — `v_60kg=45992` (un número de fecha en una columna de
+velocidad), un T30 de 2,68 s (30 m a 40 km/h), un tiro a 4 km/h. Se descarta el
+**valor** y la fila se carga igual, por dos razones: un día de test trae varias
+pruebas y una celda mala no es razón para perder el T10 de ese día, y como
+`best` es un MÍNIMO en los tests de tiempo, dejar el valor imposiblemente bajo
+lo haría ganar y sería la cifra que muestra el gráfico.
+
+### Procedencia
+
+Cada fila lleva `origen`, `origen_hoja` y `origen_id` en `result_data`,
+siguiendo el patrón que ya usa Catapult con `catapult_activity_id`. Sin eso,
+una vez cargadas nadie puede distinguir un HSR de la planilla del club (>20
+km/h) de uno de Catapult (>19,8) — y comparar los dos es exactamente lo que el
+club pidió.
+
+### Para el club
+
+- **200 filas sin fecha**: las 119 de `PRESS DE BANCO` (la hoja no tiene
+  columna de fecha) y 62 de `1000 METROS`.
+- **16 nombres sin jugador**, entre ellos typos (`DAMINA SOLIS`) y filas con
+  sólo el apellido (`OLIVEROS`, `CORNEJO`).
+- **7 celdas con valores imposibles**, listadas en el reporte del importador.
