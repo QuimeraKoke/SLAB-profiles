@@ -68,26 +68,51 @@ def _best(key: str, label: str, unit: str, group: str, reps: list[str],
           lowest_is_best: bool) -> dict:
     """`BEST` is min for a time and max for a height or a speed.
 
-    The club's sheet computes it, but it is derived from the three attempts, so
-    SLAB computes it too — importing it would store the same conclusion twice
-    and let the two drift.
+    It is derived from the attempts, so SLAB computes it rather than importing
+    it — storing the club's value too would be the same conclusion twice, free
+    to drift.
+
+    ⚠️ The formula has to survive a MISSING attempt, which is the common case:
+    2978 of 4341 rows in `CARRERAS` and 1012 of 1565 in `NEUROMUSCULAR` record
+    only two. A plain `min([a], [b], [c])` returns None as soon as one is
+    absent, so the import would have loaded 15.000 rows and left every chart
+    and every alert empty without a single error.
+
+    A missing key is not null in this engine — it raises `Unknown variable` —
+    and `coalesce` is the only lazy function, so each argument coalesces to the
+    first attempt that IS present. With `a` and `b` recorded, `min` receives
+    `(a, b, a)`, which is `min(a, b)`. With none recorded, `coalesce` raises
+    and the field is left empty, which is the right answer.
     """
     func = "min" if lowest_is_best else "max"
+    args = []
+    for i in range(len(reps)):
+        rot = reps[i:] + reps[:i]
+        args.append(f"coalesce({', '.join(f'[{r}]' for r in rot)})")
     return {"key": key, "label": label, "type": "calculated", "unit": unit,
             "group": group, "chart_type": "line",
             "direction_of_good": "down" if lowest_is_best else "up",
-            "formula": f"{func}({', '.join(f'[{r}]' for r in reps)})"}
+            "formula": f"{func}({', '.join(args)})"}
 
 
 def _prom(key: str, label: str, unit: str, group: str, reps: list[str],
           lowest_is_best: bool) -> dict:
-    # round() takes a single argument in the formula engine, so two decimals
-    # are done the long way. Same reason as in seed_fatiga_central.
-    suma = " + ".join(f"[{r}]" for r in reps)
-    return {"key": key, "label": label, "type": "calculated", "unit": unit,
+    """Imported, not computed — the engine cannot count present values.
+
+    A mean needs sum ÷ how-many-were-recorded, and there is no way to count:
+    `1 if [c] else 0` raises `Unknown variable` when `c` is absent, and
+    `coalesce` can only substitute a value, not report that it had to. Summing
+    coalesced attempts and dividing by three would silently divide a two-attempt
+    mean by three.
+
+    So this carries the club's own average, the same call already made for
+    `vam` and the 1000 m `vo2_max`. Consequence worth knowing: on a
+    hand-entered form `best` fills itself and this stays blank, because there
+    is nothing to derive it from.
+    """
+    return {"key": key, "label": label, "type": "number", "unit": unit,
             "group": group, "chart_type": "line",
-            "direction_of_good": "down" if lowest_is_best else "up",
-            "formula": f"round(({suma}) / {len(reps)} * 100) / 100"}
+            "direction_of_good": "down" if lowest_is_best else "up"}
 
 
 def _serie(key: str, label: str, unit: str, group: str, reps: list[str],

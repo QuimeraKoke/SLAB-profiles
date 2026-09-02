@@ -99,13 +99,36 @@ class FormativoTemplatesTests(TestCase):
         """
         out = self._calc("carreras", {"t10_1": 1.82, "t10_2": 1.79, "t10_3": 1.85})
         self.assertEqual(out["t10_best"], 1.79)
-        self.assertAlmostEqual(out["t10_prom"], 1.82, places=2)
 
     def test_el_mejor_de_un_salto_es_el_mayor(self):
         out = self._calc("neuromuscular", {"cmj_1": 24.1, "cmj_2": 23.9,
                                            "cmj_3": 25.4})
         self.assertEqual(out["cmj_best"], 25.4)
-        self.assertAlmostEqual(out["cmj_prom"], 24.47, places=2)
+
+    def test_el_mejor_sobrevive_a_un_intento_faltante(self):
+        """El caso mayoritario, y el que casi vacía la importación entera.
+
+        2978 de 4341 filas de CARRERAS y 1012 de 1565 de NEUROMUSCULAR
+        registran sólo dos intentos. Con `min([a], [b], [c])` el tercero
+        ausente devuelve None, así que se habrían cargado 15.000 filas con
+        todos los gráficos y todas las alertas vacíos y sin un solo error.
+
+        Una clave ausente no es nula en este motor —lanza `Unknown variable`—
+        y `coalesce` es la única función perezosa, así que cada argumento cae
+        al primer intento presente.
+        """
+        dos = self._calc("carreras", {"t10_1": 1.82, "t10_2": 1.79})
+        self.assertEqual(dos["t10_best"], 1.79)
+        uno = self._calc("carreras", {"t10_1": 1.82})
+        self.assertEqual(uno["t10_best"], 1.82)
+        salto = self._calc("neuromuscular", {"cmj_1": 24.1, "cmj_2": 23.9})
+        self.assertEqual(salto["cmj_best"], 24.1, "en salto el mejor es el mayor")
+
+    def test_sin_ningun_intento_el_mejor_queda_vacio(self):
+        # `coalesce` sin nada que devolver deja el campo vacío, que es la
+        # respuesta correcta: no hay test.
+        out = self._calc("carreras", {"t30_1": 4.2})
+        self.assertIsNone(out.get("t10_best"))
 
     def test_la_asimetria_de_COD_conserva_el_signo(self):
         """El signo dice qué lado trabajar; un valor absoluto lo esconde.
@@ -135,6 +158,18 @@ class FormativoTemplatesTests(TestCase):
         vo2 = next(f for f in self._t("resistencia_1000m").config_schema["fields"]
                    if f["key"] == "vo2_max")
         self.assertEqual(vo2["type"], "number")
+
+    def test_el_promedio_se_importa_porque_no_se_puede_contar(self):
+        """Una media necesita saber CUÁNTOS intentos hubo, y no hay forma.
+
+        `1 if [c] else 0` lanza `Unknown variable` con `c` ausente, y
+        `coalesce` sólo sustituye un valor sin poder informar que tuvo que
+        hacerlo. Sumar intentos coalescidos y dividir por tres convertiría en
+        silencio una media de dos intentos en una de tres.
+        """
+        prom = next(f for f in self._t("carreras").config_schema["fields"]
+                    if f["key"] == "t10_prom")
+        self.assertEqual(prom["type"], "number")
 
     # ── a quién se le ofrece cada test ──────────────────────────────────
     def test_carreras_y_neuromuscular_van_a_todo_el_formativo(self):
