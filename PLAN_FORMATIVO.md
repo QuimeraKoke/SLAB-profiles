@@ -383,11 +383,11 @@ Cada fase termina con una verificación que se puede correr.
 
 | Fase | Qué | Verificación |
 |---|---|---|
-| **1** | Puerta de calidad: CSV canónico, conflictos resueltos, alias listados | 0 conflictos, 0 `#N/A`, revisado por el club |
-| **2** | Categorías faltantes + jugadores del maestro + alias | Todo nombre del maestro resuelve a un jugador |
-| **3** | Pertenencias desde el histórico de check-ins | Un jugador que cambió de categoría muestra dos spells con fechas reales |
+| **1** | ✅ Puerta de calidad: CSV canónico, conflictos resueltos, alias listados | 0 conflictos, 0 `#N/A`, revisado por el club |
+| **2** | ✅ Categorías faltantes + jugadores del maestro + alias | Todo nombre del maestro resuelve a un jugador |
+| **3** | ✅ Pertenencias con fecha real de primera aparición | 469 de 479 con spell; 394 con fecha del dato del club, no estimada |
 | **4** | Plantillas (5) + los 2 campos de pulso + `applicable_categories` | El formulario de cada categoría muestra sólo lo que mide |
-| **5** | Bandas por categoría | Un Sub 11 y un Sub 20 con el mismo valor caen en bandas distintas |
+| **5** | ✅ Bandas por categoría | Un Sub 11 y un Sub 20 con el mismo valor caen en bandas distintas |
 | **6** | Importar evaluaciones físicas (~15k filas), en seco y después en firme | Conteos por familia y categoría contra la planilla |
 | **7** | Importar GPS (~13k filas) | Ídem, y los partidos van a `gps_partido` |
 | **8** | Re-verificar los módulos que dependen de esto | `/crecimiento` y `/desarrollo` con datos juveniles reales |
@@ -419,3 +419,44 @@ por código (0 filas de GPS en toda la cantera).
   selección nacional. Mismo problema conceptual que los 6 partidos del
   Sudamericano que desprendimos: son partidos reales de otro equipo. Decidir
   aparte.
+
+---
+
+## 6. La fase 3 no era lo que el plan suponía
+
+El plan pedía "spells de pertenencia desde el histórico", esperando que un
+jugador que cambió de categoría mostrara dos spells. **Con categorías por
+cohorte ese caso casi no existe**: un Serie 2013 es Serie 2013 para siempre. Lo
+que se mueve es el bracket, y eso ya lo modela `TeamSeason` por temporada.
+
+Los libros del club lo muestran sin ambigüedad: **248 de 501 jugadores**
+invierten a una cohorte que cambia entre temporadas —`CLEMENTE SALAS` da 2006,
+2007 y 2008 entre 2024 y 2026— no porque se haya movido, sino porque estuvo
+tres años en Sub 18 mientras su cohorte envejecía debajo. Leer eso como tres
+pertenencias inventaría traspasos que nunca ocurrieron.
+
+Lo que sí faltaba, y es lo que se hizo:
+
+- **159 pertenencias** para los jugadores que la fase 2 creó y no tenían
+  ninguna.
+- **235 fechas reemplazadas por la primera aparición real** en los datos del
+  club. 219 de ellas venían de `backfill_cohorts`, que usaba la fecha del
+  primer *partido*; un entrenamiento anterior prueba que el jugador ya estaba,
+  así que la fecha del partido era sólo lo más antiguo que ese comando veía.
+  `since` es una cota inferior, no un hecho en disputa.
+- **56 citaciones inactivas** para quienes jugaron sobre su serie en 2026.
+  Inactivas a propósito: `active=True` ensancha el acceso a datos de menores
+  (`api.scoping.scope_players`), y concederlo desde una planilla es un cambio
+  de permisos, no una importación. Las 56 activas que ya existían no se tocan.
+
+Seis jugadores del maestro quedan sin pertenencia porque no aparecen en ninguna
+sesión fechada. Sin fecha honesta, no se les fabrica una.
+
+### Límite conocido de `implied_cohort`
+
+La inversión etiqueta→cohorte sólo es válida cuando el jugador juega su propio
+peldaño. En Sub 18 y Sub 20 no hay a dónde subir, así que un jugador que se
+queda ahí varias temporadas invierte a una cohorte móvil. Se usa únicamente
+para los 7 jugadores sin fecha de nacimiento en ninguna parte, y su estimación
+va marcada como tal; si cae en los brackets altos hay que tratarla como
+desconocida.

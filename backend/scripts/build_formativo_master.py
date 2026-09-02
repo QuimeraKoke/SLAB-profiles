@@ -166,6 +166,17 @@ def implied_cohort(rung: int, row_year: int) -> int:
     Inverting the label against the season it was written in makes session
     evidence season-invariant. Voting on the raw label instead would file a
     player under whatever bracket he happened to play two years ago.
+
+    ⚠️ Only sound when the player plays his OWN rung. A player who stays in the
+    top bracket for three seasons inverts to a cohort that moves with him —
+    `CLEMENTE SALAS` reads as 2006, 2007 and 2008 across 2024–2026 because he
+    was Sub 18 the whole time. 248 of 501 players show this, all of them in
+    Sub 18/Sub 20 where there is nowhere further up to go.
+
+    So this is a last resort, used only for the 7 players with no birth date
+    anywhere, and their estimate is flagged as such in the output. Anyone whose
+    estimate lands in the top brackets should be treated as unknown rather than
+    trusted.
     """
     return row_year - rung
 
@@ -178,11 +189,15 @@ class Observation:
     different cohorts.
     """
 
-    __slots__ = ("dob", "bracket", "age_int", "row_year", "source")
+    __slots__ = ("dob", "bracket", "age_int", "row_date", "source")
 
-    def __init__(self, dob, bracket, age_int, row_year, source):
+    def __init__(self, dob, bracket, age_int, row_date, source):
         self.dob, self.bracket, self.age_int = dob, bracket, age_int
-        self.row_year, self.source = row_year, source
+        self.row_date, self.source = row_date, source
+
+    @property
+    def row_year(self):
+        return self.row_date.year if self.row_date else None
 
 
 def read_book(path: Path, observations: dict[str, list[Observation]],
@@ -232,7 +247,7 @@ def read_book(path: Path, observations: dict[str, list[Observation]],
                 dob = None                      # a stray value, not a birth date
             bracket = bracket_norm(cell(i_cat)) if allow_category else None
             raw_when = cell(i_when)
-            row_year = raw_when.year if hasattr(raw_when, "year") else None
+            row_date = raw_when.date() if hasattr(raw_when, "date") else None
             raw_age = cell(i_age)
             # The trialist sheet writes EDAD as a whole number of years; that
             # pins the cohort to ±1 even with no birth date at all.
@@ -256,7 +271,7 @@ def read_book(path: Path, observations: dict[str, list[Observation]],
 
             if dob or bracket or age_int:
                 observations[key].append(
-                    Observation(dob, bracket, age_int, row_year, f"{tag}:{sheet_name}"))
+                    Observation(dob, bracket, age_int, row_date, f"{tag}:{sheet_name}"))
     book.close()
 
 
@@ -458,7 +473,44 @@ def main() -> int:
             writer.writerows(rows)
         return path
 
+    # Per-player, per-season, per-bracket appearance history. This is what
+    # phase 3 consumes: a real first-appearance date for every player, and the
+    # evidence that a player turned out for a rung above his own — which under
+    # the two-scopes rule is a call-up, not a change of home category.
+    historial = []
+    for key in sorted(set(nominal) | set(observations)):
+        obs = observations.get(key, [])
+        dob, _ = resolve_dob(key, obs)
+        cohort, _ = resolve_cohort(obs, dob)
+        name = NAME_FIX_BY_DOB.get((key, dob), key)
+        agrupado: dict[tuple[int, int], list[date]] = defaultdict(list)
+        for o in obs:
+            if o.bracket and o.row_date:
+                agrupado[(o.row_date.year, o.bracket)].append(o.row_date)
+        for (temporada, rung), fechas in sorted(agrupado.items()):
+            # The rung his cohort plays THAT season, so "above his own level"
+            # is judged per season and never against the current one. Falls
+            # back to the age itself below Sub 11, where the ladder has no rung
+            # and a Serie 2016 turning out for Sub 10 is exactly his level.
+            umbral = ""
+            if cohort:
+                edad = temporada - cohort
+                propio = bracket_for_age(edad)
+                umbral = propio if isinstance(propio, int) else edad
+            historial.append({
+                "nombre": name,
+                "cohorte": cohort or "",
+                "temporada": temporada,
+                "bracket": f"Sub {rung}",
+                "sesiones": len(fechas),
+                "primera": min(fechas).isoformat(),
+                "ultima": max(fechas).isoformat(),
+                "sobre_su_serie": "sí" if umbral != "" and rung > umbral else "",
+            })
+
     p1 = dump("formativo_maestro.csv", canonical, list(canonical[0]))
+    p4 = dump("formativo_historial.csv", historial, list(historial[0])) \
+        if historial else None
     p2 = dump("formativo_pendientes.csv", pending,
               ["nombre", "cohorte_estimada", "estado", "evidencia", "pedir"])
     p3 = dump("formativo_alias.csv", aliases, ["jugador", "alias", "motivo"]) \
@@ -502,7 +554,8 @@ def main() -> int:
     if len(subieron) > 6:
         print(f"  … y {len(subieron) - 6} más (columna `promocion` del CSV)")
 
-    print(f"\n→ {p1}\n→ {p2} ({len(pending)} filas)" + (f"\n→ {p3}" if p3 else ""))
+    print(f"\n→ {p1}\n→ {p2} ({len(pending)} filas)" + (f"\n→ {p3}" if p3 else "")
+          + (f"\n→ {p4} ({len(historial)} filas)" if p4 else ""))
     return 0
 
 
