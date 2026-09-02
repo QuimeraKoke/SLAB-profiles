@@ -20,7 +20,7 @@ Ninguna es opinión mía: cada una cambia lo que se construye.
 | ~~0.1~~ | ✅ **RESUELTA (2026-09-02): es Sub 20.** El cliente confirma que para ellos es Sub 20; "Sub 21" es sólo cómo nombran el archivo. **No se agrega ninguna fila a `Bracket`** y el archivo `SUB 21 - 2026 - CAT 07-05` alimenta el bracket Sub 20 que ya existe | — |
 | ~~0.2~~ | ✅ **RESUELTA (2026-09-02): se crean.** Criterio del cliente: *manda lo que entregaron, se borran si no hay info*. Y hay — ver §2.3 | — |
 | ~~0.3~~ | ✅ **RESUELTA (2026-09-02): se queda `Serie XXXX - Sub YY`.** Es lo que ya produce `season_label_parts()`, así que **no hay migración** ni cambio de código | — |
-| **0.4** | **HSR: ¿>20 o >19,8 km/h?** El formativo mide >20, `gps_sesion` dice >19,8 | Si el umbral difiere, los números **no son comparables** con los del plantel profesional. Es definicional, no cosmético |
+| ~~0.4~~ | ⚠️ **SUPUESTO (2026-09-02): se tratan como equivalentes.** Decisión del cliente para no bloquear. Es un SUPUESTO, no un hecho verificado — ver §3.4 |
 | 0.5 | **Las 5 fechas de nacimiento en conflicto** (ver §1) | Alimentan el maturity offset: un error de meses corre la edad decimal |
 
 ---
@@ -208,6 +208,32 @@ trabajar, no en duplicar plantillas.
 Precedente en el modelo: `Category.load_config` ya guarda parámetros de ACWR por
 categoría. Va en la misma dirección que los pedidos del doctor: *el club es dueño
 del parámetro*.
+
+### 3.4 El supuesto de HSR, y qué cuesta si es falso
+
+El formativo mide HSR sobre **>20 km/h** y `gps_sesion` está etiquetado
+**>19,8 km/h**. Por decisión del cliente (2026-09-02) se importan al mismo campo
+tratándolos como equivalentes.
+
+**Queda escrito como supuesto y no como hecho**, porque tiene una consecuencia
+acotada pero real:
+
+- El sesgo es **sistemático y en una sola dirección**: un umbral más alto mide
+  menos distancia, así que el HSR del formativo queda algo por debajo. No es
+  ruido que se promedie: siempre va para el mismo lado.
+- **Dentro de una misma fuente no molesta.** El panel de contexto físico de
+  `/desarrollo` compara a un jugador contra el plantel con el que jugó **en los
+  mismos partidos**, y esas filas vienen del mismo archivo: mismo umbral en los
+  dos lados de la comparación.
+- **Donde sí molesta es al cruzar fuentes**: comparar el HSR de un juvenil
+  (archivo del club, >20) contra el del plantel profesional (Catapult, >19,8)
+  subestima al juvenil. Y ése es justamente el análisis que el club pidió —
+  "cómo le va al que sube".
+
+Si más adelante se confirma que la diferencia importa, la salida es separar el
+campo o anotar la procedencia en el resultado; **no** re-etiquetar en silencio.
+Mientras tanto la etiqueta del campo sigue diciendo >19,8, que para los datos
+del formativo es una aproximación.
 
 ---
 
