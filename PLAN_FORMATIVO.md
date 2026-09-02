@@ -386,7 +386,7 @@ Cada fase termina con una verificación que se puede correr.
 | **1** | ✅ Puerta de calidad: CSV canónico, conflictos resueltos, alias listados | 0 conflictos, 0 `#N/A`, revisado por el club |
 | **2** | ✅ Categorías faltantes + jugadores del maestro + alias | Todo nombre del maestro resuelve a un jugador |
 | **3** | ✅ Pertenencias con fecha real de primera aparición | 469 de 479 con spell; 394 con fecha del dato del club, no estimada |
-| **4** | Plantillas (5) + los 2 campos de pulso + `applicable_categories` | El formulario de cada categoría muestra sólo lo que mide |
+| **4** | ✅ Plantillas (5) + 2 campos de pulso + `applicable_categories` | Carreras/Neuromuscular en 12 categorías, Fuerza/Resistencia en 7 (Sub 13+), GPS en 10 (Sub 11+) |
 | **5** | ✅ Bandas por categoría | Un Sub 11 y un Sub 20 con el mismo valor caen en bandas distintas |
 | **6** | Importar evaluaciones físicas (~15k filas), en seco y después en firme | Conteos por familia y categoría contra la planilla |
 | **7** | Importar GPS (~13k filas) | Ídem, y los partidos van a `gps_partido` |
@@ -460,3 +460,72 @@ queda ahí varias temporadas invierte a una cohorte móvil. Se usa únicamente
 para los 7 jugadores sin fecha de nacimiento en ninguna parte, y su estimación
 va marcada como tal; si cae en los brackets altos hay que tratarla como
 desconocida.
+
+---
+
+## 7. Fase 4 — lo que el dato corrigió del diseño
+
+Dos suposiciones del §3.1 no sobrevivieron a mirar las columnas:
+
+- **`FUERZA` no tiene 3 columnas sino 72.** Es un perfil carga-velocidad: para
+  cada carga de 20 a 160 kg, tres intentos en m/s más el mejor. Esparso —1297
+  de 1979 filas no traen ninguna celda de carga— así que el resumen (1RM,
+  última carga, %RM, FR) es lo que está en todas las filas y la curva es
+  opcional. Se importa el mejor por carga y se descartan los tres intentos,
+  que son borrador: el club ya calcula el mejor y es el que usa.
+- **Resistencia son dos protocolos, no uno.** El test de palier (862 filas,
+  Course Navette) y los 1000 metros (116 filas) no comparten ni una columna
+  útil, y no se pueden graficar juntos. Son dos plantillas.
+
+`FUERZA` y `PRESS DE BANCO` sí se unificaron: misma estructura, distinto
+ejercicio, así que el ejercicio es un campo `categorical` y no una plantilla
+duplicada.
+
+### Fórmulas verificadas contra las celdas del club
+
+Cada una se comprobó antes de codificarla, porque una fórmula casi correcta
+devuelve un número plausible que nadie recalcula a mano:
+
+| Campo | Fórmula | Verificación |
+|---|---|---|
+| `metros` (palier) | `palier × 40` | exacta en 862/862 |
+| `vo2_max` (palier) | `0.336 × palier + 36.4` | exacta en 862/862 |
+| `%RM` | `última_carga ÷ 1RM × 100` | exacta en 729/729 |
+| `FR` | `1RM ÷ peso corporal` | falla en 2/682, ambos tipeos de celda |
+| `vam` (1000 m) | `metros ÷ tiempo` | exacta |
+
+Dos columnas se **importan** en vez de calcularse: `vam` del test de palier es
+un lookup de 91 filas (hoja `VAM`) que el motor de fórmulas no puede hacer, y
+`vo2_max` del 1000 m no es función sólo del tiempo (240 s da 48,3 y 251 s da
+51,1). Inventarles una fórmula reescribiría los números del club en silencio.
+
+⚠️ Consecuencia del `vam` importado: es un valor histórico. Si el club revisa
+su tabla, las filas viejas conservan el valor viejo.
+
+### El bug que casi dejó el GPS juvenil sin importar
+
+`applicable_categories` es la puerta que lee la API. La primera versión filtró
+las categorías con `departments=dept`, copiando el patrón de
+`seed_fatiga_central` — y en este club **sólo `Primer Equipo` tiene
+departamentos vinculados**, así que las cinco plantillas no se le ofrecían a
+nadie. Además `gps_sesion` y `gps_partido` aplicaban únicamente a Primer
+Equipo, o sea que los ~13.000 registros juveniles de GPS no habrían tenido
+plantilla donde caer y la importación habría reportado "0 emparejados" sin
+explicar por qué.
+
+⚠️ **`seed_fatiga_central` sigue con ese filtro**, así que la plantilla de
+Fatiga Central probablemente sólo aplica a Primer Equipo en este club. No se
+tocó acá porque es de otro departamento; queda anotado.
+
+⚠️ **Ninguna categoría formativa tiene `Category.departments` poblado** (ni las
+que ya existían). Eso no bloquea los exámenes —`applicable_categories` es la
+puerta— pero sí vacía la lista de departamentos del reporte diario para esas
+categorías. Queda anotado, sin tocar, porque afecta superficies fuera de esta
+fase.
+
+### Tercera vez que el techo de `Bracket.for_age` hay que frenarlo
+
+Devuelve Sub 11 para un chico de 8 años, correcto para su pregunta ("¿cuál es
+el peldaño más bajo que lo admite?") y equivocado para ésta. Sin guard, las
+Series 2016–2018 pasaban un corte de "Sub 11 y más" y quedaban con GPS, que
+nunca corrieron. Cubierto por test en los tres lugares.
