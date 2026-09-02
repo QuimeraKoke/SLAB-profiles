@@ -17,7 +17,7 @@ Ninguna es opinión mía: cada una cambia lo que se construye.
 
 | # | Decisión | Por qué bloquea |
 |---|---|---|
-| 0.1 | **¿Sub 21 o Sub 20?** El club dice "Sub 21"; la ANFP los inscribe en Sub 20 y COMET no tiene ninguna competencia Sub 21 | Define si `Bracket` necesita una fila nueva o si "Sub 21" es sólo el nombre interno del plantel |
+| ~~0.1~~ | ✅ **RESUELTA (2026-09-02): es Sub 20.** El cliente confirma que para ellos es Sub 20; "Sub 21" es sólo cómo nombran el archivo. **No se agrega ninguna fila a `Bracket`** y el archivo `SUB 21 - 2026 - CAT 07-05` alimenta el bracket Sub 20 que ya existe | — |
 | 0.2 | **¿Recreamos U8, U9 y U10?** Se borraron el 2026-08-26 por estar vacías (y lo estaban). El maestro tiene **55 jugadores** en esas tres | Sin ellas, 55 jugadores no tienen dónde entrar |
 | 0.3 | **¿"Categoría 2014" o "Serie 2014"?** El club usa "categoría" (dicen *"cat 2008"*); nosotros renombramos a "Serie" el 2026-08-26 | Es una migración de datos; conviene hacerla una sola vez |
 | 0.4 | **HSR: ¿>20 o >19,8 km/h?** El formativo mide >20, `gps_sesion` dice >19,8 | Si el umbral difiere, los números **no son comparables** con los del plantel profesional. Es definicional, no cosmético |
@@ -78,7 +78,27 @@ dos años atrasada (la del Sub 18 tiene el plantel de 2024). **Se lee `Lista Che
 In`, nunca `FICHA`.** Conviene avisarle al club: si alguien consulta la FICHA
 para decidir algo, está viendo un plantel viejo.
 
-### 2.2 Lo que falta crear
+### 2.2 Sub 20: el archivo "SUB 21" va al bracket que ya existe
+
+Decidido el 2026-09-02: **es Sub 20.** Así que la escalera de la ANFP no cambia
+—sigue en 11·12·13·14·15·16·18·20·Primera— y COMET, que sólo publica
+competencias "Sub 20", encaja sin traducción.
+
+Queda una cosa por reconciliar, y no es un error: el archivo dice **CAT 07-05**
+(nacidos 2005–2007) mientras `SUB-20` en SLAB tiene **43 jugadores nacidos entre
+2004 y 2010**, y sus partidos 2026 los juegan 2007 (55 %), 2006 (23 %), 2008
+(19 %) y 2009 (3 %).
+
+Eso es coherente con lo que ya sabíamos: **Sub 20 es un plantel de bracket, no
+una cohorte** — se arma por nivel con varias generaciones, igual que el Primer
+Equipo. Por eso conserva su nombre guardado en lugar de un año, y por eso el
+backfill nunca le pudo asignar `cohort_year` (33 % de año dominante, bajo el
+umbral de 70 %). El 19 % de 2008 son préstamos hacia arriba.
+
+Al importar hay que **usar el archivo como plantel declarado y no como filtro**:
+un 2008 que aparece en un partido Sub 20 no es un dato malo, es un ascenso.
+
+### 2.3 Lo que falta crear
 
 | Qué | Cuánto | Nota |
 |---|---|---|
@@ -86,7 +106,7 @@ para decidir algo, está viendo un plantel viejo.
 | U8, U9, U10 | 55 jugadores | Sujeto a 0.2 |
 | Jugadores nuevos del maestro | del orden de 100+ | Contar exacto tras la fase 1 |
 
-### 2.3 Pertenencias con fechas reales
+### 2.4 Pertenencias con fechas reales
 
 El histórico de check-ins desde 2024 muestra a cada jugador en su categoría a lo
 largo del tiempo — **es la primera fuente real para `PlayerTeamMembership`**.
