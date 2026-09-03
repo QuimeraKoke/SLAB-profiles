@@ -14,6 +14,7 @@ import {
   createRule,
   deleteRule,
   updateRule,
+  type Band,
 } from "@/lib/alertRules";
 import styles from "./page.module.css";
 
@@ -78,8 +79,35 @@ export default function RuleForm({
     [meta.templates, templateId],
   );
   const isBand = kind === "band";
+
   const fields = isBand ? template?.band_fields ?? [] : template?.numeric_fields ?? [];
   const bandField = isBand ? template?.band_fields.find((f) => f.key === fieldKey) : undefined;
+  /** Thresholds this rule carries itself. Empty = it inherits the exam's. */
+  const ownRanges: Band[] = Array.isArray(config.ranges)
+    ? (config.ranges as Band[])
+    : [];
+
+  function setRanges(next: Band[]) {
+    // Prune triggers that name a band no longer there, or the rule would
+    // point at a label that cannot fire and look configured.
+    const labels = new Set(next.map((b) => b.label).filter(Boolean));
+    const triggers = ((config.trigger_labels as string[]) || [])
+      .filter((t) => labels.size === 0 || labels.has(t));
+    patchConfig({
+      ranges: next.length ? next : undefined,
+      trigger_labels: triggers.length ? triggers : undefined,
+    });
+  }
+
+  function patchRange(i: number, patch: Partial<Band>) {
+    setRanges(ownRanges.map((b, j) => (j === i ? { ...b, ...patch } : b)));
+  }
+
+  // Chips come from whatever scale actually applies: the rule's own bands
+  // when it has them, the exam's otherwise.
+  const triggerable: string[] = ownRanges.length
+    ? ownRanges.map((b) => b.label).filter(Boolean)
+    : bandField?.bands ?? [];
 
   function patchConfig(next: Cfg) {
     setConfig((c) => ({ ...c, ...next }));
@@ -341,27 +369,114 @@ export default function RuleForm({
 
         {kind === "band" && (
           <div className={styles.bandBox}>
-            <span className={styles.fieldLabel}>Bandas que disparan alerta</span>
-            {bandField ? (
-              <div className={styles.chips}>
-                {bandField.bands.map((b) => {
-                  const sel = ((config.trigger_labels as string[]) || []).includes(b);
-                  return (
-                    <button key={b} type="button"
-                      className={sel ? styles.chipOn : styles.chip}
-                      onClick={() => {
-                        const cur = new Set((config.trigger_labels as string[]) || []);
-                        if (cur.has(b)) cur.delete(b);
-                        else cur.add(b);
-                        patchConfig({ trigger_labels: [...cur] });
-                      }}>
-                      {b}
-                    </button>
-                  );
-                })}
-              </div>
+            {!bandField ? (
+              <p className={styles.hint}>Elegí un campo numérico para definir sus bandas.</p>
             ) : (
-              <p className={styles.hint}>Elegí un campo con bandas. Vacío = las bandas rojas por defecto.</p>
+              <>
+                <div className={styles.bandHead}>
+                  <span className={styles.fieldLabel}>
+                    Umbrales de esta categoría
+                    {bandField.unit ? ` (${bandField.unit})` : ""}
+                  </span>
+                  <div className={styles.bandActions}>
+                    {ownRanges.length === 0 && bandField.default_ranges.length > 0 && (
+                      <button type="button" className={styles.linkBtn}
+                        onClick={() => setRanges(bandField.default_ranges)}>
+                        Partir de las del examen
+                      </button>
+                    )}
+                    {ownRanges.length > 0 && (
+                      <>
+                        <button type="button" className={styles.linkBtn}
+                          onClick={() => setRanges([...ownRanges, { label: "" }])}>
+                          Agregar banda
+                        </button>
+                        <button type="button" className={styles.linkBtn}
+                          onClick={() => setRanges([])}>
+                          Volver a las del examen
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {ownRanges.length === 0 ? (
+                  <p className={styles.hint}>
+                    {bandField.default_ranges.length > 0
+                      ? "Esta regla usa las bandas del examen, iguales para todas las categorías. Definí umbrales propios para que a un Sub 11 no se lo mida con los de un Sub 20."
+                      : "Este campo no tiene bandas en el examen. Definí las de esta categoría para que la regla pueda disparar."}
+                  </p>
+                ) : (
+                  <table className={styles.bandTable}>
+                    <thead>
+                      <tr>
+                        <th>Banda</th><th>Desde</th><th>Hasta</th><th />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ownRanges.map((b, i) => (
+                        <tr key={i}>
+                          <td>
+                            <input value={b.label} placeholder="p. ej. Muy Deficiente"
+                              aria-label={`Nombre de la banda ${i + 1}`}
+                              onChange={(e) => patchRange(i, { label: e.target.value })} />
+                          </td>
+                          <td>
+                            <input type="number" step="any" value={b.min ?? ""}
+                              placeholder="sin límite"
+                              aria-label={`Desde, banda ${i + 1}`}
+                              onChange={(e) => patchRange(i, {
+                                min: e.target.value === "" ? undefined : Number(e.target.value),
+                              })} />
+                          </td>
+                          <td>
+                            <input type="number" step="any" value={b.max ?? ""}
+                              placeholder="sin límite"
+                              aria-label={`Hasta, banda ${i + 1}`}
+                              onChange={(e) => patchRange(i, {
+                                max: e.target.value === "" ? undefined : Number(e.target.value),
+                              })} />
+                          </td>
+                          <td>
+                            <button type="button" className={styles.iconBtn}
+                              aria-label={`Quitar la banda ${b.label || i + 1}`}
+                              onClick={() => setRanges(ownRanges.filter((_, j) => j !== i))}>
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                <span className={styles.fieldLabel}>Bandas que disparan alerta</span>
+                {triggerable.length > 0 ? (
+                  <div className={styles.chips}>
+                    {triggerable.map((b) => {
+                      const sel = ((config.trigger_labels as string[]) || []).includes(b);
+                      return (
+                        <button key={b} type="button"
+                          className={sel ? styles.chipOn : styles.chip}
+                          aria-pressed={sel}
+                          onClick={() => {
+                            const cur = new Set((config.trigger_labels as string[]) || []);
+                            if (cur.has(b)) cur.delete(b);
+                            else cur.add(b);
+                            patchConfig({ trigger_labels: [...cur] });
+                          }}>
+                          {b}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className={styles.hint}>
+                    Nombrá al menos una banda arriba para elegir cuál dispara.
+                    Vacío = las bandas rojas por defecto.
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}

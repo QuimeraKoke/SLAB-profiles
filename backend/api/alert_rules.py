@@ -179,14 +179,40 @@ def build_rule_meta(category) -> dict:
                     "unit": f.get("unit", ""),
                     "has_bands": bool(f.get("reference_ranges")),
                 })
-            if f.get("reference_ranges"):
+            # EVERY numeric field can carry bands, not just the ones whose
+            # definition already has `reference_ranges`. A BAND rule may bring
+            # its own thresholds in `config["ranges"]` — that is the whole point
+            # of per-category bands — so gating this list on the field's shared
+            # ranges hid exactly the fields that need per-category numbers. The
+            # club's five physical templates have almost none by design, and
+            # their 66 seeded rules pointed at fields the form did not offer.
+            if f.get("type") in _NUMERIC_TYPES:
+                defaults = [
+                    {"label": b.get("label"), "min": b.get("min"),
+                     "max": b.get("max"), "color": b.get("color")}
+                    for b in (f.get("reference_ranges") or [])
+                    if isinstance(b, dict) and b.get("label")
+                ]
                 band_fields.append({
                     "key": f["key"], "label": f.get("label") or f["key"],
-                    "bands": [b.get("label") for b in f["reference_ranges"]
-                              if isinstance(b, dict) and b.get("label")],
+                    "unit": f.get("unit", ""),
+                    # Kept for the trigger chips, which only need the labels.
+                    "bands": [b["label"] for b in defaults],
+                    # New: the numbers, so the editor can show what a rule
+                    # inherits and let it be overridden per category.
+                    "default_ranges": defaults,
+                    # Opening the list to every numeric field is right but
+                    # noisy: `carreras` went from 1 option to 21, three of
+                    # which are the raw attempts of a single sprint. Nothing is
+                    # hidden — a field someone wants to alert on is always
+                    # there — but the ones meant to be read come first.
+                    "featured": bool(defaults) or bool(f.get("chart_type")),
                 })
             if f.get("key") == "tipo_sesion":
                 session_types = list(f.get("options") or [])
+        # Featured first, original order within each group: a stable sort
+        # keeps the schema's own field order, which is how the form reads.
+        band_fields.sort(key=lambda f: not f["featured"])
         tpl_out.append({
             "id": str(t.id), "name": t.name, "department": t.department.name,
             "slug": t.slug, "numeric_fields": numeric,

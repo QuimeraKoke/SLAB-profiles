@@ -390,7 +390,7 @@ Cada fase termina con una verificación que se puede correr.
 | **2** | ✅ Categorías faltantes + jugadores del maestro + alias | Todo nombre del maestro resuelve a un jugador |
 | **3** | ✅ Pertenencias con fecha real de primera aparición | 469 de 479 con spell; 394 con fecha del dato del club, no estimada |
 | **4** | ✅ Plantillas (5) + 2 campos de pulso + `applicable_categories` | Carreras/Neuromuscular en 12 categorías, Fuerza/Resistencia en 7 (Sub 13+), GPS en 10 (Sub 11+) |
-| **5** | ⚠️ Bandas por categoría — **mecanismo sí, umbrales del club NO** | 0 reglas con `config["ranges"]`; falta parsear las hojas `FORMATO CONDICIONAL` |
+| **5** | ✅ Bandas por categoría | 66 reglas con umbrales propios desde `FORMATO CONDICIONAL` + editor en `/configuraciones/alertas` |
 | **6** | ✅ Importar evaluaciones físicas | 5061 resultados en 396 jugadores, 2024-01-22 → 2026-07-15; conteos verificados contra la planilla |
 | **7** | Importar GPS (~13k filas) | Ídem, y los partidos van a `gps_partido` |
 | **8** | Re-verificar los módulos que dependen de esto | `/crecimiento` y `/desarrollo` con datos juveniles reales |

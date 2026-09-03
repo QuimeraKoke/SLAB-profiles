@@ -34,10 +34,28 @@ export interface NumericField {
   unit: string;
   has_bands: boolean;
 }
+/** One band of a reference scale. At least one of `min`/`max` is set. */
+export interface Band {
+  label: string;
+  min?: number | null;
+  max?: number | null;
+  color?: string | null;
+}
+
 export interface BandField {
   key: string;
   label: string;
+  unit: string;
+  /** Labels of the field's shared bands — enough for the trigger chips. */
   bands: string[];
+  /**
+   * The shared bands WITH their numbers. A rule may override them per
+   * category via `config.ranges`; these are what it inherits otherwise, and
+   * what the editor prefills so nobody types a scale from scratch.
+   */
+  default_ranges: Band[];
+  /** Meant to be read (has bands or a chart), as opposed to a raw attempt. */
+  featured: boolean;
 }
 export interface TemplateMeta {
   id: string;

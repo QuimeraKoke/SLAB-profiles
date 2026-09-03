@@ -396,3 +396,70 @@
   .ruleRow { flex-direction: column; align-items: flex-start; gap: 6px; }
   .ruleMeta { justify-content: flex-start; }
 }
+
+/* ── Editor de bandas por categoría ─────────────────────────────────────
+   Los umbrales viven en la regla (`config.ranges`), no en el examen, para
+   que un Sub 11 no se mida con los de un Sub 20. */
+.bandHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.bandActions {
+  display: flex;
+  gap: 0.75rem;
+}
+.linkBtn {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--color-primary, #2563eb);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.linkBtn:hover {
+  text-decoration: none;
+}
+.bandTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.5rem 0 0.75rem;
+  font-size: 0.8125rem;
+}
+.bandTable th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--color-text-muted, #64748b);
+  padding: 0 0.375rem 0.25rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+.bandTable td {
+  padding: 0.125rem 0.375rem;
+}
+.bandTable td:last-child {
+  width: 2rem;
+}
+.bandTable input {
+  width: 100%;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--color-border, #d7dce3);
+  border-radius: 5px;
+  font: inherit;
+  background: var(--color-surface, #fff);
+  color: inherit;
+}
+.bandTable input:focus-visible {
+  outline: 2px solid var(--color-primary, #2563eb);
+  outline-offset: 1px;
+}
+/* La columna de números se lee mejor alineada a la derecha. */
+.bandTable td:nth-child(2) input,
+.bandTable td:nth-child(3) input {
+  text-align: right;
+}

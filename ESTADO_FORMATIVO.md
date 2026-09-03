@@ -92,20 +92,13 @@ ninguna fase, y el riesgo corre desde entonces.
 
 Para el futuro: `railway variables` sólo con las claves, nunca los valores.
 
-### 2.2 Fase 5 real — sembrar las bandas del club
+### 2.2 ✅ Fase 5 — hecha (2026-09-02)
 
-El mecanismo está y tiene tests: una `AlertRule` de tipo BAND puede traer
-`config["ranges"]` propios y sin eso cae a los del campo. Pero **los umbrales
-del club nunca se cargaron**: verificado el 2026-09-02, **0 reglas** con
-`config["ranges"]` y **0 reglas** sobre las cinco plantillas nuevas.
-
-Las hojas `FORMATO CONDICIONAL 15-16 y 18-` y `FORMATO CONDICIONAL 13 -14 y 11`
-traen los cortes reales por categoría — "Muy Deficiente" en RM Back Squat es
-< 68,3 kg para Sub 13 y < 125 kg para Sub 18. Falta un comando que las parsee y
-siembre una regla por (categoría, campo).
-
-**Consecuencia mientras no esté: las cinco plantillas nuevas no generan ninguna
-alerta.** Los 5061 resultados están cargados y no disparan nada.
+`seed_formativo_bands` parsea las dos hojas `FORMATO CONDICIONAL` y siembra
+**66 reglas** con `config["ranges"]` propios, una por (categoría, campo) sobre
+los 10 tests que el club escaló. Y `/configuraciones/alertas` ahora tiene un
+**editor de umbrales**, así que el cuerpo médico puede revisarlos y ajustarlos
+sin tocar la base.
 
 ### 2.3 Fase 7 — importar el GPS
 
