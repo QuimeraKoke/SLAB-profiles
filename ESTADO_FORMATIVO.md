@@ -227,15 +227,28 @@ quedaron listadas por los propios importadores.
 
 ---
 
-## 5. Siguiente etapa — layouts de equipo y de jugador
+## 5. ✅ Layouts de equipo y de jugador — hechos (2026-09-02)
 
 Pedido: analizar los exámenes y crear **team layouts** y **player layouts** para
 todas las categorías.
 
-El estado hace obvio por qué: **Primer Equipo tiene 5 layouts de jugador y 6 de
-equipo; las 12 categorías formativas tienen 0.** Los 5061 resultados que
-acabamos de cargar no se ven en ninguna pantalla salvo la ficha cruda del
-examen.
+`generate_formativo_layouts` los arma desde el dato:
+
+| | |
+|---|---|
+| Layouts de jugador | **20** · 245 widgets |
+| Layouts de equipo | **20** · 171 widgets |
+
+El reparto sigue lo que cada categoría mide: SUB-20 con 7 secciones en físico,
+Serie 2018 con 1 (sólo carreras), Series 2013–2008 con 6, y táctico en las 8
+que tienen partidos. Psicosocial y kinesiológico no reciben nada porque tienen
+cero resultados.
+
+⚠️ **1204 resultados quedaron fuera de todo dashboard** y el comando los
+reporta aparte: viven en plantillas que **no aplican** a esas categorías —
+1165 de `pentacompartimental` (aplica sólo a Primer Equipo, y los importó
+`import_pentacompartimental` sin ampliar la aplicabilidad) y 39 de médico. O
+se amplía `applicable_categories`, o no se pueden graficar.
 
 ### Qué datos hay realmente, por categoría y departamento
 
