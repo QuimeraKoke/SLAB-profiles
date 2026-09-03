@@ -139,13 +139,19 @@ aditiva pero no marca lo que creó. Tomar un dump primero.
 
 ## 3. Pendiente nuestro — no bloqueante
 
-### 3.1 Bandas del lado de la visualización
+### 3.1 ✅ Bandas del lado de la visualización — hecho (2026-09-02)
 
-La fase 5 atacó la alerta, que es la que carga una decisión. Los **gráficos
-siguen leyendo `reference_ranges` del campo**, así que la banda que se dibuja
-es la del default compartido: a un Sub 11 se le dibuja la banda de un Sub 20.
-Sitios a mirar: `DynamicUploader.tsx`, `ComparisonTable.tsx`,
-`TeamRosterMatrix.tsx`, `lib/reference.ts`.
+`dashboards/category_bands.py` resuelve la banda por categoría y la inyecta
+donde se serializa, vía el mismo patrón de `ContextVar` que ya usan el flag de
+secundarios en `team_aggregation` y el ancho de columna en los renderers de
+PDF. Sin eso habría que pasar un parámetro por 14 resolvedores para un lookup.
+
+Al hacerlo apareció que **sólo cinco tipos de gráfico emiten bandas**:
+`comparison_table`, `line_with_selector` y `grouped_bar` del lado del jugador,
+`team_roster_matrix` y `team_distribution` del lado del equipo. `multi_line`
+calcula el meta y no lo serializa, así que ahí la banda nunca llegaba al
+frontend. Importa para los layouts: si se quiere ver la banda sobre una línea,
+el widget es `line_with_selector`, no `multi_line`.
 
 ### 3.2 `BulkIngestForm` no muestra las filas rechazadas
 

@@ -27,6 +27,7 @@ from .models import (
     iter_template_fields,
 )
 from .player_state import _GPS_TRAIN_SLUG, match_load_refs
+from . import category_bands
 from .stats import mean as _stats_mean, stdev as _stats_stdev
 
 
@@ -98,7 +99,10 @@ def _field_meta(template: ExamTemplate, key: str) -> dict[str, Any]:
         "group": field.get("group", ""),
         "type": field.get("type", "text"),
         "direction_of_good": field.get("direction_of_good", "neutral"),
-        "reference_ranges": list(field.get("reference_ranges") or []),
+        # The category's own thresholds when it has them, the field's shared
+        # ones otherwise. Empty scope = previous behaviour exactly.
+        "reference_ranges": category_bands.for_field(
+            template, key, field.get("reference_ranges")),
     }
 
 
@@ -1027,7 +1031,14 @@ def resolve_widget(
                 "Reserved for V2."
             ),
         }
-    return handler(widget, sources, player_id, date_from, date_to)
+    # Set once here so all 11 resolvers draw the bands of the player's own
+    # category without a parameter through every signature.
+    from core.models import Player
+
+    categoria = (Player.objects.filter(pk=player_id)
+                 .values_list("category_id", flat=True).first())
+    with category_bands.scope(categoria):
+        return handler(widget, sources, player_id, date_from, date_to)
 
 
 # ---------- goal_card -----------------------------------------------------

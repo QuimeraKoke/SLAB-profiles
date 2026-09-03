@@ -23,6 +23,7 @@ from core.models import Category, Player, Position
 from exams.bands import band_for_value as _band_for_value
 from exams.models import Episode, ExamResult, ExamTemplate
 
+from . import category_bands
 from .models import Aggregation, ChartType, TeamReportWidget
 from .stats import deviation as _stats_deviation
 
@@ -91,7 +92,11 @@ def resolve_team_widget(
     }
     token = _INCLUDE_SECONDARY.set(include_secondary)
     try:
-        result = _dispatch_team_widget(widget, category, common)
+        # Same reason as the flag above: the band a team chart draws has to be
+        # this category's, and threading it through 16 resolvers for one lookup
+        # is not worth it.
+        with category_bands.scope(category.id):
+            result = _dispatch_team_widget(widget, category, common)
     finally:
         _INCLUDE_SECONDARY.reset(token)
 
@@ -326,7 +331,8 @@ def _field_meta(template: ExamTemplate, key: str) -> dict[str, Any]:
                 # Clinical reference bands. List of {label, min?, max?,
                 # color?}. Empty list = no bands defined → frontend skips
                 # band-based hint and coloring for this field.
-                "reference_ranges": list(field.get("reference_ranges") or []),
+                "reference_ranges": category_bands.for_field(
+                    template, key, field.get("reference_ranges")),
             }
     return {
         "label": key, "unit": "", "type": "",
