@@ -144,8 +144,37 @@ class FormativoGpsTests(TestCase):
             ws = book.create_sheet("U15")
             ws.append(sin_hsr)
             book.save(ruta)
-            _, faltantes = ing.parse_workbook(str(ruta))
+            _, faltantes, _ = ing.parse_workbook(str(ruta))
         self.assertIn("hsr", faltantes.get("U15", []))
+
+    def test_avisa_cuando_aparece_una_columna_nueva(self):
+        """El riesgo espejo, y el silencioso.
+
+        La planilla la mantienen a mano. Que falte una métrica ya avisa; que
+        AGREGUEN una columna no avisaba nada — simplemente no llegaba, y la
+        corrida seguía reportando una carga completa.
+        """
+        with TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "gps.xlsx"
+            import openpyxl
+            book = openpyxl.Workbook()
+            book.remove(book.active)
+            ws = book.create_sheet("U15")
+            ws.append(CAB + ["HMLD (m)"])
+            ws.append(fila() + [1022.4])
+            book.save(ruta)
+            _, faltantes, desconocidas = ing.parse_workbook(str(ruta))
+        self.assertEqual(faltantes, {}, "no falta ninguna métrica esperada")
+        self.assertEqual(desconocidas.get("U15"), ["HMLD (m)"])
+
+    def test_no_avisa_por_las_columnas_que_se_ignoran_a_proposito(self):
+        # Identidad, microciclo, observación y las tres marcas de partido no
+        # son métricas y no deben ensuciar el aviso.
+        with TemporaryDirectory() as tmp:
+            ruta = Path(tmp) / "gps.xlsx"
+            escribir(ruta, {"U15": [fila()]})
+            _, _, desconocidas = ing.parse_workbook(str(ruta))
+        self.assertEqual(desconocidas, {})
 
     # ── partido o sesión ────────────────────────────────────────────────
     def test_las_marcas_del_club_definen_que_es_partido(self):

@@ -65,6 +65,11 @@ class Command(BaseCommand):
                 "\n  ⚠️ MÉTRICAS QUE NO MAPEARON (la hoja cambió de forma):"))
             for hoja, faltan in sorted(rep.columnas_sin_mapear.items()):
                 self.stdout.write(f"    {hoja:<14} {', '.join(faltan)}")
+        if rep.columnas_desconocidas:
+            self.stdout.write(self.style.WARNING(
+                "\n  Columnas que el importador no reconoce (¿se agregaron?):"))
+            for hoja, cols in sorted(rep.columnas_desconocidas.items()):
+                self.stdout.write(f"    {hoja:<14} {', '.join(cols)}")
         if rep.por_hoja:
             self.stdout.write("\n  por hoja:")
             for hoja, n in sorted(rep.por_hoja.items(), key=lambda kv: -kv[1]):

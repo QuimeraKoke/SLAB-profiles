@@ -102,8 +102,18 @@ COLUMNAS: tuple[tuple[str, str], ...] = (
 ESPERADAS = frozenset({"tot_dur", "tot_dist", "mpm", "acc", "dec", "max_vel",
                        "player_load", "hsr", "sprint_dist", "sprints"})
 
+# Any of these carrying a value means the row is a match. See the module
+# docstring for why they beat `CÓDIGO = MD` as the signal.
 MARCAS_PARTIDO = ("LOCALIA", "CALIDAD OPONENTE", "RESULTADO")
 
+# Columns that are NOT metrics and are skipped on purpose: identity, the
+# microcycle day (derived by `exams.microcycle` from the club's own match
+# dates), the free-text note, and the three match markers that decide which
+# exam a row lands in.
+NO_METRICAS = frozenset({
+    "FECHA", "JUGADOR", "FECHA DE NACIMIENTO", "EDAD", "CATEGORIA", "POSICION",
+    "CODIGO", "MICRO", "OBSERVACION", *MARCAS_PARTIDO,
+})
 
 def norm(value: object) -> str:
     text = unicodedata.normalize("NFD", str(value or ""))
@@ -165,34 +175,41 @@ class Reporte:
     fuera_de_rango: list[str] = dc_field(default_factory=list)
     por_hoja: dict = dc_field(default_factory=lambda: defaultdict(int))
     columnas_sin_mapear: dict = dc_field(default_factory=dict)
+    columnas_desconocidas: dict = dc_field(default_factory=dict)
 
 
-def parse_workbook(path: str) -> tuple[list[Fila], dict[str, list[str]]]:
+def parse_workbook(
+    path: str,
+) -> tuple[list[Fila], dict[str, list[str]], dict[str, list[str]]]:
     import openpyxl
 
     book = openpyxl.load_workbook(path, data_only=True, read_only=True)
     filas: list[Fila] = []
     faltantes: dict[str, list[str]] = {}
+    desconocidas: dict[str, list[str]] = {}
     for hoja in book.sheetnames:
         if hoja in SHEETS_EXCLUDED:
             continue
-        nuevas, sin_mapear = _parse_sheet(book[hoja], hoja)
+        nuevas, sin_mapear, sin_reconocer = _parse_sheet(book[hoja], hoja)
         filas.extend(nuevas)
         if sin_mapear:
             faltantes[hoja] = sin_mapear
+        if sin_reconocer:
+            desconocidas[hoja] = sin_reconocer
     book.close()
-    return filas, faltantes
+    return filas, faltantes, desconocidas
 
 
-def _parse_sheet(sheet, hoja: str) -> tuple[list[Fila], list[str]]:
+def _parse_sheet(sheet, hoja: str) -> tuple[list[Fila], list[str], list[str]]:
     rows = sheet.iter_rows(values_only=True)
     try:
-        cab = [norm(c) for c in next(rows)]
+        crudos = [str(c or "").strip() for c in next(rows)]
     except StopIteration:
-        return [], []
+        return [], [], []
+    cab = [norm(c) for c in crudos]
     ix = {c: i for i, c in enumerate(cab) if c}
     if "JUGADOR" not in ix:
-        return [], []
+        return [], [], []
 
     # Resolve the column map once. First pattern wins, and a field is claimed
     # only once so `SPRINT (m)` cannot also answer for `SPRINT (#)`.
@@ -216,6 +233,16 @@ def _parse_sheet(sheet, hoja: str) -> tuple[list[Fila], list[str]]:
     i_marcas = [ix[m] for m in MARCAS_PARTIDO if m in ix]
 
     faltantes = sorted(ESPERADAS - tomados)
+    # The mirror risk of a hand-kept spreadsheet. A missing metric is loud
+    # already; a column the club ADDS is silent — it just never arrives, and
+    # the run still reports a full load. So anything that is neither mapped
+    # nor a known non-metric is surfaced too.
+    mapeadas = {i for i, _ in campos}
+    # Reported with the header as the club WROTE it: whoever reads this goes
+    # looking for "HMLD (m)" in their spreadsheet, not for "HMLD M".
+    desconocidas = sorted(
+        crudos[i] for i, c in enumerate(cab)
+        if c and i not in mapeadas and c not in NO_METRICAS)
     filas = []
     for r in rows:
         get = lambda i: (r[i] if i is not None and 0 <= i < len(r) else None)
@@ -234,7 +261,7 @@ def _parse_sheet(sheet, hoja: str) -> tuple[list[Fila], list[str]]:
             es_partido=any(get(i) not in (None, "") for i in i_marcas),
             datos=datos, observacion=str(get(i_obs) or "").strip(),
         ))
-    return filas, faltantes
+    return filas, faltantes, desconocidas
 
 
 def build_matcher(club: Club):
@@ -299,13 +326,14 @@ def _descartar_fuera_de_rango(template: ExamTemplate, datos: dict) -> list[str]:
 
 def run(path: str, club: Club, *, commit: bool = False,
         fire_alerts: bool = False, solo_hojas: set[str] | None = None) -> Reporte:
-    filas, faltantes = parse_workbook(path)
+    filas, faltantes, desconocidas = parse_workbook(path)
     if solo_hojas:
         filas = [f for f in filas if f.hoja in solo_hojas]
     match = build_matcher(club)
     eventos = _eventos_por_dia(club)
     rep = Reporte()
     rep.columnas_sin_mapear = faltantes
+    rep.columnas_desconocidas = desconocidas
 
     plantillas: dict[str, ExamTemplate | None] = {}
     for slug in (SLUG_PARTIDO, SLUG_SESION):

@@ -321,9 +321,44 @@ Limpio y completo — para eso está la clave de procedencia.
 
 ---
 
-## Fase 7 — GPS ⏳ PENDIENTE
+## Fase 7 — GPS ✅
 
-El importador **no existe todavía**. Lo que ya está decidido:
+```bash
+cp "$HOME/Downloads/U de Chile - Formativo/GPS CATEGORÍAS.xlsx" \
+  backend/_formativo_gps.xlsx
+
+docker compose exec backend python manage.py import_formativo_gps \
+  --file /app/_formativo_gps.xlsx
+# ... leer, después --commit
+
+rm backend/_formativo_gps.xlsx
+```
+
+**Resultado esperado:** 15.352 resultados — 3501 `gps_partido` (1649
+vinculados a su evento) y 11.851 `gps_sesion`, 305 jugadores, 2025-01-08 →
+2026-09-01. Re-correrlo crea 0.
+
+⚠️ **Los dos avisos del reporte hay que leerlos.** La planilla la mantienen a
+mano, así que el importador es a medida de ella y vigila las dos direcciones:
+
+- *"MÉTRICAS QUE NO MAPEARON"* — la hoja cambió de forma y una métrica
+  esperada no llegó. Es el bug que ya pasó una vez: el club mete sus umbrales
+  en los encabezados (`HSR (m) >20km/h`) y un mapa por string exacto dejó
+  cinco de doce métricas afuera, con el reporte diciendo "0 filas sin
+  métricas".
+- *"Columnas que el importador no reconoce"* — agregaron una columna y se está
+  ignorando. Es el riesgo espejo, y el silencioso.
+
+**Revertir:**
+
+```bash
+docker compose exec backend python manage.py shell -c "
+from exams.models import ExamResult
+ExamResult.objects.filter(result_data__origen='planilla_club_formativo_gps').delete()
+"
+```
+
+### Lo que quedó decidido y medido
 
 - **Se reusa `gps_sesion` / `gps_partido`**, no se crea un tercer examen. Las
   columnas del formativo son un subconjunto estricto: los 13 métricos ya tienen
@@ -343,7 +378,28 @@ El importador **no existe todavía**. Lo que ya está decidido:
   sistemático y en una sola dirección: subestima al juvenil.
 - Las hojas `U17WC`, `U20 WC` y `WC CLUBES` **se excluyen**: son bitácoras de
   scouting con jugadores de otros equipos (Panamá, Guatemala, Al Ahly, Inter
-  Miami).
+  Miami). También `Pasing Indi.`, que parte una sesión en bloques de 15
+  minutos y contaría el mismo trabajo varias veces.
+- **`acc_dec` queda vacío**, igual que en Primer Equipo: Catapult tampoco lo
+  llena. Confirmado por el cliente.
+- **2174 filas son día de partido sin localía ni resultado** y van a sesión.
+  No parecen partidos (mediana 47,0 min y 5180 m, contra 82,2 y 8214 de las
+  marcadas) y sin marcas no hay rival ni resultado, así que un `gps_partido`
+  sería un registro de partido sin partido.
+
+---
+
+## Fase Wellness ⏳ PENDIENTE — plantilla propia
+
+El club confirma que **el wellness del formativo no sigue la misma regla que
+el de Primer Equipo**, así que no se reusa `checkin_fisico`: van plantillas
+propias. Los 8 archivos de `Wellness - Check in & Out/` (~65 MB) siguen sin
+importar, y el sync de Google Form alimenta sólo a Primer Equipo (1988
+resultados, todos ahí).
+
+Falta definir los campos desde esos archivos, y decidir si el formulario va a
+cubrir el formativo de acá en adelante — porque si no, importar el histórico
+deja una serie que se corta el día de la carga.
 
 ---
 
