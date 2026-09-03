@@ -184,6 +184,35 @@ class GenerarLayoutsTests(TestCase):
             DepartmentLayout.objects.filter(category=self.grande,
                                             department=self.nutri).exists())
 
+    # ── la pestaña de la ficha ──────────────────────────────────────────
+    def test_vincula_el_departamento_a_la_categoria(self):
+        """Sin esto el layout existe y es inalcanzable.
+
+        La ficha del jugador arma sus pestañas con `Category.departments`
+        (perfil/[id]/page.tsx:130), no con los layouts. Ninguna categoría
+        formativa lo tenía poblado, así que los 20 dashboards generados no
+        aparecían en ninguna ficha.
+        """
+        self.assertFalse(self.grande.departments.exists())
+        self.correr("--commit")
+        self.assertIn("fisico",
+                      self.grande.departments.values_list("slug", flat=True))
+
+    def test_no_vincula_un_departamento_sin_layout(self):
+        # Una pestaña vinculada sin layout renderiza un panel vacío, que se lee
+        # como "faltan datos".
+        self.correr("--commit")
+        self.assertNotIn("nutricional",
+                         self.grande.departments.values_list("slug", flat=True))
+        self.assertFalse(self.vacia.departments.exists())
+
+    def test_no_saca_un_departamento_que_ya_estaba(self):
+        # El club puede haber vinculado uno a mano; sólo se agrega.
+        self.grande.departments.add(self.nutri)
+        self.correr("--commit")
+        self.assertIn("nutricional",
+                      self.grande.departments.values_list("slug", flat=True))
+
     # ── equipo ──────────────────────────────────────────────────────────
     def test_genera_tambien_los_layouts_de_equipo(self):
         self.correr("--commit")

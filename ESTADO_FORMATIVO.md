@@ -167,11 +167,19 @@ canónico (`players_in_category` / `scope_players`). Cada sitio crudo es un
 lugar donde un jugador citado no aparece, o aparece donde no debería. La regla
 es: **acceso = origen ∪ citaciones activas; conteo = sólo origen.**
 
-### 3.4 `Category.departments` vacío en todo el formativo
+### 3.4 ✅ `Category.departments` — era bloqueante, no cosmético
 
-Ninguna categoría formativa lo tiene poblado, ni las que ya existían. No
-bloquea exámenes —`applicable_categories` es la puerta que lee la API— pero
-vacía la lista de departamentos del reporte diario para esas categorías.
+Lo había clasificado como "no bloquea exámenes, sólo vacía la lista del
+reporte diario". **Estaba equivocado.** La ficha del jugador arma sus pestañas
+de departamento con `player.category.departments`
+(`perfil/[id]/page.tsx:130`), así que con la M2M vacía los 20 layouts
+generados eran inalcanzables desde la ficha de cualquier jugador: existían y
+no había forma de llegar a ellos.
+
+Ahora lo vincula `generate_formativo_layouts`, que es donde ya se sabe que hay
+algo que mostrar. Sólo agrega, nunca saca, para no pisar un departamento que
+el club vinculó a mano. Un departamento sin layout **no** se vincula: la
+pestaña renderizaría un panel vacío, que se lee como "faltan datos".
 
 ### 3.5 `seed_fatiga_central` tiene el bug que la fase 4 corrigió
 

@@ -88,6 +88,7 @@ class Reporte:
     widgets: int = 0
     sin_datos: list[str] = dc_field(default_factory=list)
     huerfanos: list[str] = dc_field(default_factory=list)
+    vinculados: list[str] = dc_field(default_factory=list)
     detalle: list[str] = dc_field(default_factory=list)
 
 
@@ -363,6 +364,17 @@ class Command(BaseCommand):
                 rep.layouts += accion == "creado"
                 rep.reconstruidos += accion == "reconstruido"
                 rep.widgets += n
+                # La ficha del jugador arma sus pestañas con
+                # `Category.departments` (perfil/[id]/page.tsx:130), no con los
+                # layouts. Sin el vínculo, el layout existe y es inalcanzable:
+                # ninguna categoría formativa lo tenía poblado, así que los 20
+                # dashboards no aparecían en ninguna ficha. Se vincula acá, que
+                # es donde ya se sabe que hay algo que mostrar — y sólo se
+                # AGREGA, para no sacar un departamento que el club puso a mano.
+                if not category.departments.filter(pk=department.pk).exists():
+                    category.departments.add(department)
+                    rep.vinculados.append(f"{category.name} · {slug}")
+
                 sec_eq = secciones_equipo(category, templates)
                 n_eq = 0
                 if sec_eq:
@@ -391,6 +403,14 @@ class Command(BaseCommand):
             self.stdout.write("")
             for linea in rep.detalle:
                 self.stdout.write(f"    {linea}")
+        if rep.vinculados:
+            self.stdout.write(self.style.SUCCESS(
+                f"\n  Departamentos vinculados a la categoría "
+                f"(para que aparezca la pestaña): {len(rep.vinculados)}"))
+            for item in rep.vinculados[:14]:
+                self.stdout.write(f"    {item}")
+            if len(rep.vinculados) > 14:
+                self.stdout.write(f"    … y {len(rep.vinculados) - 14} más")
         if rep.huerfanos:
             self.stdout.write(self.style.ERROR(
                 f"\n  ⚠️ Datos que no se pueden graficar — la plantilla no aplica "
