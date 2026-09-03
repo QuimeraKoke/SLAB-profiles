@@ -100,16 +100,32 @@ los 10 tests que el club escaló. Y `/configuraciones/alertas` ahora tiene un
 **editor de umbrales**, así que el cuerpo médico puede revisarlos y ajustarlos
 sin tocar la base.
 
-### 2.3 Fase 7 — importar el GPS
+### 2.3 ✅ Fase 7 — GPS importado (2026-09-02)
 
-~13.000 filas. El importador no existe; las decisiones sí (§Fase 7 del
-runbook): se reusa `gps_sesion`/`gps_partido`, `LOCALIA`/`RESULTADO` con valor
-⇒ partido, procedencia igual que la fase 6, y se excluyen `U17WC` / `U20 WC` /
-`WC CLUBES` porque traen jugadores de otros equipos.
+**15.352 resultados**: 3501 `gps_partido` (1649 vinculados a su evento) y
+11.851 `gps_sesion`, 305 jugadores, 2025-01-08 → 2026-09-01. Con eso el cruce
+que el club pidió ya funciona:
 
-Es la fase que desbloquea lo que el club pidió —"cómo le va al que sube"— y la
-detección de talento por variables físicas, hoy bloqueada por datos y no por
-código: **0 filas de GPS en toda la cantera**.
+| Categoría | DT medio en partido | HSR medio |
+|---|---|---|
+| Primer Equipo | 9559 m | 920 m |
+| SUB-20 | 8065 m | 664 m |
+| Serie 2010 | 7918 m | 565 m |
+| Serie 2013 | 7328 m | 376 m |
+| Serie 2015 | 4844 m | 124 m |
+
+⚠️ Primer Equipo viene de Catapult (HSR > 19,8 km/h) y el formativo de la
+planilla (> 20). El gradiente es fisiológicamente coherente, así que la
+diferencia no distorsiona la lectura gruesa, pero la clave de procedencia
+permite auditarlo cuando importe.
+
+### 2.4 Wellness del formativo — plantilla propia, sin importar
+
+El club confirma que **no sigue la regla de Primer Equipo**, así que no se
+reusa `checkin_fisico`. Los 8 archivos (~65 MB) siguen sin tocar y el sync de
+Google Form alimenta sólo a Primer Equipo. Falta definir los campos desde esos
+archivos y decidir si el formulario va a cubrir el formativo de acá en
+adelante.
 
 ### 2.4 Desplegar
 

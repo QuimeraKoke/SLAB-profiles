@@ -408,30 +408,38 @@ class Command(BaseCommand):
                 f"  {slug}: {detalle} categorías juveniles (Sub 11+), {total} en total"))
 
     def _gps_heart_rate(self, dept, unlock):
+        """Both GPS exams get the heart-rate pair, not just the session one.
+
+        The club's export carries the two columns on U18 and U20, and 3503 of
+        those rows are matches — filing them in `gps_partido` while only
+        `gps_sesion` had the fields would have dropped the pulse of every
+        match.
+        """
         from exams.models import ExamTemplate
 
-        template = ExamTemplate.objects.filter(department=dept,
-                                               slug="gps_sesion").first()
-        if template is None:
-            self.stdout.write(self.style.WARNING(
-                "  gps_sesion no existe en este departamento: no se agregó FC"))
-            return
-        if template.is_locked and not unlock:
-            self.stdout.write(self.style.WARNING(
-                "  gps_sesion: bloqueada, pasá --unlock para agregar FC"))
-            return
-        schema = dict(template.config_schema or {})
-        fields = list(schema.get("fields") or [])
-        existentes = {f.get("key") for f in fields}
-        nuevos = [f for f in GPS_HR_FIELDS if f["key"] not in existentes]
-        if not nuevos:
-            self.stdout.write("  gps_sesion: ya tenía los campos de FC")
-            return
-        schema["fields"] = fields + nuevos
-        template.config_schema = schema
-        if unlock:
-            template.is_locked = False
-        template.save(update_fields=["config_schema", "is_locked"])
-        template.rebuild_template_fields()
-        self.stdout.write(self.style.SUCCESS(
-            f"  gps_sesion: + {', '.join(f['key'] for f in nuevos)}"))
+        for slug in ("gps_sesion", "gps_partido"):
+            template = ExamTemplate.objects.filter(department=dept,
+                                                   slug=slug).first()
+            if template is None:
+                self.stdout.write(self.style.WARNING(
+                    f"  {slug} no existe en este departamento: no se agregó FC"))
+                continue
+            if template.is_locked and not unlock:
+                self.stdout.write(self.style.WARNING(
+                    f"  {slug}: bloqueada, pasá --unlock para agregar FC"))
+                continue
+            schema = dict(template.config_schema or {})
+            fields = list(schema.get("fields") or [])
+            existentes = {f.get("key") for f in fields}
+            nuevos = [f for f in GPS_HR_FIELDS if f["key"] not in existentes]
+            if not nuevos:
+                self.stdout.write(f"  {slug}: ya tenía los campos de FC")
+                continue
+            schema["fields"] = fields + nuevos
+            template.config_schema = schema
+            if unlock:
+                template.is_locked = False
+            template.save(update_fields=["config_schema", "is_locked"])
+            template.rebuild_template_fields()
+            self.stdout.write(self.style.SUCCESS(
+                f"  {slug}: + {', '.join(f['key'] for f in nuevos)}"))

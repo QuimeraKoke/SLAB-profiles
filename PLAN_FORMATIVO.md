@@ -392,7 +392,7 @@ Cada fase termina con una verificación que se puede correr.
 | **4** | ✅ Plantillas (5) + 2 campos de pulso + `applicable_categories` | Carreras/Neuromuscular en 12 categorías, Fuerza/Resistencia en 7 (Sub 13+), GPS en 10 (Sub 11+) |
 | **5** | ✅ Bandas por categoría | 66 reglas con umbrales propios desde `FORMATO CONDICIONAL` + editor en `/configuraciones/alertas` |
 | **6** | ✅ Importar evaluaciones físicas | 5061 resultados en 396 jugadores, 2024-01-22 → 2026-07-15; conteos verificados contra la planilla |
-| **7** | Importar GPS (~13k filas) | Ídem, y los partidos van a `gps_partido` |
+| **7** | ✅ Importar GPS | 15.352 resultados: 3501 `gps_partido` (1649 con evento) + 11.851 `gps_sesion` |
 | **8** | Re-verificar los módulos que dependen de esto | `/crecimiento` y `/desarrollo` con datos juveniles reales |
 
 **La fase 8 es la recompensa:** con GPS juvenil cargado se desbloquea la
@@ -592,3 +592,18 @@ club pidió.
 - **16 nombres sin jugador**, entre ellos typos (`DAMINA SOLIS`) y filas con
   sólo el apellido (`OLIVEROS`, `CORNEJO`).
 - **7 celdas con valores imposibles**, listadas en el reporte del importador.
+
+---
+
+## 9. Wellness del formativo — plantilla propia (decidido 2026-09-02)
+
+El club confirma que **el wellness del formativo no sigue la misma regla que el
+de Primer Equipo**, así que no se reusa `checkin_fisico`: van plantillas
+propias. Los 8 archivos de `Wellness - Check in & Out/` (uno por categoría,
+~65 MB) siguen **sin importar**, y el sync de Google Form que ya corre alimenta
+únicamente a Primer Equipo (1988 resultados, todos ahí).
+
+Pendiente antes de escribir el importador: definir los campos de esas
+plantillas a partir de lo que realmente traen esos archivos, y decidir si el
+formulario va a cubrir el formativo de acá en adelante — porque si no, importar
+el histórico deja una serie que se corta el día de la carga.
