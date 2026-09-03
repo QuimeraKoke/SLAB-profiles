@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { useCategoryContext } from "@/context/CategoryContext";
 import { useAuth } from "@/context/AuthContext";
 import { hasPermission } from "@/lib/permissions";
 import { useAssistant } from "@/context/AssistantContext";
@@ -119,16 +120,25 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     if (pathname.startsWith("/configuraciones")) return ["Administración"];
     return [];
   });
+  const { categoryId } = useCategoryContext();
   const [departments, setDepartments] = useState<Department[]>([]);
 
   // Fetch the departments visible to this user. `/clubs/{id}/departments`
   // already applies StaffMembership scoping — non-admins only see the
   // departments their membership grants. Platform admins (no membership)
   // skip this call and the Reportes group simply doesn't render.
+  //
+  // `with_team_layout_for` narrows it to the departments that actually have a
+  // team report configured for the selected category: the submenu links to
+  // `/reportes/{slug}`, and without a layout that page has nothing to draw.
+  // A team layout is per (department, category), so this re-fetches when the
+  // picker changes — the Formativo, for instance, has Físico in all 12 series
+  // but Táctico only in the 8 that play matches.
   useEffect(() => {
-    if (!membership) return;
+    if (!membership || !categoryId) return;
     let cancelled = false;
-    api<Department[]>(`/clubs/${membership.club.id}/departments`)
+    const qs = `?with_team_layout_for=${encodeURIComponent(categoryId)}`;
+    api<Department[]>(`/clubs/${membership.club.id}/departments${qs}`)
       .then((data) => {
         if (!cancelled) {
           setDepartments(
@@ -142,7 +152,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     return () => {
       cancelled = true;
     };
-  }, [membership]);
+  }, [membership, categoryId]);
 
   const reportsGroup: NavGroup | null =
     departments.length > 0

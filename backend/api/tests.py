@@ -428,3 +428,73 @@ class ForecastAccuracyTests(TestCase):
             available_at=timezone.now(),
         )
         self.assertEqual(forecast_accuracy(category=self.cat)["episodes"], 0)
+
+
+class DepartmentsWithTeamLayoutTests(TestCase):
+    """`/clubs/{id}/departments?with_team_layout_for=<category>`.
+
+    The sidebar's Dashboard submenu links to `/reportes/{slug}`, which draws a
+    team report layout. A department without one for the selected category
+    lands the user on a page with nothing to show, so the option is hidden —
+    but only for that caller: four other views share this endpoint and want
+    every department the membership grants.
+    """
+
+    def setUp(self):
+        from core.models import Category, Club, Department
+        from dashboards.models import TeamReportLayout
+        from api.routers import list_club_departments
+
+        self.view = list_club_departments
+        self.rf = RequestFactory()
+        self.su = get_user_model().objects.create_superuser("su2", "su2@x.com", "x")
+        self.club = Club.objects.create(name="FC2")
+        self.con = Department.objects.create(club=self.club, name="Físico",
+                                             slug="fisico")
+        self.sin = Department.objects.create(club=self.club, name="Médico",
+                                             slug="medico")
+        self.cat = Category.objects.create(club=self.club, name="Serie 2008",
+                                           cohort_year=2008)
+        self.otra = Category.objects.create(club=self.club, name="Serie 2018",
+                                            cohort_year=2018)
+        TeamReportLayout.objects.create(department=self.con, category=self.cat)
+
+    def _slugs(self, **kw):
+        r = self.rf.get("/x")
+        r.user = self.su
+        return sorted(d.slug for d in self.view(r, str(self.club.id), **kw))
+
+    def test_sin_el_parametro_devuelve_todos(self):
+        # Los otros cuatro consumidores no deben cambiar de comportamiento.
+        self.assertEqual(self._slugs(), ["fisico", "medico"])
+
+    def test_con_el_parametro_solo_los_que_tienen_team_layout(self):
+        self.assertEqual(
+            self._slugs(with_team_layout_for=str(self.cat.id)), ["fisico"])
+
+    def test_una_categoria_sin_ningun_layout_devuelve_lista_vacia(self):
+        self.assertEqual(self._slugs(with_team_layout_for=str(self.otra.id)), [])
+
+    def test_un_layout_inactivo_no_cuenta(self):
+        from dashboards.models import TeamReportLayout
+
+        TeamReportLayout.objects.filter(department=self.con).update(is_active=False)
+        self.assertEqual(self._slugs(with_team_layout_for=str(self.cat.id)), [])
+
+    def test_una_categoria_inexistente_no_revienta(self):
+        import uuid
+
+        self.assertEqual(self._slugs(with_team_layout_for=str(uuid.uuid4())), [])
+
+    def test_no_duplica_cuando_hay_varios_layouts(self):
+        """Un departamento puede tener un layout `period` y otro `match`.
+
+        Sin `.distinct()` el join los devolvería dos veces y el submenú
+        mostraría la opción repetida.
+        """
+        from dashboards.models import TeamReportLayout
+
+        TeamReportLayout.objects.create(department=self.con, category=self.cat,
+                                        scope="match")
+        self.assertEqual(
+            self._slugs(with_team_layout_for=str(self.cat.id)), ["fisico"])

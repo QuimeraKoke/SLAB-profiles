@@ -630,10 +630,36 @@ def reset_user_password(request, user_id: int):
 
 
 @api.get("/clubs/{club_id}/departments", response=list[DepartmentOut])
-def list_club_departments(request, club_id: str):
+def list_club_departments(
+    request, club_id: str,
+    with_team_layout_for: str | None = None,
+):
+    """Departments the user can see.
+
+    `with_team_layout_for=<category_id>` narrows the list to those that have an
+    active team report layout for that category. Opt-in on purpose: five
+    callers share this endpoint (the sidebar, the report page, the match form,
+    the event form and the user admin) and only the sidebar wants the narrower
+    answer. A team layout is per (department, category), so the answer changes
+    with the category picker.
+    """
     membership = get_membership(request.user)
     qs = Department.objects.filter(club_id=club_id)
-    return scope_departments(qs, membership)
+    qs = scope_departments(qs, membership)
+    if with_team_layout_for:
+        # Scoped through `scope_categories` so the parameter cannot be used to
+        # probe which departments a category the user cannot see happens to
+        # have configured.
+        category = scope_categories(
+            Category.objects.all(), membership,
+        ).filter(pk=with_team_layout_for).first()
+        if category is None:
+            return []
+        qs = qs.filter(
+            team_report_layouts__category=category,
+            team_report_layouts__is_active=True,
+        ).distinct()
+    return qs
 
 
 @api.get("/clubs/{club_id}/positions", response=list[PositionOut])
