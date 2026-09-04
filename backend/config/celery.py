@@ -82,6 +82,21 @@ app.conf.beat_schedule = {
         "schedule": crontab(minute=10, hour=13),            # 13:10 catch-up
         "kwargs": {"mode": "reconcile", "since_days": 3},
     },
+    # Formativo: the club's two live Google Sheets (GPS + physical tests).
+    # Twice a day, not hourly, for three reasons: each run reads both documents
+    # whole (~20k rows, a couple of minutes), the club edits them in working
+    # bursts rather than continuously, and both ingests are idempotent so a
+    # missed tick costs nothing. 06:40 lands before the morning meeting; 20:40
+    # picks up the day's training. Minutes are off the :00/:15/:30 lanes the
+    # other integrations use. No-op unless the sheet ids + credentials are set.
+    "formativo-sheets-morning": {
+        "task": "exams.tasks.sync_formativo_sheets",
+        "schedule": crontab(minute=40, hour=6),
+    },
+    "formativo-sheets-evening": {
+        "task": "exams.tasks.sync_formativo_sheets",
+        "schedule": crontab(minute=40, hour=20),
+    },
     # Catapult OpenField GPS sync (activities → gps_partido/gps_sesion). Hourly
     # at :15 (staggered from fixtures :00 and VALD :30). Gap-fill / idempotent —
     # dedup on the Catapult activity_id, so re-runs never duplicate and

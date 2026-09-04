@@ -252,18 +252,18 @@ class FormativoIngestTests(TestCase):
 
 
 def _hoja_temporal(hojas, nombre):
-    import openpyxl
+    """The raw cell grid of one sheet — what the parsers now take.
+
+    They used to receive an openpyxl worksheet and call `iter_rows`; since the
+    Google Sheets source landed they take a list of rows, so both origins look
+    the same to them (see `exams.formativo_sources`).
+    """
+    from exams.formativo_sources import FuenteXlsx
+
     with TemporaryDirectory() as tmp:
         ruta = Path(tmp) / "x.xlsx"
         escribir(ruta, hojas)
-        book = openpyxl.load_workbook(ruta, data_only=True)
-        ws = book[nombre]
-        # Materialise before the temp dir goes away.
-        filas = [tuple(r) for r in ws.iter_rows(values_only=True)]
-        book.close()
-
-    class Fake:
-        def iter_rows(self, values_only=True):
-            return iter(filas)
-
-    return Fake()
+        fuente = FuenteXlsx(str(ruta))
+        grid = fuente.filas(nombre)
+        fuente.cerrar()
+    return grid

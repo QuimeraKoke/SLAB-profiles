@@ -233,6 +233,14 @@ WELLNESS_SHEET_WORKSHEET = env("WELLNESS_SHEET_WORKSHEET", default="Respuestas d
 WELLNESS_CLUB = env("WELLNESS_CLUB", default="Universidad de Chile")
 WELLNESS_CATEGORY = env("WELLNESS_CATEGORY", default="Primer Equipo")
 
+# Formativo: the club's two live Google Sheets (GPS + physical evaluations).
+# Same service account as the wellness form. Blank either id ⇒ that half of the
+# sync no-ops, so the schedule is safe to ship before the club shares a
+# document.
+FORMATIVO_GPS_SHEET_ID = env("FORMATIVO_GPS_SHEET_ID", default="")
+FORMATIVO_EVAL_SHEET_ID = env("FORMATIVO_EVAL_SHEET_ID", default="")
+FORMATIVO_CLUB = env("FORMATIVO_CLUB", default="Universidad de Chile")
+
 # --- Email ---
 # Default in dev: print emails to stdout. Set EMAIL_BACKEND to
 # 'django.core.mail.backends.smtp.EmailBackend' (or AWS SES, SendGrid, etc.)

@@ -30,8 +30,9 @@ class Command(BaseCommand):
             "(aditivo, dedup por origen_id).")
 
     def add_arguments(self, parser):
-        parser.add_argument("--file", required=True,
-                            help="Ruta al .xlsx dentro del contenedor.")
+        parser.add_argument("--file", required=True, dest="origen",
+                            help=("Ruta al .xlsx dentro del contenedor, O el id "
+                                  "de la Google Sheet viva del club."))
         parser.add_argument("--club", default="Universidad de Chile")
         parser.add_argument("--commit", action="store_true",
                             help="Escribe (por defecto: simulación).")
@@ -45,9 +46,13 @@ class Command(BaseCommand):
         if club is None:
             raise CommandError(f"No existe el club '{opts['club']}'.")
 
+        from django.conf import settings
+
         rep = formativo_ingest.run(
-            opts["file"], club, commit=opts["commit"],
+            opts["origen"], club, commit=opts["commit"],
             fire_alerts=opts["alerts"],
+            creds_file=settings.GOOGLE_SHEETS_CREDENTIALS_FILE,
+            creds_json=settings.GOOGLE_SHEETS_CREDENTIALS_JSON,
             solo_hojas=set(opts["sheets"]) if opts.get("sheets") else None)
 
         modo = "APLICADO" if opts["commit"] else "SIMULACIÓN (sin --commit no escribe)"

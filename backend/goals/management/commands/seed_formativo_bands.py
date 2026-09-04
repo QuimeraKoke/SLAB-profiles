@@ -137,31 +137,47 @@ class Reporte:
     no_aplicable: list[str] = dc_field(default_factory=list)
 
 
-def parse_sheets(path: str) -> tuple[list[Bloque], list[str]]:
-    import openpyxl
+def parse_sheets(
+    origen: str, *, creds_file: str = "", creds_json: str = "",
+) -> tuple[list[Bloque], list[str]]:
+    """`origen` is an .xlsx path or a Google Sheets id.
 
-    book = openpyxl.load_workbook(path, data_only=True)
+    ⚠️ The tab titles differ between the two. Excel caps a sheet name at 31
+    characters, so the live `FORMATO CONDICIONAL 15-16 y 18-20` arrives in an
+    export as `FORMATO CONDICIONAL 15-16 y 18-`. The constants below are the
+    truncated form, and `match_sheet` resolves either — matching by exact
+    string would silently find no sheets and seed zero bands.
+    """
+    from exams.formativo_sources import abrir, match_sheet
+
+    fuente = abrir(origen, creds_file=creds_file, creds_json=creds_json)
+    disponibles = fuente.hojas()
     bloques: list[Bloque] = []
-    faltantes = [h for h in SHEETS if h not in book.sheetnames]
+    faltantes = []
     for hoja in SHEETS:
-        if hoja in book.sheetnames:
-            bloques.extend(_parse_sheet(book[hoja], hoja))
-    book.close()
+        real = match_sheet(disponibles, hoja)
+        if real is None:
+            faltantes.append(hoja)
+            continue
+        bloques.extend(_parse_sheet(fuente.filas(real), real))
+    fuente.cerrar()
     return bloques, faltantes
 
 
-def _parse_sheet(ws, hoja: str) -> list[Bloque]:
-    filas = {}
-    for r in range(1, ws.max_row + 1):
-        filas[r] = [ws.cell(row=r, column=c).value
-                    for c in range(1, ws.max_column + 1)]
+def _parse_sheet(grid: list, hoja: str) -> list[Bloque]:
+    # 1-indexed to keep the row numbers the report prints aligned with what a
+    # human sees in the spreadsheet.
+    filas = {i + 1: list(f) for i, f in enumerate(grid)}
+    if not filas:
+        return []
+    max_row = len(filas)
 
     # A block is seven consecutive rows whose label column reads the seven
     # band names in order. Anchoring on the sequence rather than on a header
     # keeps it working when the club adds or moves a section.
     crudos = []
     for base in (3, 7, 11):        # C/D/E, G/H/I, K/L/M as 0-indexed columns
-        for r in range(2, ws.max_row - len(BANDAS) + 2):
+        for r in range(2, max_row - len(BANDAS) + 2):
             etiquetas = [norm(filas.get(r + i, [None])[base - 1]
                               if base - 1 < len(filas.get(r + i, [])) else None)
                          for i in range(len(BANDAS))]
@@ -179,7 +195,7 @@ def _parse_sheet(ws, hoja: str) -> list[Bloque]:
 
     # The group label lives inside the first block of its group, so each group
     # starts at that block's first band row.
-    etiquetados = [r for r in range(1, ws.max_row + 1)
+    etiquetados = [r for r in range(1, max_row + 1)
                    if norm(filas.get(r, [None])[0] if filas.get(r) else None)]
     inicios = []
     for L in etiquetados:
@@ -232,8 +248,9 @@ class Command(BaseCommand):
     help = "Siembra las bandas por categoría desde las hojas FORMATO CONDICIONAL."
 
     def add_arguments(self, parser):
-        parser.add_argument("--file", required=True,
-                            help="Ruta al .xlsx dentro del contenedor.")
+        parser.add_argument("--file", required=True, dest="origen",
+                            help=("Ruta al .xlsx dentro del contenedor, O el id "
+                                  "de la Google Sheet viva del club."))
         parser.add_argument("--club", default="Universidad de Chile")
         parser.add_argument("--season", type=int, default=None)
         parser.add_argument("--commit", action="store_true")
@@ -246,11 +263,18 @@ class Command(BaseCommand):
         club = Club.objects.filter(name=opts["club"]).first()
         if club is None:
             raise CommandError(f"No existe el club '{opts['club']}'.")
-        if not Path(opts["file"]).exists():
-            raise CommandError(f"No existe {opts['file']}.")
+        origen = opts["origen"]
+        # Un id de hoja no es un archivo; sólo se valida la ruta.
+        if origen.lower().endswith((".xlsx", ".xlsm")) and not Path(origen).exists():
+            raise CommandError(f"No existe {origen}.")
         season = opts["season"] or date.today().year
 
-        bloques, faltantes = parse_sheets(opts["file"])
+        from django.conf import settings
+
+        bloques, faltantes = parse_sheets(
+            origen,
+            creds_file=settings.GOOGLE_SHEETS_CREDENTIALS_FILE,
+            creds_json=settings.GOOGLE_SHEETS_CREDENTIALS_JSON)
         if faltantes:
             raise CommandError(
                 f"El archivo no trae {faltantes}. ¿Es el libro de evaluaciones?")

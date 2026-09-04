@@ -179,33 +179,37 @@ class Reporte:
 
 
 def parse_workbook(
-    path: str,
+    origen: str, *, creds_file: str = "", creds_json: str = "",
 ) -> tuple[list[Fila], dict[str, list[str]], dict[str, list[str]]]:
-    import openpyxl
+    """`origen` is an .xlsx path or a Google Sheets id — see formativo_sources."""
+    from exams.formativo_sources import abrir, match_sheet
 
-    book = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    fuente = abrir(origen, creds_file=creds_file, creds_json=creds_json)
     filas: list[Fila] = []
     faltantes: dict[str, list[str]] = {}
     desconocidas: dict[str, list[str]] = {}
-    for hoja in book.sheetnames:
-        if hoja in SHEETS_EXCLUDED:
+    hojas = fuente.hojas()
+    # Excluded by NAME, resolved against the live titles: an export truncates a
+    # tab to 31 chars, so `WC CLUBES` may not be spelled identically.
+    excluidas = {match_sheet(hojas, h) for h in SHEETS_EXCLUDED} - {None}
+    for hoja in hojas:
+        if hoja in excluidas:
             continue
-        nuevas, sin_mapear, sin_reconocer = _parse_sheet(book[hoja], hoja)
+        nuevas, sin_mapear, sin_reconocer = _parse_sheet(fuente.filas(hoja), hoja)
         filas.extend(nuevas)
         if sin_mapear:
             faltantes[hoja] = sin_mapear
         if sin_reconocer:
             desconocidas[hoja] = sin_reconocer
-    book.close()
+    fuente.cerrar()
     return filas, faltantes, desconocidas
 
 
-def _parse_sheet(sheet, hoja: str) -> tuple[list[Fila], list[str], list[str]]:
-    rows = sheet.iter_rows(values_only=True)
-    try:
-        crudos = [str(c or "").strip() for c in next(rows)]
-    except StopIteration:
+def _parse_sheet(grid: list, hoja: str) -> tuple[list[Fila], list[str], list[str]]:
+    if not grid:
         return [], [], []
+    rows = iter(grid[1:])
+    crudos = [str(c or "").strip() for c in grid[0]]
     cab = [norm(c) for c in crudos]
     ix = {c: i for i, c in enumerate(cab) if c}
     if "JUGADOR" not in ix:
@@ -324,9 +328,11 @@ def _descartar_fuera_de_rango(template: ExamTemplate, datos: dict) -> list[str]:
     return descartados
 
 
-def run(path: str, club: Club, *, commit: bool = False,
-        fire_alerts: bool = False, solo_hojas: set[str] | None = None) -> Reporte:
-    filas, faltantes, desconocidas = parse_workbook(path)
+def run(origen: str, club: Club, *, commit: bool = False,
+        fire_alerts: bool = False, solo_hojas: set[str] | None = None,
+        creds_file: str = "", creds_json: str = "") -> Reporte:
+    filas, faltantes, desconocidas = parse_workbook(
+        origen, creds_file=creds_file, creds_json=creds_json)
     if solo_hojas:
         filas = [f for f in filas if f.hoja in solo_hojas]
     match = build_matcher(club)

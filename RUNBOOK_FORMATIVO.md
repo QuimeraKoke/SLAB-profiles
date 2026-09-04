@@ -7,10 +7,82 @@ qué escribe, cómo verificarla y **cómo revertirla**.
 > prod. Todo lo de acá está aplicado en **local** al 2026-09-02; **nada** se
 > subió a prod todavía.
 
-## Los archivos
+## Las fuentes
 
-Entregados por el club el 2026-09-02 y declarados por ellos **la fuente de
-verdad** del fútbol formativo. Ruta de referencia:
+El club **no trabaja sobre archivos**: mantiene dos Google Sheets y reparte
+exports `.xlsx` de ellas. Los importadores leen las dos cosas — se le pasa una
+ruta a un `.xlsx` o el **id del documento vivo**, y el resto es idéntico
+(`exams/formativo_sources.py`).
+
+| Documento | Id |
+|---|---|
+| GPS | `1WHlhb-K1Pbk1-ttkkCzdIMT69RCfYzXhDyzFXMI4_vo` |
+| Evaluaciones físicas | `1F_1hUR3DsO70ziLiyja-QZW-j2727W5CsS53XWUY6BU` |
+
+Acceso: la **misma** cuenta de servicio que el formulario de wellness
+(`slab-uchile-gdrive@slab-platform-501001.iam.gserviceaccount.com`), ya
+compartida en los dos documentos. No hace falta credencial nueva.
+
+⚠️ **Tres cosas cambian entre el export y el documento vivo**, y las tres
+serían silenciosas:
+
+1. **Los títulos de hoja se truncan a 31 caracteres en un export.** El vivo
+   `FORMATO CONDICIONAL 15-16 y 18-20` llega como
+   `FORMATO CONDICIONAL 15-16 y 18-`. `match_sheet` resuelve los dos; comparar
+   por string exacto no encontraría ninguna hoja y sembraría cero bandas.
+2. **Los números renderizados son lossy.** La misma celda de `DT (m)` se lee
+   `4.159` como texto y `4158.9` en crudo, porque el punto es separador de
+   MILES. Leer el texto divide cada distancia por mil sin que nada avise, así
+   que el lado de Sheets siempre pide `UNFORMATTED_VALUE`.
+3. **Las fechas renderizadas son ambiguas** (`8/01/2025`), que es la moneda al
+   aire día/mes que ya nos costó dos fechas de nacimiento. Sin formato son
+   números de serie, que son exactos — y se convierten **sólo en las columnas
+   de fecha**, nunca a ciegas: una `DURACIÓN (m)` de 37 también es un serial
+   válido y se volvería 1900-02-05.
+
+### Sincronización automática
+
+Dos ticks diarios en Celery Beat (`config/celery.py`), y no cada hora por tres
+razones: cada corrida lee los dos documentos completos (~20.000 filas, un par
+de minutos), el club los edita a ráfagas y no de forma continua, y los dos
+ingests son idempotentes por `origen_id`, así que un tick perdido no cuesta
+nada.
+
+| Tarea | Cuándo | Por qué |
+|---|---|---|
+| `formativo-sheets-morning` | 06:40 local | antes de la reunión de la mañana |
+| `formativo-sheets-evening` | 20:40 local | levanta el entrenamiento del día |
+
+Se lee la hoja **completa** en cada corrida, no una ventana por fecha: el club
+corrige filas viejas —completa una fecha que faltaba, arregla un dato— y una
+ventana se perdería esas correcciones.
+
+Variables de entorno (blanquear un id ⇒ esa mitad del sync no hace nada):
+
+```
+FORMATIVO_GPS_SHEET_ID=1WHlhb-K1Pbk1-ttkkCzdIMT69RCfYzXhDyzFXMI4_vo
+FORMATIVO_EVAL_SHEET_ID=1F_1hUR3DsO70ziLiyja-QZW-j2727W5CsS53XWUY6BU
+FORMATIVO_CLUB=Universidad de Chile
+# ya configuradas para wellness:
+GOOGLE_SHEETS_CREDENTIALS_FILE=/app/secrets/gsheets.json   # local
+GOOGLE_SHEETS_CREDENTIALS_JSON=<blob base64>               # Railway
+```
+
+⚠️ En Railway **no hay archivo que montar**: va el JSON de la cuenta de
+servicio en `GOOGLE_SHEETS_CREDENTIALS_JSON`, en base64 (una sola línea).
+
+Correrlo a mano, contra el documento vivo:
+
+```bash
+docker compose exec backend python manage.py import_formativo_gps \
+  --file 1WHlhb-K1Pbk1-ttkkCzdIMT69RCfYzXhDyzFXMI4_vo        # dry-run
+docker compose exec backend python manage.py shell -c \
+  "from exams.tasks import sync_formativo_sheets; print(sync_formativo_sheets(commit=False))"
+```
+
+## Los archivos (exports)
+
+Entregados por el club el 2026-09-02. Ruta de referencia:
 
 ```
 ~/Downloads/U de Chile - Formativo/

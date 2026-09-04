@@ -91,6 +91,111 @@ def sync_wellness_responses(mode: str = "today", since_days: int = 3) -> dict:
                 pass
 
 
+# ── Formativo: las dos planillas vivas del club ─────────────────────────
+# El club NO trabaja sobre archivos: mantiene dos Google Sheets y reparte
+# exports .xlsx de ellas. Sincronizar el documento vivo es lo que convierte una
+# importación puntual en un dato que se mantiene: entre el export que
+# importamos y la hoja de hoy ya había 76 filas más de GPS y 35 de
+# evaluaciones, y esa brecha crece todos los días.
+#
+# Los dos ingests son idempotentes por `result_data["origen_id"]`, así que un
+# tick sólo escribe lo nuevo y re-leer la hoja completa es seguro. Leerla
+# completa es además lo correcto: el club edita filas viejas (corrige una
+# fecha, completa un dato que faltaba), y una ventana por fecha se perdería
+# esas correcciones.
+_LOCK_FORMATIVO = "lock:sync_formativo_sheets"
+_LOCK_FORMATIVO_TTL = 3600  # una corrida completa toma minutos, no segundos
+
+
+def _formativo_creds() -> tuple[str, str]:
+    return (settings.GOOGLE_SHEETS_CREDENTIALS_FILE,
+            settings.GOOGLE_SHEETS_CREDENTIALS_JSON)
+
+
+@shared_task(name="exams.tasks.sync_formativo_sheets")
+def sync_formativo_sheets(commit: bool = True, alerts: bool = False) -> dict:
+    """Pull both Formativo sheets into their exams.
+
+    `alerts=False` on purpose: these documents carry two seasons of history, and
+    an alert anchored on a two-year-old reading is expired again by the next
+    staleness sweep — firing them would only churn the alert list. The daily
+    tick that DOES want alerts can pass `alerts=True` once the club is caught
+    up.
+    """
+    from core.models import Club
+    from exams import formativo_gps_ingest, formativo_ingest
+    from integrations.google_sheets import GoogleSheetsError
+
+    creds_file, creds_json = _formativo_creds()
+    gps_id = settings.FORMATIVO_GPS_SHEET_ID
+    eval_id = settings.FORMATIVO_EVAL_SHEET_ID
+    if not (creds_file or creds_json) or not (gps_id or eval_id):
+        logger.info("formativo sync skipped: sheets/credentials not configured")
+        return {"status": "skipped", "reason": "not configured"}
+
+    club = Club.objects.filter(name=settings.FORMATIVO_CLUB).first()
+    if club is None:
+        logger.warning("formativo sync skipped: club %r not found",
+                       settings.FORMATIVO_CLUB)
+        return {"status": "skipped", "reason": "club not found"}
+
+    lock = None
+    try:
+        from django.core.cache import cache
+
+        lock = cache
+        if not cache.add(_LOCK_FORMATIVO, "1", _LOCK_FORMATIVO_TTL):
+            logger.info("formativo sync skipped: another run holds the lock")
+            return {"status": "skipped", "reason": "locked"}
+    except Exception:  # pragma: no cover — cache backend unavailable
+        lock = None
+
+    salida: dict = {"status": "ok"}
+    try:
+        for clave, sheet_id, modulo in (
+            ("evaluaciones", eval_id, formativo_ingest),
+            ("gps", gps_id, formativo_gps_ingest),
+        ):
+            if not sheet_id:
+                continue
+            try:
+                rep = modulo.run(
+                    sheet_id, club, commit=commit, fire_alerts=alerts,
+                    creds_file=creds_file, creds_json=creds_json,
+                )
+            except GoogleSheetsError as exc:
+                # One unreachable document must not sink the other.
+                logger.warning("formativo sync (%s) failed: %s", clave, exc)
+                salida[clave] = {"status": "error", "error": str(exc)}
+                salida["status"] = "partial"
+                continue
+            salida[clave] = {
+                "creados": rep.creados, "ya_existian": rep.ya_existian,
+                "sin_jugador": len(rep.sin_jugador),
+                "fuera_de_rango": len(rep.fuera_de_rango),
+            }
+            # These two are the tell that the club changed the sheet's shape,
+            # and they are worth a log line rather than a silent partial load.
+            faltan = getattr(rep, "columnas_sin_mapear", None)
+            if faltan:
+                logger.error("formativo sync (%s): métricas sin mapear %s",
+                             clave, faltan)
+                salida[clave]["columnas_sin_mapear"] = faltan
+            desconocidas = getattr(rep, "columnas_desconocidas", None)
+            if desconocidas:
+                logger.warning("formativo sync (%s): columnas nuevas %s",
+                               clave, desconocidas)
+                salida[clave]["columnas_desconocidas"] = desconocidas
+        logger.info("formativo sync: %s", salida)
+        return salida
+    finally:
+        if lock is not None:
+            try:
+                lock.delete(_LOCK_FORMATIVO)
+            except Exception:  # pragma: no cover
+                pass
+
+
 @shared_task(name="exams.tasks.sync_all_vald_clubs")
 def sync_all_vald_clubs(full: bool = False) -> list[dict]:
     """Scheduled VALD Hub sync for every club with an enabled integration.

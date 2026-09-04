@@ -207,29 +207,36 @@ def _desfase(cab: list[str], muestras: list[tuple]) -> int:
     return 0
 
 
-def parse_workbook(path: str) -> tuple[list[Fila], dict[str, int]]:
-    import openpyxl
+def parse_workbook(
+    origen: str, *, creds_file: str = "", creds_json: str = "",
+) -> tuple[list[Fila], dict[str, int]]:
+    """`origen` is an .xlsx path or a Google Sheets id — see formativo_sources."""
+    from exams.formativo_sources import abrir, match_sheet
 
-    book = openpyxl.load_workbook(path, data_only=True)
+    fuente = abrir(origen, creds_file=creds_file, creds_json=creds_json)
     filas: list[Fila] = []
     sin_fecha: dict[str, int] = {}
-    for hoja in book.sheetnames:
-        if hoja in TESTS_LARGOS:
-            nuevas, n = _parse_largo(book[hoja], hoja)
-        elif hoja in ANCHAS:
-            nuevas, n = _parse_ancho(book[hoja], hoja)
-        else:
+    hojas = fuente.hojas()
+    # The sheets are looked up by the name the parser knows, resolved against
+    # the live titles: an export truncates a tab title to 31 characters.
+    for conocida, es_largo in ([(h, True) for h in TESTS_LARGOS]
+                               + [(h, False) for h in ANCHAS]):
+        real = match_sheet(hojas, conocida)
+        if real is None:
             continue
+        grid = fuente.filas(real)
+        nuevas, n = (_parse_largo(grid, conocida) if es_largo
+                     else _parse_ancho(grid, conocida))
         filas.extend(nuevas)
         if n:
-            sin_fecha[hoja] = n
-    book.close()
+            sin_fecha[real] = n
+    fuente.cerrar()
     return filas, sin_fecha
 
 
-def _abrir(sheet):
+def _abrir(grid):
     """Header, the rows after it, and the shift the data actually has."""
-    filas = list(sheet.iter_rows(values_only=True))
+    filas = [list(f) for f in grid]
     cab = _cabecera(iter(filas))
     if cab is None:
         return None, [], 0
@@ -252,9 +259,9 @@ def _indices(cab, desfase=0):
             get(empieza="FECHA"))
 
 
-def _parse_largo(sheet, hoja: str) -> list[Fila]:
+def _parse_largo(grid, hoja: str) -> list[Fila]:
     """One row per test → one `Fila` per (player, date), tests folded in."""
-    cab, datos, desfase = _abrir(sheet)
+    cab, datos, desfase = _abrir(grid)
     if cab is None:
         return [], 0
     i_nombre, i_dob, i_dia = _indices(cab, desfase)
@@ -293,9 +300,9 @@ def _parse_largo(sheet, hoja: str) -> list[Fila]:
     return list(agrupado.values()), sin_fecha
 
 
-def _parse_ancho(sheet, hoja: str) -> list[Fila]:
+def _parse_ancho(grid, hoja: str) -> list[Fila]:
     slug, mapa, fijos = ANCHAS[hoja]
-    cab, datos_filas, desfase = _abrir(sheet)
+    cab, datos_filas, desfase = _abrir(grid)
     if cab is None:
         return [], 0
     i_nombre, i_dob, i_dia = _indices(cab, desfase)
@@ -392,9 +399,11 @@ def _descartar_fuera_de_rango(template: ExamTemplate, datos: dict) -> list[str]:
     return descartados
 
 
-def run(path: str, club: Club, *, commit: bool = False,
-        fire_alerts: bool = False, solo_hojas: set[str] | None = None) -> Reporte:
-    filas, sin_fecha = parse_workbook(path)
+def run(origen: str, club: Club, *, commit: bool = False,
+        fire_alerts: bool = False, solo_hojas: set[str] | None = None,
+        creds_file: str = "", creds_json: str = "") -> Reporte:
+    filas, sin_fecha = parse_workbook(
+        origen, creds_file=creds_file, creds_json=creds_json)
     rep_sin_fecha = sin_fecha
     if solo_hojas:
         filas = [f for f in filas if f.hoja in solo_hojas]
