@@ -70,6 +70,18 @@ class Command(BaseCommand):
                 "\n  ⚠️ MÉTRICAS QUE NO MAPEARON (la hoja cambió de forma):"))
             for hoja, faltan in sorted(rep.columnas_sin_mapear.items()):
                 self.stdout.write(f"    {hoja:<14} {', '.join(faltan)}")
+        if getattr(rep, "fechas_invertidas", None):
+            total = sum(len(v) for v in rep.fechas_invertidas.values())
+            self.stdout.write(self.style.WARNING(
+                f"\n  Fechas con pinta de día/mes invertido: {total}"))
+            self.stdout.write(
+                "    (la fila anterior es POSTERIOR, e invertir día/mes la "
+                "devuelve al orden — se carga igual, es una sospecha)")
+            for hoja, casos in sorted(rep.fechas_invertidas.items()):
+                for fila, previa, actual, sugerida in casos[:4]:
+                    self.stdout.write(
+                        f"    {hoja:<10} fila {fila}: {actual} → "
+                        f"¿{sugerida}?  (la anterior es {previa})")
         if rep.columnas_desconocidas:
             self.stdout.write(self.style.WARNING(
                 "\n  Columnas que el importador no reconoce (¿se agregaron?):"))

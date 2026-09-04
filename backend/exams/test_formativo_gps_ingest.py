@@ -144,7 +144,7 @@ class FormativoGpsTests(TestCase):
             ws = book.create_sheet("U15")
             ws.append(sin_hsr)
             book.save(ruta)
-            _, faltantes, _ = ing.parse_workbook(str(ruta))
+            _, faltantes, _, _ = ing.parse_workbook(str(ruta))
         self.assertIn("hsr", faltantes.get("U15", []))
 
     def test_avisa_cuando_aparece_una_columna_nueva(self):
@@ -163,7 +163,7 @@ class FormativoGpsTests(TestCase):
             ws.append(CAB + ["HMLD (m)"])
             ws.append(fila() + [1022.4])
             book.save(ruta)
-            _, faltantes, desconocidas = ing.parse_workbook(str(ruta))
+            _, faltantes, desconocidas, _ = ing.parse_workbook(str(ruta))
         self.assertEqual(faltantes, {}, "no falta ninguna métrica esperada")
         self.assertEqual(desconocidas.get("U15"), ["HMLD (m)"])
 
@@ -173,7 +173,7 @@ class FormativoGpsTests(TestCase):
         with TemporaryDirectory() as tmp:
             ruta = Path(tmp) / "gps.xlsx"
             escribir(ruta, {"U15": [fila()]})
-            _, _, desconocidas = ing.parse_workbook(str(ruta))
+            _, _, desconocidas, _ = ing.parse_workbook(str(ruta))
         self.assertEqual(desconocidas, {})
 
     # ── partido o sesión ────────────────────────────────────────────────

@@ -56,6 +56,43 @@ def match_sheet(nombres: list[str], buscado: str) -> str | None:
     return None
 
 
+def fechas_invertidas(
+    fechas: list[tuple[int, date]],
+) -> list[tuple[int, date, date, date]]:
+    """Rows whose date looks like a day/month typo, from the row ORDER.
+
+    The club types these sheets by hand and the day/month swap is its most
+    persistent defect — it has already cost two birth dates, a session date and
+    an inverted band scale. This catches a fourth flavour for free, because the
+    per-category sheets are append-ordered: a row dated BEFORE the row above it
+    is out of place by construction.
+
+    Mere disorder is not the signal, though. `NEUROMUSCULAR` and `RESISTENCIA`
+    carry 57 out-of-order rows between them because the club groups those by
+    test rather than by date, and flagging all of them would bury the real ones
+    in noise. So the test is narrower: a row is suspect only when its date is
+    out of order AND exchanging its day and month would put it back IN order.
+
+    Measured against both live documents: 4 hits, all the same batch —
+    `2025-11-10` entered as `10/11` in U15, U14, U13 and SPARRING — and zero
+    false positives in the 57 disordered evaluation rows.
+
+    Returns `(row, previous_date, stored_date, likely_intended_date)`.
+    Reporting only: the row still imports, because a suspicion is not a fact.
+    """
+    sospechosas = []
+    for (_, previa), (fila, actual) in zip(fechas, fechas[1:]):
+        if actual >= previa or actual.day > 12:
+            continue
+        try:
+            invertida = date(actual.year, actual.day, actual.month)
+        except ValueError:      # e.g. day 30 as a month
+            continue
+        if invertida >= previa:
+            sospechosas.append((fila, previa, actual, invertida))
+    return sospechosas
+
+
 class Fuente(Protocol):
     """A workbook: named sheets of positional rows, dates already real dates."""
 
@@ -105,25 +142,37 @@ class FuenteSheets:
                  creds_json: str = ""):
         self.sheet_id = sheet_id
         self.creds = {"creds_file": creds_file, "creds_json": creds_json}
+        self._doc = None
         self._hojas: list[str] | None = None
         self._cache: dict[str, list[list[Any]]] = {}
 
-    def hojas(self) -> list[str]:
-        from integrations.google_sheets import list_worksheets
+    def _documento(self):
+        """One handle for the whole sync.
 
+        Opening per worksheet costs an extra API request each time, and Sheets
+        caps a service account at 60 reads/minute: reading the club's two
+        documents that way hit the 429 in under a minute.
+        """
+        from integrations.google_sheets import Documento
+
+        if self._doc is None:
+            self._doc = Documento(self.sheet_id, **self.creds)
+        return self._doc
+
+    def hojas(self) -> list[str]:
         if self._hojas is None:
-            self._hojas = list_worksheets(self.sheet_id, **self.creds)
+            self._hojas = self._documento().worksheets()
         return self._hojas
 
     def filas(self, hoja: str) -> list[list[Any]]:
-        from integrations.google_sheets import fetch_values, serial_to_date
+        from integrations.google_sheets import serial_to_date
 
         real = match_sheet(self.hojas(), hoja)
         if real is None:
             return []
         if real in self._cache:
             return self._cache[real]
-        grid = fetch_values(self.sheet_id, real, **self.creds)
+        grid = self._documento().values(real)
         if grid:
             # Which columns are dates is read from the header, once.
             cols = {i for i, h in enumerate(grid[0])
@@ -139,6 +188,7 @@ class FuenteSheets:
 
     def cerrar(self):
         self._cache.clear()
+        self._doc = None
 
 
 def abrir(origen: str, *, creds_file: str = "", creds_json: str = "") -> Fuente:

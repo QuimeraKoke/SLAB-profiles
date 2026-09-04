@@ -12,11 +12,11 @@ Thin wrapper over gspread + a service-account credential. Mirrors the
 `integrations/api_football` package shape (client + exceptions).
 """
 
-from .client import (fetch_rows, fetch_values, list_worksheets, serial_to_date,
-                     SERIAL_EPOCH)
+from .client import (Documento, fetch_rows, fetch_values, list_worksheets,
+                     serial_to_date, SERIAL_EPOCH)
 from .exceptions import GoogleSheetsError
 
 __all__ = [
-    "fetch_rows", "fetch_values", "list_worksheets", "serial_to_date",
-    "SERIAL_EPOCH", "GoogleSheetsError",
+    "Documento", "fetch_rows", "fetch_values", "list_worksheets",
+    "serial_to_date", "SERIAL_EPOCH", "GoogleSheetsError",
 ]

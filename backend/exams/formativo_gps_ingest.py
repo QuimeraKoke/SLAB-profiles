@@ -176,11 +176,12 @@ class Reporte:
     por_hoja: dict = dc_field(default_factory=lambda: defaultdict(int))
     columnas_sin_mapear: dict = dc_field(default_factory=dict)
     columnas_desconocidas: dict = dc_field(default_factory=dict)
+    fechas_invertidas: dict = dc_field(default_factory=dict)
 
 
 def parse_workbook(
     origen: str, *, creds_file: str = "", creds_json: str = "",
-) -> tuple[list[Fila], dict[str, list[str]], dict[str, list[str]]]:
+) -> tuple[list[Fila], dict[str, list[str]], dict[str, list[str]], dict[str, list]]:
     """`origen` is an .xlsx path or a Google Sheets id — see formativo_sources."""
     from exams.formativo_sources import abrir, match_sheet
 
@@ -188,6 +189,7 @@ def parse_workbook(
     filas: list[Fila] = []
     faltantes: dict[str, list[str]] = {}
     desconocidas: dict[str, list[str]] = {}
+    fechas_raras: dict[str, list] = {}
     hojas = fuente.hojas()
     # Excluded by NAME, resolved against the live titles: an export truncates a
     # tab to 31 chars, so `WC CLUBES` may not be spelled identically.
@@ -195,25 +197,30 @@ def parse_workbook(
     for hoja in hojas:
         if hoja in excluidas:
             continue
-        nuevas, sin_mapear, sin_reconocer = _parse_sheet(fuente.filas(hoja), hoja)
+        nuevas, sin_mapear, sin_reconocer, invertidas = _parse_sheet(
+            fuente.filas(hoja), hoja)
         filas.extend(nuevas)
         if sin_mapear:
             faltantes[hoja] = sin_mapear
         if sin_reconocer:
             desconocidas[hoja] = sin_reconocer
+        if invertidas:
+            fechas_raras[hoja] = invertidas
     fuente.cerrar()
-    return filas, faltantes, desconocidas
+    return filas, faltantes, desconocidas, fechas_raras
 
 
-def _parse_sheet(grid: list, hoja: str) -> tuple[list[Fila], list[str], list[str]]:
+def _parse_sheet(
+    grid: list, hoja: str,
+) -> tuple[list[Fila], list[str], list[str], list]:
     if not grid:
-        return [], [], []
+        return [], [], [], []
     rows = iter(grid[1:])
     crudos = [str(c or "").strip() for c in grid[0]]
     cab = [norm(c) for c in crudos]
     ix = {c: i for i, c in enumerate(cab) if c}
     if "JUGADOR" not in ix:
-        return [], [], []
+        return [], [], [], []
 
     # Resolve the column map once. First pattern wins, and a field is claimed
     # only once so `SPRINT (m)` cannot also answer for `SPRINT (#)`.
@@ -237,6 +244,7 @@ def _parse_sheet(grid: list, hoja: str) -> tuple[list[Fila], list[str], list[str
     i_marcas = [ix[m] for m in MARCAS_PARTIDO if m in ix]
 
     faltantes = sorted(ESPERADAS - tomados)
+    fechas_en_orden: list[tuple[int, date]] = []
     # The mirror risk of a hand-kept spreadsheet. A missing metric is loud
     # already; a column the club ADDS is silent — it just never arrives, and
     # the run still reports a full load. So anything that is neither mapped
@@ -259,13 +267,19 @@ def _parse_sheet(grid: list, hoja: str) -> tuple[list[Fila], list[str], list[str
             valor = _num(get(i))
             if valor is not None:
                 datos[key] = valor
+        if dia is not None:
+            # `n_fila` cuenta como lo ve un humano en la planilla: la cabecera
+            # es la 1, así que el primer dato es la 2.
+            fechas_en_orden.append((len(fechas_en_orden) + 2, dia))
         filas.append(Fila(
             hoja=hoja, nombre=nombre.strip(), dob=_fecha(get(i_dob)), dia=dia,
             codigo=str(get(i_cod) or "").strip().upper(),
             es_partido=any(get(i) not in (None, "") for i in i_marcas),
             datos=datos, observacion=str(get(i_obs) or "").strip(),
         ))
-    return filas, faltantes, desconocidas
+    from exams.formativo_sources import fechas_invertidas
+
+    return filas, faltantes, desconocidas, fechas_invertidas(fechas_en_orden)
 
 
 def build_matcher(club: Club):
@@ -331,7 +345,7 @@ def _descartar_fuera_de_rango(template: ExamTemplate, datos: dict) -> list[str]:
 def run(origen: str, club: Club, *, commit: bool = False,
         fire_alerts: bool = False, solo_hojas: set[str] | None = None,
         creds_file: str = "", creds_json: str = "") -> Reporte:
-    filas, faltantes, desconocidas = parse_workbook(
+    filas, faltantes, desconocidas, fechas_raras = parse_workbook(
         origen, creds_file=creds_file, creds_json=creds_json)
     if solo_hojas:
         filas = [f for f in filas if f.hoja in solo_hojas]
@@ -340,6 +354,7 @@ def run(origen: str, club: Club, *, commit: bool = False,
     rep = Reporte()
     rep.columnas_sin_mapear = faltantes
     rep.columnas_desconocidas = desconocidas
+    rep.fechas_invertidas = fechas_raras
 
     plantillas: dict[str, ExamTemplate | None] = {}
     for slug in (SLUG_PARTIDO, SLUG_SESION):

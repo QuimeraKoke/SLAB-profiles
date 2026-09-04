@@ -59,6 +59,42 @@ def _client(creds_file: str, creds_json: str):
     return gspread.authorize(_load_credentials(creds_file, creds_json))
 
 
+class Documento:
+    """One open spreadsheet, reused across worksheet reads.
+
+    `open_by_key` costs an API request of its own (it fetches the document
+    metadata), so opening per worksheet doubles the request count and burns the
+    quota: reading the club's two documents that way tripped Sheets'
+    "Read requests per minute per user" (60) less than a minute in. One handle
+    per sync is ~17 requests instead of ~34.
+    """
+
+    def __init__(self, sheet_id: str, *, creds_file: str = "",
+                 creds_json: str = ""):
+        if not sheet_id or not (creds_file or creds_json):
+            raise GoogleSheetsError("Falta el id de la hoja o las credenciales.")
+        try:
+            self._sheet = _client(creds_file, creds_json).open_by_key(sheet_id)
+        except GoogleSheetsError:
+            raise
+        except Exception as exc:
+            raise GoogleSheetsError(f"No se pudo abrir el documento: {exc}")
+
+    def worksheets(self) -> list[str]:
+        try:
+            return [w.title for w in self._sheet.worksheets()]
+        except Exception as exc:
+            raise GoogleSheetsError(f"No se pudieron listar las hojas: {exc}")
+
+    def values(self, worksheet: str) -> list[list[Any]]:
+        """Raw grid, unformatted. See `fetch_values` for why unformatted."""
+        try:
+            ws = self._sheet.worksheet(worksheet)
+            return ws.get_values(value_render_option="UNFORMATTED_VALUE")
+        except Exception as exc:
+            raise GoogleSheetsError(f"No se pudo leer la hoja '{worksheet}': {exc}")
+
+
 def list_worksheets(
     sheet_id: str, *, creds_file: str = "", creds_json: str = "",
 ) -> list[str]:

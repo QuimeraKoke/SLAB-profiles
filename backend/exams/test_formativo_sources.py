@@ -20,7 +20,7 @@ from tempfile import TemporaryDirectory
 from django.test import SimpleTestCase
 
 from exams.formativo_sources import (FuenteSheets, FuenteXlsx, abrir,
-                                     match_sheet)
+                                     fechas_invertidas, match_sheet)
 from integrations.google_sheets import SERIAL_EPOCH, serial_to_date
 
 
@@ -163,6 +163,39 @@ class FuenteSheetsTests(SimpleTestCase):
         self.assertEqual(calls["n"], 1)
 
 
+class FechasInvertidasTests(SimpleTestCase):
+    """El detector de día/mes por orden de fila."""
+
+    def test_detecta_el_caso_real_de_las_hojas(self):
+        # U15 fila 968: la anterior es 2025-11-10 y esta 2025-10-11.
+        out = fechas_invertidas([(2, date(2025, 11, 10)), (3, date(2025, 10, 11))])
+        self.assertEqual(out, [(3, date(2025, 11, 10), date(2025, 10, 11),
+                                date(2025, 11, 10))])
+
+    def test_no_marca_el_desorden_por_bloques(self):
+        """`NEUROMUSCULAR` y `RESISTENCIA` traen 57 filas fuera de orden.
+
+        El club las agrupa por test, no por fecha. Marcarlas todas enterraría
+        las cuatro reales en ruido, así que sólo cuenta cuando invertir el día
+        y el mes DEVUELVE la fila al orden.
+        """
+        # 2025-03-20 fuera de orden, pero invertirla da un mes 20: imposible.
+        self.assertEqual(
+            fechas_invertidas([(2, date(2025, 8, 1)), (3, date(2025, 3, 20))]), [])
+
+    def test_no_marca_un_dia_mayor_a_12(self):
+        # Si el día no puede ser un mes, no hay inversión posible.
+        self.assertEqual(
+            fechas_invertidas([(2, date(2025, 5, 30)), (3, date(2025, 4, 25))]), [])
+
+    def test_una_secuencia_ordenada_no_reporta_nada(self):
+        self.assertEqual(fechas_invertidas(
+            [(2, date(2025, 1, 5)), (3, date(2025, 1, 6)), (4, date(2025, 2, 1))]), [])
+
+    def test_una_sola_fecha_no_reporta_nada(self):
+        self.assertEqual(fechas_invertidas([(2, date(2025, 1, 5))]), [])
+
+
 class AbrirTests(SimpleTestCase):
     def test_una_ruta_xlsx_da_la_fuente_de_archivo(self):
         self.assertIsInstance(abrir("/tmp/x.xlsx"), FuenteXlsx)
@@ -174,26 +207,39 @@ class AbrirTests(SimpleTestCase):
 
 
 class _fake_fetch:
-    """Reemplaza `fetch_values` por una grilla fija y cuenta las llamadas."""
+    """Reemplaza `Documento` por una grilla fija y cuenta las lecturas.
+
+    Se parchea el documento y no `fetch_values` porque la fuente abre UN
+    handle por sincronización: abrir por hoja costaba un request extra cada
+    vez y reventaba la cuota de 60 lecturas por minuto.
+    """
 
     def __init__(self, grid):
         self.grid = grid
         self.calls = {"n": 0}
 
     def __enter__(self):
-        import integrations.google_sheets as gs
+        import exams.formativo_sources as fs
 
-        self._orig = gs.fetch_values
+        grid, calls = self.grid, self.calls
 
-        def fake(sheet_id, worksheet, **kw):
-            self.calls["n"] += 1
-            return [list(r) for r in self.grid]
+        class DocFalso:
+            def __init__(self, *a, **kw):
+                pass
 
-        gs.fetch_values = fake
-        return self.calls
+            def worksheets(self):
+                return ["U20"]
+
+            def values(self, worksheet):
+                calls["n"] += 1
+                return [list(r) for r in grid]
+
+        self._orig = fs.FuenteSheets._documento
+        fs.FuenteSheets._documento = lambda self: DocFalso()
+        return calls
 
     def __exit__(self, *exc):
-        import integrations.google_sheets as gs
+        import exams.formativo_sources as fs
 
-        gs.fetch_values = self._orig
+        fs.FuenteSheets._documento = self._orig
         return False

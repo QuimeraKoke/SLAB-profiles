@@ -83,19 +83,27 @@ app.conf.beat_schedule = {
         "kwargs": {"mode": "reconcile", "since_days": 3},
     },
     # Formativo: the club's two live Google Sheets (GPS + physical tests).
-    # Twice a day, not hourly, for three reasons: each run reads both documents
-    # whole (~20k rows, a couple of minutes), the club edits them in working
-    # bursts rather than continuously, and both ingests are idempotent so a
-    # missed tick costs nothing. 06:40 lands before the morning meeting; 20:40
-    # picks up the day's training. Minutes are off the :00/:15/:30 lanes the
-    # other integrations use. No-op unless the sheet ids + credentials are set.
-    "formativo-sheets-morning": {
+    # Hourly — the staff want the data as soon as it is typed, and a full run
+    # measures 13 s: 7,5 s to read the 9 GPS tabs (15.454 rows), 5,3 s for the
+    # 6 evaluation tabs (5.096), plus the dedup query. That is 0,4% of the hour.
+    #
+    # Sheets caps a service account at 60 reads/minute and a run costs ~17
+    # requests, so the ceiling is nowhere near. It was reachable, though: the
+    # first version opened the document once PER WORKSHEET, doubling the
+    # requests, and tripped a 429 in under a minute — hence `Documento`.
+    #
+    # Each run reads the sheets WHOLE rather than tailing the new rows. The
+    # tabs are append-ordered, so a tail read would work, but it buys ~3 s of
+    # the 13 (the cost is HTTP round-trips, not payload: 20 rows take 0,28 s
+    # and 4.000 take 0,49 s) and it would stop picking up the club's edits to
+    # older rows — which is exactly what they are about to do with the 9 birth
+    # dates and 200 undated rows still pending.
+    #
+    # Minute 25 keeps it off the :00 (fixtures), :15 (Catapult) and :30 (VALD)
+    # lanes. No-op unless the sheet ids + credentials are set.
+    "formativo-sheets-hourly": {
         "task": "exams.tasks.sync_formativo_sheets",
-        "schedule": crontab(minute=40, hour=6),
-    },
-    "formativo-sheets-evening": {
-        "task": "exams.tasks.sync_formativo_sheets",
-        "schedule": crontab(minute=40, hour=20),
+        "schedule": crontab(minute=25),
     },
     # Catapult OpenField GPS sync (activities → gps_partido/gps_sesion). Hourly
     # at :15 (staggered from fixtures :00 and VALD :30). Gap-fill / idempotent —
