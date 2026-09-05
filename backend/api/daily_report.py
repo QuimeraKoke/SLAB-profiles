@@ -492,9 +492,22 @@ def _wellness_roles_block(category, players, pids, target_date) -> dict:
     for the categories that have one.
 
     Only the Formativo fills a post-session form, so the key is absent for
-    every other category and the front end renders no tab at all — an empty
+    every other category and the front end renders nothing at all — an empty
     "Check-OUT 0/25" would read as a compliance failure rather than as a form
     that squad never had.
+
+    ⚠️ The date is NOT `target_date`. Measured over the club's 49.573
+    check-outs, they arrive between 11:00 and 18:00 (peak 17–18) against the
+    check-in's 07–09; almost none before 10. The Daily is an 8 AM meeting, so
+    "who is missing today's check-out" would list the whole squad every single
+    morning — the session has not happened yet. What the staff actually asks at
+    that hour is who never closed the LAST session.
+
+    So the block self-calibrates to the most recent day with any check-out
+    activity on or before the viewed date, and reports that date so the screen
+    can name it. Same trick `build_adherence` uses for its denominator, and it
+    behaves correctly when navigating to a past meeting day: that day if it had
+    a session, the one before it otherwise.
     """
     from api import wellness as w
 
@@ -502,8 +515,14 @@ def _wellness_roles_block(category, players, pids, target_date) -> dict:
     out: dict = {"wellness_roles": roles}
     if w.ROLE_CHECKOUT not in roles:
         return out
-    hechos = _responded_on(category, pids, target_date, role=w.ROLE_CHECKOUT)
+
+    dia = _ultimo_dia_con_actividad(category, pids, target_date,
+                                    role=w.ROLE_CHECKOUT)
+    hechos = (_responded_on(category, pids, dia, role=w.ROLE_CHECKOUT)
+              if dia else set())
     out["checkout_hoy"] = {
+        "date": dia.isoformat() if dia else None,
+        "is_target_date": dia == target_date if dia else False,
         "n": len(hechos),
         "expected": len(players),
         "no_respondieron": [
@@ -514,9 +533,39 @@ def _wellness_roles_block(category, players, pids, target_date) -> dict:
                 "injured": p.status != Player.STATUS_AVAILABLE,
             }
             for p in players if p.id not in hechos
-        ],
+        ] if dia else [],
     }
     return out
+
+
+def _ultimo_dia_con_actividad(category, pids, target_date, role=None):
+    """Most recent local date ≤ `target_date` with any response, or None.
+
+    Looks back a bounded window rather than scanning the whole history: two
+    weeks covers a normal break, and without the bound a category that stopped
+    filling the form a year ago would surface a year-old list as if it were
+    the last session.
+    """
+    from datetime import timedelta
+
+    from api import wellness as w
+    from exams.models import ExamResult
+
+    tids = [t.id for t in w.templates_for(category, role=role or w.ROLE_CHECKIN)]
+    if not tids or not pids:
+        return None
+    recientes = (
+        ExamResult.objects.filter(
+            player_id__in=pids, template_id__in=tids,
+            recorded_at__date__lte=target_date,
+            recorded_at__date__gte=target_date - timedelta(days=14),
+        )
+        .order_by("-recorded_at")
+        .values_list("recorded_at", flat=True)[:1]
+    )
+    for rec in recientes:
+        return timezone.localtime(rec).date()
+    return None
 
 
 def _responded_on(category, pids, target_date, role=None) -> set:

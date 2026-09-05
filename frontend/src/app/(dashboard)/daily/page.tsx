@@ -34,6 +34,7 @@ import type {
   DailyNote,
   DailyReport,
   DailySummaryPayload,
+  DailyWellnessDay,
 } from "@/components/daily/types";
 import styles from "./page.module.css";
 
@@ -60,6 +61,20 @@ function longDate(iso: string): string {
     day: "numeric",
     month: "long",
   });
+}
+
+/** " · del 4 sep" when the block describes a day other than the one on screen.
+ *
+ *  The Check-OUT block self-calibrates to the last session, which at 8 AM is
+ *  yesterday's — check-outs arrive between 11:00 and 18:00. Without saying so,
+ *  "No respondieron el check-out" reads as an accusation about a session that
+ *  has not happened yet. */
+function diaDelBloque(bloque: DailyWellnessDay): string {
+  if (!bloque.date || bloque.is_target_date) return "";
+  const [, m, d] = bloque.date.split("-").map(Number);
+  const mes = ["ene", "feb", "mar", "abr", "may", "jun",
+               "jul", "ago", "sep", "oct", "nov", "dic"][m - 1];
+  return ` · del ${d} ${mes}`;
 }
 
 function relDays(iso: string): string {
@@ -312,7 +327,7 @@ export default function DailyPage() {
           value={`${wellnessDay.n}/${wellnessDay.expected}`}
           detail={
             wellnessRole === "checkout"
-              ? "check-outs respondidos"
+              ? `check-outs respondidos${diaDelBloque(wellnessDay)}`
               : "check-ins respondidos"
           }
           tabs={
@@ -331,6 +346,7 @@ export default function DailyPage() {
         <div className={styles.noResp}>
           <span className={styles.noRespTitle}>
             No respondieron el {ROLE_LABEL[wellnessRole].toLowerCase()}
+            {wellnessRole === "checkout" && diaDelBloque(wellnessDay)}
             <span className={styles.noRespCount}>
               {wellnessDay.no_respondieron.length}
             </span>

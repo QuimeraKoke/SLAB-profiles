@@ -11,6 +11,14 @@ export interface DailyWellnessDay {
     position: string | null;
     injured: boolean;
   }[];
+  /** Check-OUT only: the day the block actually describes. Not always the
+   *  meeting date — check-outs arrive 11:00–18:00, so at 8 AM the useful
+   *  question is who never closed the LAST session. Null if no session in
+   *  the past two weeks. */
+  date?: string | null;
+  /** True when `date` IS the viewed date, so the screen can say "de hoy"
+   *  instead of naming another day. */
+  is_target_date?: boolean;
 }
 
 export interface DailyKpis {

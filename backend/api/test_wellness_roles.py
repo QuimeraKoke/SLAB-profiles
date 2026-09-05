@@ -240,3 +240,90 @@ class CommandCenterCheckoutTests(TestCase):
         self.assertEqual(cc["kpis"]["wellness"]["value"], 100)
         self.assertEqual(cc["kpis"]["wellness"]["responses"], 1)
         self.assertEqual(cc["checkin_adherence"]["responded"], 1)
+
+
+class DailyCheckoutDiaTests(TestCase):
+    """La fecha del bloque de Check-OUT del Daily.
+
+    Medido sobre las 49.573 respuestas del club: los check-out llegan entre las
+    11:00 y las 18:00 (pico 17–18) contra el 07–09 del check-in, y casi ninguno
+    antes de las 10. El Daily es la reunión de las 8, así que "quién no
+    respondió el check-out de HOY" listaría al plantel completo todas las
+    mañanas — por una sesión que todavía no pasó.
+    """
+
+    def setUp(self):
+        base = WellnessRoleResolverTests()
+        base.setUp()
+        self.__dict__.update(base.__dict__)
+        self.jugador = Player.objects.create(
+            category=self.youth, first_name="A", last_name="B", is_active=True)
+        self.otro = Player.objects.create(
+            category=self.youth, first_name="C", last_name="D", is_active=True)
+
+    def _bloque(self, fecha, categoria=None):
+        from api.daily_report import _wellness_roles_block
+
+        cat = categoria or self.youth
+        jugadores = list(Player.objects.filter(category=cat, is_active=True))
+        return _wellness_roles_block(cat, jugadores,
+                                     [p.id for p in jugadores], fecha)
+
+    def _checkout(self, player, dia, hora=17):
+        from datetime import datetime
+
+        ExamResult.objects.create(
+            player=player, template=self.checkout,
+            recorded_at=timezone.make_aware(datetime(dia.year, dia.month, dia.day, hora)),
+            result_data={"rpe": 7, "duracion_min": 60})
+
+    def test_sin_datos_de_hoy_cae_a_la_ultima_sesion(self):
+        from datetime import timedelta
+
+        hoy = timezone.localdate()
+        ayer = hoy - timedelta(days=1)
+        self._checkout(self.jugador, ayer)
+        bloque = self._bloque(hoy)["checkout_hoy"]
+        self.assertEqual(bloque["date"], ayer.isoformat())
+        self.assertFalse(bloque["is_target_date"], "la pantalla tiene que nombrar el día")
+        self.assertEqual(bloque["n"], 1)
+        # El que NO cerró la sesión de ayer: eso es lo que se pregunta a las 8.
+        self.assertEqual([p["name"] for p in bloque["no_respondieron"]], ["C D"])
+
+    def test_con_datos_del_dia_usa_el_dia(self):
+        hoy = timezone.localdate()
+        self._checkout(self.jugador, hoy, hora=17)
+        bloque = self._bloque(hoy)["checkout_hoy"]
+        self.assertEqual(bloque["date"], hoy.isoformat())
+        self.assertTrue(bloque["is_target_date"])
+
+    def test_una_fecha_pasada_no_mira_hacia_adelante(self):
+        """Navegar a un día pasado no puede traer el check-out de después."""
+        from datetime import timedelta
+
+        hoy = timezone.localdate()
+        self._checkout(self.jugador, hoy)
+        bloque = self._bloque(hoy - timedelta(days=1))["checkout_hoy"]
+        self.assertIsNone(bloque["date"])
+        self.assertEqual(bloque["no_respondieron"], [],
+                         "sin sesión conocida no se acusa a nadie")
+
+    def test_una_categoria_muerta_no_resucita_una_lista_vieja(self):
+        """La ventana es de dos semanas.
+
+        Sin cota, una categoría que dejó de llenar el formulario hace un año
+        mostraría esa lista de hace un año como si fuera la última sesión.
+        """
+        from datetime import timedelta
+
+        hoy = timezone.localdate()
+        self._checkout(self.jugador, hoy - timedelta(days=40))
+        bloque = self._bloque(hoy)["checkout_hoy"]
+        self.assertIsNone(bloque["date"])
+
+    def test_el_primer_equipo_no_trae_el_bloque(self):
+        Player.objects.create(category=self.senior, first_name="E",
+                              last_name="F", is_active=True)
+        bloque = self._bloque(timezone.localdate(), self.senior)
+        self.assertEqual(bloque["wellness_roles"], ["checkin"])
+        self.assertNotIn("checkout_hoy", bloque)
