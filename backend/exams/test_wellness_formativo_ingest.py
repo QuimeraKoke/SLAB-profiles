@@ -353,3 +353,23 @@ class IngestaTests(TestCase):
                           titulo="SUB 13 - 2026 - CAT 13", club=self.club,
                           rol="checkin", commit=True)
         self.assertEqual((rep.filas, rep.creados), (0, 0))
+
+
+class EsperaDeReintentoTests(SimpleTestCase):
+    """Un 429 no es un fallo de red: es la cuota por MINUTO."""
+
+    def test_la_cuota_espera_medio_minuto(self):
+        for exc in (Exception("APIError: [429]: Quota exceeded for quota metric"),
+                    Exception("Quota exceeded for quota metric 'Read requests'")):
+            self.assertGreaterEqual(ing.espera_reintento(exc, 0), 30)
+
+    def test_la_espera_crece_con_el_intento(self):
+        exc = Exception("[429] Quota exceeded")
+        self.assertLess(ing.espera_reintento(exc, 0), ing.espera_reintento(exc, 1))
+
+    def test_un_503_no_espera_un_minuto(self):
+        """Reintentar rápido ante un 503 transitorio es lo correcto: esperar
+        medio minuto por cada uno de los ocho documentos convertiría el sync en
+        cuatro minutos de espera por un fallo que se resuelve solo."""
+        exc = Exception("APIError: [503]: The service is currently unavailable.")
+        self.assertLessEqual(ing.espera_reintento(exc, 0), 5)

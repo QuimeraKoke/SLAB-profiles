@@ -473,6 +473,22 @@ def parsear(grid: list[list[Any]], *, rol: str) -> tuple[list[dict], list[str]]:
     return filas, sin_mapear
 
 
+def espera_reintento(exc, intento: int) -> float:
+    """Segundos a esperar antes del próximo intento.
+
+    Un 429 de Sheets no es un fallo transitorio de red: es la cuota de 60
+    lecturas por minuto por usuario, y su ventana es de un minuto. Reintentar a
+    los 3 y 6 segundos vuelve a chocar contra la misma pared — medido en prod,
+    dos de los ocho documentos fallaron así cuando el sync corrió pegado a otra
+    lectura. Ante cuota se espera de a medio minuto; ante cualquier otra cosa
+    alcanza con unos segundos.
+    """
+    texto = str(exc)
+    if "429" in texto or "Quota exceeded" in texto:
+        return 30.0 * (intento + 1)
+    return 3.0 * (intento + 1)
+
+
 def _disparar_alertas(results: list) -> int:
     """`bulk_create` fires no signals, so the alert evaluation is explicit.
 

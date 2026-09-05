@@ -106,14 +106,16 @@ class Command(BaseCommand):
                 f"{len(fallidos)} documento(s)/hoja(s) fallaron — ver arriba.")
 
     def _abrir(self, Documento, sid, creds, intentos=3):
-        """Reintenta: Google devolvió un 503 en uno de ocho documentos."""
+        """Reintenta: Google devolvió un 503 en uno de ocho documentos, y un
+        429 de cuota en otros dos cuando el sync corrió pegado a otra lectura.
+        La espera la decide `espera_reintento`, que distingue los dos casos."""
         for i in range(intentos):
             try:
                 return Documento(sid, **creds)
-            except Exception:
+            except Exception as exc:
                 if i == intentos - 1:
                     raise
-                time.sleep(3 * (i + 1))
+                time.sleep(ingest.espera_reintento(exc, i))
 
     def _linea(self, r):
         partes = [f"{r.creados:6} nuevos", f"{r.repetidos:6} ya estaban"]

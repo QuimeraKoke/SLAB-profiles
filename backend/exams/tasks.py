@@ -272,7 +272,9 @@ def sync_wellness_formativo(commit: bool = True, dias: int | None = 7,
                         salida["fallidos"].append(f"{sid[:16]}: {exc}")
                         salida["status"] = "partial"
                     else:
-                        time.sleep(3 * (intento + 1))
+                        # Un 429 es la cuota por MINUTO: esperar 3 s vuelve a
+                        # chocar contra la misma pared.
+                        time.sleep(ingest.espera_reintento(exc, intento))
             if doc is None:
                 continue
             for rol in ("checkin", "checkout"):
