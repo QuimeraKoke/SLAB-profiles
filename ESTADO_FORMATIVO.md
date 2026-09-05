@@ -119,15 +119,55 @@ planilla (> 20). El gradiente es fisiológicamente coherente, así que la
 diferencia no distorsiona la lectura gruesa, pero la clave de procedencia
 permite auditarlo cuando importe.
 
-### 2.4 Wellness del formativo — plantilla propia, sin importar
+### 2.4 ✅ Wellness del formativo — plantillas y superficies listas (2026-09-04)
 
-El club confirma que **no sigue la regla de Primer Equipo**, así que no se
-reusa `checkin_fisico`. Los 8 archivos (~65 MB) siguen sin tocar y el sync de
-Google Form alimenta sólo a Primer Equipo. Falta definir los campos desde esos
-archivos y decidir si el formulario va a cubrir el formativo de acá en
-adelante.
+El club **no sigue la regla de Primer Equipo**, así que no se reusa
+`checkin_fisico`. Se hizo lo que faltaba del lado nuestro:
 
-### 2.4 Desplegar
+**Las plantillas** (`seed_wellness_formativo`, 12 categorías):
+`checkin_formativo` (13 campos) y `checkout_formativo` (16 campos). `SUMA` y
+`UA` se **calculan**, no se importan — sus encabezados son inconsistentes entre
+los ocho documentos (`SUMA` en cuatro, un `0` pelado en uno, `UA` en seis y
+`AU` en uno) y una columna cuyo nombre es un typo es como una métrica se vacía
+en silencio.
+
+**La plantilla declara su escala.** `config_schema["wellness"]` lleva `role`,
+`items`, `inverted` y `dimensions`, y `api/wellness.py` los lee en vez de
+tenerlos hardcodeados. Vive en el schema y no en una columna del modelo porque
+así **se versiona con el formulario**: cuando el club lo cambie, la versión
+nueva trae sus propios ítems en vez de que los viejos sigan aplicando calladamente.
+Una plantilla sin bloque `wellness` cae a las constantes anteriores, que es
+exactamente lo que `checkin_fisico` declaraba de forma implícita.
+
+**Las superficies dejaron de mirar el slug.** El Daily, el Centro de mando,
+`readiness` y el roster resuelven la plantilla por categoría. Sin esto los
+65.000 check-ins del formativo entraban a una pantalla que consultaba
+`checkin_fisico`, no encontraba nada y reportaba "0/68 respondieron" — igual
+que un plantel que no contestó.
+
+⚠️ Tres de los cinco ítems del formativo están **invertidos** (fatiga, estrés,
+daño muscular) contra los cinco de Primer Equipo que apuntan todos igual.
+Promediarlos crudos le da 84 a un jugador destruido, y el número sigue
+pareciendo un puntaje de wellness. Por eso existe `score_for(category, data)`:
+resuelve ítems, máximos e invertidos juntos, y **hay que usarlo en vez de
+`score()`**.
+
+**El check-out en el frontend** (2026-09-04): el payload trae `wellness_roles`
+por categoría y el toggle Check-IN/Check-OUT aparece sólo donde hay las dos
+formas. Está en el KPI de wellness y en la tarjeta de adherencia del Centro de
+mando, y en el KPI del Daily. El estado va en la URL (`?wellness=checkout`),
+como el resto de las pestañas de la app. Primer Equipo no ve toggle ni fila
+"Check-OUT" en calidad de datos: un "Sin plantilla" ahí se leería como una
+falla de configuración y no como un formulario que ese plantel nunca llenó.
+
+**Falta el importador.** Los 8 documentos (65.067 filas de CHECK IN + 53.040
+de CHECK OUT) siguen sin cargar, y su cron. El match es **por nombre** — el
+orden de columnas cambia entre documentos — con alias de encabezado
+(`CALIDAD SUEÑO`/`CALIDAD DEL SUEÑO`, `Peso (kg)`/`Peso (kg) solo número`) y la
+categoría sale del título del documento (`CAT 15` → cohorte 2015; `SUB 21` →
+bracket Sub 20).
+
+### 2.5 Desplegar
 
 **22 commits sin subir.** Es toda esta etapa más las anteriores. Local está por
 delante de prod y la brecha crece con cada fase.

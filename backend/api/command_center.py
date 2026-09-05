@@ -64,7 +64,9 @@ def build_command_center(category) -> dict:
         for s in PlayerMetricState.objects.filter(player_id__in=player_ids)
     }
 
-    return {
+    from api import wellness as w
+
+    payload = {
         "category": category.name,
         "generated_at": now.isoformat(),
         "context": _context(category, players, states, crit_player_ids, now),
@@ -74,7 +76,18 @@ def build_command_center(category) -> dict:
         "data_quality": _data_quality(category, player_ids, now),
         "checkin_adherence": _checkin_adherence(category, players, now),
         "recent": _recent(alerts),
+        # Which wellness forms this category fills. The Formativo also fills a
+        # post-session Check-OUT (RPE, internal load, soreness); Primer Equipo
+        # does not, so the front end asks instead of assuming both exist.
+        "wellness_roles": w.roles_for(category),
     }
+    if w.ROLE_CHECKOUT in payload["wellness_roles"]:
+        payload["checkout"] = {
+            "wellness": _kpi_wellness(category, players, role=w.ROLE_CHECKOUT),
+            "adherence": _checkin_adherence(category, players, now,
+                                            role=w.ROLE_CHECKOUT),
+        }
+    return payload
 
 
 # ─── Context (next match + pre-match risk) ────────────────────────────
@@ -221,25 +234,34 @@ def _kpi_carga(category, players, now) -> dict:
     }
 
 
-def _kpi_wellness(category, players) -> dict:
-    """Team wellness from the real Check-IN data (`checkin_fisico`), each
-    item normalized by its own scale (recuperación ÷10, the others ÷5) and
-    averaged to 0–100. See `api/wellness.py`."""
+def _kpi_wellness(category, players, *, role: str = None) -> dict:
+    """Team wellness from the category's own Check-IN (or Check-OUT) form, each
+    item normalized by its own scale and averaged to 0–100.
+
+    Which template, which items, their maxima and which are inverted all come
+    from the template's `wellness` block — Primer Equipo asks recuperación
+    (1–10) and four 1–5 items where high is good; the Formativo asks five 1–5
+    items of which three are inverted. See `api/wellness.py`."""
     from api import wellness as w
 
+    role = role or w.ROLE_CHECKIN
     pids = [p.id for p in players]
-    fmax = w.field_max(category)
-    recent = w.recent_by_player(category, pids, limit=1)
+    fmax = w.field_max(category, role=role)
+    fmin = w.field_min(category, role=role)
+    items = w.items_for(category, role=role)
+    inverted = w.inverted_for(category, role=role)
+    dims = w.dimensions_for(category, role=role)
+    recent = w.recent_by_player(category, pids, limit=1, role=role)
 
     scores: list[float] = []
-    dim_acc: dict[str, list[float]] = {k: [] for k, _ in w.DIMENSIONS}
+    dim_acc: dict[str, list[float]] = {k: [] for k, _ in dims}
     for datas in recent.values():
         latest = datas[0]
-        s = w.score(latest, fmax)
+        s = w.score(latest, fmax, items, inverted, fmin)
         if s is not None:
             scores.append(s)
-        for k, _ in w.DIMENSIONS:
-            dv = w.dimension_pct(latest, k, fmax)
+        for k, _ in dims:
+            dv = w.dimension_pct(latest, k, fmax, inverted, fmin)
             if dv is not None:
                 dim_acc[k].append(dv)
 
@@ -254,7 +276,7 @@ def _kpi_wellness(category, players) -> dict:
         "expected": len(players),
         "dimensions": [
             {"label": lbl, "value": round(sum(dim_acc[k]) / len(dim_acc[k]))}
-            for k, lbl in w.DIMENSIONS if dim_acc[k]
+            for k, lbl in dims if dim_acc[k]
         ],
     }
 
@@ -269,9 +291,11 @@ def _kpi_completitud(category, player_ids, now) -> dict:
         slug__in=[_GPS_MATCH_SLUG, _GPS_TRAIN_SLUG],
         applicable_categories=category,
     ).values_list("id", flat=True))
-    well_templates = list(ExamTemplate.objects.filter(
-        slug="checkin_fisico", applicable_categories=category,
-    ).values_list("id", flat=True))
+    from api import wellness as w
+
+    # Whichever check-in this category declares — `checkin_formativo` in the
+    # Formativo, `checkin_fisico` in Primer Equipo.
+    well_templates = [t.id for t in w.templates_for(category)]
 
     gps_n = (
         ExamResult.objects.filter(
@@ -306,17 +330,14 @@ def _kpi_completitud(category, player_ids, now) -> dict:
     }
 
 
-def _checkin_adherence(category, players, now) -> dict:
+def _checkin_adherence(category, players, now, *, role: str = None) -> dict:
     """Today's check-in adherence: BOTH the non-responders and the responders
     (each player deep-linkable to its ficha), so the card can label who's who.
     Informative — no alert. Feeds the Centro de mando adherence card."""
-    from api.wellness import WELLNESS_SLUG
+    from api import wellness as w
 
     today = timezone.localdate()
-    tids = list(
-        ExamTemplate.objects.filter(slug=WELLNESS_SLUG, applicable_categories=category)
-        .values_list("id", flat=True)
-    ) or list(ExamTemplate.objects.filter(slug=WELLNESS_SLUG).values_list("id", flat=True))
+    tids = [t.id for t in w.templates_for(category, role=role or w.ROLE_CHECKIN)]
     responded_ids = set(
         ExamResult.objects.filter(
             player_id__in=[p.id for p in players],
@@ -428,7 +449,7 @@ def _data_quality(category, player_ids, now) -> list[dict]:
     players that last upload covered. `last_at` is the most recent
     `recorded_at`; `players` counts the distinct players uploaded on that
     last day (e.g. the squad in the last match / training session)."""
-    from api import wellness as w  # WELLNESS_SLUG (real check-in template)
+    from api import wellness as w
 
     n = len(player_ids)
     today = timezone.localdate(now)
@@ -466,8 +487,13 @@ def _data_quality(category, player_ids, now) -> list[dict]:
 
     rows = [
         measured_row("GPS", [_GPS_MATCH_SLUG, _GPS_TRAIN_SLUG]),
-        measured_row("Wellness", [w.WELLNESS_SLUG]),
+        measured_row("Check-IN", [t.slug for t in w.templates_for(category)]),
     ]
+    # Only the categories that HAVE a check-out get the row; showing "Sin
+    # plantilla" to Primer Equipo would read as a gap in its setup.
+    salida = [t.slug for t in w.templates_for(category, role=w.ROLE_CHECKOUT)]
+    if salida:
+        rows.append(measured_row("Check-OUT", salida))
     # Sources we don't measure automatically yet — surfaced so the operator
     # knows they exist (no freshness data to show).
     for label in ("Médico", "Nutrición", "Isocinético"):

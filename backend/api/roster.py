@@ -93,13 +93,12 @@ def build_roster(category) -> dict:
 
 
 def _wellness_and_forma(category, pids: list) -> tuple[dict, dict]:
-    """Latest wellness (0–100, real `checkin_fisico` data, per-item-scale
-    normalized) + the "Tendencia wellness" sparkline. The sparkline shows the
-    **past 7 days** of check-ins (oldest→newest); the wellness value is the
-    most recent check-in regardless of date."""
+    """Latest wellness (0–100, from whichever check-in the category declares,
+    per-item-scale normalized) + the "Tendencia wellness" sparkline. The
+    sparkline shows the **past 7 days** of check-ins (oldest→newest); the
+    wellness value is the most recent check-in regardless of date."""
     from api import wellness as w
 
-    fmax = w.field_max(category)
     # Wellness value = the latest check-in (any date).
     latest = w.recent_by_player(category, pids, limit=1)
     # Tendencia sparkline = check-ins from the past 7 days only (with dates so
@@ -110,7 +109,7 @@ def _wellness_and_forma(category, pids: list) -> tuple[dict, dict]:
 
     wellness, forma = {}, {}
     for pid, datas in latest.items():
-        s = w.score(datas[0], fmax) if datas else None
+        s = w.score_for(category, datas[0]) if datas else None
         if s is not None:
             wellness[pid] = s
 
@@ -123,7 +122,7 @@ def _wellness_and_forma(category, pids: list) -> tuple[dict, dict]:
             d = timezone.localtime(rec).date()
             if d in by_day:
                 continue
-            s = w.score(data, fmax)
+            s = w.score_for(category, data)
             if s is not None:
                 by_day[d] = s
         if not by_day:

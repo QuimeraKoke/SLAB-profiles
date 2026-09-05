@@ -254,3 +254,9 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* The Check-IN/Check-OUT toggle under the adherence card's header. Absent for
+   the categories that only fill a check-in. */
+.railCard > [role="tablist"] {
+  margin: -4px 0 10px;
+}

@@ -53,9 +53,10 @@ def build_inputs(player) -> dict:
     from goals.models import Alert, AlertStatus
 
     cat = player.category
-    fmax = w.field_max(cat) if cat else {}
     recent = (w.recent_by_player(cat, [player.id], limit=8).get(player.id, []) if cat else [])
-    scores = [s for s in (w.score(d, fmax) for d in recent) if s is not None]
+    # Resolved per category: the Formativo's check-in asks different items and
+    # three of them are inverted, so a fixed item list scores it backwards.
+    scores = [s for s in (w.score_for(cat, d) for d in recent) if s is not None]
     wellness = scores[0] if scores else None
     baseline = round(sum(scores[1:]) / len(scores[1:])) if len(scores) >= 3 else None
     trend = (wellness - baseline) if (wellness is not None and baseline is not None) else None

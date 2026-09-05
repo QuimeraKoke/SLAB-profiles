@@ -157,7 +157,10 @@ CHECKOUT = {
         "role": "checkout",
         "items": [["rpe", "RPE"], ["dano_muscular", "Daño muscular"]],
         "inverted": ["rpe", "dano_muscular"],
-        "dimensions": [["rpe", "RPE"], ["carga_interna", "Carga interna"]],
+        # Both are 0–10 / 1–5 scales, which is what a percentage chip needs.
+        # `carga_interna` is NOT here on purpose: UA has no ceiling, so
+        # "420 UA" as a percentage of anything is a number that means nothing.
+        "dimensions": [["rpe", "RPE"], ["dano_muscular", "Daño muscular"]],
     },
 }
 

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Database,
   History,
@@ -19,11 +20,13 @@ import KpiStrip from "@/components/command/KpiStrip";
 import SquadStatus from "@/components/command/SquadStatus";
 import DecisionTable from "@/components/command/DecisionTable";
 import BriefingPanel from "@/components/command/BriefingPanel";
+import WellnessRoleTabs, { ROLE_LABEL } from "@/components/command/WellnessRoleTabs";
 import type {
   CommandCenter,
   CCDataQualityRow,
   CCRecentItem,
   CCCheckinAdherence,
+  WellnessRoleId,
 } from "@/components/command/types";
 import styles from "./page.module.css";
 
@@ -31,6 +34,27 @@ export default function CommandCenterPage() {
   const { categoryId, categories, loading: catLoading } = useCategoryContext();
   const [data, setData] = useState<CommandCenter | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useSearchParams();
+
+  // The check-in/check-out choice lives in the URL, like every other tab in
+  // the app: bookmarkable, refresh-safe and deep-linkable from an alert.
+  const roles = data?.wellness_roles ?? ["checkin"];
+  const requested = params.get("wellness");
+  const wellnessRole: WellnessRoleId =
+    requested === "checkout" && roles.includes("checkout") ? "checkout" : "checkin";
+
+  const setWellnessRole = useMemo(
+    () => (role: WellnessRoleId) => {
+      const next = new URLSearchParams(params.toString());
+      if (role === "checkin") next.delete("wellness");
+      else next.set("wellness", role);
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [params, pathname, router],
+  );
 
   useEffect(() => {
     if (!categoryId) return;
@@ -74,7 +98,13 @@ export default function CommandCenterPage() {
       <div className={styles.stack}>
         {/* Full-width hero + KPI strip across the whole canvas. */}
         <Hero context={data.context} />
-        <KpiStrip kpis={data.kpis} />
+        <KpiStrip
+          kpis={data.kpis}
+          wellnessRoles={roles}
+          wellnessRole={wellnessRole}
+          checkoutWellness={data.checkout?.wellness}
+          onWellnessRoleChange={setWellnessRole}
+        />
 
         {/* Below: main column + rail (Estado del plantel moved down here). */}
         <div className={styles.grid}>
@@ -85,7 +115,16 @@ export default function CommandCenterPage() {
 
           <aside className={styles.rail}>
             <SquadStatus squad={data.squad} />
-            <CheckinAdherence data={data.checkin_adherence} />
+            <CheckinAdherence
+              data={
+                wellnessRole === "checkout" && data.checkout
+                  ? data.checkout.adherence
+                  : data.checkin_adherence
+              }
+              roles={roles}
+              role={wellnessRole}
+              onRoleChange={setWellnessRole}
+            />
             <DataQuality rows={data.data_quality} />
             <QuickActions />
             <RecentActivity items={data.recent} />
@@ -120,7 +159,14 @@ function DataQuality({ rows }: { rows: CCDataQualityRow[] }) {
   );
 }
 
-function CheckinAdherence({ data }: { data: CCCheckinAdherence }) {
+function CheckinAdherence({
+  data, roles, role, onRoleChange,
+}: {
+  data: CCCheckinAdherence;
+  roles: WellnessRoleId[];
+  role: WellnessRoleId;
+  onRoleChange: (r: WellnessRoleId) => void;
+}) {
   const { responded, expected, pct, no_respondieron, respondieron } = data;
   const tone = pct == null ? "muted" : pct >= 90 ? "ok" : pct >= 60 ? "warn" : "crit";
   const [openMissing, setOpenMissing] = useState(true);
@@ -129,8 +175,16 @@ function CheckinAdherence({ data }: { data: CCCheckinAdherence }) {
     <div className={styles.railCard}>
       <div className={styles.railHead}>
         <HeartPulse size={15} aria-hidden="true" />
-        Adherencia al check-in de hoy
+        {roles.length > 1
+          ? `Adherencia al ${ROLE_LABEL[role].toLowerCase()} de hoy`
+          : "Adherencia al check-in de hoy"}
       </div>
+      <WellnessRoleTabs
+        roles={roles}
+        active={role}
+        onChange={onRoleChange}
+        label="Adherencia de hoy"
+      />
       <div className={styles.adhStat}>
         <span className={`${styles.adhPct} ${styles[`adh_${tone}`]}`}>
           {pct == null ? "—" : `${pct}%`}

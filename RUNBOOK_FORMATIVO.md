@@ -461,17 +461,77 @@ ExamResult.objects.filter(result_data__origen='planilla_club_formativo_gps').del
 
 ---
 
-## Fase Wellness ⏳ PENDIENTE — plantilla propia
+## Fase Wellness — plantillas ✅, importador ⏳
 
 El club confirma que **el wellness del formativo no sigue la misma regla que
 el de Primer Equipo**, así que no se reusa `checkin_fisico`: van plantillas
-propias. Los 8 archivos de `Wellness - Check in & Out/` (~65 MB) siguen sin
-importar, y el sync de Google Form alimenta sólo a Primer Equipo (1988
+propias. El sync de Google Form sigue alimentando sólo a Primer Equipo (1988
 resultados, todos ahí).
 
-Falta definir los campos desde esos archivos, y decidir si el formulario va a
-cubrir el formativo de acá en adelante — porque si no, importar el histórico
-deja una serie que se corta el día de la carga.
+### Plantillas — hecho
+
+```bash
+docker compose exec backend python manage.py seed_wellness_formativo \
+    --club "Universidad de Chile" --season 2026 [--unlock]
+```
+
+Crea/actualiza `checkin_formativo` (13 campos) y `checkout_formativo` (16) y
+las aplica a las 12 categorías del formativo. Idempotente; `--unlock` hace
+falta si alguien bloqueó la plantilla desde el admin.
+
+**Verificación**
+
+```bash
+docker compose exec backend python manage.py shell -c "
+from core.models import Category
+from api import wellness as w
+for c in Category.objects.filter(club__name='Universidad de Chile'):
+    print(c.name, w.roles_for(c), [t.slug for t in w.templates_for(c)])"
+```
+
+Primer Equipo tiene que dar `['checkin'] ['checkin_fisico']` y cada Serie
+`['checkin', 'checkout'] ['checkin_formativo']`.
+
+### La plantilla declara su escala
+
+`config_schema["wellness"]` lleva `role` (`checkin`/`checkout`), `items` (lo
+que promedia el puntaje 0–100), `inverted` y `dimensions` (los chips del KPI).
+`api/wellness.py` los lee; ninguna superficie tiene el slug hardcodeado.
+
+⚠️ **Usar `score_for(category, data)`, nunca `score()` a mano.** Tres de los
+cinco ítems del formativo están invertidos y acertar los ítems pero errar los
+invertidos da un puntaje exactamente al revés: un jugador destruido puntúa 84.
+
+⚠️ Una dimensión declarada que **no** sea también ítem del puntaje necesita que
+`field_max` la cubra, o `dimension_pct` devuelve `None` y el chip no aparece
+sin ningún error. Eso lo resuelve `_claves()`; si se agrega otro lookup por
+campo, tiene que usarlo.
+
+⚠️ La fracción es `v ÷ max`, **no** un reescalado min–max: el peor valor
+posible de una escala 1–5 vale 20, no 0. Es la misma propiedad que hace que el
+peor check-in de Primer Equipo dé 18. Cambiarla movería todos los números
+históricos de los dos planteles.
+
+### Importador ⏳ pendiente
+
+Los 8 documentos (65.067 filas de CHECK IN + 53.040 de CHECK OUT) siguen sin
+importar, y falta su cron. Notas para escribirlo:
+
+- El match es **por nombre**: el orden de columnas cambia entre documentos.
+- Alias de encabezado: `CALIDAD SUEÑO`/`CALIDAD DEL SUEÑO`,
+  `Peso (kg)`/`Peso (kg) solo número`.
+- La categoría sale del **título del documento**: `CAT 15` → cohorte 2015;
+  `SUB 21` → bracket Sub 20.
+- `SUMA` y `UA` **no se importan** — los calcula la plantilla. Sus encabezados
+  son inconsistentes (`SUMA` en cuatro documentos, un `0` pelado en uno, `UA`
+  en seis y `AU` en uno).
+- Reusar `exams/formativo_sources.py`: resuelve el título truncado a 31
+  caracteres, pide `UNFORMATTED_VALUE` (el punto es separador de miles) y
+  convierte seriales a fecha **sólo en columnas de fecha**.
+
+Falta decidir si el formulario va a cubrir el formativo de acá en adelante —
+porque si no, importar el histórico deja una serie que se corta el día de la
+carga.
 
 ---
 

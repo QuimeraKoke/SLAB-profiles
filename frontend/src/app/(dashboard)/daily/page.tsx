@@ -27,6 +27,8 @@ import CreateAlertModal from "@/components/daily/CreateAlertModal";
 import NotesPanel from "@/components/daily/NotesPanel";
 import PlansPanel from "@/components/daily/PlansPanel";
 import PlanList from "@/components/daily/PlanList";
+import WellnessRoleTabs, { ROLE_LABEL } from "@/components/command/WellnessRoleTabs";
+import type { WellnessRoleId } from "@/components/command/types";
 import type {
   DailyAlertRow,
   DailyNote,
@@ -126,6 +128,25 @@ export default function DailyPage() {
     [searchParams, router, pathname],
   );
 
+  // Same rule as the meeting date: the check-in/check-out choice lives in the
+  // URL. Only the Formativo has a Check-OUT, so `wellness_roles` decides
+  // whether the toggle exists at all.
+  const wellnessRoles = (data?.wellness_roles ?? ["checkin"]) as WellnessRoleId[];
+  const wellnessRole: WellnessRoleId =
+    searchParams.get("wellness") === "checkout" && wellnessRoles.includes("checkout")
+      ? "checkout"
+      : "checkin";
+  const setWellnessRole = useCallback(
+    (role: WellnessRoleId) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (role === "checkin") params.delete("wellness");
+      else params.set("wellness", role);
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [searchParams, router, pathname],
+  );
+
   const disponibles = useMemo(
     () => (roster?.players ?? []).filter((p) => p.status === "available"),
     [roster],
@@ -179,6 +200,11 @@ export default function DailyPage() {
   if (!data) return <div className={styles.muted}>Cargando la Daily…</div>;
 
   const { kpis } = data;
+  // Which of the two forms the KPI and the "no respondieron" list describe.
+  const wellnessDay =
+    wellnessRole === "checkout" && data.checkout_hoy
+      ? data.checkout_hoy
+      : kpis.wellness_hoy;
 
   return (
     <div className={styles.page}>
@@ -278,23 +304,39 @@ export default function DailyPage() {
           tone={kpis.alertas.critical > 0 ? "crit" : kpis.alertas.warning > 0 ? "warn" : "ok"}
         />
         <Kpi
-          label="Wellness del día"
-          value={`${kpis.wellness_hoy.n}/${kpis.wellness_hoy.expected}`}
-          detail="check-ins respondidos"
+          label={
+            wellnessRoles.length > 1
+              ? `Wellness del día · ${ROLE_LABEL[wellnessRole]}`
+              : "Wellness del día"
+          }
+          value={`${wellnessDay.n}/${wellnessDay.expected}`}
+          detail={
+            wellnessRole === "checkout"
+              ? "check-outs respondidos"
+              : "check-ins respondidos"
+          }
+          tabs={
+            <WellnessRoleTabs
+              roles={wellnessRoles}
+              active={wellnessRole}
+              onChange={setWellnessRole}
+              label="Wellness del día"
+            />
+          }
         />
       </div>
 
-      {/* ── No respondieron el check-in (informativo — para ir a llamarlos) ── */}
-      {kpis.wellness_hoy.no_respondieron.length > 0 && (
+      {/* ── No respondieron (informativo — para ir a llamarlos) ── */}
+      {wellnessDay.no_respondieron.length > 0 && (
         <div className={styles.noResp}>
           <span className={styles.noRespTitle}>
-            No respondieron el check-in
+            No respondieron el {ROLE_LABEL[wellnessRole].toLowerCase()}
             <span className={styles.noRespCount}>
-              {kpis.wellness_hoy.no_respondieron.length}
+              {wellnessDay.no_respondieron.length}
             </span>
           </span>
           <div className={styles.noRespList}>
-            {kpis.wellness_hoy.no_respondieron.map((p) => (
+            {wellnessDay.no_respondieron.map((p) => (
               <Link
                 key={p.player_id}
                 href={`/perfil/${p.player_id}`}
@@ -473,17 +515,21 @@ function Kpi({
   value,
   detail,
   tone,
+  tabs,
 }: {
   label: string;
   value: string;
   detail?: string;
   tone?: "ok" | "warn" | "crit";
+  /** Optional segmented control (the Check-IN/Check-OUT toggle). */
+  tabs?: React.ReactNode;
 }) {
   return (
     <div className={styles.kpi}>
       <span className={styles.kpiLabel}>{label}</span>
       <span className={`${styles.kpiValue} ${tone ? styles[`kpi_${tone}`] : ""}`}>{value}</span>
       {detail && <span className={styles.kpiDetail}>{detail}</span>}
+      {tabs}
     </div>
   );
 }

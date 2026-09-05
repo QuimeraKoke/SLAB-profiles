@@ -469,3 +469,11 @@
   color: #1f2937;
   white-space: pre-wrap;
 }
+
+/* The Check-IN/Check-OUT toggle inside the wellness KPI. It renders only for
+   the categories that fill both forms, so the extra row costs nothing to the
+   rest. `align-self` keeps it from stretching across the card. */
+.kpi > [role="tablist"] {
+  align-self: flex-start;
+  margin-top: 8px;
+}

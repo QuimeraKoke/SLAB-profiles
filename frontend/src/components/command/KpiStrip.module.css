@@ -108,3 +108,12 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* Right side of a card head: the role toggle (when the category has two
+   wellness forms) sits before the status pill. */
+.headRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}

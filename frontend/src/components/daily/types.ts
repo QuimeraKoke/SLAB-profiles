@@ -2,6 +2,17 @@
 
 export type Tone = "ok" | "warn" | "crit" | "info" | "muted";
 
+export interface DailyWellnessDay {
+  n: number;
+  expected: number;
+  no_respondieron: {
+    player_id: string;
+    name: string;
+    position: string | null;
+    injured: boolean;
+  }[];
+}
+
 export interface DailyKpis {
   disponibles: { n: number; total: number };
   no_disponibles: {
@@ -9,16 +20,7 @@ export interface DailyKpis {
     breakdown: { label: string; n: number; tone: Tone }[];
   };
   alertas: { critical: number; warning: number };
-  wellness_hoy: {
-    n: number;
-    expected: number;
-    no_respondieron: {
-      player_id: string;
-      name: string;
-      position: string | null;
-      injured: boolean;
-    }[];
-  };
+  wellness_hoy: DailyWellnessDay;
 }
 
 export interface DailyEpisode {
@@ -149,4 +151,8 @@ export interface DailyReport {
   } | null;
   players: { id: string; name: string }[];
   departments: { id: string; name: string; slug: string }[];
+  /** Wellness forms this category fills. "checkout" only in the Formativo. */
+  wellness_roles: ("checkin" | "checkout")[];
+  /** Present only when `wellness_roles` includes "checkout". */
+  checkout_hoy?: DailyWellnessDay;
 }

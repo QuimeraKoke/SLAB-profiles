@@ -129,6 +129,7 @@ def build_daily_report(category, target_date: date_cls, user) -> dict:
         "generated_at": now.isoformat(),
         "category": category.name,
         "kpis": _kpis(players, alerts, responded_ids, target_date),
+        **_wellness_roles_block(category, players, pids, target_date),
         "lesionados": lesionados,
         "alertas": alertas,
         "kine": _kine_entries(category, target_date),
@@ -470,30 +471,65 @@ def _latest_wellness(category, pids) -> dict:
     """{player_id: {"score", "date"} | None} from the latest check-in."""
     from api import wellness as w
 
-    fmax = w.field_max(category)
     latest = w.recent_by_player(category, pids, limit=1, with_dates=True)
     out = {}
     for pid, items in latest.items():
         if not items:
             continue
         rec, data = items[0]
-        s = w.score(data, fmax)
+        # `score_for` resolves items, maxima and inverted flags together: the
+        # Formativo fills a different form than Primer Equipo, and a caller
+        # that gets the item list right but the inverted set wrong produces a
+        # score that is exactly backwards.
+        s = w.score_for(category, data)
         if s is not None:
             out[pid] = {"score": s, "date": timezone.localtime(rec).date().isoformat()}
     return out
 
 
-def _responded_on(category, pids, target_date) -> set:
+def _wellness_roles_block(category, players, pids, target_date) -> dict:
+    """`wellness_roles`, plus the Check-OUT counterpart of `wellness_hoy`
+    for the categories that have one.
+
+    Only the Formativo fills a post-session form, so the key is absent for
+    every other category and the front end renders no tab at all — an empty
+    "Check-OUT 0/25" would read as a compliance failure rather than as a form
+    that squad never had.
+    """
+    from api import wellness as w
+
+    roles = w.roles_for(category)
+    out: dict = {"wellness_roles": roles}
+    if w.ROLE_CHECKOUT not in roles:
+        return out
+    hechos = _responded_on(category, pids, target_date, role=w.ROLE_CHECKOUT)
+    out["checkout_hoy"] = {
+        "n": len(hechos),
+        "expected": len(players),
+        "no_respondieron": [
+            {
+                "player_id": str(p.id),
+                "name": f"{p.first_name} {p.last_name}".strip(),
+                "position": p.position.abbreviation if p.position else None,
+                "injured": p.status != Player.STATUS_AVAILABLE,
+            }
+            for p in players if p.id not in hechos
+        ],
+    }
+    return out
+
+
+def _responded_on(category, pids, target_date, role=None) -> set:
     """Set of player_ids with a check-in recorded ON `target_date`. Unlike
     `_latest_wellness` (latest per player), this is date-scoped so the "no
     respondieron" list is correct when navigating to a past meeting day."""
     from api import wellness as w
-    from exams.models import ExamResult, ExamTemplate
+    from exams.models import ExamResult
 
-    tids = list(
-        ExamTemplate.objects.filter(slug=w.WELLNESS_SLUG, applicable_categories=category)
-        .values_list("id", flat=True)
-    ) or list(ExamTemplate.objects.filter(slug=w.WELLNESS_SLUG).values_list("id", flat=True))
+    # Whichever template this category declares for the role — the Formativo's
+    # check-in is `checkin_formativo`, not `checkin_fisico`, and it also has a
+    # post-session check-out that Primer Equipo does not fill.
+    tids = [t.id for t in w.templates_for(category, role=role or w.ROLE_CHECKIN)]
     if not tids:
         return set()
     return set(

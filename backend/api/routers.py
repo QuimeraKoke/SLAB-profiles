@@ -3919,11 +3919,15 @@ def daily_report_summary(request, category_id: str, date: str = ""):
 
 
 @api.get("/wellness-adherence")
-def wellness_adherence(request, category_id: str, date_from: str = "", date_to: str = ""):
+def wellness_adherence(request, category_id: str, date_from: str = "",
+                       date_to: str = "", role: str = "checkin"):
     """Check-in adherence over a window (informative, no alerts): per-player
     responded/missed grid + compliance % (denominator = days with any check-in
-    activity in the category) + a squad roll-up. Default window: last 4 weeks."""
-    from api.wellness import build_adherence
+    activity in the category) + a squad roll-up. Default window: last 4 weeks.
+
+    `role` picks the form: `checkin`, or `checkout` for the categories that
+    fill a post-session one (the Formativo)."""
+    from api.wellness import ROLE_CHECKIN, ROLE_CHECKOUT, build_adherence
 
     membership = get_membership(request.user)
     category = scope_categories(
@@ -3931,7 +3935,9 @@ def wellness_adherence(request, category_id: str, date_from: str = "", date_to: 
     ).filter(pk=category_id).first()
     if category is None:
         raise HttpError(404, "Category not found")
-    return build_adherence(category, date_from, date_to)
+    if role not in (ROLE_CHECKIN, ROLE_CHECKOUT):
+        raise HttpError(400, "role must be 'checkin' or 'checkout'")
+    return build_adherence(category, date_from, date_to, role=role)
 
 
 @api.get("/templates", response=list[TemplateOut])

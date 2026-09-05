@@ -9,7 +9,8 @@ import {
   Database,
 } from "lucide-react";
 
-import type { CCKpis, Tone } from "./types";
+import type { CCKpis, CCWellnessKpi, Tone, WellnessRoleId } from "./types";
+import WellnessRoleTabs, { ROLE_LABEL } from "./WellnessRoleTabs";
 import styles from "./KpiStrip.module.css";
 
 interface Chip {
@@ -17,8 +18,25 @@ interface Chip {
   tone?: Tone;
 }
 
-export default function KpiStrip({ kpis }: { kpis: CCKpis }) {
-  const { disponibilidad: d, riesgo: r, carga: c, wellness: w, completitud: cp } = kpis;
+export default function KpiStrip({
+  kpis,
+  wellnessRoles = ["checkin"],
+  wellnessRole = "checkin",
+  checkoutWellness,
+  onWellnessRoleChange,
+}: {
+  kpis: CCKpis;
+  /** Which forms this category fills; the toggle hides itself below two. */
+  wellnessRoles?: WellnessRoleId[];
+  wellnessRole?: WellnessRoleId;
+  checkoutWellness?: CCWellnessKpi;
+  onWellnessRoleChange?: (role: WellnessRoleId) => void;
+}) {
+  const { disponibilidad: d, riesgo: r, carga: c, completitud: cp } = kpis;
+  // The Check-OUT is a different form with its own items (RPE, carga interna),
+  // so the card swaps its whole body rather than showing a second number.
+  const showCheckout = wellnessRole === "checkout" && checkoutWellness != null;
+  const w = showCheckout ? checkoutWellness! : kpis.wellness;
 
   return (
     <div className={styles.strip}>
@@ -46,7 +64,11 @@ export default function KpiStrip({ kpis }: { kpis: CCKpis }) {
       />
       <Card
         icon={<HeartPulse size={18} aria-hidden="true" />}
-        title="Wellness plantel"
+        title={
+          wellnessRoles.length > 1
+            ? `Wellness plantel · ${ROLE_LABEL[wellnessRole]}`
+            : "Wellness plantel"
+        }
         value={w.value == null ? "—" : String(w.value)}
         status={{ text: w.status, tone: w.tone }}
         chips={w.dimensions.map((dim) => ({ label: `${dim.label} ${dim.value}` }))}
@@ -54,6 +76,16 @@ export default function KpiStrip({ kpis }: { kpis: CCKpis }) {
           w.responses != null
             ? `${w.responses}/${w.expected} respuestas`
             : "Sin respuestas registradas."
+        }
+        tabs={
+          onWellnessRoleChange && (
+            <WellnessRoleTabs
+              roles={wellnessRoles}
+              active={wellnessRole}
+              onChange={onWellnessRoleChange}
+              label="Wellness del plantel"
+            />
+          )
         }
       />
       <Card
@@ -77,6 +109,7 @@ function Card({
   status,
   chips,
   detail,
+  tabs,
 }: {
   icon: React.ReactNode;
   title: string;
@@ -84,16 +117,20 @@ function Card({
   status?: { text: string; tone: Tone };
   chips?: Chip[];
   detail?: string;
+  tabs?: React.ReactNode;
 }) {
   return (
     <div className={styles.card}>
       <div className={styles.cardHead}>
         <span className={styles.icon}>{icon}</span>
-        {status && (
-          <span className={`${styles.status} ${styles[`tone_${status.tone}`]}`}>
-            {status.text}
-          </span>
-        )}
+        <span className={styles.headRight}>
+          {tabs}
+          {status && (
+            <span className={`${styles.status} ${styles[`tone_${status.tone}`]}`}>
+              {status.text}
+            </span>
+          )}
+        </span>
       </div>
       <div className={styles.title}>{title}</div>
       <div className={styles.value}>{value}</div>

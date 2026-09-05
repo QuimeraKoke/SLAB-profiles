@@ -1,0 +1,40 @@
+/* Compact segmented control, sized to sit in a KPI card head or a rail-card
+   header — not the page-level tab bar (see ProfileTabs for that one). */
+.tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: #f3f4f6;
+  border-radius: 7px;
+}
+
+.tab {
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tab:hover {
+  color: #111827;
+}
+
+.tab:focus-visible {
+  outline: 2px solid #4f46e5;
+  outline-offset: 1px;
+}
+
+.active,
+.active:hover {
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+}

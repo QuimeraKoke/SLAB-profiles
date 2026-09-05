@@ -96,13 +96,24 @@ def dimensions_for(category, *, role: str = ROLE_CHECKIN) -> list[tuple[str, str
     return list(DIMENSIONS) if role == ROLE_CHECKIN else []
 
 
+def _claves(category, role) -> set[str]:
+    """Score items PLUS declared dimensions.
+
+    Dimensions have to be in here. `dimension_pct` returns None when the key has
+    no max, so a dimension that is not also a score item used to render nothing
+    at all — the chip just wasn't there, with no error to notice.
+    """
+    return {k for k, _ in items_for(category, role=role)} | {
+        k for k, _ in dimensions_for(category, role=role)}
+
+
 def field_max(category, *, role: str = ROLE_CHECKIN) -> dict[str, float]:
     """field_key → configured max, for the items that make up the score.
 
     Read from the template rather than assumed, because the scales are not
     uniform: 1–10 for recuperación against 1–5 for the rest.
     """
-    claves = dict(items_for(category, role=role))
+    claves = _claves(category, role)
     out: dict[str, float] = {}
     for t in templates_for(category, role=role):
         for f in ((t.config_schema or {}).get("fields") or []):
@@ -122,7 +133,7 @@ def field_min(category, *, role: str = ROLE_CHECKIN) -> dict[str, float]:
     the same place, and leaves the non-inverted path (and Primer Equipo's
     numbers) exactly as they were.
     """
-    claves = dict(items_for(category, role=role))
+    claves = _claves(category, role)
     out: dict[str, float] = {}
     for t in templates_for(category, role=role):
         for f in ((t.config_schema or {}).get("fields") or []):
@@ -193,6 +204,26 @@ def dimension_pct(data: dict, key: str, fmax: dict[str, float],
     return round(min(1.0, max(0.0, v / mx)) * 100)
 
 
+def dimension_pct_for(category, data: dict, key: str, *,
+                      role: str = ROLE_CHECKIN) -> int | None:
+    """One dimension chip, resolved. Same reason as `score_for`: a dimension
+    read without its `inverted` flag renders "Fatiga 90%" for a wrecked squad.
+    """
+    return dimension_pct(data, key, field_max(category, role=role),
+                         inverted_for(category, role=role),
+                         field_min(category, role=role))
+
+
+def roles_for(category) -> list[str]:
+    """Which wellness roles this category actually has a template for.
+
+    The Formativo fills a Check-OUT and Primer Equipo does not, so the surfaces
+    that show one have to ask rather than assume. Returns `["checkin"]` or
+    `["checkin", "checkout"]`, in that order.
+    """
+    return [r for r in (ROLE_CHECKIN, ROLE_CHECKOUT) if templates_for(category, role=r)]
+
+
 def recent_by_player(category, player_ids: list, limit: int = 12, since=None,
                      with_dates: bool = False, role: str = ROLE_CHECKIN) -> dict:
     """{player_id: [result_data, ...]} newest-first, for the category's
@@ -235,8 +266,9 @@ def _parse_date(raw):
         return None
 
 
-def build_adherence(category, date_from: str = "", date_to: str = "") -> dict:
-    """Check-in adherence over a window. **Informative only — no alerts.**
+def build_adherence(category, date_from: str = "", date_to: str = "",
+                    role: str = ROLE_CHECKIN) -> dict:
+    """Check-in (or check-out) adherence over a window. **Informative only.**
 
     The denominator is self-calibrated = days on which *any* active player
     logged a check-in (a proxy for "a response was expected that day"), so rest

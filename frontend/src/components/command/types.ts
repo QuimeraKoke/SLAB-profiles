@@ -32,6 +32,17 @@ export interface CCKpiBreakdown {
   expected?: number;
 }
 
+export type WellnessRoleId = "checkin" | "checkout";
+
+export interface CCWellnessKpi {
+  value: number | null;
+  status: string;
+  tone: Tone;
+  responses?: number;
+  expected?: number;
+  dimensions: { label: string; value: number }[];
+}
+
 export interface CCKpis {
   disponibilidad: {
     value: string;
@@ -53,14 +64,7 @@ export interface CCKpis {
     over?: number;
     detail: string;
   };
-  wellness: {
-    value: number | null;
-    status: string;
-    tone: Tone;
-    responses?: number;
-    expected?: number;
-    dimensions: { label: string; value: number }[];
-  };
+  wellness: CCWellnessKpi;
   completitud: {
     value: number | null;
     status: string;
@@ -158,4 +162,12 @@ export interface CommandCenter {
   data_quality: CCDataQualityRow[];
   checkin_adherence: CCCheckinAdherence;
   recent: CCRecentItem[];
+  /** Wellness forms this category actually fills. Always contains "checkin";
+   *  "checkout" only for the Formativo, which fills a post-session form. */
+  wellness_roles: WellnessRoleId[];
+  /** Present only when `wellness_roles` includes "checkout". */
+  checkout?: {
+    wellness: CCWellnessKpi;
+    adherence: CCCheckinAdherence;
+  };
 }
