@@ -42,15 +42,38 @@ from django.db import transaction
 
 from core.models import Bracket, Category, Club, Department
 
+# Bandas de la escala 1–5, compartidas por las doce categorías.
+#
+# Van en el CAMPO y no en `config["ranges"]` de cada regla a propósito: un 3 de
+# sueño significa lo mismo en Serie 2018 que en SUB-20, así que replicarlas por
+# categoría serían 12 copias del mismo número esperando a desincronizarse. Las
+# pruebas físicas son el caso contrario — ahí el club mide el mismo test con
+# umbrales distintos por edad y por eso `seed_formativo_bands` sí las escribe
+# por categoría.
+#
+# Los límites son inclusivos y gana el primer match, así que el orden importa:
+# un 3 cae en "Aviso" porque "Crítico" cierra en 2. El club puede sobreescribir
+# los números por categoría desde el editor de bandas sin tocar esto.
+BANDAS_1_5 = [
+    {"min": 1, "max": 2, "label": "Crítico", "color": "#dc2626", "alert": True},
+    {"min": 2, "max": 3, "label": "Aviso", "color": "#f59e0b"},
+    {"min": 3, "max": 5, "label": "Normal", "color": "#16a34a"},
+]
+
+
 # 1–5 self-report scales. `direction_of_good` differs per item and that is the
 # point: more sleep is better, more fatigue is worse. Getting one backwards
 # inverts its band on every chart.
-def _escala(key: str, label: str, grupo: str, *, mas_es_mejor: bool) -> dict:
-    return {
+def _escala(key: str, label: str, grupo: str, *, mas_es_mejor: bool,
+            bandas: bool = True) -> dict:
+    campo = {
         "key": key, "label": label, "type": "number", "unit": "",
         "group": grupo, "min": 1, "max": 5, "chart_type": "line",
         "direction_of_good": "up" if mas_es_mejor else "down",
     }
+    if bandas:
+        campo["reference_ranges"] = [dict(b) for b in BANDAS_1_5]
+    return campo
 
 
 G_BIEN, G_CUERPO, G_HABITOS = "Bienestar", "Cuerpo", "Hábitos"
@@ -74,10 +97,23 @@ CHECKIN = {
         {"key": "sintomas", "label": "Síntomas", "type": "text", "group": G_CUERPO},
         {"key": "dolor_muscular", "label": "Dolor muscular (zona)",
          "type": "text", "group": G_CUERPO},
+        # Sin bandas: el peso "normal" es el del jugador, no un rango del
+        # formulario. Una banda compartida le diría a un Serie 2018 y a un
+        # SUB-20 lo mismo.
         {"key": "peso", "label": "Peso", "type": "number", "unit": "kg",
          "group": G_CUERPO, "min": 25, "max": 130, "chart_type": "line"},
-        _escala("hidratacion", "Nivel de hidratación", G_HABITOS,
-                mas_es_mejor=True),
+        # ⚠️ NO es una escala 1–5, aunque el formulario la llame "nivel".
+        # Medido sobre 46.512 respuestas: va de 1 a 9 y el 78% son 2 o 3 —
+        # litros de agua al día, donde 2 es lo normal. Tratada como escala 1–5
+        # con banda "1–2 = Crítico", marcaba el 55% de las respuestas del
+        # plantel como críticas y enterraba a las alertas reales.
+        #
+        # Sin banda por defecto a propósito: cuántos litros son pocos es una
+        # decisión del cuerpo médico, no algo que se pueda inferir de la
+        # distribución. El editor de bandas está para eso.
+        {"key": "hidratacion", "label": "Hidratación", "type": "number",
+         "unit": "L", "group": G_HABITOS, "min": 0, "max": 10,
+         "chart_type": "line", "direction_of_good": "up"},
         {"key": "ultima_comida", "label": "Última comida antes de entrenar",
          "type": "text", "group": G_HABITOS},
         {"key": "relaciones_afectivas",
@@ -129,7 +165,22 @@ CHECKOUT = {
          "min": 1, "max": 240, "chart_type": "line"},
         {"key": "rpe", "label": "Esfuerzo percibido (RPE)", "type": "number",
          "unit": "", "group": G_CARGA, "min": 0, "max": 10,
-         "chart_type": "line", "direction_of_good": "neutral"},
+         "chart_type": "line", "direction_of_good": "neutral",
+         # Zonas de intensidad para leer el gráfico, con `alert: False` en
+         # todas. El RPE mide CARGA: una sesión de 9 es una sesión dura, no un
+         # problema, y sin el flag explícito la heurística de
+         # `exams.bands.alert_bands` elegiría la banda más roja y la haría
+         # disparar sola.
+         "reference_ranges": [
+             {"min": 0, "max": 4, "label": "Baja", "color": "#93c5fd",
+              "alert": False},
+             {"min": 4, "max": 7, "label": "Moderada", "color": "#60a5fa",
+              "alert": False},
+             {"min": 7, "max": 9, "label": "Alta", "color": "#2563eb",
+              "alert": False},
+             {"min": 9, "max": 10, "label": "Máxima", "color": "#1e3a8a",
+              "alert": False},
+         ]},
         {
             "key": "carga_interna", "label": "Carga interna (UA)",
             "type": "calculated", "unit": "UA", "group": G_CARGA,
@@ -181,6 +232,21 @@ CHECKOUT = {
         "dimensions": [["dano_muscular", "Daño muscular"], ["rpe", "RPE"]],
     },
 }
+
+# Qué campos vigilan una alerta. Sólo las escalas 1–5 con bandas: el peso no
+# tiene un rango compartido y el RPE mide carga, no bienestar.
+CAMPOS_CON_ALERTA = {
+    "checkin_formativo": ["calidad_sueno", "nivel_fatiga", "nivel_estres",
+                          "estado_animo", "dano_muscular"],
+    "checkout_formativo": ["dano_muscular", "partido_recuperacion",
+                           "partido_explosivas", "partido_fisico"],
+}
+
+# `trigger_labels` decide qué banda dispara cada severidad. Sin ellos, el
+# evaluador cae a la heurística de "la banda más roja" y las dos reglas del
+# mismo campo dispararían por lo mismo.
+SEVERIDADES = (("critical", ["Crítico"]), ("warning", ["Aviso"]))
+
 
 INPUT_CONFIG = {
     "input_modes": ["team_table", "single", "bulk_ingest"],
@@ -243,8 +309,41 @@ class Command(BaseCommand):
                 f"  {nombre}: {accion} · {len(schema['fields'])} campos · "
                 f"{len(cats)} categorías"))
 
+        self._alertas()
         self.stdout.write(
             "\n  Categorías: " + ", ".join(sorted(c.name for c in cats)))
+
+    def _alertas(self):
+        """Una regla `band` por campo y severidad, sin categoría.
+
+        `category=None` significa "todas", que es lo correcto acá: los umbrales
+        de una escala 1–5 son los mismos en las doce. Es además el patrón que
+        ya tiene `checkin_fisico`.
+
+        Nunca toca una regla existente. El cuerpo médico va a ajustar estos
+        números desde el editor de bandas, y una segunda corrida del seeder no
+        puede borrar ese trabajo.
+        """
+        from exams.models import ExamTemplate
+        from goals.models import AlertRule
+
+        creadas = existentes = 0
+        for slug, campos in CAMPOS_CON_ALERTA.items():
+            template = ExamTemplate.objects.filter(slug=slug).first()
+            if template is None:
+                continue
+            for campo in campos:
+                for severidad, labels in SEVERIDADES:
+                    _, nueva = AlertRule.objects.get_or_create(
+                        template=template, field_key=campo, category=None,
+                        severity=severidad, kind="band",
+                        defaults={"config": {"trigger_labels": labels},
+                                  "is_active": True},
+                    )
+                    creadas += nueva
+                    existentes += not nueva
+        self.stdout.write(self.style.SUCCESS(
+            f"  Alertas: {creadas} creadas · {existentes} ya existían"))
 
     def _formativo(self, club, season):
         """Youth categories, by data rather than by name — same rule as the

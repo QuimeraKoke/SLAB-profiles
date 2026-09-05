@@ -201,7 +201,8 @@ _LOCK_WELLNESS_FORM_TTL = 3600
 
 
 @shared_task(name="exams.tasks.sync_wellness_formativo")
-def sync_wellness_formativo(commit: bool = True, dias: int | None = 7) -> dict:
+def sync_wellness_formativo(commit: bool = True, dias: int | None = 7,
+                            alerts: bool = True) -> dict:
     """Pull the Formativo's eight wellness documents (Check-IN + Check-OUT).
 
     `dias=7` by default rather than the full history. The documents go back to
@@ -215,6 +216,12 @@ def sync_wellness_formativo(commit: bool = True, dias: int | None = 7) -> dict:
     503 on one of eight during the first survey, and a sync that gives up on
     the first failure would silently skip a whole category until someone
     noticed.
+
+    `alerts=True` here, unlike the GPS/evaluations sync: this one reads a
+    7-day window of live responses, so every row it finds is recent enough to
+    be worth an alert. The full weekly sweep passes `dias=None` and would
+    re-read two seasons, but the ingest bounds the evaluation to the last 30
+    days on its own — a 2024 reading is expired again by the next sweep.
     """
     import time
 
@@ -249,7 +256,7 @@ def sync_wellness_formativo(commit: bool = True, dias: int | None = 7) -> dict:
     desde = ingest.ventana(dias)
     salida: dict = {"status": "ok", "documentos": len(ids), "creados": 0,
                     "repetidos": 0, "sin_jugador": 0, "ambiguos": 0,
-                    "fallidos": []}
+                    "alertas": 0, "fallidos": []}
     try:
         for sid in ids:
             doc = titulo = None
@@ -271,7 +278,8 @@ def sync_wellness_formativo(commit: bool = True, dias: int | None = 7) -> dict:
             for rol in ("checkin", "checkout"):
                 try:
                     rep = ingest.ingerir(doc, titulo=titulo, club=club, rol=rol,
-                                         commit=commit, desde=desde)
+                                         commit=commit, desde=desde,
+                                         alertas=alerts)
                 except Exception as exc:
                     logger.warning("wellness formativo (%s/%s): %s",
                                    titulo, rol, exc)
@@ -282,6 +290,7 @@ def sync_wellness_formativo(commit: bool = True, dias: int | None = 7) -> dict:
                 salida["repetidos"] += rep.repetidos
                 salida["sin_jugador"] += sum(rep.no_encontrados.values())
                 salida["ambiguos"] += sum(rep.ambiguos.values())
+                salida["alertas"] += rep.alertas
                 # Una columna nueva en el formulario es la forma exacta en que
                 # una métrica desaparece sin que nadie lo note.
                 if rep.columnas_sin_mapear:

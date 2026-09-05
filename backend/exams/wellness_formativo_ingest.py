@@ -204,6 +204,7 @@ class Reporte:
     sin_fecha: int = 0
     sin_jugador: int = 0
     fuera_de_categoria: int = 0
+    alertas: int = 0
     no_encontrados: dict = field(default_factory=dict)
     ambiguos: dict = field(default_factory=dict)
     columnas_sin_mapear: list = field(default_factory=list)
@@ -472,8 +473,27 @@ def parsear(grid: list[list[Any]], *, rol: str) -> tuple[list[dict], list[str]]:
     return filas, sin_mapear
 
 
+def _disparar_alertas(results: list) -> int:
+    """`bulk_create` fires no signals, so the alert evaluation is explicit.
+
+    Bounded by the same staleness cutoff the GPS ingest uses. These documents
+    hold two and a half seasons of history, and an alert anchored on a 2024
+    reading is expired again by the next sweep — firing them would only churn
+    the list without telling anyone anything.
+    """
+    from goals.evaluator import (ALERT_STALE_DAYS,
+                                 evaluate_threshold_rules_for_result)
+
+    corte = timezone.now() - timedelta(days=ALERT_STALE_DAYS)
+    n = 0
+    for r in results:
+        if r.recorded_at and r.recorded_at >= corte:
+            n += len(evaluate_threshold_rules_for_result(r) or [])
+    return n
+
+
 def ingerir(doc, *, titulo: str, club, rol: str, commit: bool,
-            desde: datetime | None = None) -> Reporte:
+            desde: datetime | None = None, alertas: bool = False) -> Reporte:
     """Read one tab of one document and create the missing results.
 
     Idempotent on `(player, recorded_at)` truncated to the second — the same
@@ -548,6 +568,8 @@ def ingerir(doc, *, titulo: str, club, rol: str, commit: bool,
     rep.creados = len(nuevos)
     if commit and nuevos:
         ExamResult.objects.bulk_create(nuevos, batch_size=1000)
+        if alertas:
+            rep.alertas = _disparar_alertas(nuevos)
     return rep
 
 

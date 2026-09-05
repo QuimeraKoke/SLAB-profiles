@@ -327,3 +327,135 @@ class DailyCheckoutDiaTests(TestCase):
         bloque = self._bloque(timezone.localdate(), self.senior)
         self.assertEqual(bloque["wellness_roles"], ["checkin"])
         self.assertNotIn("checkout_hoy", bloque)
+
+
+class BandasYAlertasDelFormativoTests(TestCase):
+    """Lo que el seeder deja sembrado, y sobre todo lo que NO siembra."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from django.core.management import call_command
+
+        cls.club = Club.objects.create(name="U")
+        cls.dept = Department.objects.create(club=cls.club, name="Físico",
+                                            slug="fisico")
+        cat = Category.objects.create(club=cls.club, name="Serie 2013",
+                                      cohort_year=2013)
+        cat.departments.add(cls.dept)
+        call_command("seed_wellness_formativo", club="U", season=2026,
+                     verbosity=0)
+
+    def _campo(self, slug, key):
+        t = ExamTemplate.objects.get(slug=slug)
+        return next(f for f in t.config_schema["fields"] if f["key"] == key)
+
+    def test_las_escalas_1_5_traen_banda(self):
+        for key in ("calidad_sueno", "nivel_fatiga", "nivel_estres",
+                    "estado_animo", "dano_muscular"):
+            bandas = self._campo("checkin_formativo", key).get("reference_ranges")
+            self.assertTrue(bandas, key)
+            self.assertEqual([b["label"] for b in bandas],
+                             ["Crítico", "Aviso", "Normal"], key)
+
+    def test_un_3_cae_en_aviso_y_no_en_critico(self):
+        """Los límites son inclusivos y gana el primer match, así que el orden
+        de declaración decide qué pasa en la frontera."""
+        from exams.bands import band_for_value
+
+        bandas = self._campo("checkin_formativo", "calidad_sueno")["reference_ranges"]
+        self.assertEqual(band_for_value(2, bandas)["label"], "Crítico")
+        self.assertEqual(band_for_value(3, bandas)["label"], "Aviso")
+        self.assertEqual(band_for_value(4, bandas)["label"], "Normal")
+
+    def test_la_hidratacion_no_tiene_banda_ni_alerta(self):
+        """Medido sobre 46.512 respuestas: va de 1 a 9 y el 78% son 2 o 3 —
+        litros de agua, no un nivel 1–5. Con la banda de escala puesta,
+        marcaba el 55% de las respuestas como críticas y enterraba el resto."""
+        from goals.models import AlertRule
+
+        campo = self._campo("checkin_formativo", "hidratacion")
+        self.assertEqual(campo["unit"], "L")
+        self.assertEqual(campo["max"], 10, "los valores reales llegan a 9")
+        self.assertNotIn("reference_ranges", campo)
+        self.assertFalse(AlertRule.objects.filter(
+            template__slug="checkin_formativo", field_key="hidratacion").exists())
+
+    def test_el_peso_no_tiene_banda(self):
+        # El peso "normal" es el del jugador, no un rango del formulario.
+        self.assertNotIn("reference_ranges",
+                         self._campo("checkin_formativo", "peso"))
+
+    def test_el_rpe_tiene_zonas_pero_no_puede_disparar(self):
+        from exams.bands import alert_bands
+        from goals.models import AlertRule
+
+        campo = self._campo("checkout_formativo", "rpe")
+        bandas = campo["reference_ranges"]
+        self.assertEqual([b["label"] for b in bandas],
+                         ["Baja", "Moderada", "Alta", "Máxima"])
+        # Sin `alert: False` explícito, la heurística de la banda más roja la
+        # haría disparar sola: una sesión de RPE 9 es una sesión dura, no una
+        # alarma.
+        self.assertEqual(alert_bands(bandas), [])
+        self.assertFalse(AlertRule.objects.filter(
+            template__slug="checkout_formativo", field_key="rpe").exists())
+
+    def test_cada_campo_vigilado_tiene_aviso_y_critica(self):
+        from goals.models import AlertRule
+
+        for slug, campos in (
+            ("checkin_formativo", ["calidad_sueno", "nivel_fatiga",
+                                   "nivel_estres", "estado_animo",
+                                   "dano_muscular"]),
+            ("checkout_formativo", ["dano_muscular", "partido_recuperacion",
+                                    "partido_explosivas", "partido_fisico"]),
+        ):
+            for campo in campos:
+                sev = set(AlertRule.objects.filter(
+                    template__slug=slug, field_key=campo,
+                ).values_list("severity", flat=True))
+                self.assertEqual(sev, {"warning", "critical"}, f"{slug}.{campo}")
+
+    def test_las_reglas_no_son_por_categoria(self):
+        """Un 3 de sueño significa lo mismo en Serie 2018 que en SUB-20.
+
+        Replicarlas por categoría serían 12 copias del mismo número esperando
+        a desincronizarse — al revés de las pruebas físicas, donde el club mide
+        el mismo test con umbrales distintos por edad.
+        """
+        from goals.models import AlertRule
+
+        self.assertFalse(AlertRule.objects.filter(
+            template__slug__in=("checkin_formativo", "checkout_formativo"),
+        ).exclude(category=None).exists())
+
+    def test_cada_severidad_dispara_su_propia_banda(self):
+        from goals.evaluator import _band_evaluation
+        from goals.models import AlertRule
+
+        for sev, valor_que_dispara, valor_que_no in (("critical", 2, 3),
+                                                     ("warning", 3, 2)):
+            regla = AlertRule.objects.get(template__slug="checkin_formativo",
+                                          field_key="calidad_sueno",
+                                          severity=sev)
+            banda, disparan = _band_evaluation(regla, valor_que_dispara)
+            self.assertIn(banda["label"], [b["label"] for b in disparan], sev)
+            banda, disparan = _band_evaluation(regla, valor_que_no)
+            self.assertNotIn(banda["label"], [b["label"] for b in disparan], sev)
+
+    def test_una_segunda_corrida_no_pisa_los_numeros_del_club(self):
+        """El cuerpo médico va a ajustar estos umbrales desde el editor."""
+        from django.core.management import call_command
+
+        from goals.models import AlertRule
+
+        regla = AlertRule.objects.filter(
+            template__slug="checkin_formativo", field_key="calidad_sueno",
+            severity="critical").first()
+        regla.config = {"trigger_labels": ["Crítico"],
+                        "ranges": [{"min": 1, "max": 1.5, "label": "Crítico"}]}
+        regla.save()
+        call_command("seed_wellness_formativo", club="U", season=2026,
+                     unlock=True, verbosity=0)
+        regla.refresh_from_db()
+        self.assertEqual(regla.config["ranges"][0]["max"], 1.5)

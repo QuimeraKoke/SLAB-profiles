@@ -569,6 +569,82 @@ el bloque `environment` de los servicios, así que el sync horario de GPS y
 evaluaciones fue un **no-op silencioso** desde que se escribió. Están las tres
 en los tres servicios (backend, worker, beat).
 
+### Bandas y alertas — hechas (2026-09-05)
+
+Las siembra el mismo `seed_wellness_formativo`. Son 18 reglas `band`, dos por
+campo vigilado (aviso + crítica), **sin categoría** — `category=None` significa
+"todas", que es lo correcto: un 3 de sueño significa lo mismo en Serie 2018 que
+en SUB-20. Replicarlas por categoría serían 12 copias del mismo número
+esperando a desincronizarse. Es al revés que en las pruebas físicas, donde el
+club mide el mismo test con umbrales distintos por edad y `seed_formativo_bands`
+sí las escribe por categoría.
+
+Las bandas de la escala 1–5 viven en el **campo** (`reference_ranges`), no en
+`config["ranges"]` de cada regla: el evaluador cae al campo cuando la regla no
+trae números propios, así que un solo lugar sirve a las doce y el club puede
+sobreescribir por categoría desde el editor sin tocar el código.
+
+| valor | banda | dispara |
+|---|---|---|
+| 1–2 | Crítico | la regla `critical` |
+| 3 | Aviso | la regla `warning` |
+| 4–5 | Normal | nada |
+
+Los límites son **inclusivos y gana el primer match**, así que el orden de
+declaración decide la frontera: un 3 cae en "Aviso" porque "Crítico" cierra
+en 2.
+
+**Qué NO tiene banda, y por qué importa**
+
+- **`hidratacion`** ⚠️ No es una escala 1–5 aunque el formulario la llame
+  "nivel". Medido sobre 46.512 respuestas: va de **1 a 9** y el 78% son 2 o 3 —
+  son litros de agua al día, donde 2 es lo normal. Con la banda de escala
+  puesta marcaba el **55% de las respuestas del plantel como críticas** y
+  enterraba las alertas reales: la primera corrida generó 284 alertas de
+  hidratación de un total de 397. Cuántos litros son pocos lo decide el cuerpo
+  médico, no la distribución.
+- **`rpe`**: tiene zonas de intensidad para colorear el gráfico
+  (Baja/Moderada/Alta/Máxima) pero con `alert: False` en todas y **ninguna
+  regla**. Mide carga: una sesión de RPE 9 es una sesión dura, no un problema.
+  Sin el flag explícito, la heurística de `exams.bands.alert_bands` elegiría la
+  banda más roja y la haría disparar sola.
+- **`peso`**: el peso "normal" es el del jugador, no un rango del formulario.
+
+**Alertas sobre lo ya importado**
+
+`bulk_create` no dispara señales, así que la evaluación es explícita — igual
+que en el ingest de GPS, y acotada a los últimos 30 días (`ALERT_STALE_DAYS`):
+una alerta anclada en una lectura de 2024 se expira sola en el siguiente
+barrido. El cron pasa `alerts=True` porque su ventana de 7 días es toda
+reciente.
+
+```bash
+# el cron lo hace solo; a mano:
+docker compose exec backend python manage.py import_wellness_formativo \
+    --commit --dias 7 --alertas
+# y después, porque bulk_create tampoco recalcula el estado materializado:
+docker compose exec backend python manage.py rebuild_player_state
+```
+
+Resultado de la primera evaluación: **113 alertas activas** (20 críticas, 93
+avisos) sobre ~500 jugadores.
+
+### Layouts con los datos de wellness
+
+```bash
+docker compose exec backend python manage.py generate_formativo_layouts --commit
+```
+
+Hay que re-correrlo **después** de importar: el generador deriva los widgets de
+los campos que tienen datos, así que los layouts armados antes del wellness no
+lo incluían. Agrega 8 widgets de jugador y 6 de equipo por categoría (sueño,
+fatiga, estrés, ánimo, daño, peso, hidratación / RPE, duración, percepción de
+partido). Reconstruye en el lugar, así que pisa cualquier ajuste manual —
+`--skip-existing` lo evita.
+
+Verificado sobre un jugador de Serie 2011: 8 secciones, 30 widgets, todos con
+datos.
+
 ### Lo que el relevamiento de los documentos cambió
 
 **⚠️ La escala NO está invertida.** En este formulario **5 es lo mejor para los

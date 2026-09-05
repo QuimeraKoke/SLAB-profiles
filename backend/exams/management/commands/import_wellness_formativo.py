@@ -42,6 +42,9 @@ class Command(BaseCommand):
         parser.add_argument("--rol", choices=["checkin", "checkout"], default=None,
                             help="Sólo una de las dos hojas.")
         parser.add_argument("--commit", action="store_true")
+        parser.add_argument("--alertas", action="store_true",
+                            help="Evaluar reglas de alerta sobre lo nuevo "
+                                 "(sólo lo de los últimos 30 días).")
 
     def handle(self, *args, **opts):
         from integrations.google_sheets import Documento
@@ -84,7 +87,8 @@ class Command(BaseCommand):
                 for rol in roles:
                     try:
                         rep = ingest.ingerir(doc, titulo=titulo, club=club,
-                                             rol=rol, commit=True, desde=desde)
+                                             rol=rol, commit=True, desde=desde,
+                                             alertas=opts["alertas"])
                     except Exception as exc:
                         fallidos.append((f"{titulo}/{rol}",
                                          f"{type(exc).__name__}: {exc}"))
@@ -121,6 +125,8 @@ class Command(BaseCommand):
             partes.append(f"{r.fuera_de_categoria} de otra categoría")
         if r.sin_fecha:
             partes.append(f"{r.sin_fecha} sin fecha")
+        if r.alertas:
+            partes.append(f"{r.alertas} alertas")
         estilo = self.style.SUCCESS if r.creados else self.style.NOTICE
         self.stdout.write(estilo(
             f"  {r.documento:26} {r.hoja:10} {r.filas:6} filas · "

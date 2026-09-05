@@ -181,6 +181,19 @@ filas coinciden al 100% con la suma cruda, 0 con la invertida). Y el check-out
 que su KPI muestra carga interna (UA) con tono neutral en vez de un puntaje
 0–100 que habría dicho "Sin datos" para siempre en media plantilla.
 
+**Bandas, alertas y layouts — hechos (2026-09-05).** 18 reglas `band` (dos por
+campo vigilado, sin categoría porque un 3 de sueño significa lo mismo en las
+doce), las bandas 1–5 en el campo, y los layouts regenerados: 8 widgets de
+jugador + 6 de equipo por categoría. La ficha de un jugador de Serie 2011
+muestra 8 secciones y 30 widgets, todos con datos. **113 alertas activas** (20
+críticas) tras evaluar los últimos 30 días.
+
+⚠️ **`hidratacion` no es una escala 1–5.** Va de 1 a 9 y el 78% de las 46.512
+respuestas son 2 o 3: son litros de agua, donde 2 es lo normal. Sembrada con la
+banda de escala marcaba el 55% de las respuestas como críticas — 284 alertas
+falsas de 397. Quedó sin banda y sin regla: cuántos litros son pocos lo decide
+el cuerpo médico.
+
 ⚠️ **`FORMATIVO_GPS_SHEET_ID` y `FORMATIVO_EVAL_SHEET_ID` nunca llegaban al
 contenedor**: estaban en `settings.py` pero no en el bloque `environment` de
 `docker-compose.yml`, así que el sync horario de GPS y evaluaciones fue un
