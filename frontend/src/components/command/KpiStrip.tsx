@@ -69,13 +69,16 @@ export default function KpiStrip({
             ? `Wellness plantel · ${ROLE_LABEL[wellnessRole]}`
             : "Wellness plantel"
         }
-        value={w.value == null ? "—" : String(w.value)}
+        value={w.value == null ? "—" : `${w.value}${w.unit ? ` ${w.unit}` : ""}`}
         status={{ text: w.status, tone: w.tone }}
         chips={w.dimensions.map((dim) => ({ label: `${dim.label} ${dim.value}` }))}
         detail={
-          w.responses != null
+          // El Check-OUT manda su propio pie: mide carga, no adherencia, y
+          // "12/25 respuestas" no dice lo que hay que mirar ahí.
+          w.detail ??
+          (w.responses != null
             ? `${w.responses}/${w.expected} respuestas`
-            : "Sin respuestas registradas."
+            : "Sin respuestas registradas.")
         }
         tabs={
           onWellnessRoleChange && (

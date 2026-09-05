@@ -196,6 +196,110 @@ def sync_formativo_sheets(commit: bool = True, alerts: bool = False) -> dict:
                 pass
 
 
+_LOCK_WELLNESS_FORM = "lock:sync_wellness_formativo"
+_LOCK_WELLNESS_FORM_TTL = 3600
+
+
+@shared_task(name="exams.tasks.sync_wellness_formativo")
+def sync_wellness_formativo(commit: bool = True, dias: int | None = 7) -> dict:
+    """Pull the Formativo's eight wellness documents (Check-IN + Check-OUT).
+
+    `dias=7` by default rather than the full history. The documents go back to
+    February 2024 and hold ~118.000 responses between them; re-reading all of
+    it every tick would cost minutes per run to find the handful of rows that
+    are new. The window is generous on purpose — a day of downtime, like the
+    nine the local Celery stack spent unable to resolve Redis, still gets
+    caught up without a manual backfill. Pass `dias=None` for the full sweep.
+
+    One unreachable document does NOT sink the other seven: Google returned a
+    503 on one of eight during the first survey, and a sync that gives up on
+    the first failure would silently skip a whole category until someone
+    noticed.
+    """
+    import time
+
+    from core.models import Club
+    from exams import wellness_formativo_ingest as ingest
+    from integrations.google_sheets import Documento
+
+    creds_file, creds_json = _formativo_creds()
+    ids = settings.FORMATIVO_WELLNESS_SHEET_IDS
+    if not (creds_file or creds_json) or not ids:
+        logger.info("wellness formativo skipped: sheets/credentials not configured")
+        return {"status": "skipped", "reason": "not configured"}
+
+    club = Club.objects.filter(name=settings.FORMATIVO_CLUB).first()
+    if club is None:
+        logger.warning("wellness formativo skipped: club %r not found",
+                       settings.FORMATIVO_CLUB)
+        return {"status": "skipped", "reason": "club not found"}
+
+    lock = None
+    try:
+        from django.core.cache import cache
+
+        lock = cache
+        if not cache.add(_LOCK_WELLNESS_FORM, "1", _LOCK_WELLNESS_FORM_TTL):
+            logger.info("wellness formativo skipped: another run holds the lock")
+            return {"status": "skipped", "reason": "locked"}
+    except Exception:  # pragma: no cover — cache backend unavailable
+        lock = None
+
+    creds = {"creds_file": creds_file, "creds_json": creds_json}
+    desde = ingest.ventana(dias)
+    salida: dict = {"status": "ok", "documentos": len(ids), "creados": 0,
+                    "repetidos": 0, "sin_jugador": 0, "ambiguos": 0,
+                    "fallidos": []}
+    try:
+        for sid in ids:
+            doc = titulo = None
+            for intento in range(3):
+                try:
+                    doc = Documento(sid, **creds)
+                    titulo = doc.titulo()
+                    break
+                except Exception as exc:
+                    if intento == 2:
+                        logger.warning("wellness formativo: %s inalcanzable: %s",
+                                       sid[:16], exc)
+                        salida["fallidos"].append(f"{sid[:16]}: {exc}")
+                        salida["status"] = "partial"
+                    else:
+                        time.sleep(3 * (intento + 1))
+            if doc is None:
+                continue
+            for rol in ("checkin", "checkout"):
+                try:
+                    rep = ingest.ingerir(doc, titulo=titulo, club=club, rol=rol,
+                                         commit=commit, desde=desde)
+                except Exception as exc:
+                    logger.warning("wellness formativo (%s/%s): %s",
+                                   titulo, rol, exc)
+                    salida["fallidos"].append(f"{titulo}/{rol}: {exc}")
+                    salida["status"] = "partial"
+                    continue
+                salida["creados"] += rep.creados
+                salida["repetidos"] += rep.repetidos
+                salida["sin_jugador"] += sum(rep.no_encontrados.values())
+                salida["ambiguos"] += sum(rep.ambiguos.values())
+                # Una columna nueva en el formulario es la forma exacta en que
+                # una métrica desaparece sin que nadie lo note.
+                if rep.columnas_sin_mapear:
+                    logger.error("wellness formativo (%s/%s): columnas nuevas %s",
+                                 titulo, rol, rep.columnas_sin_mapear)
+                    salida.setdefault("columnas_nuevas", []).append(
+                        {"documento": titulo, "hoja": rol,
+                         "columnas": rep.columnas_sin_mapear})
+        logger.info("wellness formativo: %s", salida)
+        return salida
+    finally:
+        if lock is not None:
+            try:
+                lock.delete(_LOCK_WELLNESS_FORM)
+            except Exception:  # pragma: no cover
+                pass
+
+
 @shared_task(name="exams.tasks.sync_all_vald_clubs")
 def sync_all_vald_clubs(full: bool = False) -> list[dict]:
     """Scheduled VALD Hub sync for every club with an enabled integration.

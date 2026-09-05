@@ -160,12 +160,31 @@ como el resto de las pestañas de la app. Primer Equipo no ve toggle ni fila
 "Check-OUT" en calidad de datos: un "Sin plantilla" ahí se leería como una
 falla de configuración y no como un formulario que ese plantel nunca llenó.
 
-**Falta el importador.** Los 8 documentos (65.067 filas de CHECK IN + 53.040
-de CHECK OUT) siguen sin cargar, y su cron. El match es **por nombre** — el
-orden de columnas cambia entre documentos — con alias de encabezado
-(`CALIDAD SUEÑO`/`CALIDAD DEL SUEÑO`, `Peso (kg)`/`Peso (kg) solo número`) y la
-categoría sale del título del documento (`CAT 15` → cohorte 2015; `SUB 21` →
-bracket Sub 20).
+**El importador y el cron — hechos (2026-09-05).** 117.395 filas leídas,
+**109.914 importadas**: 60.341 check-in y 49.573 check-out, del 15/01/2024 al
+04/09/2026. Tres entradas de Celery Beat mantienen los ocho documentos al día
+(ventana de 7 días en la jornada, barrido completo los domingos); una corrida
+mide 39,5 s.
+
+Quedó afuera un 6,4%: **6741 filas de 69 nombres sin jugador en SLAB** —
+casi todos ex-jugadores cuya última respuesta es de 2024 — y **738 filas de dos
+homónimos** (`DAVID GUZMAN`, `FRANCO CÁCERES`) que la cohorte del documento no
+desempata. Los únicos nombres recientes sin resolver son **JOHN CORTES**,
+**NICOLAS MARCANO** y **CHRISTIAN ROZAS**, que hay que ver con el club.
+
+⚠️ **Dos correcciones que el relevamiento obligó.** La escala **no está
+invertida**: en este formulario 5 es lo mejor para los cinco ítems, fatiga y
+daño muscular incluidos, verificado contra la columna `SUMA` del club (25.146
+filas coinciden al 100% con la suma cruda, 0 con la invertida). Y el check-out
+**mide carga, no bienestar**: `rpe` viene en el 100% de las filas y
+`dano_muscular` en el 8%, y cuatro de los ocho documentos no lo preguntan — así
+que su KPI muestra carga interna (UA) con tono neutral en vez de un puntaje
+0–100 que habría dicho "Sin datos" para siempre en media plantilla.
+
+⚠️ **`FORMATIVO_GPS_SHEET_ID` y `FORMATIVO_EVAL_SHEET_ID` nunca llegaban al
+contenedor**: estaban en `settings.py` pero no en el bloque `environment` de
+`docker-compose.yml`, así que el sync horario de GPS y evaluaciones fue un
+no-op silencioso desde que se escribió. Corregido en los tres servicios.
 
 ### 2.5 Desplegar
 

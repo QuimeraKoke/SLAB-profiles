@@ -105,6 +105,40 @@ app.conf.beat_schedule = {
         "task": "exams.tasks.sync_formativo_sheets",
         "schedule": crontab(minute=25),
     },
+    # Wellness del formativo: OCHO documentos de Google Forms, cada uno con sus
+    # hojas `CHECK IN` y `CHECK OUT`. Dos cadencias por la misma razón que el
+    # wellness del Primer Equipo — el check-in se llena a la mañana antes de
+    # entrenar y el check-out después de la sesión, así que la ventana útil son
+    # las dos puntas del día y no la madrugada.
+    #
+    # A diferencia del sync de GPS/evaluaciones, este lee sólo los últimos días
+    # en vez del documento entero: entre los ocho hay ~118.000 respuestas desde
+    # febrero de 2024, y releerlas todas cada media hora sería minutos de
+    # trabajo para encontrar las diez filas nuevas. La ventana de 7 días es
+    # holgada a propósito, para que una caída de un par de días se recupere
+    # sola — el stack local pasó nueve días sin poder resolver `redis` y nadie
+    # lo notó hasta que faltaron los datos.
+    #
+    # Ocho documentos son 24 requests (abrir + dos hojas cada uno) contra el
+    # límite de 60 lecturas por minuto. Minuto 40 para no pisar :00 (fixtures),
+    # :15 (Catapult), :25 (formativo) ni :30 (VALD).
+    "wellness-formativo-jornada": {
+        "task": "exams.tasks.sync_wellness_formativo",
+        "schedule": crontab(minute=40, hour="7-11,16-22"),
+        "kwargs": {"dias": 7},
+    },
+    "wellness-formativo-offpeak": {
+        "task": "exams.tasks.sync_wellness_formativo",
+        "schedule": crontab(minute=40, hour="0-6,12-15,23"),
+        "kwargs": {"dias": 7},
+    },
+    # Barrido completo semanal: recoge las respuestas que el club edita o
+    # agrega con fecha vieja, que la ventana de 7 días ya no alcanza.
+    "wellness-formativo-completo": {
+        "task": "exams.tasks.sync_wellness_formativo",
+        "schedule": crontab(minute=50, hour=4, day_of_week=0),
+        "kwargs": {"dias": None},
+    },
     # Catapult OpenField GPS sync (activities → gps_partido/gps_sesion). Hourly
     # at :15 (staggered from fixtures :00 and VALD :30). Gap-fill / idempotent —
     # dedup on the Catapult activity_id, so re-runs never duplicate and

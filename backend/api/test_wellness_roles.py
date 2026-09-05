@@ -199,16 +199,35 @@ class CommandCenterCheckoutTests(TestCase):
         # una falta de configuración y no como un formulario que no existe.
         self.assertNotIn("Check-OUT", [r["source"] for r in cc["data_quality"]])
 
-    def test_la_categoria_con_checkout_lo_trae_puntuado(self):
+    def test_la_categoria_con_checkout_trae_su_carga_interna(self):
+        """El KPI del check-out mide CARGA, no bienestar.
+
+        Medido sobre las 49.573 respuestas del club: `rpe` viene en el 100% de
+        las filas y `dano_muscular` en el 8% — y cuatro de los ocho documentos
+        no lo preguntan nunca. Un puntaje 0–100 armado sobre ese ítem diría
+        "Sin datos" para siempre en la mitad de las categorías.
+        """
         ExamResult.objects.create(
             player=self.jugador, template=self.checkout,
-            recorded_at=timezone.now(), result_data={"rpe": 0, "dano_muscular": 1},
+            recorded_at=timezone.now(),
+            result_data={"rpe": 7, "duracion_min": 60,
+                         "molestia_post": "Isquiotibiales Der."},
         )
         cc = build_command_center(self.youth)
         self.assertEqual(cc["wellness_roles"], ["checkin", "checkout"])
-        self.assertEqual(cc["checkout"]["wellness"]["value"], 100)
+        ko = cc["checkout"]["wellness"]
+        self.assertEqual(ko["value"], 420, "7 × 60 = la UA del club")
+        self.assertEqual(ko["unit"], "UA")
+        self.assertEqual(ko["tone"], "info", "una sesión dura no es una alarma")
+        self.assertIn({"label": "RPE medio", "value": 7.0}, ko["dimensions"])
+        self.assertIn({"label": "con molestia", "value": 1}, ko["dimensions"])
         self.assertEqual(cc["checkout"]["adherence"]["responded"], 1)
         self.assertIn("Check-OUT", [r["source"] for r in cc["data_quality"]])
+
+    def test_el_checkout_sin_respuestas_no_inventa_un_numero(self):
+        cc = build_command_center(self.youth)
+        self.assertIsNone(cc["checkout"]["wellness"]["value"])
+        self.assertEqual(cc["checkout"]["wellness"]["status"], "Sin datos")
 
     def test_el_checkin_del_formativo_ya_no_mira_el_slug_del_primer_equipo(self):
         """La regresión de origen: `checkin_formativo` contaba como 0 respuestas."""

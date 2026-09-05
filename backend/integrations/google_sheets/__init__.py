@@ -13,10 +13,10 @@ Thin wrapper over gspread + a service-account credential. Mirrors the
 """
 
 from .client import (Documento, fetch_rows, fetch_values, list_worksheets,
-                     serial_to_date, SERIAL_EPOCH)
+                     serial_to_date, serial_to_datetime, SERIAL_EPOCH)
 from .exceptions import GoogleSheetsError
 
 __all__ = [
     "Documento", "fetch_rows", "fetch_values", "list_worksheets",
-    "serial_to_date", "SERIAL_EPOCH", "GoogleSheetsError",
+    "serial_to_date", "serial_to_datetime", "SERIAL_EPOCH", "GoogleSheetsError",
 ]

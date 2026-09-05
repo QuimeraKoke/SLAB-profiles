@@ -512,26 +512,103 @@ posible de una escala 1–5 vale 20, no 0. Es la misma propiedad que hace que el
 peor check-in de Primer Equipo dé 18. Cambiarla movería todos los números
 históricos de los dos planteles.
 
-### Importador ⏳ pendiente
+### Importador — hecho (2026-09-05)
 
-Los 8 documentos (65.067 filas de CHECK IN + 53.040 de CHECK OUT) siguen sin
-importar, y falta su cron. Notas para escribirlo:
+```bash
+# ensayo, no escribe nada
+docker compose exec backend python manage.py import_wellness_formativo
 
-- El match es **por nombre**: el orden de columnas cambia entre documentos.
-- Alias de encabezado: `CALIDAD SUEÑO`/`CALIDAD DEL SUEÑO`,
-  `Peso (kg)`/`Peso (kg) solo número`.
-- La categoría sale del **título del documento**: `CAT 15` → cohorte 2015;
-  `SUB 21` → bracket Sub 20.
-- `SUMA` y `UA` **no se importan** — los calcula la plantilla. Sus encabezados
-  son inconsistentes (`SUMA` en cuatro documentos, un `0` pelado en uno, `UA`
-  en seis y `AU` en uno).
-- Reusar `exams/formativo_sources.py`: resuelve el título truncado a 31
-  caracteres, pide `UNFORMATTED_VALUE` (el punto es separador de miles) y
-  convierte seriales a fecha **sólo en columnas de fecha**.
+# histórico completo
+docker compose exec backend python manage.py import_wellness_formativo --commit
+
+# sólo lo nuevo (lo que corre el cron)
+docker compose exec backend python manage.py import_wellness_formativo --commit --dias 7
+```
+
+Los ocho documentos salen de `FORMATIVO_WELLNESS_SHEET_IDS` (lista separada
+por comas). `--sheet-id` prueba uno solo sin tocar la configuración.
+
+**Resultado de la primera corrida**: 117.395 filas leídas, **109.914
+importadas** (60.341 check-in + 49.573 check-out), del 15/01/2024 al 04/09/2026.
+
+**Lo que NO entró y por qué**
+
+| | filas | qué es |
+|---|---|---|
+| Sin jugador en SLAB | 6741 | 69 nombres, casi todos ex-jugadores: su última respuesta es de 2024. Sólo 92 filas son recientes. |
+| Ambiguos | 738 | `DAVID GUZMAN` (466) y `FRANCO CÁCERES` (272) — homónimos que la cohorte del documento no desempata. |
+
+Los nombres recientes sin jugador son **JOHN CORTES** (50), **NICOLAS
+MARCANO** (10), **CHRISTIAN ROZAS** (2) y `Opción 35` (3, basura del
+formulario). Esos cuatro hay que resolverlos con el club.
+
+### El cron
+
+Tres entradas en `config/celery.py`:
+
+| entrada | cuándo | ventana |
+|---|---|---|
+| `wellness-formativo-jornada` | :40 de 07–11 y 16–22 | 7 días |
+| `wellness-formativo-offpeak` | :40 del resto | 7 días |
+| `wellness-formativo-completo` | domingos 04:50 | todo |
+
+Dos cadencias por la misma razón que el wellness de Primer Equipo: el check-in
+se llena a la mañana y el check-out después de entrenar. **Lee sólo los últimos
+7 días**, no el documento entero como el sync de GPS: entre los ocho hay
+118.000 respuestas desde febrero de 2024 y releerlas todas cada media hora sería
+minutos de trabajo para encontrar diez filas. La ventana es holgada a propósito
+para que una caída de un par de días se recupere sola. El barrido semanal
+recoge lo que el club edita con fecha vieja.
+
+Una corrida completa mide **39,5 s** para los ocho documentos (24 requests
+contra el límite de 60 lecturas/minuto).
+
+⚠️ **Las variables tienen que pasar por `docker-compose.yml`.** `FORMATIVO_GPS_SHEET_ID`
+y `FORMATIVO_EVAL_SHEET_ID` estuvieron definidas en `settings.py` pero nunca en
+el bloque `environment` de los servicios, así que el sync horario de GPS y
+evaluaciones fue un **no-op silencioso** desde que se escribió. Están las tres
+en los tres servicios (backend, worker, beat).
+
+### Lo que el relevamiento de los documentos cambió
+
+**⚠️ La escala NO está invertida.** En este formulario **5 es lo mejor para los
+cinco ítems**, fatiga, estrés y daño muscular incluidos: `NIVEL DE FATIGA` 5
+significa "sin fatiga". Verificado contra la columna `SUMA` del propio club, que
+es la suma CRUDA de los cinco — 25.146 filas de tres documentos coinciden al
+100% con la suma cruda y ninguna con la versión invertida. El daño muscular del
+check-out apunta igual: quien puntúa 1–2 nombra un músculo dolorido en el 50–70%
+de las filas, quien puntúa 5 en el 1%. La plantilla se sembró al revés y se
+corrigió; equivocarse acá es invisible, porque todos los números quedan en rango
+y el plantel simplemente parece estar bien cuando está roto.
+
+**El check-out es un formulario de CARGA, no de bienestar.** Cobertura medida
+sobre las 49.573 respuestas: `rpe` 100%, `duracion_min` 99%,
+`tipo_entrenamiento` 88%, `dano_muscular` **8%** — y cuatro de los ocho
+documentos no lo preguntan nunca. Por eso el KPI del Centro de mando muestra
+**carga interna (UA)** con tono neutral y los chips de RPE medio y jugadores con
+molestia, en vez de un puntaje 0–100 que diría "Sin datos" para siempre en la
+mitad de las categorías.
+
+**El orden de columnas cambia entre documentos**, así que el mapeo es por
+encabezado normalizado y nunca posicional. Variantes que hay que tolerar:
+`CALIDAD SUEÑO`/`CALIDAD DEL SUEÑO`, `Peso (kg)`/`Peso (kg) solo número`,
+`DAÑO MUSCULAR`/`PERCEPCIÓN MOLESTIAS/DOLORES`, `UA`/`AU`.
+
+**El match es por jugador, no por categoría.** El título trae una categoría
+(`SUB 11 - 2026 - CAT 15`) pero es una copia vieja de algo que SLAB ya sabe: uno
+todavía dice 2025 y los dos de arriba abarcan varias cohortes (`CAT 08-07`). Las
+filas matchean por NOMBRE contra el plantel del club y la categoría del jugador
+en SLAB decide dónde cae el resultado. El título sólo desempata homónimos.
+
+⚠️ El apellido materno **tiene que estar en la clave**: `Tomás De Araya` se
+guarda como last=`De` second=`Araya`, y buscar por nombre + paterno pedía
+`TOMAS DE`. Y `nombre + materno` va en un **segundo nivel**, nunca junto a las
+claves primarias: si compite de igual a igual, `Lucas Pantoja Nuñez` reclama la
+clave `LUCAS NUÑEZ` que es de `Lucas Nuñez Leon` y las dos quedan ambiguas
+(medido: recupera 760 filas y bloquea ~970).
 
 Falta decidir si el formulario va a cubrir el formativo de acá en adelante —
-porque si no, importar el histórico deja una serie que se corta el día de la
-carga.
+por ahora sí: los ocho documentos se estaban llenando el 04/09.
 
 ---
 

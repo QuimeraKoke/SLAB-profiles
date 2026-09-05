@@ -57,18 +57,27 @@ G_BIEN, G_CUERPO, G_HABITOS = "Bienestar", "Cuerpo", "Hábitos"
 
 CHECKIN = {
     "fields": [
+        # ⚠️ Los cinco apuntan en la MISMA dirección: 5 es lo mejor, también en
+        # fatiga, estrés y daño. `NIVEL DE FATIGA` 5 es "sin fatiga", no
+        # "fatiga máxima". Verificado contra la columna `SUMA` del propio club,
+        # que es la suma CRUDA de los cinco: 25.146 filas de tres documentos
+        # coinciden al 100% con la suma cruda y 0 con la versión invertida.
         _escala("calidad_sueno", "Calidad del sueño", G_BIEN, mas_es_mejor=True),
-        _escala("nivel_fatiga", "Nivel de fatiga", G_BIEN, mas_es_mejor=False),
-        _escala("nivel_estres", "Nivel de estrés", G_BIEN, mas_es_mejor=False),
+        _escala("nivel_fatiga", "Nivel de fatiga", G_BIEN, mas_es_mejor=True),
+        _escala("nivel_estres", "Nivel de estrés", G_BIEN, mas_es_mejor=True),
         _escala("estado_animo", "Estado de ánimo", G_BIEN, mas_es_mejor=True),
-        _escala("dano_muscular", "Daño muscular", G_CUERPO, mas_es_mejor=False),
+        _escala("dano_muscular", "Daño muscular", G_CUERPO, mas_es_mejor=True),
+        # Sólo la pregunta el documento de SUB 16, y hoy está entera vacía. Va
+        # igual para que el importador no la reporte como columna desconocida.
+        _escala("nivel_recuperacion", "Nivel de recuperación", G_BIEN,
+                mas_es_mejor=True),
         {"key": "sintomas", "label": "Síntomas", "type": "text", "group": G_CUERPO},
         {"key": "dolor_muscular", "label": "Dolor muscular (zona)",
          "type": "text", "group": G_CUERPO},
         {"key": "peso", "label": "Peso", "type": "number", "unit": "kg",
          "group": G_CUERPO, "min": 25, "max": 130, "chart_type": "line"},
-        {"key": "hidratacion", "label": "Nivel de hidratación", "type": "text",
-         "group": G_HABITOS},
+        _escala("hidratacion", "Nivel de hidratación", G_HABITOS,
+                mas_es_mejor=True),
         {"key": "ultima_comida", "label": "Última comida antes de entrenar",
          "type": "text", "group": G_HABITOS},
         {"key": "relaciones_afectivas",
@@ -82,13 +91,13 @@ CHECKIN = {
             "key": "total_bienestar", "label": "Total bienestar",
             "type": "calculated", "unit": "", "group": G_BIEN,
             "chart_type": "line", "direction_of_good": "up",
-            # The club's own `SUMA`, recomputed. Fatigue, stress and muscle
-            # damage are INVERTED first (6 − x on a 1–5 scale): summing them
-            # raw would make a wrecked player score high, which is how a
-            # wellness total ends up pointing the wrong way.
-            "formula": ("[calidad_sueno] + [estado_animo] "
-                        "+ (6 - [nivel_fatiga]) + (6 - [nivel_estres]) "
-                        "+ (6 - [dano_muscular])"),
+            # The club's own `SUMA`, recomputed: the raw sum of the five, 5 to
+            # 25. Raw because all five point the same way — see the note on the
+            # scales above. Mirroring three of them (which is what this formula
+            # used to do) produced a number the club would not recognise: 15
+            # where their sheet says 19.
+            "formula": ("[calidad_sueno] + [nivel_fatiga] + [nivel_estres] "
+                        "+ [estado_animo] + [dano_muscular]"),
         },
     ],
     # What makes this template the category's Check-IN, and which of its fields
@@ -102,8 +111,8 @@ CHECKIN = {
             ["estado_animo", "Ánimo"],
             ["dano_muscular", "Daño muscular"],
         ],
-        # Inverted items: the score must read "5 = worst", not "5 = best".
-        "inverted": ["nivel_fatiga", "nivel_estres", "dano_muscular"],
+        # NINGUNO invertido: en este formulario 5 siempre es lo mejor.
+        "inverted": [],
         "dimensions": [["calidad_sueno", "Sueño"], ["nivel_fatiga", "Fatiga"],
                        ["estado_animo", "Ánimo"]],
     },
@@ -130,7 +139,10 @@ CHECKOUT = {
             # a metric whose own header is a typo goes half-empty in silence.
             "formula": "[rpe] * [duracion_min]",
         },
-        _escala("dano_muscular", "Daño muscular", G_MOLESTIA, mas_es_mejor=False),
+        # Misma dirección que en el check-in: 5 = sin daño. Verificado contra
+        # las cuatro columnas de músculo: quien puntúa 1–2 nombra un músculo
+        # dolorido en el 50–70% de las filas, quien puntúa 5 en el 1%.
+        _escala("dano_muscular", "Daño muscular", G_MOLESTIA, mas_es_mejor=True),
         {"key": "molestia_post", "label": "Molestia muscular post-sesión",
          "type": "text", "group": G_MOLESTIA},
         *[{"key": f"molestia_{k}", "label": f"Molestia — {etiqueta}",
@@ -151,16 +163,22 @@ CHECKOUT = {
          "type": "text", "group": G_CARGA},
         {"key": "puntos_recuperacion",
          "label": "Puntos de recuperación posteriores a la sesión",
-         "type": "number", "unit": "", "group": G_CARGA, "min": 0, "max": 20},
+         # El techo no es 20: los valores reales llegan a 105 y más.
+         "type": "number", "unit": "", "group": G_CARGA, "min": 0, "max": 200},
     ],
     "wellness": {
         "role": "checkout",
-        "items": [["rpe", "RPE"], ["dano_muscular", "Daño muscular"]],
-        "inverted": ["rpe", "dano_muscular"],
-        # Both are 0–10 / 1–5 scales, which is what a percentage chip needs.
-        # `carga_interna` is NOT here on purpose: UA has no ceiling, so
-        # "420 UA" as a percentage of anything is a number that means nothing.
-        "dimensions": [["rpe", "RPE"], ["dano_muscular", "Daño muscular"]],
+        # Sólo el daño muscular. El RPE mide CARGA, no bienestar: meterlo en el
+        # puntaje hace que una sesión exigente se pinte de rojo un martes
+        # cualquiera, y su `direction_of_good` es neutral justamente por eso.
+        # Dos documentos (SUB 12 y SUB 13) ni siquiera preguntan daño muscular
+        # en el check-out; ahí el puntaje queda vacío, que es lo honesto.
+        "items": [["dano_muscular", "Daño muscular"]],
+        "inverted": [],
+        # `carga_interna` NO va como chip: UA no tiene techo, así que como
+        # porcentaje de algo no significa nada. El RPE sí, leído como
+        # intensidad (6/10 → 60).
+        "dimensions": [["dano_muscular", "Daño muscular"], ["rpe", "RPE"]],
     },
 }
 

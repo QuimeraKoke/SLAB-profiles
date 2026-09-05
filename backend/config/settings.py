@@ -241,6 +241,16 @@ FORMATIVO_GPS_SHEET_ID = env("FORMATIVO_GPS_SHEET_ID", default="")
 FORMATIVO_EVAL_SHEET_ID = env("FORMATIVO_EVAL_SHEET_ID", default="")
 FORMATIVO_CLUB = env("FORMATIVO_CLUB", default="Universidad de Chile")
 
+# Wellness del formativo: OCHO documentos, uno por categoría, cada uno con sus
+# hojas `CHECK IN` y `CHECK OUT`. Van como lista separada por comas en una sola
+# variable en vez de ocho: la cantidad cambia cuando el club abre o cierra una
+# categoría, y agregar una variable de entorno por temporada es una migración
+# de infraestructura para un dato que es una lista.
+FORMATIVO_WELLNESS_SHEET_IDS = [
+    s.strip() for s in env("FORMATIVO_WELLNESS_SHEET_IDS", default="").split(",")
+    if s.strip()
+]
+
 # --- Email ---
 # Default in dev: print emails to stdout. Set EMAIL_BACKEND to
 # 'django.core.mail.backends.smtp.EmailBackend' (or AWS SES, SendGrid, etc.)

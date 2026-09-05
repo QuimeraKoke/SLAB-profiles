@@ -83,7 +83,7 @@ def build_command_center(category) -> dict:
     }
     if w.ROLE_CHECKOUT in payload["wellness_roles"]:
         payload["checkout"] = {
-            "wellness": _kpi_wellness(category, players, role=w.ROLE_CHECKOUT),
+            "wellness": _kpi_checkout(category, players),
             "adherence": _checkin_adherence(category, players, now,
                                             role=w.ROLE_CHECKOUT),
         }
@@ -279,6 +279,72 @@ def _kpi_wellness(category, players, *, role: str = None) -> dict:
             for k, lbl in dims if dim_acc[k]
         ],
     }
+
+
+def _kpi_checkout(category, players) -> dict:
+    """Post-session KPI: internal load, not a wellness score.
+
+    Measured over the club's 49.573 imported check-outs: `rpe` is filled in
+    100% of rows and `duracion_min` in 99%, but `dano_muscular` in **8%** — and
+    four of the eight documents never ask it at all. A 0–100 wellness score
+    built on that item reads "Sin datos" forever in half the categories, which
+    says nothing about those squads and everything about the form.
+
+    So the headline is what the check-out actually measures: internal load
+    (RPE × minutes, the club's own `UA`), with a NEUTRAL tone. A hard session
+    is not a problem to be flagged red — it is Tuesday. What does deserve
+    attention sits in the chips: how many players reported a molestia.
+    """
+    from api import wellness as w
+
+    pids = [p.id for p in players]
+    recientes = w.recent_by_player(category, pids, limit=1, role=w.ROLE_CHECKOUT)
+
+    cargas, rpes, molestos, respuestas = [], [], 0, 0
+    for datas in recientes.values():
+        d = datas[0] or {}
+        rpe = _f(d.get("rpe"))
+        mins = _f(d.get("duracion_min"))
+        if rpe is None:
+            continue
+        respuestas += 1
+        rpes.append(rpe)
+        if mins is not None:
+            cargas.append(rpe * mins)
+        if any(str(d.get(k) or "").strip() for k in _MOLESTIA_KEYS):
+            molestos += 1
+
+    if not respuestas:
+        return {"value": None, "status": "Sin datos", "tone": "muted",
+                "dimensions": [], "unit": "UA",
+                "detail": "Sin check-outs registrados."}
+
+    carga = round(sum(cargas) / len(cargas)) if cargas else None
+    chips = [{"label": "RPE medio", "value": round(sum(rpes) / len(rpes), 1)}]
+    if molestos:
+        chips.append({"label": "con molestia", "value": molestos})
+    return {
+        "value": carga,
+        "unit": "UA",
+        "status": "Carga interna",
+        "tone": "info",
+        "responses": respuestas,
+        "expected": len(players),
+        "dimensions": chips,
+        "detail": (f"{respuestas}/{len(players)} respuestas · "
+                   f"{molestos} con molestia"),
+    }
+
+
+def _f(raw):
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+_MOLESTIA_KEYS = ("molestia_post", "observaciones", "molestia_isquiotibiales",
+                  "molestia_aductores", "molestia_cuadriceps", "molestia_gemelos")
 
 
 def _kpi_completitud(category, player_ids, now) -> dict:

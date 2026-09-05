@@ -91,6 +91,9 @@ services:
       # (gitignored) → /app/secrets/ via the ./backend mount.
       GOOGLE_SHEETS_CREDENTIALS_FILE: ${GOOGLE_SHEETS_CREDENTIALS_FILE:-/app/secrets/gsheets.json}
       WELLNESS_SHEET_ID: ${WELLNESS_SHEET_ID:-}
+      FORMATIVO_GPS_SHEET_ID: ${FORMATIVO_GPS_SHEET_ID:-}
+      FORMATIVO_EVAL_SHEET_ID: ${FORMATIVO_EVAL_SHEET_ID:-}
+      FORMATIVO_WELLNESS_SHEET_IDS: ${FORMATIVO_WELLNESS_SHEET_IDS:-}
     volumes:
       - ./backend:/app
     ports:
@@ -143,6 +146,9 @@ services:
       # Wellness Google-Sheet ingest (exams.tasks.sync_wellness_responses).
       GOOGLE_SHEETS_CREDENTIALS_FILE: ${GOOGLE_SHEETS_CREDENTIALS_FILE:-/app/secrets/gsheets.json}
       WELLNESS_SHEET_ID: ${WELLNESS_SHEET_ID:-}
+      FORMATIVO_GPS_SHEET_ID: ${FORMATIVO_GPS_SHEET_ID:-}
+      FORMATIVO_EVAL_SHEET_ID: ${FORMATIVO_EVAL_SHEET_ID:-}
+      FORMATIVO_WELLNESS_SHEET_IDS: ${FORMATIVO_WELLNESS_SHEET_IDS:-}
     volumes:
       - ./backend:/app
     depends_on:
@@ -193,6 +199,9 @@ services:
       # Wellness Google-Sheet ingest (exams.tasks.sync_wellness_responses).
       GOOGLE_SHEETS_CREDENTIALS_FILE: ${GOOGLE_SHEETS_CREDENTIALS_FILE:-/app/secrets/gsheets.json}
       WELLNESS_SHEET_ID: ${WELLNESS_SHEET_ID:-}
+      FORMATIVO_GPS_SHEET_ID: ${FORMATIVO_GPS_SHEET_ID:-}
+      FORMATIVO_EVAL_SHEET_ID: ${FORMATIVO_EVAL_SHEET_ID:-}
+      FORMATIVO_WELLNESS_SHEET_IDS: ${FORMATIVO_WELLNESS_SHEET_IDS:-}
     volumes:
       - ./backend:/app
     depends_on:

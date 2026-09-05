@@ -80,6 +80,19 @@ class Documento:
         except Exception as exc:
             raise GoogleSheetsError(f"No se pudo abrir el documento: {exc}")
 
+    def titulo(self) -> str:
+        """The document's own name.
+
+        The Formativo's eight wellness documents carry the category in their
+        title (`… CAT 15`, `… SUB 21`) and nowhere else — the rows themselves
+        only have a player name. Reading it from the metadata already fetched by
+        `open_by_key` costs no extra request.
+        """
+        try:
+            return self._sheet.title
+        except Exception as exc:
+            raise GoogleSheetsError(f"No se pudo leer el título: {exc}")
+
     def worksheets(self) -> list[str]:
         try:
             return [w.title for w in self._sheet.worksheets()]
@@ -159,6 +172,31 @@ def serial_to_date(value: Any) -> _date | None:
     if not (1 <= float(value) <= 73415):
         return None
     return SERIAL_EPOCH + _timedelta(days=int(float(value)))
+
+
+def serial_to_datetime(value: Any) -> "datetime | None":
+    """Serial number → naive datetime, keeping the time of day.
+
+    `serial_to_date` throws away the fractional part, which in a Google Form
+    response sheet is the submission TIME — and the wellness ingest keys its
+    idempotency on `(player, recorded_at)`, so collapsing every response of a
+    day to midnight would make a player's second check-in of the week look like
+    a duplicate of the first.
+
+    Truncated to whole seconds, for the same reason `wellness_ingest` does it:
+    the key has to be stable no matter which source produced the row.
+    """
+    from datetime import datetime as _datetime
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if not (1 <= float(value) <= 73415):
+        return None
+    entero = int(float(value))
+    resto = float(value) - entero
+    base = _datetime.combine(SERIAL_EPOCH + _timedelta(days=entero),
+                             _datetime.min.time())
+    return base + _timedelta(seconds=round(resto * 86400))
 
 
 def fetch_rows(

@@ -41,6 +41,10 @@ export interface CCWellnessKpi {
   responses?: number;
   expected?: number;
   dimensions: { label: string; value: number }[];
+  /** Check-OUT only: it reports internal load (UA), not a 0–100 score. */
+  unit?: string;
+  /** Check-OUT only: the card's footer, written by the backend. */
+  detail?: string;
 }
 
 export interface CCKpis {
