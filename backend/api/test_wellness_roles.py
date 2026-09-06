@@ -459,3 +459,49 @@ class BandasYAlertasDelFormativoTests(TestCase):
                      unlock=True, verbosity=0)
         regla.refresh_from_db()
         self.assertEqual(regla.config["ranges"][0]["max"], 1.5)
+
+
+class FallbackAcotadoAlClubTests(TestCase):
+    """El último recurso de `templates_for` no puede saltar de club.
+
+    Era un `slug=checkin_fisico` a secas contra toda la base, así que una
+    categoría sin plantilla vinculada resolvía a la de OTRO club — las cuatro
+    categorías femeninas de U. de Chile levantaban la de Selección Chilena.
+    No falseaba ningún conteo, porque todos los llamadores cruzan además por
+    `player_id__in`; el problema es la próxima lectura que no lo haga.
+    """
+
+    def setUp(self):
+        self.uch = Club.objects.create(name="U. de Chile")
+        self.otro = Club.objects.create(name="Selección Chilena")
+        for club in (self.uch, self.otro):
+            dept = Department.objects.create(club=club, name="Físico",
+                                             slug="fisico")
+            t = ExamTemplate.objects.create(
+                name="Check-in físico", slug=w.WELLNESS_SLUG, department=dept,
+                config_schema={"fields": [
+                    {"key": "sueno", "type": "number", "label": "Sueño",
+                     "min": 1, "max": 5},
+                ]},
+            )
+            setattr(self, f"tpl_{'uch' if club is self.uch else 'otro'}", t)
+        # Sin la M2M poblada: justo el caso que caía al fallback.
+        self.huerfana = Category.objects.create(club=self.uch,
+                                                name="SUB-19 F - Femenino")
+
+    def test_una_categoria_sin_plantilla_no_toma_la_de_otro_club(self):
+        resueltas = w.templates_for(self.huerfana)
+        self.assertEqual([t.id for t in resueltas], [self.tpl_uch.id])
+        self.assertNotIn(self.tpl_otro.id, [t.id for t in resueltas])
+
+    def test_un_club_sin_ninguna_plantilla_devuelve_vacio(self):
+        """Vacío, no la del vecino. Una lista vacía se ve en pantalla como
+        "sin datos"; la plantilla de otro club se ve como un número real."""
+        tercero = Club.objects.create(name="Otro club")
+        sola = Category.objects.create(club=tercero, name="Primer Equipo")
+        self.assertEqual(w.templates_for(sola), [])
+
+    def test_la_vinculada_sigue_ganando(self):
+        cat = Category.objects.create(club=self.uch, name="Primer Equipo")
+        self.tpl_uch.applicable_categories.add(cat)
+        self.assertEqual([t.id for t in w.templates_for(cat)], [self.tpl_uch.id])

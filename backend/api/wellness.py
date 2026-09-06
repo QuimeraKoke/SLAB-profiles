@@ -63,7 +63,16 @@ def templates_for(category, *, role: str = ROLE_CHECKIN) -> list:
     Resolution order, and the fallback matters: a category that declares
     nothing still gets `checkin_fisico`, so every surface keeps working for the
     clubs that were live before templates could declare a role.
+
+    ⚠️ Every step is scoped to the category's own CLUB. The last-resort lookup
+    used to be a bare `slug=checkin_fisico` across the whole database, so a
+    category with no template linked resolved to *another club's* form — the
+    four femenino categories were picking up Selección Chilena's. Nothing was
+    miscounted, because every caller also filters by `player_id__in`, but the
+    next reader that does not would be reading another club's data with no
+    error to notice.
     """
+    club_id = getattr(getattr(category, "club", None), "id", None)
     declarados = [
         t for t in ExamTemplate.objects.filter(
             applicable_categories=category, is_active_version=True)
@@ -73,10 +82,14 @@ def templates_for(category, *, role: str = ROLE_CHECKIN) -> list:
         return declarados
     if role != ROLE_CHECKIN:
         return []
-    return list(
-        ExamTemplate.objects.filter(slug=WELLNESS_SLUG,
-                                    applicable_categories=category)
-    ) or list(ExamTemplate.objects.filter(slug=WELLNESS_SLUG))
+    propias = ExamTemplate.objects.filter(slug=WELLNESS_SLUG,
+                                          applicable_categories=category)
+    if propias:
+        return list(propias)
+    if club_id is None:
+        return []
+    return list(ExamTemplate.objects.filter(slug=WELLNESS_SLUG,
+                                            department__club_id=club_id))
 
 
 def items_for(category, *, role: str = ROLE_CHECKIN) -> list[tuple[str, str]]:
