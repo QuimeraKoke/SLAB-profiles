@@ -1,9 +1,62 @@
 # Estado — integración de los datos de Formativo (U. de Chile)
 
-Corte: **2026-09-02**. Todo aplicado en **local**; **nada** subido a prod.
+Corte: **2026-09-06**. **Terminada y en producción.**
 
-- Plan y decisiones: `PLAN_FORMATIVO.md`
 - Comandos, verificación y revert de cada fase: `RUNBOOK_FORMATIVO.md`
+- Lo que depende del club: `PENDIENTES_CLUB.md`
+- Plan y decisiones originales: `PLAN_FORMATIVO.md`
+- Resumen para el estado general de la plataforma: `STATUS.md` §3.58
+
+## Dónde quedó prod
+
+| | Antes (2026-09-04) | Ahora |
+|---|---|---|
+| Categorías | 12 | **16** |
+| Jugadores | 315 | **480** |
+| Resultados del club (todos) | ~18.000 | **152.844** |
+| — de ellos, traídos por esta integración | 4.410 | **138.730** |
+| Reglas de alerta | 18 | **102** |
+| Layouts jugador / equipo | 5 / 6 | **35 / 36** |
+
+Desglose de los 138.730: **60.384** Check-IN y **49.594** Check-OUT de wellness,
+**15.518** GPS de sesión, **4.432** GPS de partido, **5.061** evaluaciones
+físicas y **3.741** fichas oficiales ANFP.
+
+**Sobre "resultados invisibles":** eran 5.348 cuando lo medimos. Hoy quedan
+**3.811 sin vincular a la categoría del jugador, y eso es correcto**: son el
+historial de los 10 ascendidos, y se leen por el fallback de club de
+`chart_spec` más las secciones "· historial". Vincularlos habría convertido a
+`checkin_formativo` en el check-in declarado de Primer Equipo. Los otros 1.537
+sí eran un hueco de configuración y se vincularon
+(`link_templates_with_data`). **Registros sin ninguna forma de verse: 0.**
+
+## Lo que sigue abierto
+
+**Del club** — los cuatro puntos de `PENDIENTES_CLUB.md`: 739 respuestas de dos
+homónimos (con nuestra propuesta de atribución para que sólo confirmen), 4
+nombres nuevos que llenan formularios y no están en el plantel, el umbral de
+hidratación en litros, y 7 `personId` de COMET.
+
+**Nuestro, no bloqueante**
+
+- Los 57 nombres de ex-jugadores con 5.557 respuestas de wellness: se cargan
+  sólo si el club quiere conservar su historial (los crearíamos inactivos).
+- `VALD_CLIENT_SECRET` está en prod pero la integración VALD sigue sin
+  activarse — ver `project_vald_integration` en memoria.
+- Los pendientes viejos del club sobre las planillas: 9 fechas de nacimiento,
+  200 filas sin fecha en las evaluaciones, el texto invertido del rango T10 en
+  `FORMATO CONDICIONAL`.
+- Deuda menor listada en §3 más abajo (`BulkIngestForm` no muestra las filas
+  rechazadas, 46 filtros `category=` en crudo, `seed_fatiga_central` con el bug
+  de `departments`, `quick_list` declarado y sin implementar).
+
+---
+
+## Historial de la integración
+
+Lo que sigue es el registro de cómo se llegó acá, fase por fase. Se conserva
+porque explica **por qué** cada cosa quedó como quedó — sobre todo los errores
+que costaron encontrar.
 
 ---
 

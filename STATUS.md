@@ -2924,6 +2924,51 @@ A cluster of fixes after the Daily made stale alerts visible:
   were repointed to `checkin_fisico`; and the wellness sync now evaluates
   band rules explicitly after `bulk_create` (which skips signals).
 
+
+---
+
+### 3.58 Fútbol formativo — integración completa (LIVE, 2026-09-05/06)
+
+Las 12 categorías juveniles de la U. de Chile entraron a SLAB. Prod pasó de
+**12 categorías / 315 jugadores** a **16 / 480**, y la integración trajo
+**138.730 resultados** (el club tiene 152.844 en total).
+El detalle operativo vive en tres documentos de la raíz, que son la referencia
+para tocar cualquier cosa de esto:
+
+- **`RUNBOOK_FORMATIVO.md`** — cada comando, su verificación y su revert.
+- **`ESTADO_FORMATIVO.md`** — qué está hecho y qué falta.
+- **`PENDIENTES_CLUB.md`** — lo que depende del club.
+
+**Qué entró.** Plantel maestro (`import_formativo_master`, cohorte + bracket
+ANFP), 5 plantillas físicas (`seed_formativo_templates`), 5.061 evaluaciones y
+15.518 filas de GPS desde dos Google Sheets vivas, 109.975 respuestas de
+wellness desde ocho documentos de Google Forms, 66 bandas de referencia del
+club y 18 reglas de alerta del wellness, y 35+36 layouts generados.
+
+**Crons nuevos** (`config/celery.py`): `formativo-sheets-hourly` (:25, GPS +
+evaluaciones, lee el documento entero) y tres de wellness — `-jornada` (:40 en
+7-11 y 16-22), `-offpeak` y `-completo` (domingos 04:50). El wellness lee una
+ventana de 7 días y no todo: entre los ocho documentos hay 118.000 respuestas
+desde febrero de 2024.
+
+**La escalera ANFP tiene huecos** — 11·12·13·14·15·16·**18**·20 — así que
+`temporada − cohorte` inventa Sub 17/19/21. Hay que caminar `Bracket.order`.
+Y `Bracket.for_age` es un TECHO: devuelve Sub 11 para un chico de 8.
+
+**⚠️ La dirección de la escala del wellness es un error invisible.** En el
+formulario del club **5 es lo mejor para los cinco ítems**, fatiga y daño
+muscular incluidos. Verificado contra su columna `SUMA` (la suma cruda): 25.146
+filas coinciden, cero con la versión espejada. Al revés, todos los números
+quedan en rango y un plantel destruido se ve bien. Lo mismo con `hidratacion`,
+que son LITROS (1–9, moda 2) y no una escala 1–5: sembrada como escala marcaba
+el 55% de las respuestas como críticas.
+
+**⚠️ Nunca vincular una plantilla con bloque `wellness` a una categoría que no
+la llena**: `api/wellness.py::templates_for` la convertiría en su check-in
+declarado. Por eso `link_templates_with_data` las saltea.
+
+**`applicable_categories` contesta bien una pregunta y mal otra** — ver §7.
+
 ---
 
 ## 4. Management commands
@@ -3107,6 +3152,27 @@ Things that work today but should be tidied before they confuse the next contrib
 
 ## 7. Known caveats
 
+- **`applicable_categories` contesta dos preguntas y sólo una bien
+  (2026-09-06).** *"¿Esta categoría puede CARGAR este examen?"* — sí, es su
+  trabajo, y `/players/{id}/templates` (el selector del registrador) hace bien
+  en filtrar por ella. *"¿Se puede LEER el historial propio del jugador?"* — no.
+  Un jugador que cambia de categoría conserva sus resultados y pierde sus
+  gráficos, porque el layout se elige por su categoría ACTUAL. Medido en prod:
+  5.348 resultados invisibles, 3.811 de ascendidos — 10 de los 30 de Primer
+  Equipo vienen del formativo. `dashboards/chart_spec.py` ahora cae al club en
+  la LECTURA (nunca más allá), y `add_history_sections` agrega las secciones
+  colapsadas. La lista de resultados de la ficha nunca filtró: el dato siempre
+  estuvo, faltaban los gráficos.
+- **`Category.departments` se desincroniza en silencio.** Es una M2M que se
+  puebla en un paso y se lee en otro. Controla las pestañas de departamento de
+  la ficha y de ella deriva `seed_ficha_partido --all-applicable-categories` su
+  lista de categorías. Mordió tres veces en una semana — 2.920 fichas de
+  partido, 1.465 de `pentacompartimental` y los 20 layouts del formativo — y el
+  síntoma es siempre el mismo: **el dato está cargado, bien atribuido, y la
+  pantalla vacía.** `link_templates_with_data` cubre el caso general. ⚠️ No
+  puede distinguir "esta categoría usa el examen" de "un ascendido trae
+  historial" (se ven idénticos en la base y piden arreglos opuestos), así que
+  su lista de `--slug` se elige a mano.
 - **`POST /results/bulk` / `POST /results/team` shadowing — FIXED
   (2026-07-05)**: the parameterized routes now use the `{uuid:result_id}`
   converter, so the URL pattern only matches real UUIDs and the literal
@@ -3212,6 +3278,10 @@ Defined in `.env.example`, consumed by `docker-compose.yml` and
 | `CELERY_TIMEZONE`         | `America/Santiago`               | Beat schedules run in LOCAL time (wellness sync, goal evaluator, fixtures sync). |
 | `GOOGLE_SHEETS_CREDENTIALS_FILE` | _(empty)_                 | Service-account JSON path for the wellness Sheet sync (§3.51). Either this **or** the JSON blob below. |
 | `GOOGLE_SHEETS_CREDENTIALS_JSON` | _(empty)_                 | Service-account credentials as a raw/base64 JSON blob (container-friendly alternative). |
+| `FORMATIVO_GPS_SHEET_ID`  | _(empty)_                        | Google Sheet del GPS del formativo (§3.58). Vacía ⇒ el cron es un no-op. |
+| `FORMATIVO_EVAL_SHEET_ID` | _(empty)_                        | Google Sheet de evaluaciones físicas del formativo. |
+| `FORMATIVO_WELLNESS_SHEET_IDS` | _(empty)_                   | Los OCHO documentos de wellness, separados por coma. |
+| `FORMATIVO_CLUB`          | `Universidad de Chile`           | Club al que apuntan los tres syncs anteriores. |
 | `WELLNESS_SHEET_ID`       | _(empty)_                        | Google Sheet id of the wellness form responses. Blank ⇒ sync no-ops.   |
 | `WELLNESS_SHEET_WORKSHEET`| `Respuestas de formulario 1`     | Worksheet name.                                                        |
 | `WELLNESS_CLUB` / `WELLNESS_CATEGORY` | `Universidad de Chile` / `Primer Equipo` | Scope the sync writes into.             |
