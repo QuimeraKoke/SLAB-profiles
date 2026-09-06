@@ -681,6 +681,61 @@ partido" (4 widgets) aparece en el layout táctico de cada Serie.
 Sub 11 y la ANFP no corre competencia ahí, por eso tienen 0 fichas. Las tres
 categorías femeninas también — es otra competencia.
 
+### El dato invisible — dos causas, dos arreglos (2026-09-06)
+
+Medido en prod: **5348 resultados no llegaban a ningún dashboard**. Están bien
+atribuidos al jugador y se ven en la lista de resultados de la ficha; lo que
+falla son los gráficos. La compuerta es `applicable_categories`, y mezcla dos
+preguntas distintas:
+
+| Superficie | ¿Filtra? | ¿Está bien? |
+|---|---|---|
+| Lista de resultados (`/players/{id}/results`) | No | sí — es el historial del jugador |
+| Selector de carga (`/players/{id}/templates`) | Sí | sí — no ofrecer un formulario ajeno |
+| Gráficos (`chart_spec.py`) | Sí | **no** — ahí se perdían |
+
+**Causa A — el ascenso (3811 filas).** 11 de los 35 de Primer Equipo vienen del
+formativo, y para ellos el historial juvenil es la mayor parte de lo que SLAB
+sabe: Cristóbal Ulloa, 689 lecturas y ni un gráfico.
+
+Arreglo en dos partes. `chart_spec` cae al club cuando la categoría no aplica —
+sólo en LECTURA, el selector de carga sigue cerrado. Y las secciones de
+historial, que nacen colapsadas y con "· historial" en el título:
+
+```bash
+# layouts que genera SLAB (categorías del formativo): las incluye solo
+docker compose exec backend python manage.py generate_formativo_layouts --commit
+
+# layouts hechos a mano (Primer Equipo): sólo agrega al final, NO reconstruye
+docker compose exec backend python manage.py add_history_sections \
+    --club "Universidad de Chile" --category "Primer Equipo" --commit
+```
+
+⚠️ **No correr `generate_formativo_layouts` sobre Primer Equipo.** Reconstruye,
+y sus layouts son de mayo hechos a mano ("Alertas activas", "Mapa de lesiones",
+"Medicación reciente"). Por eso `add_history_sections` existe aparte.
+
+**Causa B — plantillas que la categoría SÍ usa y nadie vinculó (1537 filas).**
+`pentacompartimental` con 1465, más médicos sueltos. Tercer caso en una semana
+después de `ficha_partido`:
+
+```bash
+docker compose exec backend python manage.py link_templates_with_data \
+    --club "Universidad de Chile" \
+    --slug pentacompartimental --slug cmj --slug hip_adab --slug nordico \
+    --slug imtp --slug analisis_sangre --slug ck --commit
+```
+
+⚠️ **Los `--slug` van a mano a propósito.** El comando no puede distinguir "la
+categoría usa el examen" de "un ascendido trae historial": las dos se ven igual
+en la base y piden soluciones opuestas. `carreras` en Primer Equipo son 52 filas
+de historial — vincularlo le ofrecería al plantel una batería que no corre.
+Imprime la fecha de la última fila como señal, pero decide el operador.
+
+⚠️ Salta solo las plantillas con bloque `wellness`: vincular `checkin_formativo`
+a Primer Equipo lo volvería su check-in declarado y el plantel entero quedaría
+midiéndose contra un formulario que no llena.
+
 ### Lo que el relevamiento de los documentos cambió
 
 **⚠️ La escala NO está invertida.** En este formulario **5 es lo mejor para los

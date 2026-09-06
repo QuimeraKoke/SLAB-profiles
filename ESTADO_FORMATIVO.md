@@ -188,6 +188,16 @@ jugador + 6 de equipo por categoría. La ficha de un jugador de Serie 2011
 muestra 8 secciones y 30 widgets, todos con datos. **113 alertas activas** (20
 críticas) tras evaluar los últimos 30 días.
 
+**El historial del ascendido (2026-09-06).** De 5348 resultados invisibles en
+prod, 3811 eran de jugadores promovidos — 11 de los 35 de Primer Equipo, y para
+ellos el historial juvenil es la mayor parte de lo que SLAB sabe. `chart_spec`
+resolvía la plantilla por `applicable_categories`, que responde "¿esta categoría
+puede cargar este examen?" y no "¿se puede leer el historial del jugador?".
+Ahora la lectura cae al club; el selector de carga sigue cerrado. Las secciones
+de historial nacen colapsadas (24 de 35 no tienen ese pasado). Las otras 1537
+filas eran plantillas que la categoría sí usa y nadie vinculó —
+`link_templates_with_data`.
+
 **Fichas de partido — visibles (2026-09-05).** `ficha_partido` estaba vinculada
 sólo a Primer Equipo, así que 2920 de las 3690 fichas de COMET no se veían en
 ningún dashboard. Se agregó el departamento táctico a Serie 2015 y se re-corrió
