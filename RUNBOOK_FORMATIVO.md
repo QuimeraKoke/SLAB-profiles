@@ -645,6 +645,42 @@ partido). Reconstruye en el lugar, así que pisa cualquier ajuste manual —
 Verificado sobre un jugador de Serie 2011: 8 secciones, 30 widgets, todos con
 datos.
 
+### Fichas de partido del formativo — visibles (2026-09-05)
+
+COMET venía escribiendo la ficha oficial de cada jugador del formativo desde
+siempre, pero `ficha_partido` estaba vinculada **sólo a Primer Equipo**: 2920 de
+las 3690 fichas en prod no se veían en ningún dashboard.
+
+La causa no era la plantilla sino `Category.departments`. La bandera
+`--all-applicable-categories` de `seed_ficha_partido` filtra por las categorías
+que tienen el departamento **táctico** vinculado, y ocho del formativo ya lo
+tenían — lo que faltaba era volver a correr el seeder después de que lo
+consiguieran. Serie 2015 no lo tenía y sí tiene fichas, así que hubo que
+agregárselo.
+
+```bash
+# 1. Serie 2015 juega ANFP (Sub 11) pero le faltaba el departamento
+docker compose exec backend python manage.py shell -c "
+from core.models import Category, Club, Department
+club = Club.objects.get(name='Universidad de Chile')
+Category.objects.get(club=club, name='Serie 2015').departments.add(
+    Department.objects.get(club=club, slug='tactico'))"
+
+# 2. re-vincular la plantilla (usa .set(), no pierde Primer Equipo)
+docker compose exec backend python manage.py seed_ficha_partido \
+    --club "Universidad de Chile" --all-applicable-categories
+
+# 3. los widgets aparecen al regenerar
+docker compose exec backend python manage.py generate_formativo_layouts --commit
+```
+
+Resultado: 10 categorías, **0 fichas invisibles**, y la sección "Ficha oficial de
+partido" (4 widgets) aparece en el layout táctico de cada Serie.
+
+⚠️ Serie 2016, 2017 y 2018 quedan fuera **a propósito**: están bajo el escalón
+Sub 11 y la ANFP no corre competencia ahí, por eso tienen 0 fichas. Las tres
+categorías femeninas también — es otra competencia.
+
 ### Lo que el relevamiento de los documentos cambió
 
 **⚠️ La escala NO está invertida.** En este formulario **5 es lo mejor para los

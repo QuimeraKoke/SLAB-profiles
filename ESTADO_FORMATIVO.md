@@ -188,6 +188,13 @@ jugador + 6 de equipo por categoría. La ficha de un jugador de Serie 2011
 muestra 8 secciones y 30 widgets, todos con datos. **113 alertas activas** (20
 críticas) tras evaluar los últimos 30 días.
 
+**Fichas de partido — visibles (2026-09-05).** `ficha_partido` estaba vinculada
+sólo a Primer Equipo, así que 2920 de las 3690 fichas de COMET no se veían en
+ningún dashboard. Se agregó el departamento táctico a Serie 2015 y se re-corrió
+`seed_ficha_partido --all-applicable-categories`: 10 categorías, **0
+invisibles**. Serie 2016–2018 y las femeninas quedan fuera a propósito (bajo el
+escalón Sub 11 / otra competencia, 0 fichas).
+
 ⚠️ **`hidratacion` no es una escala 1–5.** Va de 1 a 9 y el 78% de las 46.512
 respuestas son 2 o 3: son litros de agua, donde 2 es lo normal. Sembrada con la
 banda de escala marcaba el 55% de las respuestas como críticas — 284 alertas
