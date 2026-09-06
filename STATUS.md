@@ -2978,6 +2978,19 @@ All under `backend/exams/management/commands/`. Run via
 
 | Command                    | Lives in                              | Purpose                                                                 |
 | -------------------------- | ------------------------------------- | ----------------------------------------------------------------------- |
+| **— Fútbol formativo (§3.58) —** | | **Corren en el orden de esta tabla; el runbook tiene la verificación de cada uno.** |
+| `import_formativo_master`  | `core/management/commands/`           | Fase 1. Plantel maestro desde el CSV del club → jugadores, categorías `Serie NNNN` por cohorte y `TeamSeason` por bracket ANFP. `--top-bucket "SUB-20"` es obligatorio (sin él inventa Series 2004-2007). `--reassign` / `--overwrite-dob` apagados por defecto. |
+| `backfill_formativo_history` | `core/management/commands/`         | Fase 3. Historial de categorías por temporada; `--call-ups` crea `PlayerCallUp` inactivos. |
+| `seed_formativo_templates` | `exams/management/commands/`          | Fase 4. Las 5 plantillas físicas (carreras, fuerza, neuromuscular, resistencia, 1000 m) + suma frecuencia cardíaca a los dos GPS y les amplía las categorías juveniles. |
+| `import_formativo_evaluaciones` | `exams/management/commands/`     | Fase 5. Evaluaciones físicas. `--file` acepta una ruta `.xlsx` **o un id de Google Sheet**. |
+| `import_formativo_gps`     | `exams/management/commands/`          | Fase 5. GPS de partido y sesión, mismo `--file`. Reporta fechas con pinta de día/mes invertido. |
+| `seed_formativo_bands`     | `goals/management/commands/`          | Fase 6. Las 66 bandas de referencia del club desde las hojas `FORMATO CONDICIONAL`. `--overwrite` re-siembra números pero PRESERVA `trigger_labels`. |
+| `seed_wellness_formativo`  | `exams/management/commands/`          | Fase 7. `checkin_formativo` (14 campos) y `checkout_formativo` (16) + sus 18 reglas `band`. `SUMA` y `UA` se calculan, no se importan. |
+| `import_wellness_formativo` | `exams/management/commands/`         | Fase 8. Los 8 documentos de Google Forms. `--dias N` para la ventana incremental, `--alertas` para evaluar reglas sobre lo nuevo, `--sheet-id` para probar uno solo. |
+| `generate_formativo_layouts` | `dashboards/management/commands/`   | Fase 9. Deriva layouts de jugador y de equipo de los campos **que tienen datos**, así que hay que correrlo DESPUÉS de importar. ⚠️ **Reconstruye**: no usarlo sobre Primer Equipo, cuyos layouts están hechos a mano. |
+| `add_history_sections`     | `dashboards/management/commands/`     | El equivalente aditivo del anterior, para layouts curados a mano: agrega al final las secciones "· historial" del jugador que cambió de categoría, colapsadas. Idempotente. |
+| `link_templates_with_data` | `exams/management/commands/`          | Amplía `applicable_categories` a las categorías que ya tienen resultados de esa plantilla — el arreglo del "dato cargado y pantalla vacía" (§7). ⚠️ Saltea las plantillas con bloque `wellness`, y su lista de `--slug` se elige a mano porque no puede distinguir "la categoría usa el examen" de "un ascendido trae historial". |
+| `seed_ficha_partido`       | `exams/management/commands/`          | La ficha oficial ANFP. `--all-applicable-categories` deriva las categorías de las que tienen el departamento **táctico** vinculado — hay que re-correrlo cuando una categoría lo consigue. |
 | `seed_pentacompartimental` | `exams/management/commands/`          | Create / overwrite the 5-component anthropometry template's schema.    |
 | ~~`seed_metas`~~           | `exams/management/commands/`          | **Deprecated.** Structured goals are first-class via the Goal model now (§3.15). The command file is kept for archival; do not run it. |
 | `seed_daily_notes`         | `exams/management/commands/`          | Create `Notas diarias <Department>` daily-notes templates.             |
