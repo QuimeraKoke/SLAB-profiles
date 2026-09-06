@@ -111,8 +111,33 @@ def campos_con_datos(category: Category, template: ExamTemplate) -> dict[str, in
     return dict(cuenta)
 
 
-def secciones_para(category: Category, templates: list[ExamTemplate]) -> list[dict]:
-    """One section per template that has data, its widgets from its own groups."""
+def _plantillas_de_historial(category, department, aplicables) -> list:
+    """Plantillas del departamento que la categoría NO corre pero de las que
+    sus jugadores tienen resultados.
+
+    Es el caso del ascendido, y en el plantel real no es marginal: 11 de los 35
+    de Primer Equipo vienen del formativo y para ellos el historial juvenil es
+    la mayor parte de lo que SLAB sabe — uno tenía 689 lecturas y ni un
+    gráfico.
+    """
+    familias = {t.family_id for t in aplicables}
+    ids = (ExamResult.objects
+           .filter(player__category=category, template__department=department)
+           .exclude(template__family_id__in=familias)
+           .values_list("template__family_id", flat=True).distinct())
+    return list(ExamTemplate.objects.filter(
+        family_id__in=list(ids), is_active_version=True).distinct())
+
+
+def secciones_para(category: Category, templates: list[ExamTemplate],
+                   *, historial: bool = False) -> list[dict]:
+    """One section per template that has data, its widgets from its own groups.
+
+    `historial=True` marks the sections built from a template the category does
+    NOT run: they exist for the player who changed category. `campos_con_datos`
+    already counts by the category's PLAYERS rather than by applicability, so
+    the only thing that changes is how the section presents itself.
+    """
     secciones = []
     for template in templates:
         cuenta = campos_con_datos(category, template)
@@ -158,7 +183,11 @@ def secciones_para(category: Category, templates: list[ExamTemplate]) -> list[di
                 "sources": [{"template": template, "field_keys": lineas,
                              "aggregation": Aggregation.ALL}],
             })
-        secciones.append({"title": template.name, "widgets": widgets})
+        secciones.append({
+            "title": f"{template.name} · historial" if historial else template.name,
+            "widgets": widgets,
+            "historial": historial,
+        })
     return secciones
 
 
@@ -182,7 +211,10 @@ def construir(department: Department, category: Category, secciones: list[dict],
     for i, sec in enumerate(secciones):
         section = LayoutSection.objects.create(
             layout=layout, title=sec["title"], is_collapsible=True,
-            default_collapsed=False, sort_order=i)
+            # Las de historial arrancan cerradas: en Primer Equipo son 11 de 35
+            # los que traen historial del formativo, así que para los otros 24
+            # serían paneles vacíos ocupando la pantalla.
+            default_collapsed=bool(sec.get("historial")), sort_order=i)
         for j, w in enumerate(sec["widgets"]):
             widget = Widget.objects.create(
                 section=section, chart_type=w["chart_type"], title=w["title"],
@@ -336,6 +368,14 @@ class Command(BaseCommand):
                         department=department, applicable_categories=category,
                         is_active_version=True).distinct())
                 secciones = secciones_para(category, templates)
+                # Y las del jugador que cambió de categoría: plantillas que
+                # esta categoría NO corre pero de las que sus jugadores traen
+                # historial. `chart_spec` ya las resuelve por club, así que el
+                # widget funciona; lo que faltaba era que alguien lo creara.
+                secciones += secciones_para(
+                    category, _plantillas_de_historial(category, department,
+                                                       templates),
+                    historial=True)
                 if not secciones:
                     # "Sin datos" y "hay datos pero la plantilla no aplica a
                     # esta categoría" son cosas distintas, y la segunda es un

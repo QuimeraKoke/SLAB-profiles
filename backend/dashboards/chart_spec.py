@@ -92,13 +92,31 @@ def _normalize_spec(
             raise _SpecError(f"sources[{i}].template_slug es obligatorio")
         # slug is unique per club; the category fixes the club. Prefer the
         # active version, then the highest version number.
+        #
+        # The fallback to the club exists for the PLAYER who changed category.
+        # A widget used to resolve its template strictly by
+        # `applicable_categories`, so a footballer promoted from the Formativo
+        # arrived at Primer Equipo with his charts starting from zero: 11 of
+        # the 35 in that squad came up that way, and for them the youth history
+        # IS most of what SLAB knows — Cristóbal Ulloa had 689 readings and not
+        # one chart.
+        #
+        # This widens only the READ path. `applicable_categories` still gates
+        # what a category may RECORD (`/players/{id}/templates`, the registrar's
+        # picker), which is the question it actually answers. Reading a player's
+        # own history is a different question, and the answer to it is "yes".
         template = (
             ExamTemplate.objects.filter(slug=slug, applicable_categories=category)
             .order_by("-is_active_version", "-version")
             .first()
+        ) or (
+            ExamTemplate.objects.filter(
+                slug=slug, department__club_id=category.club_id)
+            .order_by("-is_active_version", "-version")
+            .first()
         )
         if template is None:
-            raise _SpecError(f"No existe la plantilla '{slug}' para esta categoría")
+            raise _SpecError(f"No existe la plantilla '{slug}' en este club")
         field_keys = s.get("field_keys") or []
         if not isinstance(field_keys, list):
             raise _SpecError(f"sources[{i}].field_keys debe ser una lista")
