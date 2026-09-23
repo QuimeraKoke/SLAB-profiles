@@ -64,18 +64,28 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from core.models import Bracket, Category, Club, Player, Position
+from core.positions import CANON
 
 # The club's workbooks use six coarse positions; the club's own taxonomy is
 # finer (Extremo derecho / izquierdo). The source does not say which side, so
 # each maps to the unspecified variant — the same reason a generic "Lateral"
 # already sits alongside "Lateral derecho"/"Lateral izquierdo".
+# El tercer elemento salía de acá con la granularidad ("General" / "Específica"
+# / vacío), que no agrupa nada y dejaba el catálogo sin línea. Ahora la línea y
+# el orden los dicta `core.positions`, la misma fuente que usa
+# `normalize_positions` — si no, cada corrida del importador volvía a
+# desalinear el catálogo que el normalizador acababa de ordenar.
+POSITION_LABELS = {
+    "GUARDAMETA": ("POR", "Arquero"),
+    "DEFENSA CENTRAL": ("DC", "Defensa central"),
+    "DEFENSA LATERAL": ("L", "Lateral"),
+    "MEDIOCAMPISTA": ("MC", "Mediocampista"),
+    "EXTREMO": ("EX", "Extremo"),
+    "CENTRO DELANTERO": ("DEL", "Delantero"),
+}
 POSITION_MAP = {
-    "GUARDAMETA": ("POR", "Arquero", ""),
-    "DEFENSA CENTRAL": ("DC", "Defensa central", "Específica"),
-    "DEFENSA LATERAL": ("L", "Lateral", "General"),
-    "MEDIOCAMPISTA": ("MC", "Mediocampista", ""),
-    "EXTREMO": ("EX", "Extremo", "General"),
-    "CENTRO DELANTERO": ("DEL", "Delantero", ""),
+    etiqueta: (abbr, nombre, CANON[abbr][0])
+    for etiqueta, (abbr, nombre) in POSITION_LABELS.items()
 }
 
 
@@ -260,7 +270,9 @@ class Command(BaseCommand):
                 report["posicion_creada"].append(f"{abbr} — {name}")
                 pos = Position.objects.create(
                     club=club, abbreviation=abbr, name=name, role=role,
-                    sort_order=Position.objects.filter(club=club).count())
+                    # El orden también es canónico: contar las filas existentes
+                    # daba un número que dependía del orden de importación.
+                    sort_order=CANON[abbr][1])
             resolved[label] = pos
         return resolved
 

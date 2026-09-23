@@ -84,6 +84,13 @@ run "seed_match_performance" python manage.py seed_match_performance \
 run "seed_daily_notes" python manage.py seed_daily_notes \
     --create-if-missing --all-applicable-categories --club "$CLUB" --unlock
 
+# 3b. Línea canónica del catálogo de posiciones. Los seeds crean sus posiciones
+# con `get_or_create(defaults=...)`, así que cada uno fija `role` a su manera y
+# sólo la primera vez. Esto los converge a `core.positions.CANON`, que es lo que
+# lee la comparación entre divisiones: sin línea, un juvenil no tiene contra qué
+# medirse. Idempotente — re-correrlo no cambia nada.
+run "normalize_positions" python manage.py normalize_positions --commit
+
 # 4. Inline-row schema rebuild for the admin
 run "sync_template_fields" python manage.py sync_template_fields --all
 
