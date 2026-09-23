@@ -30,6 +30,11 @@ DAILY_SUMMARY_MODEL = env("DAILY_SUMMARY_MODEL", default="claude-haiku-4-5-20251
 # NOTE: the readiness call omits `thinking`/`effort` so this may point at a
 # pre-4.6 tier (e.g. Haiku 4.5) that rejects those params.
 READINESS_MODEL = env("READINESS_MODEL", default="claude-haiku-4-5-20251001")
+
+# Conclusión en prosa del comparador de jugadores. Separado de ANTHROPIC_MODEL
+# porque es una lectura de juicio —qué diferencia importa— y no un resumen:
+# vale la pena el modelo bueno. Bajalo por env si el costo lo pide.
+COMPARISON_MODEL = env("COMPARISON_MODEL", default="claude-opus-5")
 # (Dedup is handled durably by dashboards.pdf.report_cache — content-addressed
 # PDF snapshots in S3 keyed on a stable data + agent-config hash — so there's
 # no narrative-level TTL cache to configure.)

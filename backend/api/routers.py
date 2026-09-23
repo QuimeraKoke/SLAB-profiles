@@ -65,6 +65,8 @@ from .schemas import (
     PlayerIn,
     PlayerOut,
     PlayerPatchIn,
+    ComparisonSectionIn,
+    PlayerComparisonOut,
     PositionComparisonOut,
     PositionOut,
     AlertOut,
@@ -787,7 +789,11 @@ def list_players(
     return qs
 
 
-@api.get("/players/{player_id}", response=PlayerDetailOut)
+# {uuid:...} por la misma razón que en /results/{uuid:result_id}: con el
+# converter goloso por defecto, este patrón también matcheaba la ruta literal
+# "/players/comparison" (registrada después) y el comparador respondía 500
+# intentando parsear "comparison" como UUID. Ver §7 en STATUS.md.
+@api.get("/players/{uuid:player_id}", response=PlayerDetailOut)
 def get_player(request, player_id: str):
     membership = get_membership(request.user)
     qs = scope_players(
@@ -949,7 +955,7 @@ def create_player(request, payload: PlayerIn):
     return get_player(request, str(player.id))
 
 
-@api.patch("/players/{player_id}", response=PlayerDetailOut)
+@api.patch("/players/{uuid:player_id}", response=PlayerDetailOut)
 @require_perm("core.change_player")
 def update_player(request, player_id: str, payload: PlayerPatchIn):
     """Partial update for a player. Each provided field is written; others
@@ -1008,7 +1014,7 @@ def update_player(request, player_id: str, payload: PlayerPatchIn):
     return get_player(request, str(player.id))
 
 
-@api.delete("/players/{player_id}")
+@api.delete("/players/{uuid:player_id}")
 @require_perm("core.delete_player")
 def delete_player(request, player_id: str):
     """Hard-delete a player. Refuses (409) when there are linked records
@@ -2135,6 +2141,214 @@ def get_position_comparison(request, player_id: str, widget_id: str, key: str):
         raise HttpError(404, "Template not accessible")
 
     return position_comparison(source, field_key, player)
+
+
+@api.get("/players/comparison/sections")
+@require_perm("core.view_player_comparison")
+def get_comparison_sections(request, category_id: str):
+    """Las métricas guardadas para cada sección del comparador.
+
+    Por club: qué se mira es una curaduría del cuerpo técnico, no una
+    preferencia por usuario. Una sección sin fila devuelve lista vacía y el
+    frontend cae a su default (las métricas con banda de la categoría).
+    """
+    from dashboards.models import ComparisonSectionConfig
+
+    # Se recibe la categoría y no el club porque es lo que el frontend tiene a
+    # mano (sale del jugador elegido); el club se resuelve acá.
+    categoria = _scoped_category_or_404(request, category_id)
+    guardadas = {
+        c.section: c.metric_keys or []
+        for c in ComparisonSectionConfig.objects.filter(club_id=categoria.club_id)
+    }
+    return {s.value: guardadas.get(s.value, [])
+            for s in ComparisonSectionConfig.Section}
+
+
+@api.put("/players/comparison/sections/{section}")
+@require_perm("core.view_player_comparison")
+def put_comparison_section(request, section: str, payload: ComparisonSectionIn):
+    """Guarda las métricas de una sección. El ORDEN se conserva: en el radar
+    define qué eje queda al lado de cuál."""
+    from dashboards.models import ComparisonSectionConfig
+
+    validas = {s.value for s in ComparisonSectionConfig.Section}
+    if section not in validas:
+        raise HttpError(422, f"Sección inválida. Opciones: {sorted(validas)}.")
+
+    categoria = _scoped_category_or_404(request, payload.category_id)
+
+    fila, _ = ComparisonSectionConfig.objects.update_or_create(
+        club_id=categoria.club_id, section=section,
+        defaults={"metric_keys": payload.metric_keys,
+                  "updated_by": request.user if request.user.is_authenticated else None},
+    )
+    return {"section": fila.section, "metric_keys": fila.metric_keys}
+
+
+@api.get("/players/comparison/metrics")
+@require_perm("core.view_player_comparison")
+def get_comparison_metrics(request, category_id: str):
+    """Catálogo de métricas del comparador.
+
+    Endpoint propio y no `/alert-rules/meta` —que sirve lo mismo— porque aquel
+    exige `goals.view_alertrule`: alguien con permiso de comparar pero sin
+    permiso de alertas habría visto el selector vacío y la pantalla inservible,
+    sin ningún error visible.
+
+    `has_band_rule` marca los campos para los que ESTA categoría tiene una
+    banda configurada. Son los indicadores que el club eligió, y por eso son
+    el default del selector: "los primeros cinco del catálogo" no significaba
+    nada.
+    """
+    from dashboards.models import iter_template_fields
+    from goals.models import AlertRule, AlertRuleKind
+
+    category = _scoped_category_or_404(request, category_id)
+    plantillas = (
+        ExamTemplate.objects
+        .filter(applicable_categories=category, is_active_version=True)
+        .select_related("department").order_by("department__name", "name")
+        .distinct()
+    )
+    con_banda = set(
+        AlertRule.objects
+        .filter(category=category, kind=AlertRuleKind.BAND, is_active=True)
+        .values_list("template__family_id", "field_key")
+    )
+    # El set canónico del repo, no uno propio: incluye `calculated`, que es lo
+    # que son casi todos los indicadores del club (T10 — mejor, CMJ — mejor,
+    # fuerza relativa…). Con un set inventado más angosto, 8 de las 10 bandas
+    # sembradas para una categoría quedaban invisibles.
+    from api.alert_rules import _NUMERIC_TYPES as numericos
+    out = []
+    for t in plantillas:
+        campos = [
+            {
+                "key": f["key"],
+                "label": f.get("label") or f["key"],
+                "unit": f.get("unit", ""),
+                "has_band_rule": (t.family_id, f["key"]) in con_banda,
+            }
+            for f in iter_template_fields(t)
+            if f.get("type") in numericos
+        ]
+        if campos:
+            out.append({"slug": t.slug, "name": t.name, "fields": campos})
+    return {"templates": out}
+
+
+@api.get("/players/comparison", response=PlayerComparisonOut)
+@require_perm("core.view_player_comparison")
+def get_player_comparison(request, players: str, metrics: str,
+                          series: str | None = None,
+                          percentiles: bool = False,
+                          date_from: str | None = None,
+                          date_to: str | None = None):
+    """Comparador de jugadores entre divisiones.
+
+    `players`: ids separados por coma (2 a 6).
+    `metrics`: `<slug de plantilla>:<campo>` separados por coma. Sin tope.
+    `series`: subconjunto de `metrics` que además necesita su serie completa
+    (la que se va a graficar). Omitido: sólo últimos valores.
+
+    Detrás de `core.view_player_comparison`, que no tiene nadie por defecto:
+    esta superficie expone los valores de cualquier jugador del club a quien la
+    abra, incluido el plantel profesional.
+    """
+    from dashboards.player_comparison import MAX_PLAYERS, compare
+
+    ids = [x for x in (v.strip() for v in players.split(",")) if x]
+    # Uno solo es válido: ver la ficha de un jugador contra la vara de su línea
+    # en Primer Equipo es una lectura completa por sí misma, y obligar a elegir
+    # un segundo para mirar al primero no tiene sentido.
+    if not (1 <= len(ids) <= MAX_PLAYERS):
+        raise HttpError(422, f"Elegí entre 1 y {MAX_PLAYERS} jugadores.")
+
+    membership = get_membership(request.user)
+    encontrados = list(
+        scope_players(
+            Player.objects.select_related("category", "position"), membership
+        ).filter(id__in=ids)
+    )
+    if len(encontrados) != len(set(ids)):
+        raise HttpError(404, "Alguno de los jugadores no existe o no es accesible.")
+
+    # El orden lo pone quien llama, no la base: la pantalla pone un jugador a
+    # cada lado y el de la izquierda tiene que seguir a la izquierda.
+    por_id = {str(p.id): p for p in encontrados}
+    ordenados = [por_id[i] for i in ids if i in por_id]
+
+    clubes = {p.category.club_id for p in ordenados if p.category_id}
+    if len(clubes) != 1:
+        raise HttpError(422, "Todos los jugadores tienen que ser del mismo club.")
+
+    pares = [x for x in (v.strip() for v in metrics.split(",")) if x]
+    if not pares:
+        raise HttpError(422, "Elegí al menos una métrica.")
+
+    club_id = clubes.pop()
+    slugs = {par.split(":", 1)[0] for par in pares if ":" in par}
+    # ⚠️ Filtrar por slug NO alcanza: las plantillas son POR CLUB y el slug se
+    # repite entre ellos — `gps_sesion` existe para la U. de Chile y para la
+    # Selección, con `family_id` distinto. Sin este filtro el diccionario se
+    # quedaba con la última que devolviera la consulta, y una comparación de la
+    # U. podía leer la familia de la Selección y volver con las series vacías.
+    plantillas = {
+        t.slug: t for t in scope_templates(
+            ExamTemplate.objects.filter(
+                slug__in=slugs, department__club_id=club_id), membership)
+    }
+
+    seleccion: list[tuple[ExamTemplate, str]] = []
+    for par in pares:
+        slug, sep, field_key = par.partition(":")
+        if not sep or not field_key:
+            raise HttpError(422, f"Métrica mal formada: '{par}'.")
+        template = plantillas.get(slug)
+        if template is None:
+            raise HttpError(404, f"Plantilla '{slug}' no existe o no es accesible.")
+        seleccion.append((template, field_key))
+
+    # Sin `series`, sólo viajan los últimos valores — que es todo lo que la
+    # tabla y las tarjetas necesitan. La serie completa es cara (~20 KB por
+    # métrica y jugador), así que se pide sólo para lo que se va a graficar.
+    pedidas = {x.strip() for x in (series or "").split(",") if x.strip()}
+
+    desde, hasta = _parse_date_window(date_from, date_to)
+    # `_parse_date_window` devuelve datetimes naive; el campo es tz-aware.
+    # Comparar los dos corre la frontera por el offset del huso y mueve
+    # silenciosamente qué lecturas entran en la ventana.
+    from django.utils import timezone as _tz
+    desde = _tz.make_aware(desde) if desde and _tz.is_naive(desde) else desde
+    hasta = _tz.make_aware(hasta) if hasta and _tz.is_naive(hasta) else hasta
+    return compare(ordenados, seleccion, club_id=club_id,
+                   series_for=frozenset(pedidas), con_percentiles=percentiles,
+                   date_from=desde, date_to=hasta)
+
+
+@api.get("/players/comparison/conclusion")
+@require_perm("core.view_player_comparison")
+def get_comparison_conclusion(request, players: str, metrics: str,
+                             date_from: str | None = None,
+                             date_to: str | None = None):
+    """Conclusión en prosa de la misma comparación (LLM).
+
+    Endpoint aparte del comparador a propósito: la tabla y los gráficos se
+    dibujan sin esperar al modelo, y si el modelo falla la pantalla no se
+    entera. Devuelve `{"conclusion": null}` en vez de un error — no tener
+    conclusión es un estado normal, no una falla.
+    """
+    from dashboards.comparison_insight import conclusion
+
+    # Se reusa la vista del comparador en vez de duplicar el parseo de
+    # parámetros y el scoping — y así la conclusión habla exactamente de lo que
+    # el usuario tiene en pantalla, no de una consulta parecida. `series` pide
+    # todas las métricas porque de las series sale la tendencia.
+    comparacion = get_player_comparison(
+        request, players=players, metrics=metrics, series=metrics,
+        date_from=date_from, date_to=date_to)
+    return {"conclusion": conclusion(comparacion)}
 
 
 # ---------- Team reports ----------

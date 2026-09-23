@@ -8,6 +8,7 @@ import {
   User,
   BarChart3,
   Calendar,
+  GitCompareArrows,
   LayoutDashboard,
   Activity,
   Database,
@@ -233,6 +234,20 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     href: "/crecimiento",
   };
 
+  // Al mismo nivel que Dashboard y no anidado en "Datos": es una superficie de
+  // lectura por derecho propio, no una utilidad de carga/exportación como sus
+  // vecinos de allá.
+  //
+  // Detrás de `core.view_player_comparison`, hoy otorgado a nadie. Expone los
+  // valores de cualquier jugador del club —el plantel profesional incluido—
+  // así que se muestra sólo a quien tenga la llave. Ocultar el link es
+  // cosmético: la puerta real es el @require_perm del endpoint.
+  const compararItem: NavGroup = {
+    label: "Comparar jugadores",
+    icon: GitCompareArrows,
+    href: "/comparar",
+  };
+
   const navSections: Array<{ label: string | null; items: NavGroup[] }> = [
     {
       label: "Operativa",
@@ -242,6 +257,8 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
       label: "Análisis",
       items: [
         ...(reportsGroup ? [reportsGroup] : []),
+        ...(hasPermission(user, "core.view_player_comparison")
+          ? [compararItem] : []),
         // Detrás de `core.view_development`, hoy otorgado a nadie. Ocultar el
         // link es cosmético: la puerta real son los @require_perm del backend.
         // Pero un link que lleva a "no tenés permiso" es peor que no tenerlo.

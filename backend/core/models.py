@@ -133,6 +133,25 @@ class Category(models.Model):
             # can never be swept into Editor or Solo Lectura by a re-run.
             # Superusers still pass, via `_has_perm`'s bypass.
             ("view_development", "Puede ver los módulos Desarrollo y Crecimiento"),
+            #
+            # Comparador de jugadores entre divisiones. Cuelga de Category por
+            # la misma razón que el de arriba: lee A TRAVÉS de categorías —un
+            # Sub 15 contra un Sub 20 contra la media de su línea en Primer
+            # Equipo— y no hay tabla propia que lo aloje.
+            #
+            # Separado de `view_development` a propósito: aquel responde "¿este
+            # chico juega sobre su edad?" con el dato de su propia serie; este
+            # expone los valores de CUALQUIER jugador del club a quien lo abra,
+            # incluido el plantel profesional. Es una superficie más sensible y
+            # merece su propia llave.
+            #
+            # ⚠️ Otorgado a NADIE por defecto. `seed_role_groups` resuelve los
+            # permisos de cada grupo desde una lista explícita de
+            # `f"{action}_{model}"`, así que no puede colarse en Editor ni en
+            # Solo Lectura por una re-corrida. Superusuario pasa por el bypass
+            # de `_has_perm`.
+            ("view_player_comparison",
+             "Puede ver el comparador de jugadores entre divisiones"),
         ]
 
     def __str__(self) -> str:

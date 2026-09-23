@@ -1018,6 +1018,69 @@ class ComparisonMeanPointOut(Schema):
     n: int
 
 
+class ComparisonSectionIn(Schema):
+    """Guardado de una sección del comparador. El orden de `metric_keys` es
+    significativo — en el radar decide la posición de cada eje."""
+
+    category_id: str
+    metric_keys: list[str]
+
+
+class PlayerComparisonMetricOut(Schema):
+    """Una métrica del comparador. `key` es `<slug de plantilla>:<campo>`."""
+
+    key: str
+    field_key: str
+    template: str
+    template_label: str
+    label: str
+    unit: str
+    direction_of_good: str
+
+
+class PlayerComparisonPlayerOut(Schema):
+    """Un jugador del comparador, con su último valor y su serie por métrica.
+
+    `values` y `series` van tipados flojo (`dict[str, Any]`) porque sus claves
+    son las métricas pedidas y cambian en cada request — declararlas exigiría un
+    schema por combinación.
+    """
+
+    id: str
+    name: str
+    category: str | None = None
+    position: str | None = None
+    line: str | None = None
+    photo_url: str | None = None
+    date_of_birth: str | None = None
+    # ⚠️ Todo lo que el payload manda tiene que estar declarado acá: Ninja
+    # serializa contra el schema y DESCARTA en silencio lo que no figura. Un
+    # campo agregado en el servicio y olvidado acá no rompe nada — simplemente
+    # nunca llega al navegador, y la pantalla se ve vacía sin ningún error.
+    bands: dict[str, Any] = {}
+    band_labels: dict[str, Any] = {}
+    values: dict[str, Any]
+    series: dict[str, Any]
+
+
+class PlayerComparisonOut(Schema):
+    """Comparador entre divisiones (`dashboards.player_comparison.compare`).
+
+    `benchmark` va por LÍNEA (`Arquero` / `Defensa` / `Mediocampo` / `Ataque`),
+    no por posición: los vocabularios de Primer Equipo y del formativo no
+    coinciden, y cruzar por nombre exacto dejaba sin referencia a 154 de 354
+    juveniles. Cada entrada trae su `n` — la línea de arqueros son dos personas
+    y eso no se puede dibujar igual que una media de diez.
+    """
+
+    metrics: list[PlayerComparisonMetricOut]
+    players: list[PlayerComparisonPlayerOut]
+    benchmark: dict[str, Any]
+    # Sólo con `?percentiles=true`. Ver la advertencia de arriba: sin declararlo
+    # el radar recibía un payload sin percentiles y no se dibujaba.
+    percentiles: dict[str, Any] | None = None
+
+
 class PositionComparisonOut(Schema):
     """Same-position peer series for one widget field (see
     `dashboards.aggregation.position_comparison`)."""

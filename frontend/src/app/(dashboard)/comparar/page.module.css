@@ -1,0 +1,260 @@
+/* Comparador de jugadores entre divisiones.
+   Colores explícitos en todos lados: `globals.css` pinta el body con
+   `--text-color`, que es casi blanco. Heredar acá dejaría el texto invisible
+   sobre fondo blanco. */
+
+.page {
+  padding: 16px 28px 56px;
+  max-width: 1280px;
+  margin: 0 auto;
+  color: #344054;
+}
+
+.header { margin-bottom: 18px; }
+.h1 { font-size: 22px; font-weight: 700; color: #0a2240; margin: 0; }
+.sub { font-size: 13px; color: #667085; margin: 2px 0 0; }
+
+.vacio { font-size: 14px; color: #667085; padding: 28px 0; text-align: center; }
+.error {
+  background: #fef3f2; border: 1px solid #fecdca; border-radius: 10px;
+  color: #b42318; font-size: 13px; padding: 10px 12px; margin: 12px 0;
+}
+.aviso {
+  background: #fffaeb; border: 1px solid #fedf89; border-radius: 8px;
+  color: #b54708; font-size: 12px; padding: 7px 10px; margin: 0 0 10px;
+}
+
+.controles {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.controles > :first-child { flex: 1 1 340px; margin-bottom: 0; }
+
+/* ── selector de jugadores ─────────────────────────────────────────── */
+.picker {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.elegidos { display: flex; gap: 6px; flex-wrap: wrap; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #eef2ff; border: 1px solid #c7d2fe; border-radius: 999px;
+  color: #3730a3; font-size: 13px; font-weight: 600; padding: 4px 6px 4px 12px;
+}
+.pillX {
+  display: inline-flex; background: none; border: none; cursor: pointer;
+  color: #6366f1; padding: 2px; border-radius: 50%;
+}
+.pillX:hover { background: #c7d2fe; }
+
+.searchBox { position: relative; min-width: 260px; }
+.searchIcon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  color: #98a2b3; pointer-events: none;
+}
+.searchInput {
+  width: 100%; border: 1px solid #d0d5dd; border-radius: 8px;
+  padding: 8px 10px 8px 32px; font-size: 14px; background: #fff; color: #0a2240;
+}
+.searchInput:disabled { background: #f9fafb; color: #98a2b3; }
+.resultados {
+  position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0;
+  list-style: none; margin: 0; padding: 4px;
+  background: #fff; border: 1px solid #d0d5dd; border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.12); max-height: 280px;
+  overflow-y: auto;
+}
+.resultado {
+  width: 100%; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; background: none; border: none; border-radius: 6px;
+  padding: 7px 10px; font-size: 13px; color: #0a2240; cursor: pointer;
+  text-align: left;
+}
+.resultado:hover:not(:disabled) { background: #f6f8fc; }
+.resultado:disabled { color: #98a2b3; cursor: default; }
+.grupoCat {
+  margin: 6px 0 2px; padding: 0 10px;
+  font-size: 10px; font-weight: 700; color: #98a2b3;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.grupoLista { list-style: none; margin: 0; padding: 0; }
+.resultadoPos { font-size: 11px; color: #667085; white-space: nowrap; }
+
+/* ── selector de métricas ──────────────────────────────────────────── */
+.metricPicker {
+  background: #f9fafb; border: 1px solid #eef0f4; border-radius: 12px;
+  padding: 10px 14px; margin-bottom: 16px;
+}
+.metricSummary {
+  cursor: pointer; font-size: 13px; font-weight: 600; color: #475467;
+}
+.metricGroups { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.metricGroupTitle {
+  font-size: 11px; font-weight: 700; color: #667085; margin: 0 0 4px;
+  text-transform: uppercase; letter-spacing: 0.02em;
+}
+.metricChips, .metricTabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.metricTabs { margin-bottom: 10px; }
+
+.chip, .chipOn {
+  font-size: 12px; border-radius: 999px; padding: 4px 11px; cursor: pointer;
+  border: 1px solid #d0d5dd; background: #fff; color: #475467;
+}
+.chipOn { background: #0a2240; border-color: #0a2240; color: #fff; }
+
+/* ── layout del comparador ─────────────────────────────────────────── */
+.comparador { display: flex; flex-direction: column; gap: 16px; }
+.tarjetas {
+  display: grid; gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.card {
+  background: #fff; border: 1px solid #e8eaf0; border-top: 3px solid #2563eb;
+  border-radius: 14px; padding: 16px; text-align: center;
+}
+.avatarWrap { display: flex; justify-content: center; margin-bottom: 10px; }
+.avatar, .avatarFallback {
+  width: 72px; height: 72px; border-radius: 50%; object-fit: cover;
+}
+.avatarFallback {
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 24px; font-weight: 700; letter-spacing: 0.02em;
+}
+.cardName { font-size: 15px; font-weight: 700; color: #0a2240; margin: 0; }
+.cardMeta { font-size: 12px; color: #667085; margin: 2px 0 0; }
+.cardLine { font-size: 11px; color: #98a2b3; margin: 2px 0 0; }
+
+.cardMetrics {
+  margin: 12px 0 0; padding: 12px 0 0; border-top: 1px solid #f2f4f7;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.cardMetric {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+}
+.cardMetricLabel { font-size: 12px; color: #667085; text-align: left; }
+.cardMetricValue {
+  font-size: 14px; font-weight: 700; color: #0a2240; margin: 0;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.unidad { font-size: 11px; font-weight: 500; color: #98a2b3; }
+.nulo { color: #98a2b3; font-weight: 500; font-size: 12px; }
+
+/* ── cabecera de sección ───────────────────────────────────────────── */
+.seccionCab {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; border-bottom: 1px solid #e8eaf0; padding-bottom: 6px;
+  margin-top: 6px;
+}
+.seccionTitulo {
+  margin: 0; font-size: 13px; font-weight: 700; color: #0a2240;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.linkBtn {
+  background: none; border: none; padding: 0; font: inherit; font-size: 12px;
+  color: #4f46e5; cursor: pointer; text-decoration: underline; white-space: nowrap;
+}
+.linkBtn:hover { text-decoration: none; }
+
+.radarLeyenda {
+  margin: 0 0 10px; font-size: 11.5px; line-height: 1.5; color: #667085;
+}
+.radarLeyenda strong { color: #344054; }
+.flecha { font-weight: 700; color: #0a2240; }
+
+/* ── conclusión del modelo ─────────────────────────────────────────── */
+.conclusion {
+  background: #f5f3ff; border: 1px solid #ddd6fe; border-left: 3px solid #7c3aed;
+  border-radius: 12px; padding: 12px 16px;
+}
+.conclusionTitulo {
+  margin: 0 0 4px; font-size: 11px; font-weight: 700; color: #6d28d9;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.conclusionTexto {
+  margin: 0; font-size: 13.5px; line-height: 1.55; color: #2e1065;
+}
+.conclusionCargando { margin: 0; font-size: 13px; color: #7c6aa8; font-style: italic; }
+.conclusionNota { margin: 8px 0 0; font-size: 11px; color: #8b7cb8; }
+
+/* ── centro: tabla o gráfico ───────────────────────────────────────── */
+.centro {
+  background: #fff; border: 1px solid #e8eaf0; border-radius: 14px;
+  padding: 14px 16px;
+}
+.switchRow {
+  display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+  margin-bottom: 12px;
+}
+.segmented {
+  display: inline-flex; background: #f2f4f7; border-radius: 9px; padding: 2px;
+}
+.seg, .segOn {
+  border: none; border-radius: 7px; padding: 5px 12px; font-size: 12px;
+  font-weight: 600; cursor: pointer; background: none; color: #475467;
+}
+.segOn { background: #fff; color: #0a2240; box-shadow: 0 1px 2px rgba(16,24,40,.1); }
+
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th, .table td {
+  padding: 8px 10px; text-align: right; border-bottom: 1px solid #f2f4f7;
+  font-variant-numeric: tabular-nums; color: #344054;
+}
+.table thead th {
+  font-size: 11px; font-weight: 700; color: #667085; text-transform: uppercase;
+  letter-spacing: 0.02em; text-align: right;
+}
+.table thead th:first-child, .rowHead { text-align: left; }
+.rowHead { font-weight: 600; color: #0a2240; }
+.mejor { font-weight: 700; color: #027a48; background: #f0fdf4; }
+.refCell { color: #7c3aed; font-weight: 600; }
+.n { font-size: 11px; font-weight: 500; color: #98a2b3; }
+
+/* Fila-título del examen dentro de la tabla. Mismo lenguaje visual que el
+   título de cada grupo de gráficos: es el mismo agrupamiento en dos vistas. */
+.grupoFila {
+  text-align: left !important;
+  font-size: 11px; font-weight: 700; color: #475467;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  background: #f9fafb; border-bottom: 1px solid #e8eaf0;
+  padding: 7px 10px !important;
+}
+
+/* ── gráficos apilados, agrupados por examen ───────────────────────── */
+.grupos { display: flex; flex-direction: column; gap: 22px; }
+.grupo { display: flex; flex-direction: column; gap: 10px; }
+.grupoTitulo {
+  margin: 0; font-size: 11px; font-weight: 700; color: #475467;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  padding-bottom: 6px; border-bottom: 1px solid #e8eaf0;
+}
+.grupoGraficos { display: flex; flex-direction: column; gap: 18px; }
+.graficoTitulo {
+  margin: 0 0 2px; font-size: 13px; font-weight: 700; color: #0a2240;
+}
+
+/* Más bajo que un gráfico solo: ahora van varios apilados y la lectura es
+   de barrido vertical. */
+.banda {
+  display: inline-block; margin-left: 7px; padding: 1px 7px;
+  border-radius: 999px; font-size: 10px; font-weight: 700; color: #fff;
+  text-shadow: 0 1px 1px rgba(0,0,0,.35); vertical-align: middle;
+  white-space: nowrap;
+}
+.notaBandas {
+  margin: 0 0 8px; font-size: 11px; color: #98a2b3; line-height: 1.45;
+}
+.chartArea { width: 100%; height: 240px; }
+.tooltip {
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(16,24,40,.1); padding: 8px 10px;
+  font-size: 12px; color: #344054; display: flex; flex-direction: column; gap: 2px;
+}
+.tooltipNombre { font-weight: 700; }
+.tooltipFecha { color: #98a2b3; font-weight: 500; }
+
+@media (max-width: 720px) {
+  .page { padding: 12px 14px 48px; }
+  .chartArea { height: 280px; }
+}
