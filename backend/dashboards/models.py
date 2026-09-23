@@ -48,7 +48,11 @@ class ChartType(models.TextChoices):
 
     # 1 source, aggregation=last_n, multiple field_keys
     # Renders a grouped bar chart (one group per result, one bar per field).
-    GROUPED_BAR = "grouped_bar", "Grouped bar chart"
+    # `display_config: {"stacked": true}` apila en vez de agrupar. Flag y no
+    # tipo nuevo: el dato, el eje y la leyenda son iguales — lo único que
+    # cambia es si el total de la pila significa algo (aceleraciones +
+    # desaceleraciones sí: carga mecánica total; unidades distintas, no).
+    GROUPED_BAR = "grouped_bar", "Grouped bar chart (apilable)"
 
     # 1 source, aggregation=all (or last_n), multiple field_keys.
     # Renders one overlaid line per field, sharing a single x-axis. Use when
@@ -75,6 +79,42 @@ class ChartType(models.TextChoices):
     # whose options carry `option_regions` mappings to body parts.
     # Renders a human silhouette colored by counts per region.
     BODY_MAP_HEATMAP = "body_map_heatmap", "Body map heatmap (counts per region)"
+
+    # 1 source, aggregation=all. DOS métricas en un mismo gráfico: la primera
+    # como barras sobre el eje izquierdo, la segunda como línea sobre un eje
+    # derecho propio. Es el par que el cuerpo físico lee junto — distancia
+    # total contra HSR, contra metros/minuto, contra duración — y que no se
+    # puede poner en `multi_line`: comparten el dibujo pero no la escala, y
+    # forzarlos a un solo eje aplasta la métrica chica contra el piso.
+    #
+    # `display_config`:
+    #   { "bars": "<field_key>", "line": "<field_key>",
+    #     "group_by": "week" }        // agrupador del eje X, opcional
+    #
+    # El eje X es una sesión por punto, etiquetada con su día de microciclo
+    # (`md_label`) cuando lo tiene, y agrupada por semana ISO.
+    # 1 source. Un número grande con su sparkline: el encabezado de un tablero
+    # físico. `aggregation` decide QUÉ número — y la diferencia importa: la
+    # suma de la distancia de un período es volumen acumulado, el último valor
+    # es estado de hoy, y el máximo es un techo alcanzado. Tres lecturas
+    # distintas del mismo campo.
+    #
+    # `display_config`:
+    #   { "field": "<field_key>", "agg": "sum"|"latest"|"mean"|"max",
+    #     "sparkline": true }
+    KPI_CARD = "kpi_card", "Tarjeta KPI (número + sparkline)"
+
+    # 1 source, aggregation=all. Una FILA POR SESIÓN, columnas = los campos
+    # configurados. Distinto de `comparison_table`, que está TRANSPUESTO
+    # (filas = métricas, columnas = últimas tomas): sirve para leer la
+    # evolución de pocas métricas, no para recorrer un registro de actividad.
+    # Acá cada fila es un entrenamiento y se lee de arriba hacia abajo.
+    SESSION_LOG = "session_log", "Bitácora de sesiones (una fila por registro)"
+
+    DUAL_AXIS_BAR_LINE = (
+        "dual_axis_bar_line",
+        "Barras + línea con eje secundario (dos métricas, dos escalas)",
+    )
 
     # Team-scoped chart types — used by `TeamReportLayout` only. Config lives
     # on `TeamReportWidget.config` (JSONField), not WidgetDataSource. See
@@ -1156,3 +1196,47 @@ class PlayerStateSnapshot(models.Model):
 
     def __str__(self) -> str:
         return f"snapshot · {self.player_id} @ {self.captured_on}"
+
+
+class ComparisonSectionConfig(models.Model):
+    """Qué métricas llena cada sección del comparador de jugadores.
+
+    Por CLUB y no por usuario, igual que los layouts, las bandas y las reglas
+    de alerta: qué se mira es una curaduría del cuerpo técnico, no una
+    preferencia personal. El selector de cada sección sigue dejando desviarse
+    en el momento sin guardar — lo que se persiste es el acuerdo, no la
+    exploración.
+
+    Una fila por (club, sección). Sin fila, la sección cae al default: las
+    métricas para las que ese club definió bandas.
+    """
+
+    class Section(models.TextChoices):
+        CARDS = "cards", "Tarjetas"
+        RADAR = "radar", "Radar"
+        TABLE = "table", "Tabla y gráficos"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    club = models.ForeignKey(
+        "core.Club", on_delete=models.CASCADE, related_name="comparison_sections",
+    )
+    section = models.CharField(max_length=16, choices=Section.choices)
+    # `<slug de plantilla>:<campo>`, en el orden en que se quieren mostrar —
+    # el orden ES parte de la configuración, sobre todo en el radar, donde
+    # define qué eje va al lado de cuál.
+    metric_keys = models.JSONField(default=list)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="+",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["club", "section"], name="uniq_comparison_section_per_club",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.club_id} · {self.section} ({len(self.metric_keys or [])})"

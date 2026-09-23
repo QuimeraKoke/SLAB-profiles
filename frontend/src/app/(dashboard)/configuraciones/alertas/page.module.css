@@ -452,7 +452,11 @@
   border-radius: 5px;
   font: inherit;
   background: var(--color-surface, #fff);
-  color: inherit;
+  /* Explícito, NO `inherit`: `globals.css` pinta el body con `--text-color`,
+     que es #f1f3f9 — casi blanco. Heredarlo dejaba los umbrales escritos en
+     blanco sobre el fondo blanco del input. Es el mismo color que usan los
+     demás inputs del formulario (`.field select, .field input`). */
+  color: #0a2240;
 }
 .bandTable input:focus-visible {
   outline: 2px solid var(--color-primary, #2563eb);

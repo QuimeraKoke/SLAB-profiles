@@ -1568,14 +1568,40 @@ class TeamDistributionTests(TestCase):
             ]},
         )
 
-    def _build_widget(self, *, bin_count=None) -> TeamReportWidget:
+    # Tres bandas sobre "peso", con los dos extremos ABIERTOS — la forma que
+    # siembra `seed_formativo_bands` y la que garantiza que nadie quede afuera.
+    BANDAS = [
+        {"label": "Bajo", "max": 75, "color": "#FF0000"},
+        {"label": "Medio", "min": 75, "max": 85, "color": "#FFFF00"},
+        {"label": "Alto", "min": 85, "color": "#0000FF"},
+    ]
+
+    def _con_bandas(self):
+        campo = dict(self.template.config_schema["fields"][0])
+        campo["reference_ranges"] = self.BANDAS
+        self.template.config_schema = {"fields": [campo]}
+        self.template.save(update_fields=["config_schema"])
+
+    def _sembrar_pesos(self, pesos):
+        for peso, jugador in zip(pesos, self.players):
+            ExamResult.objects.create(
+                player=jugador, template=self.template,
+                recorded_at=timezone.now(), result_data={"peso": peso},
+            )
+
+    def _build_widget(self, *, bin_count=None, binning=None) -> TeamReportWidget:
         layout = TeamReportLayout.objects.create(department=self.dept, category=self.cat)
         section = TeamReportSection.objects.create(layout=layout)
+        cfg = {}
+        if bin_count:
+            cfg["bin_count"] = bin_count
+        if binning:
+            cfg["binning"] = binning
         widget = TeamReportWidget.objects.create(
             section=section,
             chart_type=ChartType.TEAM_DISTRIBUTION.value,
             title="Dist",
-            display_config={"bin_count": bin_count} if bin_count else {},
+            display_config=cfg,
         )
         TeamReportWidgetDataSource.objects.create(
             widget=widget, template=self.template,
@@ -1752,6 +1778,48 @@ class TeamDistributionTests(TestCase):
         self.assertNotIn("band_counts", payload)
         for b in payload["bins"]:
             self.assertNotIn("color", b)
+
+    # ── binning por bandas ────────────────────────────────────────────────
+    def test_binning_bands_hace_un_bin_por_banda(self):
+        self._con_bandas()
+        self._sembrar_pesos([70, 75, 80, 85, 90])
+        payload = resolve_team_widget(
+            self._build_widget(bin_count=8, binning="bands"), self.cat)
+        self.assertEqual(payload["binning"], "bands")
+        # Se pidió bin_count=8 y se ignora a propósito: mandan las bandas.
+        self.assertEqual(payload["bin_count"], 3)
+        self.assertEqual([b["band_label"] for b in payload["bins"]],
+                         ["Bajo", "Medio", "Alto"])
+        self.assertEqual([b["count"] for b in payload["bins"]], [2, 2, 1])
+        self.assertEqual([b["color"] for b in payload["bins"]],
+                         ["#FF0000", "#FFFF00", "#0000FF"])
+
+    def test_binning_bands_no_deja_a_nadie_afuera_por_los_extremos(self):
+        # El punto de las bandas abiertas: un valor absurdo hacia cada lado
+        # sigue cayendo en el gráfico en vez de desaparecer sin aviso.
+        self._con_bandas()
+        self._sembrar_pesos([1, 40, 80, 120, 999])
+        payload = resolve_team_widget(self._build_widget(binning="bands"), self.cat)
+        self.assertEqual(sum(b["count"] for b in payload["bins"]),
+                         payload["stats"]["n"])
+        self.assertIsNone(payload["bins"][0]["low"], "la primera es abierta")
+        self.assertIsNone(payload["bins"][-1]["high"], "la última es abierta")
+
+    def test_binning_bands_cae_a_uniform_si_el_campo_no_tiene_bandas(self):
+        self._sembrar_pesos([70, 75, 80, 85, 90])
+        payload = resolve_team_widget(
+            self._build_widget(bin_count=5, binning="bands"), self.cat)
+        self.assertEqual(payload["binning"], "uniform")
+        self.assertEqual(payload["bin_count"], 5)
+
+    def test_sin_binning_el_histograma_queda_igual_que_antes(self):
+        # Guard de no-regresión: el default no cambió para los layouts vivos.
+        self._con_bandas()
+        self._sembrar_pesos([70, 75, 80, 85, 90])
+        payload = resolve_team_widget(self._build_widget(bin_count=5), self.cat)
+        self.assertEqual(payload["binning"], "uniform")
+        self.assertEqual(payload["bin_count"], 5)
+        self.assertEqual(sum(b["count"] for b in payload["bins"]), 5)
 
 
 # =============================================================================

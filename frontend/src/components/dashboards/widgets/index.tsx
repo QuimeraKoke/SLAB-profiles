@@ -9,11 +9,14 @@ import ComparisonTable from "./ComparisonTable";
 import CrossExamLine from "./CrossExamLine";
 import LineWithSelector from "./LineWithSelector";
 import DonutPerResult from "./DonutPerResult";
+import DualAxisBarLine from "./DualAxisBarLine";
 import GoalCard from "./GoalCard";
 import GroupedBar from "./GroupedBar";
+import KpiCard from "./KpiCard";
 import MultiLine from "./MultiLine";
 import PlayerAlerts from "./PlayerAlerts";
 import RadarTrainingLoad from "./RadarTrainingLoad";
+import SessionLog from "./SessionLog";
 import Unsupported from "./Unsupported";
 
 const widgetRegistry: Record<
@@ -26,6 +29,9 @@ const widgetRegistry: Record<
   donut_per_result: DonutPerResult,
   grouped_bar: GroupedBar,
   multi_line: MultiLine,
+  dual_axis_bar_line: DualAxisBarLine,
+  kpi_card: KpiCard,
+  session_log: SessionLog,
   cross_exam_line: CrossExamLine,
   body_map_heatmap: BodyMapHeatmap,
   goal_card: GoalCard,

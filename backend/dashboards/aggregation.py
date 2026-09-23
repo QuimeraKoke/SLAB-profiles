@@ -123,6 +123,12 @@ def _empty(widget: Widget, chart_type: str) -> dict[str, Any]:
         return {**base, "groups": [], "fields": []}
     if chart_type == ChartType.MULTI_LINE.value:
         return {**base, "series": []}
+    if chart_type == ChartType.DUAL_AXIS_BAR_LINE.value:
+        return {**base, "bars": None, "line": None, "points": []}
+    if chart_type == ChartType.KPI_CARD.value:
+        return {**base, "field": None, "value": None, "sparkline": [], "n": 0}
+    if chart_type == ChartType.SESSION_LOG.value:
+        return {**base, "columns": [], "rows": []}
     if chart_type == ChartType.CROSS_EXAM_LINE.value:
         return {**base, "series": []}
     if chart_type == ChartType.BODY_MAP_HEATMAP.value:
@@ -678,6 +684,11 @@ def _resolve_multi_line(
                 "label": meta["label"],
                 "unit": meta["unit"],
                 "color": palette[i] if i < len(palette) else None,
+                # Va siempre, aunque el renderer sólo las dibuje cuando queda
+                # UNA serie: con dos campos en el mismo eje Y no hay forma de
+                # decir de cuál es la franja, y pintar la del primero sería
+                # mentir sobre el segundo.
+                "reference_ranges": meta.get("reference_ranges") or [],
                 "points": [
                     {
                         "recorded_at": r.recorded_at.isoformat(),
@@ -990,6 +1001,184 @@ def _resolve_body_map_heatmap(
     }
 
 
+def _resolve_dual_axis_bar_line(
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict[str, Any]:
+    """Dos métricas, dos escalas, un dibujo.
+
+    Barras a la izquierda, línea a la derecha. Existe porque el par que el
+    cuerpo físico lee junto —distancia total contra HSR, contra metros/minuto,
+    contra duración— no entra en `multi_line`: 6.400 m de distancia y 280 m de
+    HSR comparten gráfico pero no escala, y en un solo eje el HSR queda
+    aplastado contra el piso, indistinguible de cero.
+
+    Cada punto es UNA sesión, etiquetada con su día de microciclo (`md_label`)
+    cuando lo tiene, y agrupada por semana ISO. La semana sale de la fecha, sin
+    depender de ninguna convención del club.
+
+    `display_config`: `{"bars": "<field>", "line": "<field>"}`. Sin eso se
+    toman los dos primeros `field_keys` de la data source, en orden.
+    """
+    source = sources[0] if sources else None
+    if source is None:
+        return _empty(widget, ChartType.DUAL_AXIS_BAR_LINE.value)
+
+    cfg = widget.display_config if isinstance(widget.display_config, dict) else {}
+    claves = list(source.field_keys or [])
+    campo_barras = cfg.get("bars") or (claves[0] if claves else None)
+    campo_linea = cfg.get("line") or (claves[1] if len(claves) > 1 else None)
+    if not campo_barras or not campo_linea:
+        return _empty(widget, ChartType.DUAL_AXIS_BAR_LINE.value) | {
+            "error": ("Configura dos campos: el primero va como barras y el "
+                      "segundo como línea (o usa display_config "
+                      '{"bars": ..., "line": ...}).'),
+        }
+
+    template = source.template
+    results = _fetch_results(template, player_id, source, date_from, date_to)
+
+    puntos: list[dict[str, Any]] = []
+    for r in results:
+        datos = r.result_data or {}
+        puntos.append({
+            "recorded_at": r.recorded_at.isoformat(),
+            # La semana ISO es el agrupador del eje: "2026-W38". Se calcula
+            # acá y no en el frontend para que el PDF y la pantalla agrupen
+            # igual sin duplicar la regla.
+            "week": "%d-W%02d" % r.recorded_at.isocalendar()[:2],
+            # Etiqueta de la barra. `None` cuando la sesión cae a más de una
+            # semana de cualquier partido — no pertenece a ningún microciclo,
+            # y decirlo es más honesto que inventarle uno.
+            "md_label": datos.get("md_label") or None,
+            "bars": _safe_float(datos.get(campo_barras)),
+            "line": _safe_float(datos.get(campo_linea)),
+        })
+
+    return {
+        "chart_type": ChartType.DUAL_AXIS_BAR_LINE.value,
+        "bars": _field_meta(template, campo_barras),
+        "line": _field_meta(template, campo_linea),
+        "points": puntos,
+    }
+
+
+def _resolve_kpi_card(
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict[str, Any]:
+    """Un número grande con su sparkline.
+
+    `agg` no es un detalle de presentación: la SUMA de la distancia de un
+    período es volumen acumulado, el ÚLTIMO valor es el estado de hoy, y el
+    MÁXIMO es un techo alcanzado. Son tres lecturas distintas del mismo campo,
+    y el encabezado de un tablero físico usa las tres según la métrica — por
+    eso viaja en el payload, para que la tarjeta pueda decir cuál está
+    mostrando en vez de dejar al lector adivinando.
+    """
+    source = sources[0] if sources else None
+    if source is None:
+        return _empty(widget, ChartType.KPI_CARD.value)
+
+    cfg = widget.display_config if isinstance(widget.display_config, dict) else {}
+    claves = list(source.field_keys or [])
+    campo = cfg.get("field") or (claves[0] if claves else None)
+    if not campo:
+        return _empty(widget, ChartType.KPI_CARD.value) | {
+            "error": "Configura el campo numérico de la tarjeta.",
+        }
+
+    agg = (cfg.get("agg") or "latest").lower()
+    template = source.template
+    results = _fetch_results(template, player_id, source, date_from, date_to)
+
+    serie = []
+    for r in results:
+        v = _safe_float((r.result_data or {}).get(campo))
+        if v is not None:
+            serie.append({"recorded_at": r.recorded_at.isoformat(), "value": v})
+
+    valores = [p["value"] for p in serie]
+    if not valores:
+        valor = None
+    elif agg == "sum":
+        valor = round(sum(valores), 2)
+    elif agg == "mean":
+        valor = round(sum(valores) / len(valores), 2)
+    elif agg == "max":
+        valor = max(valores)
+    else:
+        valor = valores[-1]
+
+    return {
+        "chart_type": ChartType.KPI_CARD.value,
+        "field": _field_meta(template, campo),
+        "agg": agg,
+        "value": valor,
+        # La sparkline es la MISMA serie que produce el número: si mostrara
+        # otra ventana, la curva contaría una historia que el número no.
+        "sparkline": serie if cfg.get("sparkline", True) else [],
+        "n": len(valores),
+        "last_recorded_at": serie[-1]["recorded_at"] if serie else None,
+    }
+
+
+def _resolve_session_log(
+    widget: Widget,
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> dict[str, Any]:
+    """Una fila por sesión, columnas = los campos configurados.
+
+    `comparison_table` no sirve para esto: está transpuesto —sus filas son las
+    métricas y sus columnas las últimas tomas— y funciona bien para seguir la
+    evolución de pocos campos, no para recorrer un registro de actividad donde
+    lo que importa es la secuencia de sesiones.
+
+    Las columnas fijas (fecha, día de microciclo) van primero y no se
+    configuran: son el eje de lectura de la bitácora.
+    """
+    source = sources[0] if sources else None
+    if source is None:
+        return _empty(widget, ChartType.SESSION_LOG.value)
+
+    template = source.template
+    claves = list(source.field_keys or [])
+    if not claves:
+        return _empty(widget, ChartType.SESSION_LOG.value) | {
+            "error": "Configura al menos un campo para las columnas.",
+        }
+
+    metas = [_field_meta(template, k) for k in claves]
+    results = _fetch_results(template, player_id, source, date_from, date_to)
+
+    filas = []
+    for r in results:
+        datos = r.result_data or {}
+        filas.append({
+            "result_id": str(r.id),
+            "recorded_at": r.recorded_at.isoformat(),
+            "md_label": datos.get("md_label") or None,
+            "values": {k: _safe_float(datos.get(k)) for k in claves},
+        })
+    # Más reciente primero: una bitácora se lee desde lo último hacia atrás.
+    filas.reverse()
+
+    return {
+        "chart_type": ChartType.SESSION_LOG.value,
+        "columns": metas,
+        "rows": filas,
+    }
+
+
 # Callable type widened with `Any` because mypy/pyright can't express the
 # date_from/date_to optionals across the literal Callable type alias. The
 # actual resolvers accept the kwargs.
@@ -1000,6 +1189,9 @@ _RESOLVERS: dict[str, Callable[..., dict[str, Any]]] = {
     ChartType.DONUT_PER_RESULT.value: _resolve_donut_per_result,
     ChartType.GROUPED_BAR.value: _resolve_grouped_bar,
     ChartType.MULTI_LINE.value: _resolve_multi_line,
+    ChartType.DUAL_AXIS_BAR_LINE.value: _resolve_dual_axis_bar_line,
+    ChartType.KPI_CARD.value: _resolve_kpi_card,
+    ChartType.SESSION_LOG.value: _resolve_session_log,
     ChartType.CROSS_EXAM_LINE.value: _resolve_cross_exam_line,
     ChartType.BODY_MAP_HEATMAP.value: _resolve_body_map_heatmap,
     # `_resolve_goal_card` is defined below this dict to keep its

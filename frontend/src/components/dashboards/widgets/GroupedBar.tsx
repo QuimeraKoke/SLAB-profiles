@@ -28,6 +28,12 @@ export default function GroupedBar({ widget }: GroupedBarProps) {
   const config = (widget.display_config ?? {}) as {
     x_axis_title?: string;
     y_axis_title?: string;
+    /** `true` apila las barras en vez de agruparlas. Es un flag y no un tipo
+     *  de gráfico nuevo porque el dato, el eje y la leyenda son idénticos:
+     *  lo único que cambia es si el total de la pila significa algo. Para
+     *  aceleraciones + desaceleraciones sí significa (carga mecánica total);
+     *  para métricas de unidades distintas, no — de ahí que sea opt-in. */
+    stacked?: boolean;
   };
   const xAxisTitle = config.x_axis_title ?? "Fecha";
   const sharedUnit = data.fields.length > 0 && data.fields.every((f) => f.unit === data.fields[0].unit)
@@ -151,6 +157,7 @@ export default function GroupedBar({ widget }: GroupedBarProps) {
                 dataKey={field.key}
                 name={field.label}
                 fill={field.color || DEFAULT_PALETTE[i % DEFAULT_PALETTE.length]}
+                stackId={config.stacked ? "apiladas" : undefined}
                 isAnimationActive={false}
               />
             ))}

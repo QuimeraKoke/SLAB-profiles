@@ -751,6 +751,9 @@ export type WidgetData =
   | DonutPerResultPayload
   | GroupedBarPayload
   | MultiLinePayload
+  | DualAxisBarLinePayload
+  | KpiCardPayload
+  | SessionLogPayload
   | CrossExamLinePayload
   | BodyMapHeatmapPayload
   | GoalCardPayload
@@ -758,6 +761,73 @@ export type WidgetData =
   | ActivityLogPayload
   | UnsupportedPayload
   | EmptyPayload;
+
+/* ── Comparador de jugadores entre divisiones ──────────────────────────── */
+
+export interface ComparisonMetric {
+  /** `<slug de plantilla>:<campo>` — la clave que indexa `values` y `series`. */
+  key: string;
+  field_key: string;
+  template: string;
+  template_label: string;
+  label: string;
+  unit: string;
+  direction_of_good: "up" | "down" | "neutral";
+}
+
+export interface ComparisonPoint {
+  recorded_at: string;
+  value: number;
+}
+
+export interface ComparisonPlayer {
+  id: string;
+  name: string;
+  category: string | null;
+  position: string | null;
+  /** Línea normalizada: Arquero / Defensa / Mediocampo / Ataque. */
+  line: string | null;
+  /** Hoy `null` para los 445 del formativo — la tarjeta necesita fallback. */
+  photo_url: string | null;
+  /** Habilita el eje "misma edad" del gráfico de evolución. */
+  date_of_birth: string | null;
+  values: Record<string, ComparisonPoint | null>;
+  series: Record<string, ComparisonPoint[]>;
+  /** Las bandas de la categoría DE ESTE JUGADOR. Dos jugadores de divisiones
+   *  distintas traen escalas distintas para la misma métrica — ese es el punto
+   *  de las bandas por categoría. */
+  bands: Record<string, ReferenceBand[]>;
+  /** Nombre de la banda en la que cae su último valor, ya resuelto contra las
+   *  bandas de arriba. `null` si no hay dato o la métrica no tiene bandas. */
+  band_labels: Record<string, string | null>;
+}
+
+export interface ComparisonBenchmarkLine {
+  /** Profesionales en la línea. NO es la n de la media — ver abajo. */
+  line_size: number;
+  metrics: Record<string, { mean: number | null; n: number }>;
+}
+
+export type ComparisonSection = "cards" | "radar" | "table";
+
+/** Percentil del jugador DENTRO de su categoría, ya corregido por dirección:
+ *  más alto es siempre mejor, también en métricas donde el valor crudo mejor
+ *  es el más bajo. `pct` es null con menos de 3 compañeros con el dato. */
+export interface ComparisonPercentile {
+  pct: number | null;
+  n: number;
+  value: number | null;
+}
+
+export interface PlayerComparisonPayload {
+  metrics: ComparisonMetric[];
+  players: ComparisonPlayer[];
+  /** Por línea. `n` por métrica puede ser mucho menor que `line_size`: diez
+   *  profesionales en Defensa, quizá sólo tres con CMJ. */
+  benchmark: Record<string, ComparisonBenchmarkLine>;
+  /** `player_id` → `metric_key` → percentil. Sólo con `?percentiles=true`. */
+  percentiles?: Record<string, Record<string, ComparisonPercentile>>;
+}
 
 /** Clinical reference band: a labeled numeric range with optional color.
  *  Either `min` or `max` (or both) is present — bands are disjoint and
@@ -865,8 +935,59 @@ export interface MultiLinePayload {
     label: string;
     unit: string;
     color: string | null;
+    /** Bandas del campo, ya resueltas por categoría. Sólo se dibujan cuando
+     *  el gráfico quedó con UNA serie — ver `ReferenceBands`. */
+    reference_ranges?: ReferenceBand[];
     points: { recorded_at: string; value: number | null }[];
   }[];
+}
+
+/** Bitácora: una fila por sesión. Distinto de `ComparisonTablePayload`, que
+ *  está transpuesto (filas = métricas). */
+export interface SessionLogPayload {
+  chart_type: "session_log";
+  columns: FieldMeta[];
+  rows: {
+    result_id: string;
+    recorded_at: string;
+    md_label: string | null;
+    values: Record<string, number | null>;
+  }[];
+  empty?: boolean;
+  error?: string;
+}
+
+/** Número grande + sparkline. `agg` viaja para que la tarjeta pueda decir QUÉ
+ *  está mostrando: suma, promedio, máximo o último. */
+export interface KpiCardPayload {
+  chart_type: "kpi_card";
+  field: FieldMeta | null;
+  agg: string;
+  value: number | null;
+  sparkline: { recorded_at: string; value: number }[];
+  n: number;
+  last_recorded_at?: string | null;
+  empty?: boolean;
+  error?: string;
+}
+
+/** Barras + línea con eje secundario. Una sesión por punto. */
+export interface DualAxisBarLinePayload {
+  chart_type: "dual_axis_bar_line";
+  bars: FieldMeta | null;
+  line: FieldMeta | null;
+  points: {
+    recorded_at: string;
+    /** Semana ISO ("2026-W38"), calculada en el backend para que pantalla y
+     *  PDF agrupen igual. */
+    week: string;
+    /** Día de microciclo. `null` a más de una semana de cualquier partido. */
+    md_label: string | null;
+    bars: number | null;
+    line: number | null;
+  }[];
+  empty?: boolean;
+  error?: string;
 }
 
 export interface CrossExamMatchInfo {
@@ -1150,9 +1271,15 @@ export interface TeamDistributionPayload {
   title: string;
   field: { key: string; label: string; unit: string } | null;
   bin_count: number;
+  /** "bands" = un bin por banda del club, eje X ORDINAL y `low`/`high` en
+   *  `null` en los extremos abiertos. "uniform" (default) = el histograma
+   *  numérico de siempre. Ausente en payloads viejos = "uniform". */
+  binning?: "bands" | "uniform";
   bins: {
-    low: number;
-    high: number;
+    /** `null` con `binning: "bands"` — la banda más baja no tiene piso. */
+    low: number | null;
+    /** `null` con `binning: "bands"` — la banda más alta no tiene techo. */
+    high: number | null;
     count: number;
     players: { id: string; name: string; value: number }[];
     /** Hex color of the band the bin's midpoint falls into. Present only

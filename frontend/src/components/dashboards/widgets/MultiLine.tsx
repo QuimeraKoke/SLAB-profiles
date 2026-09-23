@@ -15,6 +15,7 @@ import {
 import type { DashboardWidget, MultiLinePayload } from "@/lib/types";
 import { ChartWindowNav, fullRangeDomain, useChartWindow, windowRangeLabel } from "./ChartWindow";
 import { MovingAvgControl, trailingMean, useMovingAverage } from "./MovingAverage";
+import { referenceBandAreas } from "./ReferenceBands";
 import styles from "./Widget.module.css";
 
 interface MultiLineProps {
@@ -120,6 +121,13 @@ export default function MultiLine({ widget }: MultiLineProps) {
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={window.data} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            {/* Bandas SÓLO con una serie: con dos campos compartiendo el eje Y
+                la franja no tiene dueño, y pintar la del primero haría leer
+                mal al segundo. Van pegadas a la grilla para quedar debajo de
+                todas las líneas. */}
+            {data.series.length === 1
+              ? referenceBandAreas(data.series[0].reference_ranges, yDomain)
+              : null}
             {/* Numeric idx axis: the viewport (domain) pans smoothly over
                 the full dataset. Explicit height keeps the title INSIDE
                 the axis band, clear of the legend row. */}

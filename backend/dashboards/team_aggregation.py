@@ -1551,11 +1551,21 @@ def _resolve_team_distribution(
         { "bin_count": 8 }   // default 8, clamped to [3, 30]
 
     `display_config` (extras):
-        { "bin_count": 8, "coloring": "none" }
+        { "bin_count": 8, "coloring": "none", "binning": "bands" }
         - `coloring`: "none" disables band-based bin coloring even if the
           field has `reference_ranges`. Anything else (default / omitted)
           is treated as "auto" — color bins by the band their midpoint
           falls into, and emit a `band_counts` summary.
+        - `binning`: "bands" reemplaza el histograma calculado por UN BIN POR
+          BANDA del club. Opt-in: el default sigue siendo "uniform", porque hay
+          layouts de equipo en producción. Cae a "uniform" solo si el campo no
+          tiene bandas configuradas.
+
+          Con "bands" el eje X deja de ser numérico y pasa a ser ORDINAL, y
+          `low`/`high` pueden venir en `null` — las bandas de los extremos son
+          abiertas (`Muy Deficiente` sin piso, `Elite` sin techo), que es
+          justamente lo que garantiza que ningún jugador quede fuera del
+          gráfico. El renderer etiqueta por `band_label`, no por los números.
 
     Returns:
         {
@@ -1612,6 +1622,10 @@ def _resolve_team_distribution(
 
     display_config = widget.display_config or {}
     bin_count = max(3, min(int(display_config.get("bin_count") or 8), 30))
+    # `binning`: "uniform" (por defecto) | "bands". Opt-in a propósito — hay
+    # layouts de equipo en producción y cambiarles el gráfico bajo los pies al
+    # club no se avisa solo. Cae a "uniform" si el campo no tiene bandas.
+    binning_mode = (display_config.get("binning") or "uniform")
 
     players = list(_roster_query(category, position_id, player_ids))
     player_index = {p.id: p for p in players}
@@ -1680,34 +1694,71 @@ def _resolve_team_distribution(
     )
     mean = sum(values) / n
 
-    # Edge case: all values identical → one bin with everyone in it.
-    if hi == lo:
-        bin_width = 1.0
-        bin_count_eff = 1
-    else:
-        bin_width = (hi - lo) / bin_count
-        bin_count_eff = bin_count
+    ref_ranges_cfg = field_meta.get("reference_ranges") or []
+    # Un bin por banda del club en vez del histograma calculado. El eje deja de
+    # ser numérico y pasa a ser ORDINAL: siete barras de igual ancho en pantalla
+    # aunque los rangos no lo sean (en 1RM "Excelente" mide 29 kg y "Bueno" 14).
+    # Es la lectura correcta — deja de ser un histograma y pasa a ser un conteo
+    # por categoría, que es lo que el cuerpo técnico lee en su planilla.
+    band_binning = (
+        binning_mode == "bands"
+        and isinstance(ref_ranges_cfg, list)
+        and len(ref_ranges_cfg) > 0
+    )
 
     bins: list[dict[str, Any]] = []
-    for i in range(bin_count_eff):
-        low = lo + i * bin_width
-        high = lo + (i + 1) * bin_width if i < bin_count_eff - 1 else hi
-        bins.append({"low": round(low, 4), "high": round(high, 4), "players": []})
-
-    for pid, value in latest_by_player.items():
-        if hi == lo:
-            idx = 0
-        else:
-            # The last bin is inclusive of `hi` so the max value lands there.
-            idx = min(int((value - lo) / bin_width), bin_count_eff - 1)
-        player = player_index[pid]
-        bins[idx]["players"].append(
-            {
+    if band_binning:
+        for band in ref_ranges_cfg:
+            if not isinstance(band, dict):
+                continue
+            bins.append({
+                # `None` = banda abierta. Las del club siempre lo son en los
+                # extremos, así que ningún jugador queda fuera del gráfico.
+                "low": band.get("min"),
+                "high": band.get("max"),
+                "players": [],
+                "color": band.get("color"),
+                "band_label": band.get("label") or "",
+            })
+        indice = {id(b): i for i, b in enumerate(ref_ranges_cfg)}
+        for pid, value in latest_by_player.items():
+            band = _band_for_value(value, ref_ranges_cfg)
+            if band is None:
+                continue
+            player = player_index[pid]
+            bins[indice[id(band)]]["players"].append({
                 "id": str(pid),
                 "name": f"{player.first_name} {player.last_name}".strip(),
                 "value": value,
-            }
-        )
+            })
+    else:
+        # Edge case: all values identical → one bin with everyone in it.
+        if hi == lo:
+            bin_width = 1.0
+            bin_count_eff = 1
+        else:
+            bin_width = (hi - lo) / bin_count
+            bin_count_eff = bin_count
+
+        for i in range(bin_count_eff):
+            low = lo + i * bin_width
+            high = lo + (i + 1) * bin_width if i < bin_count_eff - 1 else hi
+            bins.append({"low": round(low, 4), "high": round(high, 4), "players": []})
+
+        for pid, value in latest_by_player.items():
+            if hi == lo:
+                idx = 0
+            else:
+                # The last bin is inclusive of `hi` so the max value lands there.
+                idx = min(int((value - lo) / bin_width), bin_count_eff - 1)
+            player = player_index[pid]
+            bins[idx]["players"].append(
+                {
+                    "id": str(pid),
+                    "name": f"{player.first_name} {player.last_name}".strip(),
+                    "value": value,
+                }
+            )
 
     for b in bins:
         b["count"] = len(b["players"])
@@ -1720,7 +1771,7 @@ def _resolve_team_distribution(
     #      fall in each declared band.
     # Both are skipped silently when no bands are defined — the frontend
     # falls back to the default violet bars + base stats row.
-    reference_ranges = field_meta.get("reference_ranges") or []
+    reference_ranges = ref_ranges_cfg
     coloring_mode = (display_config.get("coloring") or "auto")
     band_overlay = (
         coloring_mode != "none"
@@ -1730,14 +1781,18 @@ def _resolve_team_distribution(
 
     band_counts_payload: list[dict[str, Any]] | None = None
     if band_overlay:
-        for b in bins:
-            mid = (b["low"] + b["high"]) / 2.0
-            band = _band_for_value(mid, reference_ranges)
-            if band is not None:
-                color = band.get("color")
-                if color:
-                    b["color"] = color
-                b["band_label"] = band.get("label") or ""
+        # Con bines por banda el color y la etiqueta ya vienen puestos, y el
+        # punto medio ni siquiera existe: las bandas de los extremos son
+        # abiertas, así que `low`/`high` son None y la cuenta reventaría.
+        if not band_binning:
+            for b in bins:
+                mid = (b["low"] + b["high"]) / 2.0
+                band = _band_for_value(mid, reference_ranges)
+                if band is not None:
+                    color = band.get("color")
+                    if color:
+                        b["color"] = color
+                    b["band_label"] = band.get("label") or ""
 
         # Per-band counts use each player's *latest* numeric value (not the
         # bin midpoint) so the chips reflect reality, not bin-discretized
@@ -1770,7 +1825,10 @@ def _resolve_team_distribution(
         "chart_type": ChartType.TEAM_DISTRIBUTION.value,
         "title": widget.title,
         "field": payload_field,
-        "bin_count": bin_count_eff,
+        "bin_count": len(bins),
+        # Le dice al renderer qué eje dibujar: "bands" es ordinal (una barra
+        # por banda, etiquetada), "uniform" es el histograma numérico de antes.
+        "binning": "bands" if band_binning else "uniform",
         "bins": bins,
         "stats": {
             "n": n,

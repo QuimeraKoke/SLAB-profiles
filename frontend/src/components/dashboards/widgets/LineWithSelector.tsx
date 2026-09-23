@@ -23,6 +23,7 @@ import type {
 } from "@/lib/types";
 import { ChartWindowNav, fullRangeDomain, useChartWindow, windowRangeLabel } from "./ChartWindow";
 import { MovingAvgControl, trailingMean, useMovingAverage } from "./MovingAverage";
+import { referenceBandAreas } from "./ReferenceBands";
 import styles from "./Widget.module.css";
 
 interface LineWithSelectorProps {
@@ -279,6 +280,10 @@ export default function LineWithSelector({ widget, playerId }: LineWithSelectorP
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartRows} margin={{ top: 8, right: refLines.length || band ? 70 : 16, left: 8, bottom: 8 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              {/* Las bandas del club van primero de todo: en SVG el orden de
+                  los children es el orden de pintado, y tienen que quedar
+                  DEBAJO de la envolvente y de las líneas. */}
+              {referenceBandAreas(activeField?.reference_ranges, yDomain)}
               {/* Mean±SD envelope behind everything: "this player's normal
                   range". Shaded area + a dashed centre line at the mean. */}
               {band && (
