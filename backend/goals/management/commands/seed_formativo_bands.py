@@ -70,9 +70,14 @@ SHEETS = ("FORMATO CONDICIONAL 15-16 y 18-", "FORMATO CONDICIONAL 13 -14 y 11")
 # The seven bands, worst to best, exactly as the club writes them.
 BANDAS = ("Muy Deficiente", "Deficiente", "Regular", "Bueno", "muy bueno",
           "Excelente", "Elite")
-# Red → teal ramp. Seven steps, so the middle is amber rather than green.
-COLORES = ("#dc2626", "#f97316", "#f59e0b", "#84cc16", "#16a34a", "#059669",
-           "#0d9488")
+# Los colores REALES de la planilla del club, leídos del formato de sus celdas
+# en `FORMATO CONDICIONAL` (no una paleta nuestra que se le parezca). El cuerpo
+# técnico ya lee esa hoja todos los días: si el gráfico pinta "Excelente" de un
+# verde distinto al que ellos ven en su Excel, la banda deja de ser la misma
+# cosa. El salto a azul en "Elite" es de ellos y es deliberado — corta la rampa
+# verde para que el tope se distinga de un vistazo.
+COLORES = ("#FF0000", "#FF9900", "#FFFF00", "#92D050", "#01A860", "#375623",
+           "#0000FF")
 
 # Group label in column A → the bracket ages it covers.
 GRUPOS = {
@@ -176,7 +181,11 @@ def _parse_sheet(grid: list, hoja: str) -> list[Bloque]:
     # band names in order. Anchoring on the sequence rather than on a header
     # keeps it working when the club adds or moves a section.
     crudos = []
-    for base in (3, 7, 11):        # C/D/E, G/H/I, K/L/M as 0-indexed columns
+    # C/D/E, G/H/I, K/L/M, O/P/Q as 0-indexed columns. The fourth position is
+    # not decorative: the club lays four tests across each row, and reading only
+    # three dropped the last one of every row — CMJ t-v and COD 505 IZQ never
+    # had a band in ANY category, while their siblings in the same row did.
+    for base in (3, 7, 11, 15):
         for r in range(2, max_row - len(BANDAS) + 2):
             etiquetas = [norm(filas.get(r + i, [None])[base - 1]
                               if base - 1 < len(filas.get(r + i, [])) else None)

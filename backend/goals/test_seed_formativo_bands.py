@@ -70,6 +70,52 @@ class BuildRangesTests(TestCase):
 CAB = ["FECHA", "JUGADOR", "FECHA DE NACIMIENTO", "EDAD", "CATEGORÍA", "POSICIÓN"]
 
 
+class ParseSheetTests(TestCase):
+    """`_parse_sheet` alone — dónde busca los bloques dentro de la hoja.
+
+    El club acomoda CUATRO tests a lo ancho de cada fila y el escáner miraba
+    tres, así que el último de cada fila no existía para SLAB: `CMJ t-v` y
+    `COD 505 IZQ` se quedaron sin banda en todas las categorías mientras sus
+    vecinos de la misma fila sí la tenían. Un test que apila los bloques
+    verticalmente —como hacía el fixture de este archivo— no lo habría visto
+    nunca, porque el hueco es horizontal.
+    """
+
+    # Columnas 0-indexed donde el club pone la etiqueta de cada bloque.
+    COLUMNAS = (2, 6, 10, 14)
+    TESTS = (("RM BACK SQUAT", "kg"), ("BACK SQUAT", "RM/kg"),
+             ("TIRO", "km/hr"), ("CMJ t-v", "cm"))
+
+    def _grilla(self):
+        ancho = max(self.COLUMNAS) + 3
+        filas = [[None] * ancho for _ in range(12)]
+        for col, (test, unidad) in zip(self.COLUMNAS, self.TESTS):
+            filas[3][col], filas[3][col + 1] = test, unidad
+            for i, label in enumerate(BANDAS):
+                filas[4 + i][col] = label
+                filas[4 + i][col + 1] = 10.0 + i
+        filas[6][0] = "18-20"        # el grupo vive DENTRO del primer bloque
+        return filas
+
+    def test_lee_los_cuatro_bloques_de_una_fila(self):
+        bloques = cmd._parse_sheet(self._grilla(), "hoja")
+        # Los cuatro comparten fila, así que el orden de salida es alfabético:
+        # lo que importa es que estén los cuatro, no en qué orden.
+        self.assertEqual(
+            sorted(b.test for b in bloques),
+            sorted(cmd.norm(t) for t, _ in self.TESTS),
+            "el cuarto bloque de la fila es el que se perdía",
+        )
+
+    def test_el_cuarto_bloque_hereda_el_grupo_de_su_fila(self):
+        bloques = cmd._parse_sheet(self._grilla(), "hoja")
+        cuarto = next(b for b in bloques if b.test == cmd.norm("CMJ t-v"))
+        self.assertEqual(cuarto.grupo, "18 20")
+        self.assertEqual(cuarto.unidad, "CM")
+        self.assertEqual(len(cuarto.umbrales), len(BANDAS))
+
+
+
 def escribir_formato(ruta: Path, bloques: list[dict]) -> None:
     """Reproduce la forma del club: grupo en la columna A dentro del bloque."""
     import openpyxl
