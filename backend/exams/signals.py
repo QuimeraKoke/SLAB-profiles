@@ -313,3 +313,23 @@ def check_training_load_alert(instance) -> None:
         import logging
 
         logging.getLogger(__name__).exception("training-load alert evaluation failed")
+
+
+# ── Daily meeting notes → "Notas diarias" (see exams/daily_note_sync.py) ──
+from django.db.models.signals import post_delete  # noqa: E402
+
+from core.models import DailyNote  # noqa: E402
+
+
+@receiver(post_save, sender=DailyNote)
+def _daily_note_to_exam(sender, instance: DailyNote, **kwargs):
+    from .daily_note_sync import sync
+
+    sync(instance)
+
+
+@receiver(post_delete, sender=DailyNote)
+def _daily_note_removed(sender, instance: DailyNote, **kwargs):
+    from .daily_note_sync import delete_for
+
+    delete_for(instance)
