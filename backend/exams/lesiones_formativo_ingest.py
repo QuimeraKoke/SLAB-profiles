@@ -238,7 +238,7 @@ def _verificar(m: Match, lesion: Lesion) -> Match:
             return Match(None, "conflicto_rut", [m.player])
         return m
     edad_fila = lesion.datos.get("edad")
-    edad = _edad(m.player, lesion.fecha)
+    edad = _edad(m.player, lesion.fecha) if lesion.fecha else None
     if (edad_fila is not None and edad_fila < 60 and edad is not None
             and abs(edad_fila - edad) > 1):
         return Match(None, "conflicto_edad", [m.player])
@@ -304,6 +304,14 @@ class Matcher:
         if puntos[0][0] >= 2 and puntos[0][0] > puntos[1][0]:
             return Match(puntos[0][1], metodo, unicos)
         return Match(None, "ambiguo", unicos)
+
+    def match_name(self, nombre: str, rut: str = "") -> Match:
+        """The same tiers for a sheet that only has a name (and maybe a RUT).
+
+        Other club sheets (the daily weigh-in) identify players the same free
+        way; the injury row's age veto simply does not apply without an age.
+        """
+        return self.match(Lesion(fila=0, datos={"nombre": nombre, "rut": rut}))
 
     def match(self, lesion: Lesion) -> Match:
         m = self._match(lesion)

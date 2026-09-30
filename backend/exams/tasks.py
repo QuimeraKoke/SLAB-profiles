@@ -112,6 +112,37 @@ def _formativo_creds() -> tuple[str, str]:
             settings.GOOGLE_SHEETS_CREDENTIALS_JSON)
 
 
+@shared_task(name="exams.tasks.sync_peso_diario")
+def sync_peso_diario(commit: bool = True) -> dict:
+    """First team's daily weigh-in sheet → `peso_talla`. See `exams/peso_diario_ingest.py`.
+
+    Reads the whole tab each run (one tab, ~40 rows × a column per day — a
+    couple of requests), so a weight the staff correct days later is picked up
+    too. No-op without a sheet id or credentials.
+    """
+    from core.models import Club
+    from exams import peso_diario_ingest as ing
+    from integrations.google_sheets import GoogleSheetsError
+
+    creds_file, creds_json = _formativo_creds()
+    if not settings.PESO_DIARIO_SHEET_ID or not (creds_file or creds_json):
+        return {"status": "skipped", "reason": "not configured"}
+    club = Club.objects.filter(name=settings.PESO_DIARIO_CLUB).first()
+    if club is None:
+        return {"status": "skipped", "reason": "club not found"}
+    try:
+        filas, dias = ing.leer(settings.PESO_DIARIO_SHEET_ID,
+                               creds_file=creds_file, creds_json=creds_json)
+        rep = ing.run(club, filas, dias, commit=commit)
+    except (GoogleSheetsError, ValueError) as exc:
+        logger.warning("peso diario sync failed: %s", exc)
+        return {"status": "error", "error": str(exc)}
+    out = {"status": "ok", "creados": rep.creados, "actualizados": rep.actualizados,
+           "sin_jugador": len(rep.sin_jugador), "ambiguos": len(rep.ambiguos)}
+    logger.info("peso diario sync: %s", out)
+    return out
+
+
 @shared_task(name="exams.tasks.sync_formativo_sheets")
 def sync_formativo_sheets(commit: bool = True, alerts: bool = False) -> dict:
     """Pull both Formativo sheets into their exams.

@@ -242,6 +242,14 @@ FORMATIVO_GPS_SHEET_ID = env("FORMATIVO_GPS_SHEET_ID", default="")
 FORMATIVO_EVAL_SHEET_ID = env("FORMATIVO_EVAL_SHEET_ID", default="")
 FORMATIVO_CLUB = env("FORMATIVO_CLUB", default="Universidad de Chile")
 
+# First team's daily weigh-in (nutrition staff's sheet, tab "Registro peso
+# diario") → peso_talla. The id has a default on purpose: it is not a secret,
+# and a sync that needs an env var on three Railway services to stop being a
+# silent no-op is how the formativo sheets went unsynced. Blank it to disable.
+PESO_DIARIO_SHEET_ID = env("PESO_DIARIO_SHEET_ID",
+                           default="1I27xvuHdPt82DT1ts4CNoVQxhDBPTdZiT-JYets0Xqc")
+PESO_DIARIO_CLUB = env("PESO_DIARIO_CLUB", default="Universidad de Chile")
+
 # Wellness del formativo: OCHO documentos, uno por categoría, cada uno con sus
 # hojas `CHECK IN` y `CHECK OUT`. Van como lista separada por comas en una sola
 # variable en vez de ocho: la cantidad cambia cuando el club abre o cierra una

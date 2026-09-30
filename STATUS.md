@@ -3002,6 +3002,29 @@ sin contar dos veces un día solapado. Sin horas de exposición no hay tasa por
 Pendiente: PDFs, gráficos de equipo (no tienen un jugador), el link al episodio
 concreto dentro de la pestaña Lesiones, y un cron para el importador.
 
+### 3.60 Peso diario de Primer Equipo (2026-09-30)
+
+Planilla del área de nutrición, pestaña **"Registro peso diario"**
+(`1I27xvuHdPt82DT1ts4CNoVQxhDBPTdZiT-JYets0Xqc`): una fila por jugador, una
+columna por DÍA (el encabezado es un serial de fecha). Cada celda numérica →
+un resultado de `peso_talla` (Nutricional), con la `Estatura` y el
+`Peso IDEAL` de la fila: IMC y "diferencia con el ideal" (`dif_ideal`) por
+día. 2.867 pesajes, 22-03 → hoy, 36 de 38 jugadores.
+
+* **Estados, no pesos**: `sub20`, `selección`, `operación`, `tarde`, `-`… se
+  cuentan en el reporte y no se cargan.
+* **Las correcciones se aplican** (a diferencia de los importadores del
+  formativo): `origen_id = <jugador>|<día>`, y un valor distinto en una
+  re-lectura reemplaza al guardado.
+* `peso` / `altura` escriben `current_weight_kg` / `current_height_cm`.
+* Sync horario `peso-diario-hourly` (:35). El id de la planilla tiene default
+  en settings — no es secreto, y no hace falta tocar Railway.
+* `seed_peso_diario_layout` AGREGA la sección "Peso diario" a los layouts
+  Nutricional de Primer Equipo (jugador y equipo) sin reconstruirlos.
+
+Emparejamiento: los mismos niveles que las lesiones (`Matcher.match_name`).
+`John Cortes` y `Lucas Plaza` no se asignan solos.
+
 ## 4. Management commands
 
 All under `backend/exams/management/commands/`. Run via
@@ -3015,6 +3038,8 @@ All under `backend/exams/management/commands/`. Run via
 | `seed_formativo_templates` | `exams/management/commands/`          | Fase 4. Las 5 plantillas físicas (carreras, fuerza, neuromuscular, resistencia, 1000 m) + suma frecuencia cardíaca a los dos GPS y les amplía las categorías juveniles. |
 | `import_formativo_evaluaciones` | `exams/management/commands/`     | Fase 5. Evaluaciones físicas. `--file` acepta una ruta `.xlsx` **o un id de Google Sheet**. `--completar` llena lo que le falta a un resultado ya cargado, sin pisar nada. |
 | `import_lesiones_formativo` | `exams/management/commands/`     | Lesiones del formativo (pestaña `E`). Sin `--commit` reporta emparejamiento + plan. Re-corrible: sólo crea lo nuevo y cierra lo dado de alta. §3.59. |
+| `import_peso_diario` | `exams/management/commands/`     | Peso diario de Primer Equipo (Google Sheet) → `peso_talla`. Sin `--commit` es simulación. Aplica correcciones. §3.60. |
+| `seed_peso_diario_layout` | `dashboards/management/commands/` | Agrega la sección "Peso diario" a los layouts Nutricional de una categoría, sin reconstruir. |
 | `import_formativo_gps`     | `exams/management/commands/`          | Fase 5. GPS de partido y sesión, mismo `--file`. Reporta fechas con pinta de día/mes invertido. |
 | `seed_formativo_bands`     | `goals/management/commands/`          | Fase 6. Las 66 bandas de referencia del club desde las hojas `FORMATO CONDICIONAL`. `--overwrite` re-siembra números pero PRESERVA `trigger_labels`. |
 | `seed_wellness_formativo`  | `exams/management/commands/`          | Fase 7. `checkin_formativo` (14 campos) y `checkout_formativo` (16) + sus 18 reglas `band`. `SUMA` y `UA` se calculan, no se importan. |

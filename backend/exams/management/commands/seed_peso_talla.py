@@ -1,7 +1,9 @@
 """Create the "Peso y Talla" template for the Nutricional area.
 
 Two anthropometry inputs — peso (kg) and altura (cm) — plus a calculated IMC
-(índice de masa corporal / BMI). Altura is entered in centimetres, so the
+(índice de masa corporal / BMI), and the player's target weight with its
+difference. Fed daily for Primer Equipo by `import_peso_diario` (the club's
+"Registro peso diario" sheet). Altura is entered in centimetres, so the
 formula converts to metres inside the BMI expression:
 
     IMC = peso(kg) / altura(m)²  =  peso / (altura/100)²  =  peso / altura² · 10000
@@ -41,11 +43,28 @@ SCHEMA: dict = {
             "key": "peso", "label": "Peso", "type": "number", "unit": "kg",
             "group": "Antropometría", "chart_type": "line",
             "min": 30, "max": 200,
+            # The daily weigh-in is the freshest weight the club has: keep the
+            # player's card in step (last-write-wins by recorded_at).
+            "writes_to_player_field": "current_weight_kg",
         },
         {
             "key": "altura", "label": "Altura", "type": "number", "unit": "cm",
             "group": "Antropometría", "chart_type": "line",
             "min": 120, "max": 230,
+            "writes_to_player_field": "current_height_cm",
+        },
+        {
+            # The nutritionist's target for this player ("Peso IDEAL" in the
+            # club's daily sheet). Travels with every weigh-in so a change of
+            # target is dated, not rewritten backwards.
+            "key": "peso_ideal", "label": "Peso ideal", "type": "number", "unit": "kg",
+            "group": "Objetivo", "min": 30, "max": 200,
+        },
+        {
+            "key": "dif_ideal", "label": "Diferencia con el peso ideal", "type": "calculated",
+            "unit": "kg", "group": "Objetivo", "chart_type": "line",
+            "direction_of_good": "neutral",
+            "formula": "round(([peso] - [peso_ideal]) * 100) / 100",
         },
         {
             "key": "imc", "label": "IMC", "type": "calculated", "unit": "kg/m²",
