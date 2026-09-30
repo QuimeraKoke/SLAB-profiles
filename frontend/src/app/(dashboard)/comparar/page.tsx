@@ -36,6 +36,7 @@ import {
 } from "recharts";
 
 import { api } from "@/lib/api";
+import { type InjuryRange, day as isoDay } from "@/lib/injuryRanges";
 import type {
   ComparisonMetric, ComparisonPlayer, ComparisonSection,
   PlayerComparisonPayload, PlayerSummary,
@@ -45,6 +46,8 @@ import DateRangeControl, { type DateRangeValue }
   from "@/components/common/DateRangeControl";
 import { referenceBandAreas } from "@/components/dashboards/widgets/ReferenceBands";
 
+import { InjuryRail, type RailMarker } from "./InjuryRail";
+import LesionesComparadas from "./LesionesComparadas";
 import PlayerPicker from "./PlayerPicker";
 import styles from "./page.module.css";
 
@@ -137,6 +140,22 @@ export default function CompararPage() {
           });
       })
       .catch(() => { if (!cancelado) setMetricas([]); });
+    return () => { cancelado = true; };
+  }, [elegidos]);
+
+  // ── lesiones de los elegidos ────────────────────────────────────────
+  // Aparte de la comparación: no dependen de las métricas ni de la vista, y
+  // un fallo acá deja los gráficos sin marcadores, no sin gráficos.
+  const [lesiones, setLesiones] = useState<InjuryRange[]>([]);
+  useEffect(() => {
+    let cancelado = false;
+    if (elegidos.length === 0) {
+      Promise.resolve().then(() => setLesiones([]));
+      return;
+    }
+    api<InjuryRange[]>(`/injuries/ranges?players=${elegidos.map((p) => p.id).join(",")}`)
+      .then((r) => { if (!cancelado) setLesiones(r); })
+      .catch(() => { if (!cancelado) setLesiones([]); });
     return () => { cancelado = true; };
   }, [elegidos]);
 
@@ -320,9 +339,14 @@ export default function CompararPage() {
             ) : (
               <GraficosPorExamen
                 datos={{ ...datos, metrics: filtrar(datos.metrics, secciones.table) }}
-                colorDe={colorDe} origen={origen} />
+                colorDe={colorDe} origen={origen} lesiones={lesiones} />
             )}
           </section>
+
+          {/* ── 4 · Lesiones ───────────────────────────────────────── */}
+          <LesionesComparadas
+            players={datos.players} lesiones={lesiones} colorDe={colorDe}
+            {...periodo(rango)} />
         </div>
       )}
     </div>
@@ -694,11 +718,12 @@ function ComparisonTable({
  * que aparece abajo, en el mismo orden.
  */
 function GraficosPorExamen({
-  datos, colorDe, origen,
+  datos, colorDe, origen, lesiones,
 }: {
   datos: PlayerComparisonPayload;
   colorDe: (i: number) => string;
   origen: Origen;
+  lesiones: InjuryRange[];
 }) {
   const grupos = useMemo(
     () => agruparPorExamen(datos.metrics), [datos.metrics]);
@@ -715,7 +740,7 @@ function GraficosPorExamen({
           <div className={styles.grupoGraficos}>
             {metricas.map((m) => (
               <Evolucion key={m.key} datos={datos} colorDe={colorDe}
-                metrica={m} origen={origen} />
+                metrica={m} origen={origen} lesiones={lesiones} />
             ))}
           </div>
         </section>
@@ -727,12 +752,13 @@ function GraficosPorExamen({
 /* ── gráfico: evolución con eje relativo ─────────────────────────────── */
 
 function Evolucion({
-  datos, colorDe, metrica, origen,
+  datos, colorDe, metrica, origen, lesiones,
 }: {
   datos: PlayerComparisonPayload;
   colorDe: (i: number) => string;
   metrica: ComparisonMetric | undefined;
   origen: Origen;
+  lesiones: InjuryRange[];
 }) {
   const sinEdad = origen === "edad"
     && datos.players.some((p) => !p.date_of_birth);
@@ -744,21 +770,24 @@ function Evolucion({
     if (!metrica) return [];
     return datos.players.map((p, i) => {
       const puntos = p.series[metrica.key] ?? [];
-      if (puntos.length === 0) return { player: p, color: colorDe(i), data: [] };
+      if (puntos.length === 0) return { player: p, color: colorDe(i), data: [], xDe: null };
       const cero = new Date(puntos[0].recorded_at).getTime();
       const nacimiento = p.date_of_birth
         ? new Date(p.date_of_birth).getTime() : null;
+      // La x de ESTE jugador: la misma transformación sirve para sus puntos y
+      // para sus lesiones, que es lo que hace caer el marcador bajo su curva.
+      const xDe = (t: number) => origen === "edad" && nacimiento !== null
+        ? (t - nacimiento) / (1000 * 60 * 60 * 24 * 365.25)   // años
+        : (t - cero) / (1000 * 60 * 60 * 24);                 // días
       const data = puntos.map((pt) => {
         const t = new Date(pt.recorded_at).getTime();
-        const x = origen === "edad" && nacimiento !== null
-          ? (t - nacimiento) / (1000 * 60 * 60 * 24 * 365.25)   // años
-          : (t - cero) / (1000 * 60 * 60 * 24);                 // días
+        const x = xDe(t);
         // La fecha viaja con el punto: el eje es RELATIVO (días desde el
         // primer registro, o edad), así que sin esto no hay forma de saber
         // cuándo pasó lo que se está mirando.
         return { x: Number(x.toFixed(2)), y: pt.value, fecha: pt.recorded_at };
       });
-      return { player: p, color: colorDe(i), data };
+      return { player: p, color: colorDe(i), data, xDe };
     });
   }, [datos, metrica, origen, colorDe]);
 
@@ -770,6 +799,24 @@ function Evolucion({
     return xs.length ? [Math.min(...xs), Math.max(...xs)] as [number, number]
       : undefined;
   }, [series]);
+
+  // Cada lesión en la x de su jugador. Sólo los jugadores con curva en esta
+  // métrica: sin puntos no hay eje propio donde ubicarla.
+  const marcadores = useMemo<RailMarker[]>(() => {
+    const out: RailMarker[] = [];
+    for (const s of series) {
+      if (!s.xDe) continue;
+      for (const l of lesiones) {
+        if (l.player_id !== s.player.id) continue;
+        const t0 = Date.parse(`${isoDay(l.started_at)}T00:00:00`);
+        out.push({
+          injury: l, color: s.color, x1: s.xDe(t0),
+          x2: l.ended_at ? s.xDe(Date.parse(`${isoDay(l.ended_at)}T00:00:00`)) : null,
+        });
+      }
+    }
+    return out;
+  }, [series, lesiones]);
 
   if (!metrica) return <p className={styles.vacio}>Elegí una métrica.</p>;
 
@@ -814,6 +861,12 @@ function Evolucion({
           <LineChart margin={{ top: 8, right: 64, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
             {referenceBandAreas(bandas, dominio)}
+            {/* El inicio de cada lesión, tenue y en el color de su jugador: une
+                el marcador de abajo con el punto de la curva. */}
+            {marcadores.map((m) => (
+              <ReferenceLine key={`les-${m.injury.id}`} x={m.x1} stroke={m.color}
+                strokeOpacity={0.45} strokeDasharray="2 3" ifOverflow="hidden" />
+            ))}
             <XAxis
               type="number" dataKey="x" domain={dominio ?? ["auto", "auto"]}
               tick={{ fontSize: 11, fill: "#6b7280" }} stroke="#d1d5db"
@@ -866,6 +919,7 @@ function Evolucion({
           </LineChart>
         </ResponsiveContainer>
       </div>
+      <InjuryRail markers={marcadores} domain={dominio} />
     </div>
   );
 }
@@ -930,6 +984,25 @@ function fechaCorta(iso: string): string {
 
 /** El rango como query string. El control ya trae los presets y el tope de dos
  *  años; acá sólo se traduce a lo que el endpoint espera. */
+/** The date range as days, for the injury indicators (`ventana` builds the query). */
+function periodo(r: DateRangeValue): { desde: string | null; hasta: string; periodoLabel: string } {
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (r.preset === "custom") {
+    return {
+      desde: r.date.from || null, hasta: r.date.to || hoy,
+      periodoLabel: r.date.from ? `${fechaCorta(r.date.from)} – ${fechaCorta(r.date.to || hoy)}` : "Período",
+    };
+  }
+  const dias = Number(r.preset);
+  const desde = new Date();
+  desde.setDate(desde.getDate() - dias);
+  return {
+    desde: desde.toISOString().slice(0, 10), hasta: hoy,
+    periodoLabel: dias >= 365 && dias % 365 === 0
+      ? `Últimos ${dias / 365 === 1 ? "12 meses" : `${dias / 365} años`}` : `Últimos ${dias} días`,
+  };
+}
+
 function ventana(r: DateRangeValue): string {
   if (r.preset === "custom") {
     return (r.date.from ? `&date_from=${r.date.from}` : "")

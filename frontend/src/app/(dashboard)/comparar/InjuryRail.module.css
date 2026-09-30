@@ -1,0 +1,80 @@
+/* Injury markers under a /comparar chart. Layout is absolute over the plot's
+   width; each lane is 30px (bar + label). */
+
+.rail {
+  position: relative;
+  margin-top: 2px;
+  border-top: 1px dashed #e3cccc;
+}
+
+.item {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 30px;
+}
+
+/* Duration: thin, in the player's colour. */
+.bar {
+  position: absolute;
+  top: 5px;
+  height: 3px;
+  border-radius: 2px;
+  opacity: 0.45;
+}
+
+/* An open injury fades out toward the edge instead of stopping. */
+.open {
+  -webkit-mask-image: linear-gradient(to right, #000 70%, transparent);
+  mask-image: linear-gradient(to right, #000 70%, transparent);
+}
+
+.marker {
+  position: absolute;
+  top: 0;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  transform: translateX(-6px);
+  max-width: 40%;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.marker:hover .label,
+.marker:focus-visible .label {
+  text-decoration: underline;
+}
+
+.marker:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+
+/* The dot sits ON the bar's start, ringed in grayish red: "injury", in any colour. */
+.dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #9a5b5b;
+  box-sizing: border-box;
+}
+
+.label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.more {
+  position: absolute;
+  right: 0;
+  font-size: 10.5px;
+  color: #7a4444;
+}
