@@ -78,8 +78,6 @@ export default function CompararPage() {
   // distintas del mismo chico.
   const [rango, setRango] = useState<DateRangeValue>(
     { preset: "180", date: { from: "", to: "" } });
-  const [conclusion, setConclusion] = useState<string | null>(null);
-  const [pensando, setPensando] = useState(false);
   const [vista, setVista] = useState<Vista>("tabla");
   const [origen, setOrigen] = useState<Origen>("registro");
 
@@ -189,32 +187,6 @@ export default function CompararPage() {
 
   useEffect(() => { traer(); }, [traer]);
 
-  // La conclusión va por su cuenta y DESPUÉS: la tabla y los gráficos se
-  // dibujan sin esperar al modelo, y si el modelo falla la pantalla no se
-  // entera. Es aditiva, nunca crítica.
-  useEffect(() => {
-    let cancelado = false;
-    if (elegidos.length === 0 || claves.length === 0) {
-      Promise.resolve().then(() => {
-        if (!cancelado) { setConclusion(null); setPensando(false); }
-      });
-      return () => { cancelado = true; };
-    }
-    Promise.resolve().then(() => {
-      if (!cancelado) { setConclusion(null); setPensando(true); }
-    });
-    api<{ conclusion: string | null }>(
-      `/players/comparison/conclusion?players=${elegidos.map((p) => p.id).join(",")}`
-      + `&metrics=${encodeURIComponent(claves.join(","))}`
-      // La conclusión tiene que hablar de la MISMA ventana que la pantalla.
-      + ventana(rango),
-    )
-      .then((r) => { if (!cancelado) setConclusion(r.conclusion); })
-      .catch(() => { if (!cancelado) setConclusion(null); })
-      .finally(() => { if (!cancelado) setPensando(false); });
-    return () => { cancelado = true; };
-  }, [elegidos, claves, rango]);
-
   const guardarSeccion = useCallback((seccion: ComparisonSection, keys: string[]) => {
     setSecciones((prev) => ({ ...prev, [seccion]: keys }));
     const categoria = elegidos[0]?.category_id;
@@ -274,21 +246,6 @@ export default function CompararPage() {
                 color={colorDe(i)} benchmark={datos.benchmark} />
             ))}
           </div>
-
-          {(pensando || conclusion) && (
-            <aside className={styles.conclusion}>
-              <h2 className={styles.conclusionTitulo}>Lectura</h2>
-              {pensando
-                ? <p className={styles.conclusionCargando}>Analizando…</p>
-                : <p className={styles.conclusionTexto}>{conclusion}</p>}
-              {!pensando && conclusion && (
-                <p className={styles.conclusionNota}>
-                  Generado por IA a partir de los datos de esta pantalla. Las
-                  cifras de arriba son la fuente.
-                </p>
-              )}
-            </aside>
-          )}
 
           {/* ── 2 · Radar ──────────────────────────────────────────── */}
           <SeccionCabecera

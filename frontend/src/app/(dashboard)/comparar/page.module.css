@@ -163,19 +163,6 @@
 .flecha { font-weight: 700; color: #0a2240; }
 
 /* ── conclusión del modelo ─────────────────────────────────────────── */
-.conclusion {
-  background: #f5f3ff; border: 1px solid #ddd6fe; border-left: 3px solid #7c3aed;
-  border-radius: 12px; padding: 12px 16px;
-}
-.conclusionTitulo {
-  margin: 0 0 4px; font-size: 11px; font-weight: 700; color: #6d28d9;
-  text-transform: uppercase; letter-spacing: 0.04em;
-}
-.conclusionTexto {
-  margin: 0; font-size: 13.5px; line-height: 1.55; color: #2e1065;
-}
-.conclusionCargando { margin: 0; font-size: 13px; color: #7c6aa8; font-style: italic; }
-.conclusionNota { margin: 8px 0 0; font-size: 11px; color: #8b7cb8; }
 
 /* ── centro: tabla o gráfico ───────────────────────────────────────── */
 .centro {

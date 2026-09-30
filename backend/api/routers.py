@@ -2328,30 +2328,6 @@ def get_player_comparison(request, players: str, metrics: str,
                    date_from=desde, date_to=hasta)
 
 
-@api.get("/players/comparison/conclusion")
-@require_perm("core.view_player_comparison")
-def get_comparison_conclusion(request, players: str, metrics: str,
-                             date_from: str | None = None,
-                             date_to: str | None = None):
-    """Conclusión en prosa de la misma comparación (LLM).
-
-    Endpoint aparte del comparador a propósito: la tabla y los gráficos se
-    dibujan sin esperar al modelo, y si el modelo falla la pantalla no se
-    entera. Devuelve `{"conclusion": null}` en vez de un error — no tener
-    conclusión es un estado normal, no una falla.
-    """
-    from dashboards.comparison_insight import conclusion
-
-    # Se reusa la vista del comparador en vez de duplicar el parseo de
-    # parámetros y el scoping — y así la conclusión habla exactamente de lo que
-    # el usuario tiene en pantalla, no de una consulta parecida. `series` pide
-    # todas las métricas porque de las series sale la tendencia.
-    comparacion = get_player_comparison(
-        request, players=players, metrics=metrics, series=metrics,
-        date_from=date_from, date_to=date_to)
-    return {"conclusion": conclusion(comparacion)}
-
-
 # ---------- Team reports ----------
 
 @api.get("/reports/{department_slug}", response=TeamReportResponseOut)
