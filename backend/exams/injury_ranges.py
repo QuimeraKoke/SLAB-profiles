@@ -30,6 +30,12 @@ CAMPOS = {
     "severity": "severity",
     "dias_perdidos": "dias_perdidos",
     "recurrencia": "recurrencia",
+    "tratamiento": "tratamiento",
+    "modo": "modo",                    # the club's "Causa": sobrecarga / traumática
+    "exposicion": "exposicion",
+    "exposicion_club": "exposicion_club",
+    "musculo": "musculo",
+    "mecanismo": "mecanismo",
 }
 
 
@@ -39,6 +45,12 @@ def _label(template, field_key: str, value: Any) -> Any:
         if f.get("key") == field_key:
             return (f.get("option_labels") or {}).get(value, value)
     return value
+
+
+def _linea(player) -> str:
+    """The player's line (Defensa, Mediocampista…) — `Position.role`."""
+    pos = getattr(player, "position", None)
+    return (getattr(pos, "role", "") or getattr(pos, "name", "") or "") if pos else ""
 
 
 def injury_ranges(episodes: Iterable[Episode]) -> list[dict[str, Any]]:
@@ -59,7 +71,7 @@ def injury_ranges(episodes: Iterable[Episode]) -> list[dict[str, Any]]:
                 v = datos.get(origen)
                 if v not in (None, ""):
                     resumen[destino] = v
-        for clave in ("body_part", "type", "severity", "lado"):
+        for clave in ("body_part", "type", "severity", "lado", "modo", "exposicion"):
             if clave in resumen:
                 resumen[clave] = _label(ep.template, clave, resumen[clave])
         abierta = ep.status == Episode.STATUS_OPEN
@@ -74,6 +86,8 @@ def injury_ranges(episodes: Iterable[Episode]) -> list[dict[str, Any]]:
             "started_at": ep.started_at,
             "ended_at": fin,
             "summary": resumen,
+            "stage": ep.stage,
+            "position": _linea(ep.player),
         })
     return salida
 
@@ -82,6 +96,6 @@ def for_players(player_ids, templates_qs) -> list[dict[str, Any]]:
     qs = (Episode.objects
           .filter(player_id__in=list(player_ids), template__slug=SLUG,
                   template__in=templates_qs)
-          .select_related("template", "player")
+          .select_related("template", "player__position")
           .order_by("started_at"))
     return injury_ranges(qs)

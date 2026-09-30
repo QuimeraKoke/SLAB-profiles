@@ -11,6 +11,7 @@ import TeamDailyGroupedBars from "./TeamDailyGroupedBars";
 import TeamDistribution from "./TeamDistribution";
 import TeamGoalProgress from "./TeamGoalProgress";
 import TeamHorizontalComparison from "./TeamHorizontalComparison";
+import { TeamInjuryBreakdown, TeamInjuryKpis, TeamInjuryList } from "./TeamInjuries";
 import TeamLeaderboard from "./TeamLeaderboard";
 import TeamMatchSummary from "./TeamMatchSummary";
 import TeamRosterMatrix from "./TeamRosterMatrix";
@@ -39,6 +40,9 @@ const teamWidgetRegistry: Record<
   team_activity_log: TeamActivityLog,
   team_daily_grouped_bars: TeamDailyGroupedBars,
   team_season_stats: TeamSeasonStats,
+  team_injury_kpis: TeamInjuryKpis,
+  team_injury_list: TeamInjuryList,
+  team_injury_breakdown: TeamInjuryBreakdown,
 };
 
 export function renderTeamWidget(widget: TeamReportWidget): React.ReactNode {

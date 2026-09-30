@@ -3025,6 +3025,36 @@ día. 2.867 pesajes, 22-03 → hoy, 36 de 38 jugadores.
 Emparejamiento: los mismos niveles que las lesiones (`Matcher.match_name`).
 `John Cortes` y `Lucas Plaza` no se asignan solos.
 
+### 3.61 Reporte de lesiones del equipo — tres widgets nuevos (2026-09-30)
+
+El informe de lesiones del club ("Lesionados actuales", "Lesionados en el
+año", días perdidos por jugador, desgloses por zona, tipo, músculo,
+posición, causa, exposición, recurrencia) vive ahora en el layout de equipo
+**Médico** de cada categoría con lesiones, sección "Lesiones".
+
+Ningún widget existente servía: todos trabajan por JUGADOR sobre valores de
+examen, y esto es por LESIÓN (un leaderboard de `dias_perdidos` suma el
+resultado de apertura Y el de cierre de cada episodio — el doble). Los tres
+nuevos leen `Episode` vía `exams.injury_ranges` (`dashboards/team_injuries.py`),
+sin data sources, configurados por `display_config`:
+
+| chart_type | opciones |
+|---|---|
+| `team_injury_kpis` | — (lesionados hoy, lesiones, días, días/lesión, severas, % recidiva) |
+| `team_injury_list` | `status`: `open` \| `period`; `columns` |
+| `team_injury_breakdown` | `dimension` (body_part, type, musculo, position, modo, exposicion, recurrencia, lado, severity, month, player) · `measure` (`count` \| `days`) · `render` (`bar` \| `donut` \| `table`) · `limit` · `hide_unknown` |
+
+Mismas reglas que `/comparar`: se CUENTAN las iniciadas en el período; los
+días perdidos son los días DENTRO del período (abiertas hasta hoy), unión por
+jugador. El período es el selector de fechas de la página — "Lesionados en
+el año" = elegir el año ahí. `exposicion` cae a `exposicion_club` cuando el
+partido no se confirmó con ficha ANFP.
+
+`seed_injury_team_layout` AGREGA la sección (crea el layout Médico de equipo
+donde no había; no toca el resto). Se exporta a Excel; el Word todavía no
+dibuja estos tres. Pendiente: opciones en el modal "Agregar gráfico" (hoy se
+editan en el admin), y una vista "Formativo completo" entre categorías.
+
 ## 4. Management commands
 
 All under `backend/exams/management/commands/`. Run via
@@ -3040,6 +3070,7 @@ All under `backend/exams/management/commands/`. Run via
 | `import_lesiones_formativo` | `exams/management/commands/`     | Lesiones del formativo (pestaña `E`). Sin `--commit` reporta emparejamiento + plan. Re-corrible: sólo crea lo nuevo y cierra lo dado de alta. §3.59. |
 | `import_peso_diario` | `exams/management/commands/`     | Peso diario de Primer Equipo (Google Sheet) → `peso_talla`. Sin `--commit` es simulación. Aplica correcciones. §3.60. |
 | `seed_peso_diario_layout` | `dashboards/management/commands/` | Agrega la sección "Peso diario" a los layouts Nutricional de una categoría, sin reconstruir. |
+| `seed_injury_team_layout` | `dashboards/management/commands/` | Agrega la sección "Lesiones" (12 widgets) al layout de equipo Médico de cada categoría con lesiones; crea el layout si falta. Sin `--commit` es plan. §3.61. |
 | `import_formativo_gps`     | `exams/management/commands/`          | Fase 5. GPS de partido y sesión, mismo `--file`. Reporta fechas con pinta de día/mes invertido. |
 | `seed_formativo_bands`     | `goals/management/commands/`          | Fase 6. Las 66 bandas de referencia del club desde las hojas `FORMATO CONDICIONAL`. `--overwrite` re-siembra números pero PRESERVA `trigger_labels`. |
 | `seed_wellness_formativo`  | `exams/management/commands/`          | Fase 7. `checkin_formativo` (14 campos) y `checkout_formativo` (16) + sus 18 reglas `band`. `SUMA` y `UA` se calculan, no se importan. |

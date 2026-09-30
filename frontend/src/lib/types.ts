@@ -1652,6 +1652,9 @@ export type TeamWidgetData =
   | TeamActivityLogPayload
   | TeamDailyGroupedBarsPayload
   | TeamSeasonStatsPayload
+  | TeamInjuryKpisPayload
+  | TeamInjuryListPayload
+  | TeamInjuryBreakdownPayload
   | UnsupportedPayload
   | EmptyPayload;
 
@@ -1699,6 +1702,70 @@ export interface TeamMatchSelectorConfig {
   /** Multi-mode counterpart: list of resolved match IDs. Empty in
    *  single-mode (frontend should ignore in that branch). */
   selected_ids?: string[];
+}
+
+/** Team injury widgets — `dashboards/team_injuries.py`. `period.from` is null
+ *  when the report has no lower date bound (whole history). */
+interface TeamInjuryBase {
+  title: string;
+  description?: string;
+  period: { from: string | null; to: string };
+  empty?: boolean;
+  error?: string;
+}
+
+export interface TeamInjuryKpisPayload extends TeamInjuryBase {
+  chart_type: "team_injury_kpis";
+  roster_size: number;
+  injured_now: number;
+  open_injuries: number;
+  injuries: number;
+  players_injured: number;
+  days_lost: number;
+  avg_days: number | null;
+  severe: number;
+  recurrence_pct: number | null;
+}
+
+export type TeamInjuryColumn =
+  | "player" | "started" | "ended" | "diagnosis" | "lado" | "days" | "tratamiento"
+  | "recurrencia" | "body_part" | "type" | "modo" | "severity" | "stage";
+
+export interface TeamInjuryRow {
+  id: string;
+  player_id: string;
+  player: string;
+  started: string;
+  ended: string | null;
+  open: boolean;
+  days: number;
+  diagnosis: string;
+  lado: string;
+  tratamiento: string;
+  recurrencia: string;
+  body_part: string;
+  type: string;
+  modo: string;
+  severity: string;
+  stage: string;
+}
+
+export interface TeamInjuryListPayload extends TeamInjuryBase {
+  chart_type: "team_injury_list";
+  status: "open" | "period";
+  columns: TeamInjuryColumn[];
+  rows: TeamInjuryRow[];
+}
+
+export interface TeamInjuryBreakdownPayload extends TeamInjuryBase {
+  chart_type: "team_injury_breakdown";
+  dimension: string;
+  dimension_label: string;
+  measure: "count" | "days";
+  measure_label: string;
+  render: "bar" | "donut" | "table";
+  items: { label: string; value: number; n: number; player_id: string | null }[];
+  total: number;
 }
 
 /** Payload returned by the backend `team_season_stats` resolver.

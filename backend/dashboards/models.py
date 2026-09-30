@@ -278,6 +278,22 @@ class ChartType(models.TextChoices):
         "Team — season stats per player (multi-match aggregate)",
     )
 
+    # Injury widgets — aggregate injury EPISODES, not exam values (see
+    # `dashboards/team_injuries.py`). No data sources: configured through
+    # `display_config`.
+    TEAM_INJURY_KPIS = (
+        "team_injury_kpis",
+        "Team — injury headline (injured now, injuries, days lost…)",
+    )
+    TEAM_INJURY_LIST = (
+        "team_injury_list",
+        "Team — injury list (open, or all in the period)",
+    )
+    TEAM_INJURY_BREAKDOWN = (
+        "team_injury_breakdown",
+        "Team — injuries by a dimension (count or days lost; bars / donut / table)",
+    )
+
 
 class Aggregation(models.TextChoices):
     LATEST = "latest", "Latest result only"
@@ -697,6 +713,9 @@ class TeamReportWidget(models.Model):
             (ChartType.TEAM_ACTIVITY_LOG.value, ChartType.TEAM_ACTIVITY_LOG.label),
             (ChartType.TEAM_DAILY_GROUPED_BARS.value, ChartType.TEAM_DAILY_GROUPED_BARS.label),
             (ChartType.TEAM_SEASON_STATS.value, ChartType.TEAM_SEASON_STATS.label),
+            (ChartType.TEAM_INJURY_KPIS.value, ChartType.TEAM_INJURY_KPIS.label),
+            (ChartType.TEAM_INJURY_LIST.value, ChartType.TEAM_INJURY_LIST.label),
+            (ChartType.TEAM_INJURY_BREAKDOWN.value, ChartType.TEAM_INJURY_BREAKDOWN.label),
         ],
     )
     title = models.CharField(max_length=160)

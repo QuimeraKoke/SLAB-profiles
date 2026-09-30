@@ -158,6 +158,15 @@ def _dispatch_team_widget(
         return _resolve_team_daily_grouped_bars(widget, category, **common)
     if chart_type == ChartType.TEAM_SEASON_STATS.value:
         return _resolve_team_season_stats(widget, category, **common)
+    if chart_type in (ChartType.TEAM_INJURY_KPIS.value, ChartType.TEAM_INJURY_LIST.value,
+                      ChartType.TEAM_INJURY_BREAKDOWN.value):
+        from . import team_injuries
+
+        return {
+            ChartType.TEAM_INJURY_KPIS.value: team_injuries.resolve_kpis,
+            ChartType.TEAM_INJURY_LIST.value: team_injuries.resolve_list,
+            ChartType.TEAM_INJURY_BREAKDOWN.value: team_injuries.resolve_breakdown,
+        }[chart_type](widget, category, **common)
     return _empty(widget, chart_type, error=f"Unsupported chart type: {chart_type}")
 
 

@@ -25,6 +25,9 @@ import type {
   TeamDistributionPayload,
   TeamGoalProgressPayload,
   TeamHorizontalComparisonPayload,
+  TeamInjuryBreakdownPayload,
+  TeamInjuryKpisPayload,
+  TeamInjuryListPayload,
   TeamLeaderboardPayload,
   TeamReportSection,
   TeamRosterMatrixPayload,
@@ -143,9 +146,67 @@ function serializeWidget(data: TeamWidgetData, title: string): AOA | null {
       return serializeLeaderboard(data as TeamLeaderboardPayload, title);
     case "team_goal_progress":
       return serializeGoalProgress(data as TeamGoalProgressPayload, title);
+    case "team_injury_kpis":
+      return serializeInjuryKpis(data as TeamInjuryKpisPayload, title);
+    case "team_injury_list":
+      return serializeInjuryList(data as TeamInjuryListPayload, title);
+    case "team_injury_breakdown":
+      return serializeInjuryBreakdown(data as TeamInjuryBreakdownPayload, title);
     default:
       return null;
   }
+}
+
+// ── injuries (dashboards/team_injuries.py) ──────────────────────────────
+function injuryPeriod(p: { from: string | null; to: string }): string {
+  return p.from ? `${p.from} → ${p.to}` : `hasta ${p.to}`;
+}
+
+function serializeInjuryKpis(data: TeamInjuryKpisPayload, title: string): AOA {
+  return [
+    [title], [`Período: ${injuryPeriod(data.period)}`], [],
+    ["Indicador", "Valor"],
+    ["Lesionados hoy", data.injured_now],
+    ["Lesiones abiertas", data.open_injuries],
+    ["Lesiones iniciadas en el período", data.injuries],
+    ["Jugadores lesionados en el período", data.players_injured],
+    ["Días perdidos en el período", data.days_lost],
+    ["Días por lesión", data.avg_days],
+    ["Severas (> 28 días)", data.severe],
+    ["% recidivas", data.recurrence_pct],
+  ];
+}
+
+const INJURY_HEAD: Record<string, string> = {
+  player: "Jugador", started: "Fecha de lesión", ended: "Alta", diagnosis: "Diagnóstico",
+  lado: "Lateralidad", days: "Días", tratamiento: "Tratamiento", recurrencia: "Recurrencia",
+  body_part: "Región", type: "Tipo", modo: "Causa", severity: "Severidad", stage: "Etapa",
+};
+
+function serializeInjuryList(data: TeamInjuryListPayload, title: string): AOA {
+  const rows: AOA = [
+    [title],
+    [data.status === "open" ? "Lesiones abiertas hoy" : `Iniciadas en ${injuryPeriod(data.period)}`],
+    [],
+    data.columns.map((c) => INJURY_HEAD[c] ?? c),
+  ];
+  if (data.rows.length === 0) rows.push(["Sin datos"]);
+  for (const r of data.rows) {
+    rows.push(data.columns.map((c) => (c === "ended" && !r.ended ? "en curso" : r[c] ?? "")));
+  }
+  return rows;
+}
+
+function serializeInjuryBreakdown(data: TeamInjuryBreakdownPayload, title: string): AOA {
+  const rows: AOA = [
+    [title], [`Período: ${injuryPeriod(data.period)}`], [],
+    [data.dimension_label, data.measure_label, "Lesiones", "%"],
+  ];
+  if (data.items.length === 0) rows.push(["Sin datos"]);
+  for (const i of data.items) {
+    rows.push([i.label, i.value, i.n, data.total ? Math.round((i.value / data.total) * 100) : null]);
+  }
+  return rows;
 }
 
 function serializeGoalProgress(
