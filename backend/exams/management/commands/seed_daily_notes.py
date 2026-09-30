@@ -1,7 +1,24 @@
-"""Seed (or refresh) a 'Notas diarias <Department>' template, per department.
+"""Seed (or refresh) the 'Notas diarias' template of every department.
 
 Each submission is one daily entry: the doctor sets the date (defaults to today
 in the form), an optional subject line, and a free-form note body.
+
+One name, one identity per department
+-------------------------------------
+The template is called **"Notas diarias" in every department** (it used to be
+"Notas diarias Físico", "Notas diarias Médico"…): inside a department tab the
+suffix only repeated the tab, and the screens that list exams across
+departments already show the department next to it.
+
+The NAME is therefore not an identity — eight templates share it — so a
+template is found by its **slug**, `notas_diarias_<department slug>`, which is
+unique club-wide and is what formulas, layouts and history hang from. Renaming
+never touches the slug. The old suffixed name is still recognised, so a
+department seeded before the rename is renamed in place instead of duplicated.
+
+Categories are only ever ADDED (`--all-applicable-categories`): every category
+that shows the department's tab gets the template. Nothing is detached, because
+the per-player registration screen lists exams by applicability, not by tab.
 
 Examples:
 
@@ -25,6 +42,8 @@ from django.db import transaction
 from core.models import Category, Club, Department
 from exams.models import ExamTemplate
 
+NAME = "Notas diarias"
+
 DAILY_NOTES_SCHEMA: dict = {
     "fields": [
         {
@@ -45,7 +64,7 @@ DAILY_NOTES_SCHEMA: dict = {
 
 
 class Command(BaseCommand):
-    help = "Create or refresh a 'Notas diarias <Department>' template per department."
+    help = "Create or refresh the 'Notas diarias' template of each department."
 
     def add_arguments(self, parser):
         parser.add_argument("--department-slug", default=None,
@@ -54,12 +73,12 @@ class Command(BaseCommand):
                             help="Required when more than one club exists.")
         parser.add_argument("--name", default=None,
                             help="Override the template name. Only valid with --department-slug. "
-                                 "Defaults to 'Notas diarias <DepartmentName>'.")
+                                 "Defaults to 'Notas diarias'.")
         parser.add_argument("--create-if-missing", action="store_true",
                             help="Create the template if it doesn't exist.")
         parser.add_argument("--all-applicable-categories", action="store_true",
-                            help="When creating, attach to every category in the club whose departments "
-                                 "list includes the target department.")
+                            help="Attach to every category in the club whose departments list "
+                                 "includes the target department (add-only: never detaches).")
         parser.add_argument("--unlock", action="store_true",
                             help="Clear is_locked. Use only if you accept that historical entries may not "
                                  "match the new schema.")
@@ -96,7 +115,7 @@ class Command(BaseCommand):
             self._sync_department(
                 department=department,
                 club=club,
-                name=explicit_name or f"Notas diarias {department.name}",
+                name=explicit_name or NAME,
                 create=create,
                 attach_all=attach_all,
                 unlock=unlock,
@@ -121,18 +140,27 @@ class Command(BaseCommand):
 
     def _sync_department(self, *, department: Department, club: Club, name: str,
                          create: bool, attach_all: bool, unlock: bool) -> None:
-        template = ExamTemplate.objects.filter(name=name, department=department).first()
+        slug = slug_for(department)
+        template = (
+            ExamTemplate.objects.filter(department=department, slug=slug,
+                                        is_active_version=True).first()
+            # Seeded before slugs were set explicitly: found by its old name.
+            or ExamTemplate.objects.filter(department=department, is_active_version=True,
+                                           name=f"{NAME} {department.name}").first()
+        )
         if template is None:
             if not create:
                 self.stdout.write(self.style.WARNING(
-                    f"Skipped '{department.name}': no template '{name}' "
+                    f"Skipped '{department.name}': no '{NAME}' "
                     "(pass --create-if-missing to create it)."
                 ))
                 return
-            template = self._create_template(name, department, club, attach_all)
+            template = self._create_template(name, slug, department)
 
+        antes = template.name
+        template.name = name
         template.config_schema = DAILY_NOTES_SCHEMA
-        update_fields = ["config_schema", "updated_at"]
+        update_fields = ["name", "config_schema", "updated_at"]
         if unlock and template.is_locked:
             template.is_locked = False
             update_fields.append("is_locked")
@@ -140,32 +168,30 @@ class Command(BaseCommand):
 
         # Honor `--all-applicable-categories` on UPDATE too. Templates created
         # without categories on a prior run would otherwise stay detached and
-        # `seed_fake_exams` would silently skip them.
+        # `seed_fake_exams` would silently skip them. Add-only — see module doc.
+        nuevas = 0
         if attach_all:
-            categories = Category.objects.filter(club=club, departments=department)
-            template.applicable_categories.set(categories)
+            faltan = (Category.objects.filter(club=club, departments=department)
+                      .exclude(pk__in=template.applicable_categories.values("pk")))
+            nuevas = faltan.count()
+            template.applicable_categories.add(*faltan)
 
+        renombre = f" (renamed from '{antes}')" if antes != name else ""
         self.stdout.write(self.style.SUCCESS(
-            f"Updated '{template.name}' (department: {department.name}, "
-            f"categories: {template.applicable_categories.count()})."
+            f"'{template.name}' · {department.name} · slug={template.slug}{renombre} · "
+            f"+{nuevas} categories → {template.applicable_categories.count()}"
         ))
 
     @transaction.atomic
-    def _create_template(self, name: str, department: Department, club: Club,
-                         attach_all: bool) -> ExamTemplate:
+    def _create_template(self, name: str, slug: str, department: Department) -> ExamTemplate:
+        # The slug is explicit: derived from the shared name it would collide
+        # in every department after the first.
         template = ExamTemplate.objects.create(
-            name=name, department=department, config_schema={},
+            name=name, slug=slug, department=department, config_schema={},
         )
-        if attach_all:
-            categories = Category.objects.filter(club=club, departments=department)
-            template.applicable_categories.set(categories)
-            self.stdout.write(self.style.NOTICE(
-                f"Attached '{template.name}' to {categories.count()} categories "
-                f"({', '.join(c.name for c in categories) or 'none'})."
-            ))
-        else:
-            self.stdout.write(self.style.NOTICE(
-                f"Created '{template.name}' with no applicable_categories — set them "
-                "in Django Admin or re-run with --all-applicable-categories."
-            ))
+        self.stdout.write(self.style.NOTICE(f"Created '{name}' in {department.name}."))
         return template
+
+
+def slug_for(department: Department) -> str:
+    return f"notas_diarias_{department.slug.replace('-', '_')}"
