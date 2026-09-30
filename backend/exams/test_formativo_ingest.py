@@ -163,6 +163,52 @@ class FormativoIngestTests(TestCase):
         self.assertEqual(r.result_data["v_20kg"], 1.28)
         self.assertNotIn("v_30kg", r.result_data)
 
+    # ── el resumen de FUERZA ────────────────────────────────────────────
+    FILA_FUERZA = [D, "DAMIAN SOLIS ROJAS", datetime(2010, 5, 4), 15, "U16",
+                   "EXTREMO", 60.0, 90.0, 55.6, 1.5, 0.86, 50,
+                   1.2, 1.28, 1.19, 1.28, 0, 0, 0, 0]
+
+    def test_el_resumen_de_FUERZA_se_lee_con_su_mayuscula_y_minuscula(self):
+        """`PESO CORPORAL (kg)` contra `c.upper()` no coincidía nunca.
+
+        Las 666 sesiones de prod entraron con la grilla de cargas y sin 1RM,
+        peso ni última carga: `fr` y `pct_rm` quedaron en None y los tres
+        campos graficables de la plantilla, vacíos.
+        """
+        self.correr({"FUERZA": (CAB_FUERZA, [self.FILA_FUERZA])}, commit=True)
+        d = ExamResult.objects.get(template__slug="fuerza").result_data
+        self.assertEqual(d["peso_corporal"], 60.0)
+        self.assertEqual(d["rm_estimado"], 90.0)
+        self.assertEqual(d["ultima_carga_kg"], 50)
+        self.assertEqual(d["ultima_carga_ms"], 0.86)
+        self.assertEqual(d["fr"], 1.5)
+        self.assertEqual(d["pct_rm"], 55.56)
+
+    def test_completar_llena_lo_que_falta_sin_pisar_lo_cargado(self):
+        """El dedup por `origen_id` saltaba para siempre la fila mal cargada."""
+        self.correr({"FUERZA": (CAB_FUERZA, [self.FILA_FUERZA])}, commit=True)
+        r = ExamResult.objects.get(template__slug="fuerza")
+        for k in ("peso_corporal", "rm_estimado", "ultima_carga_kg",
+                  "ultima_carga_ms"):
+            r.result_data.pop(k)
+        r.result_data["fr"] = None
+        r.result_data["v_20kg"] = 1.3          # un valor ya cargado distinto
+        r.save(update_fields=["result_data"])
+
+        rep = self.correr({"FUERZA": (CAB_FUERZA, [self.FILA_FUERZA])})
+        self.assertEqual(rep.completados, 0, "sin --completar no toca nada")
+        rep = self.correr({"FUERZA": (CAB_FUERZA, [self.FILA_FUERZA])},
+                          commit=True, completar=True)
+        self.assertEqual((rep.creados, rep.completados), (0, 1))
+        r.refresh_from_db()
+        self.assertEqual(r.result_data["rm_estimado"], 90.0)
+        self.assertEqual(r.result_data["fr"], 1.5, "debía recalcular")
+        self.assertEqual(r.result_data["v_20kg"], 1.3, "no debía pisarlo")
+
+        rep = self.correr({"FUERZA": (CAB_FUERZA, [self.FILA_FUERZA])},
+                          commit=True, completar=True)
+        self.assertEqual(rep.completados, 0, "la segunda pasada no tiene qué llenar")
+
     # ── rango ───────────────────────────────────────────────────────────
     def test_un_valor_imposible_se_descarta_y_la_fila_se_carga(self):
         """`v_60kg=45992` es un número de fecha en una columna de velocidad.

@@ -38,6 +38,9 @@ class Command(BaseCommand):
                             help="Escribe (por defecto: simulación).")
         parser.add_argument("--alerts", action="store_true",
                             help="Evalúa alertas de banda para lo cargado.")
+        parser.add_argument("--completar", action="store_true",
+                            help=("Completa los campos que le faltan a un "
+                                  "resultado ya cargado (nunca pisa un valor)."))
         parser.add_argument("--sheet", action="append", dest="sheets",
                             help="Limitar a una hoja (repetible).")
 
@@ -53,12 +56,16 @@ class Command(BaseCommand):
             fire_alerts=opts["alerts"],
             creds_file=settings.GOOGLE_SHEETS_CREDENTIALS_FILE,
             creds_json=settings.GOOGLE_SHEETS_CREDENTIALS_JSON,
-            solo_hojas=set(opts["sheets"]) if opts.get("sheets") else None)
+            solo_hojas=set(opts["sheets"]) if opts.get("sheets") else None,
+            completar=opts["completar"])
 
         modo = "APLICADO" if opts["commit"] else "SIMULACIÓN (sin --commit no escribe)"
         self.stdout.write(self.style.MIGRATE_HEADING(f"\n{modo}\n"))
         self.stdout.write(self.style.SUCCESS(f"  resultados a crear : {rep.creados}"))
         self.stdout.write(f"  ya estaban en base : {rep.ya_existian}")
+        if opts["completar"]:
+            self.stdout.write(self.style.SUCCESS(
+                f"  a completar        : {rep.completados}"))
         self.stdout.write(f"  repetidas en el xlsx: {rep.duplicados_en_archivo}")
         self.stdout.write(f"  filas sin datos    : {rep.sin_datos}")
         if rep.sin_fecha:

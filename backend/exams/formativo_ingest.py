@@ -159,6 +159,7 @@ class Reporte:
     fuera_de_rango: list[str] = field(default_factory=list)
     por_hoja: dict = field(default_factory=lambda: defaultdict(int))
     alertas: int = 0
+    completados: int = 0
 
 
 # ── parsing ─────────────────────────────────────────────────────────────
@@ -306,6 +307,12 @@ def _parse_ancho(grid, hoja: str) -> list[Fila]:
     if cab is None:
         return [], 0
     i_nombre, i_dob, i_dia = _indices(cab, desfase)
+    # Both sides upper-cased: `mapa` spells the headers as the club does
+    # (`PESO CORPORAL (kg)`, `ULTIMA CARGA (m/s)`), and comparing that against
+    # `c.upper()` matched none of the four FUERZA columns — 666 sessions loaded
+    # with their load grid and no 1RM, body weight or last load, so `fr`,
+    # `pct_rm` and every chartable field of the template came out empty.
+    mapa = {k.upper(): v for k, v in mapa.items()}
     columnas = [(i - desfase, mapa[c.upper()]) for i, c in enumerate(cab)
                 if c and c.upper() in mapa]
     cargas = [(i - desfase, f"v_{m.group(1)}kg") for i, c in enumerate(cab)
@@ -401,7 +408,17 @@ def _descartar_fuera_de_rango(template: ExamTemplate, datos: dict) -> list[str]:
 
 def run(origen: str, club: Club, *, commit: bool = False,
         fire_alerts: bool = False, solo_hojas: set[str] | None = None,
-        creds_file: str = "", creds_json: str = "") -> Reporte:
+        creds_file: str = "", creds_json: str = "",
+        completar: bool = False) -> Reporte:
+    """`completar=True` also fills the keys a stored row is MISSING.
+
+    Additive still: a value already stored is never replaced — the club's
+    later edit to a number does not rewrite history. What it repairs is a row
+    loaded while the parser could not read a column, which the dedup by
+    `origen_id` would otherwise skip forever. Off in the cron: after one
+    repair there is nothing left to fill, and the hourly run stays a pure
+    insert.
+    """
     filas, sin_fecha = parse_workbook(
         origen, creds_file=creds_file, creds_json=creds_json)
     rep_sin_fecha = sin_fecha
@@ -427,6 +444,7 @@ def run(origen: str, club: Club, *, commit: bool = False,
                                   result_data__origen_id__in=ids)
         .values_list("result_data__origen_id", flat=True))
     vistos: set[str] = set()
+    por_completar: dict[str, tuple[Fila, ExamTemplate]] = {}
 
     a_crear: list[ExamResult] = []
     for fila in filas:
@@ -439,6 +457,8 @@ def run(origen: str, club: Club, *, commit: bool = False,
             continue
         if fila.origen_id in en_base:
             rep.ya_existian += 1
+            if completar:
+                por_completar[fila.origen_id] = (fila, template)
             continue
         if fila.origen_id in vistos:
             # Same (player, date, variant) twice in the workbook — 12 of the
@@ -474,12 +494,38 @@ def run(origen: str, club: Club, *, commit: bool = False,
         rep.por_hoja[fila.hoja] += 1
         vistos.add(fila.origen_id)
 
-    if commit and a_crear:
+    a_completar = _completar(por_completar) if por_completar else []
+    rep.completados = len(a_completar)
+
+    if commit and (a_crear or a_completar):
         with transaction.atomic():
             ExamResult.objects.bulk_create(a_crear, batch_size=500)
+            ExamResult.objects.bulk_update(
+                a_completar, ["result_data", "inputs_snapshot"], batch_size=500)
             if fire_alerts:
-                rep.alertas = _fire_band_alerts(a_crear)
+                rep.alertas = _fire_band_alerts(a_crear + a_completar)
     return rep
+
+
+def _completar(por_id: dict[str, tuple[Fila, ExamTemplate]]) -> list[ExamResult]:
+    """Stored rows with keys the sheet has and they lack, merged and recomputed."""
+    cambiados = []
+    for r in (ExamResult.objects
+              .filter(result_data__origen=ORIGEN,
+                      result_data__origen_id__in=list(por_id))
+              .select_related("player")):
+        fila, template = por_id[r.result_data["origen_id"]]
+        nuevos = dict(fila.datos)
+        _descartar_fuera_de_rango(template, nuevos)
+        faltan = {k: v for k, v in nuevos.items()
+                  if r.result_data.get(k) is None}
+        if not faltan:
+            continue
+        datos, snapshot = compute_result_data(
+            template, {**r.result_data, **faltan}, player=r.player)
+        r.result_data, r.inputs_snapshot = datos, snapshot
+        cambiados.append(r)
+    return cambiados
 
 
 def _fire_band_alerts(results: list[ExamResult]) -> int:
