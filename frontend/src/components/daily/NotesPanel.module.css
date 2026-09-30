@@ -158,3 +158,11 @@
   color: #4f46e5;
   background: #eef0ff;
 }
+
+/* "últimos 7 días" next to the Plan de trabajo title: the window, muted. */
+.window {
+  margin: -4px 0 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #98a2b3;
+}

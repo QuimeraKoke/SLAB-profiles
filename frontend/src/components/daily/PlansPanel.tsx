@@ -68,11 +68,14 @@ export default function PlansPanel({
           </button>
         )}
       </header>
+      {/* The meeting reads the last week; older plans live in the player's
+          profile (api/daily_report.PLAN_WINDOW_DAYS). */}
+      <p className={styles.window}>Últimos 7 días</p>
       {plans.length === 0 ? (
         <p className={styles.empty}>
-          Sin planes de trabajo vigentes. Cargá la directriz de cada jugador —
-          bloque de fuerza, progresión de carrera, plan nutricional… — y queda
-          visible acá hasta que se actualice.
+          Sin planes de trabajo en los últimos 7 días. Cargá la directriz de
+          cada jugador — bloque de fuerza, progresión de carrera, plan
+          nutricional… —; los anteriores quedan en su perfil.
         </p>
       ) : (
         <ul className={styles.list}>

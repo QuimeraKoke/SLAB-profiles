@@ -639,14 +639,24 @@ def _notes(category, target_date, user) -> tuple[dict, list]:
     return by_player, rows
 
 
+# A plan older than this is history, not the plan: the meeting reads the last
+# week. With no floor the Daily was showing 40 plans of which 4 were this
+# week's — the rest reached back two months and buried the current ones.
+PLAN_WINDOW_DAYS = 7
+
+
 def plans_by_player(category, target_date, per_player: int = 3, user=None) -> dict:
     """Standing 'plan de trabajo' entries (KIND_PLAN) per player, most recent
-    first, as of the target date. Shown per-player in the web Daily (lesionado /
+    first, from the last `PLAN_WINDOW_DAYS` days up to the target date (the
+    meeting day included). Shown per-player in the web Daily (lesionado /
     alerta cards) and printed on each PDF slide. `user` sets `mine` so the web
-    can offer delete on one's own entries."""
+    can offer delete on one's own entries. Older plans stay in the player's
+    profile (Plan de trabajo card); only the meeting stops showing them."""
+    desde = target_date - timedelta(days=PLAN_WINDOW_DAYS - 1)
     plans = list(
         DailyNote.objects.filter(
-            player__in=players_in_category(category), kind=DailyNote.KIND_PLAN, date__lte=target_date,
+            player__in=players_in_category(category), kind=DailyNote.KIND_PLAN,
+            date__lte=target_date, date__gte=desde,
         )
         .select_related("player", "department", "created_by")
         .order_by("-date", "-created_at")
