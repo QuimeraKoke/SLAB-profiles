@@ -2971,6 +2971,37 @@ declarado. Por eso `link_templates_with_data` las saltea.
 
 ---
 
+### 3.59 Lesiones del formativo + lesiones en los gráficos y en `/comparar` (2026-09-30)
+
+**Importador.** `import_lesiones_formativo` lee la pestaña `E` del documento
+médico del formativo (723 lesiones desde 2022) y crea episodios `lesiones`:
+588 emparejadas (81 %, 95–97 % en 2025–26), re-corrible, cierra las que el club
+da de alta. Emparejamiento por RUT → Datos Personales → alias → nombre, con
+vetos de RUT ajeno y edad. Detalle y trampas en `RUNBOOK_FORMATIVO.md` §Lesiones.
+
+**En los gráficos.** `GET /injuries/ranges?players=a,b` (`exams/injury_ranges.py`,
+consultas constantes, resumen fusionado entre resultados). En el perfil, un
+`PlayerInjuriesProvider` lo trae una vez y lo leen `LineWithSelector`,
+`MultiLine`, `CrossExamLine` y `DualAxisBarLine`: franja vertical rayada gris
+rojizo con línea de inicio, chips debajo con link a Lesiones, y una línea en el
+tooltip ("En lesión: Muslo D · día 12/44", "Retorno +5 d"). `KpiCard` sólo lo
+dice en el pie.
+
+⚠️ **El eje X de esos gráficos es un índice, no el tiempo.** Una baja de tres
+meses cae ENTRE dos puntos (el jugador lesionado no genera datos), así que la
+franja dice "dónde", nunca "cuánto": la duración va siempre en texto.
+`lib/injuryRanges.ts` interpola las fechas entre filas y da un ancho mínimo.
+
+**En `/comparar`.** Marcadores en el eje X por jugador ("Fernandez · Muscular ·
+Muslo", en su color, con la misma transformación de x que su curva) y una
+sección **Lesiones** con indicadores configurables (`lib/injuryStats.ts`):
+incidencia = lesiones INICIADAS en el período; carga = días DENTRO del período,
+sin contar dos veces un día solapado. Sin horas de exposición no hay tasa por
+1000 h; la disponibilidad es lo más justo.
+
+Pendiente: PDFs, gráficos de equipo (no tienen un jugador), el link al episodio
+concreto dentro de la pestaña Lesiones, y un cron para el importador.
+
 ## 4. Management commands
 
 All under `backend/exams/management/commands/`. Run via
@@ -2982,7 +3013,8 @@ All under `backend/exams/management/commands/`. Run via
 | `import_formativo_master`  | `core/management/commands/`           | Fase 1. Plantel maestro desde el CSV del club → jugadores, categorías `Serie NNNN` por cohorte y `TeamSeason` por bracket ANFP. `--top-bucket "SUB-20"` es obligatorio (sin él inventa Series 2004-2007). `--reassign` / `--overwrite-dob` apagados por defecto. |
 | `backfill_formativo_history` | `core/management/commands/`         | Fase 3. Historial de categorías por temporada; `--call-ups` crea `PlayerCallUp` inactivos. |
 | `seed_formativo_templates` | `exams/management/commands/`          | Fase 4. Las 5 plantillas físicas (carreras, fuerza, neuromuscular, resistencia, 1000 m) + suma frecuencia cardíaca a los dos GPS y les amplía las categorías juveniles. |
-| `import_formativo_evaluaciones` | `exams/management/commands/`     | Fase 5. Evaluaciones físicas. `--file` acepta una ruta `.xlsx` **o un id de Google Sheet**. |
+| `import_formativo_evaluaciones` | `exams/management/commands/`     | Fase 5. Evaluaciones físicas. `--file` acepta una ruta `.xlsx` **o un id de Google Sheet**. `--completar` llena lo que le falta a un resultado ya cargado, sin pisar nada. |
+| `import_lesiones_formativo` | `exams/management/commands/`     | Lesiones del formativo (pestaña `E`). Sin `--commit` reporta emparejamiento + plan. Re-corrible: sólo crea lo nuevo y cierra lo dado de alta. §3.59. |
 | `import_formativo_gps`     | `exams/management/commands/`          | Fase 5. GPS de partido y sesión, mismo `--file`. Reporta fechas con pinta de día/mes invertido. |
 | `seed_formativo_bands`     | `goals/management/commands/`          | Fase 6. Las 66 bandas de referencia del club desde las hojas `FORMATO CONDICIONAL`. `--overwrite` re-siembra números pero PRESERVA `trigger_labels`. |
 | `seed_wellness_formativo`  | `exams/management/commands/`          | Fase 7. `checkin_formativo` (14 campos) y `checkout_formativo` (16) + sus 18 reglas `band`. `SUMA` y `UA` se calculan, no se importan. |

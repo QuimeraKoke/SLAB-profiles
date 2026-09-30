@@ -4,8 +4,8 @@ Pasos ejecutables para `PLAN_FORMATIVO.md`. Cada fase indica el comando exacto,
 qué escribe, cómo verificarla y **cómo revertirla**.
 
 > **Regla de este proyecto:** validar en local con datos reales antes de tocar
-> prod. Todo lo de acá está aplicado en **local** al 2026-09-02; **nada** se
-> subió a prod todavía.
+> prod. Todas las fases de acá están aplicadas en prod desde el 2026-09-05; las
+> lesiones (al final) se agregaron el 2026-09-30.
 
 ## Las fuentes
 
@@ -42,16 +42,13 @@ serían silenciosas:
 
 ### Sincronización automática
 
-Dos ticks diarios en Celery Beat (`config/celery.py`), y no cada hora por tres
-razones: cada corrida lee los dos documentos completos (~20.000 filas, un par
-de minutos), el club los edita a ráfagas y no de forma continua, y los dos
-ingests son idempotentes por `origen_id`, así que un tick perdido no cuesta
-nada.
+**Cada hora, al minuto 25** (`formativo-sheets-hourly` en `config/celery.py`).
+Una corrida completa mide ~13 s para los dos documentos (~20.000 filas) y ~17
+requests contra el límite de 60 lecturas/minuto, así que la hora sobra. Los dos
+ingests son idempotentes por `origen_id`: un tick perdido no cuesta nada.
 
-| Tarea | Cuándo | Por qué |
-|---|---|---|
-| `formativo-sheets-morning` | 06:40 local | antes de la reunión de la mañana |
-| `formativo-sheets-evening` | 20:40 local | levanta el entrenamiento del día |
+> Este documento decía "dos ticks diarios (06:40 / 20:40)"; eso fue un diseño
+> previo. El código manda: `crontab(minute=25)`.
 
 Se lee la hoja **completa** en cada corrida, no una ventana por fecha: el club
 corrige filas viejas —completa una fecha que faltaba, arregla un dato— y una
@@ -776,6 +773,122 @@ clave `LUCAS NUÑEZ` que es de `Lucas Nuñez Leon` y las dos quedan ambiguas
 
 Falta decidir si el formulario va a cubrir el formativo de acá en adelante —
 por ahora sí: los ocho documentos se estaban llenando el 04/09.
+
+---
+
+## Fuerza — el resumen que nunca se había leído (2026-09-30)
+
+`_parse_ancho` comparaba `c.upper()` contra claves escritas como las escribe el
+club (`PESO CORPORAL (kg)`, `ULTIMA CARGA (m/s)`), así que **ninguna** de las
+cuatro columnas del resumen de `FUERZA` coincidía. Las 666 sesiones entraron
+con la grilla de velocidades y sin 1RM, peso ni última carga: `fr` y `pct_rm`
+en `None`, y los tres campos graficables de la plantilla vacíos — la sección
+Fuerza mostraba sólo 13 líneas de velocidad por carga.
+
+Arreglado el parser, las filas ya cargadas se reparan con `--completar`, que
+llena sólo los campos que le FALTAN a un resultado (nunca pisa uno) y recalcula
+las fórmulas. El cron no lo usa.
+
+```bash
+python manage.py import_formativo_evaluaciones \
+    --file 1F_1hUR3DsO70ziLiyja-QZW-j2727W5CsS53XWUY6BU --sheet FUERZA --completar   # ensayo
+python manage.py import_formativo_evaluaciones \
+    --file 1F_1hUR3DsO70ziLiyja-QZW-j2727W5CsS53XWUY6BU --sheet FUERZA --completar --commit
+python manage.py generate_formativo_layouts --commit   # la sección se deriva de los datos
+```
+
+Verificación: los 666 resultados de `origen=planilla_club_formativo` en
+`fuerza` tienen `rm_estimado`; 662 tienen `fr` (4 sin peso en la planilla).
+
+⚠️ `PRESS DE BANCO` tiene la columna `FECHA` **vacía en las 119 filas**: no hay
+día al que anclar un resultado. Es del club.
+
+---
+
+## Lesiones del formativo (2026-09-30)
+
+Fuente: pestaña **`E`** del documento médico del formativo
+(`1ZagD0XPBO2IXwyLBCue6CaeGBh_MdAveIP9jtGjwc4k`), misma cuenta de servicio.
+723 lesiones desde enero de 2022, una fila por lesión, todas las categorías.
+Código: `exams/lesiones_formativo_ingest.py` + `import_lesiones_formativo`.
+
+```bash
+python manage.py import_lesiones_formativo             # emparejamiento + plan, no escribe
+python manage.py import_lesiones_formativo --detalle   # todos los nombres sin jugador
+python manage.py import_lesiones_formativo --commit    # escribe
+```
+
+Re-corrible: cada episodio lleva `legacy_raw.origen_id` (jugador + fecha +
+región). Una segunda corrida no crea nada y sólo **cierra** las lesiones que el
+club dio de alta desde la anterior. Los nombres que el club corrija entran solos
+en la corrida siguiente. **No tiene cron todavía.**
+
+### El emparejamiento es el problema
+
+`NOMBRE COMPLETO` es texto libre, y `Rut` / `Edad` / `Posición` son un VLOOKUP
+del club sobre ese texto: un `#N/A` no es "sin RUT", es un nombre que su propia
+planilla tampoco resolvió. Orden de intentos, cada fila marcada con el suyo:
+
+| método | cómo |
+|---|---|
+| `rut` | RUT de la fila → `Player.national_id` (sin puntos ni guión) |
+| `rut_dp` | nombre → pestaña `Datos Personales` → su RUT |
+| `alias` | un `PlayerAlias` nickname confirmado |
+| `dob` | nacimiento de `Datos Personales` + ≥2 tokens de nombre |
+| `nombre` / `parcial` | nombre exacto; o uno contiene al otro (plantel con un apellido menos, apellidos primero) |
+
+Y dos vetos, porque cada uno encontró un caso real:
+
+* **Un RUT tiene que compartir nombre.** La fila 554 trae el RUT de un chico de
+  11 en la de uno de 19.
+* **Un match por nombre tiene que coincidir en edad (±1).** Dos Esteban Cáceres
+  con dos años de diferencia. Edades ≥ 60 se ignoran: es el `YEARFRAC` del club
+  sobre una fecha vacía.
+
+Lo que resuelve a dos jugadores es `ambiguo` y **nunca se adivina**. Resultado
+al 2026-09-30: **588 / 723 (81 %)**, 227 jugadores; 95–97 % en 2025–2026. Los 135
+restantes, con fila y motivo, están en
+`~/Downloads/U de Chile - Formativo/lesiones_sin_emparejar_2024-2026.xlsx`.
+
+⚠️ **Nuestro plantel tiene dos RUT copiados** de un jugador a otro (Parodi /
+Ramírez, Fuentes / Santaella, con la misma fecha de nacimiento). El importador
+desempata por nombre, pero hay que corregir el plantel.
+
+### Lo que no es lo que parece
+
+* **`Días perdidos` es `TODAY() − fecha`** cuando no hay alta: 1409 días para una
+  lesión de 2022. Nunca se importa; se calcula alta − lesión, y una abierta no
+  tiene duración ni severidad todavía.
+* **`Otra lesión ósea` no es una fractura.** Es donde el club archiva Osgood,
+  Sever, periostitis. Va a `Otro`; la etiqueta original queda en `tipo_club`.
+* **`Partido`** pasa a `Partido oficial` sólo si hay ficha ANFP del jugador ±1 día
+  (32 de 185). El resto queda sin contexto; el valor del club en
+  `exposicion_club`.
+* **Alta el mismo día que la lesión**: el cierre se sella a las 18:00 y la
+  apertura a las 12:00. Con la misma hora, el "último resultado" que decide el
+  estado del episodio salía al azar — 6 de 584 quedaron abiertos así.
+
+### Qué no se abre
+
+* Una lesión **abierta de un jugador de Primer Equipo** (hoy: Bolaño, 26-09):
+  esta planilla no la lleva el cuerpo médico del primer equipo, y abrirla le
+  cambiaría el estado desde afuera.
+* Una lesión que Primer Equipo **ya registró** (±7 días): Bolaño 01-08,
+  Riquelme 23-08.
+
+`lesiones` pasa a aplicar también a SUB-20 y Series 2008–2016, para que
+"+ Nueva lesión" funcione en esos perfiles.
+
+**Revert** (todo lleva `legacy_raw.origen`):
+
+```python
+from exams.models import Episode, ExamResult
+from exams.episode_lifecycle import recompute_player_status
+qs = Episode.objects.filter(legacy_raw__origen="planilla_club_lesiones_formativo")
+players = {e.player for e in qs.select_related("player")}
+ExamResult.objects.filter(episode__in=qs).delete(); qs.delete()
+for p in players: recompute_player_status(p)
+```
 
 ---
 
