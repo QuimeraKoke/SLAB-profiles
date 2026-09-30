@@ -3017,7 +3017,7 @@ día. 2.867 pesajes, 22-03 → hoy, 36 de 38 jugadores.
   formativo): `origen_id = <jugador>|<día>`, y un valor distinto en una
   re-lectura reemplaza al guardado.
 * `peso` / `altura` escriben `current_weight_kg` / `current_height_cm`.
-* Sync horario `peso-diario-hourly` (:35). El id de la planilla tiene default
+* Sync cada 15 minutos `peso-diario-15min` (:05/:20/:35/:50). El id de la planilla tiene default
   en settings — no es secreto, y no hace falta tocar Railway.
 * `seed_peso_diario_layout` AGREGA la sección "Peso diario" a los layouts
   Nutricional de Primer Equipo (jugador y equipo) sin reconstruirlos.

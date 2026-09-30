@@ -105,12 +105,15 @@ app.conf.beat_schedule = {
         "task": "exams.tasks.sync_formativo_sheets",
         "schedule": crontab(minute=25),
     },
-    # Peso diario de Primer Equipo (planilla de nutrición). Cada hora al :35 —
-    # libre entre :25 (formativo) y :40 (wellness). Lee la pestaña entera: dos
-    # requests, y así toma también las correcciones de días anteriores.
-    "peso-diario-hourly": {
+    # Peso diario de Primer Equipo (planilla de nutrición). Cada 15 minutos:
+    # el pesaje de la mañana tiene que estar en SLAB antes de que el cuerpo
+    # técnico lo mire, y una corrida son dos requests y sólo escribe lo que
+    # cambió. Minutos :05/:20/:35/:50 — fuera de :00 (fixtures), :15
+    # (Catapult), :25 (formativo), :30 (VALD) y :40 (wellness). Lee la
+    # pestaña entera, así toma también las correcciones de días anteriores.
+    "peso-diario-15min": {
         "task": "exams.tasks.sync_peso_diario",
-        "schedule": crontab(minute=35),
+        "schedule": crontab(minute="5,20,35,50"),
     },
     # Wellness del formativo: OCHO documentos de Google Forms, cada uno con sus
     # hojas `CHECK IN` y `CHECK OUT`. Dos cadencias por la misma razón que el

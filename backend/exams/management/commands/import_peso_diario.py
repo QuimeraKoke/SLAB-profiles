@@ -1,6 +1,6 @@
 """Import the first team's daily weigh-in ("Registro peso diario") into `peso_talla`.
 
-The hourly Celery task runs the same code; this is for the first load and for
+The Celery task (every 15 minutes) runs the same code; this is for the first load and for
 checking what a run would do.
 
     docker compose exec backend python manage.py import_peso_diario            # dry run
