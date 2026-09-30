@@ -12,6 +12,7 @@ import ProfileDepartment from "@/components/perfil/ProfileDepartment/ProfileDepa
 import ProfileAlerts from "@/components/perfil/ProfileAlerts/ProfileAlerts";
 import ProfileGoals from "@/components/perfil/ProfileGoals/ProfileGoals";
 import ProfileEpisodes from "@/components/perfil/ProfileEpisodes/ProfileEpisodes";
+import { PlayerInjuriesProvider } from "@/components/perfil/PlayerInjuries/PlayerInjuriesContext";
 import { useBreadcrumbLabel } from "@/components/layout/Breadcrumbs";
 import { api, ApiError } from "@/lib/api";
 import type { PlayerDetail } from "@/lib/types";
@@ -153,6 +154,9 @@ export default function PerfilPlayerPage({ params }: PageProps) {
   const activeDepartment = player.category.departments.find((d) => d.slug === safeActive);
 
   return (
+    // One injuries fetch for the whole profile: every chart in every tab —
+    // and the assistant's transient charts — draws its bands from it.
+    <PlayerInjuriesProvider playerId={player.id}>
     <div className={styles.container}>
       <ProfileHeader player={player} />
       <ProfileTabs tabs={tabs} activeTab={safeActive} onTabChange={handleTabChange} />
@@ -186,5 +190,6 @@ export default function PerfilPlayerPage({ params }: PageProps) {
         )}
       </div>
     </div>
+    </PlayerInjuriesProvider>
   );
 }

@@ -1,0 +1,78 @@
+/* Injury strip under time-axis charts. Ink matches INJURY_INK (#9a5b5b). */
+
+.strip {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px 8px;
+  border: 1px solid #e3cccc;
+  border-radius: 999px;
+  background: #f8f1f1;
+  color: #7a4444;
+  font-size: 11px;
+  line-height: 18px;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chip:hover {
+  background: #f1e4e4;
+}
+
+.chip:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 1px;
+}
+
+/* An open injury is the one that matters today: a solid border. */
+.abierta {
+  border-color: #9a5b5b;
+  font-weight: 600;
+}
+
+/* The same hatch as the band, so the chip reads as its key. */
+.swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-left: 2px solid #9a5b5b;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(154, 91, 91, 0.45) 0 1px,
+    rgba(154, 91, 91, 0.08) 1px 4px
+  );
+}
+
+.nombre {
+  font-weight: 600;
+}
+
+.detalle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tooltipLine {
+  display: block;
+  margin-top: 2px;
+  color: #e7c4c4;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* On a white tooltip (DualAxisBarLine) the dark-tooltip tint would vanish. */
+.tooltipLineLight {
+  color: #7a4444;
+}

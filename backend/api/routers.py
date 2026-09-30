@@ -84,6 +84,7 @@ from .schemas import (
     KineEntryIn,
     KineEntryOut,
     EpisodeOut,
+    InjuryRangeOut,
     EpisodePatchIn,
     EpisodeNoteIn,
     EpisodeNoteOut,
@@ -5661,6 +5662,25 @@ def list_player_episodes(
     if template_slug:
         qs = qs.filter(template__slug=template_slug)
     return [_serialize_episode(e) for e in qs]
+
+
+@api.get("/injuries/ranges", response=list[InjuryRangeOut])
+def list_injury_ranges(request, players: str):
+    """Injuries as date ranges for time-axis charts — several players at once.
+
+    One call per profile page (all its charts share it) or per `/comparar`
+    selection. Players the caller cannot see are silently dropped, like any
+    other scoped list.
+    """
+    from exams.injury_ranges import for_players
+
+    ids = [p.strip() for p in players.split(",") if p.strip()][:50]
+    if not ids:
+        raise HttpError(422, "players: al menos un id")
+    membership = get_membership(request.user)
+    visibles = scope_players(Player.objects.filter(pk__in=ids), membership)
+    return for_players(visibles.values_list("pk", flat=True),
+                       scope_templates(ExamTemplate.objects.all(), membership))
 
 
 @api.get("/episodes/{episode_id}", response=EpisodeOut)

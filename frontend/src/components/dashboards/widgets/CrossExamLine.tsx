@@ -14,6 +14,7 @@ import {
 
 import type { CrossExamLinePayload, CrossExamMatchInfo, DashboardWidget } from "@/lib/types";
 import { ChartWindowNav, fullRangeDomain, useChartWindow, windowRangeLabel } from "./ChartWindow";
+import { InjuryStrip, InjuryTooltipLine, injuryBandAreas, injuryDefs, useChartInjuries } from "./InjuryBands";
 import { MovingAvgControl, trailingMean, useMovingAverage } from "./MovingAverage";
 import styles from "./Widget.module.css";
 
@@ -108,6 +109,13 @@ export default function CrossExamLine({ widget }: CrossExamLineProps) {
 
   const window = useChartWindow(chartData);
 
+  // Rows are keyed by the DISPLAYED day (shifted when `date_shift_days` is
+  // set); injuries stay on their real dates. The tooltip still shows each
+  // sample's actual date, so the two can be told apart.
+  const days = useMemo(() => chartData.map((r) => String(r.day)), [chartData]);
+  const lesiones = useChartInjuries(days);
+  const fullWidth = (widget.column_span ?? 12) >= 12;
+
   // Fixed per-side axis over the FULL history — the frame stays put while
   // the window slides.
   const yDomains = useMemo(() => {
@@ -156,6 +164,11 @@ export default function CrossExamLine({ widget }: CrossExamLineProps) {
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={window.data} margin={{ top: 8, right: hasRight ? 8 : 16, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            {injuryDefs(lesiones.patternId)}
+            {injuryBandAreas(lesiones.placed, {
+              patternId: lesiones.patternId, xDomain: window.xDomain, labels: fullWidth,
+              yAxisId: "left",
+            })}
             {/* Numeric idx axis: the viewport (domain) pans smoothly over
                 the full dataset. Explicit height keeps the title INSIDE
                 the axis band, clear of the legend row. */}
@@ -214,7 +227,8 @@ export default function CrossExamLine({ widget }: CrossExamLineProps) {
               />
             )}
             <Tooltip
-              content={<CrossExamTooltip series={seriesMeta} matches={data.matches} />}
+              content={<CrossExamTooltip series={seriesMeta} matches={data.matches}
+                injuryFor={lesiones.contextFor} />}
               cursor={{ stroke: "#9ca3af", strokeDasharray: "3 3" }}
             />
             <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} iconType="circle" iconSize={8} />
@@ -257,6 +271,9 @@ export default function CrossExamLine({ widget }: CrossExamLineProps) {
           </LineChart>
         </ResponsiveContainer>
       </div>
+      <InjuryStrip chart={lesiones} compact={!fullWidth}
+        fromDay={window.visible[0] ? String(window.visible[0].day) : undefined}
+        toDay={window.visible.length ? String(window.visible[window.visible.length - 1].day) : undefined} />
     </div>
   );
 }
@@ -266,9 +283,10 @@ interface TooltipProps {
   payload?: Array<{ payload?: Record<string, string | number | null> }>;
   series: Array<{ dataKey: string; label: string; unit: string }>;
   matches?: Record<string, CrossExamMatchInfo>;
+  injuryFor?: (day: string | undefined) => string | null;
 }
 
-function CrossExamTooltip({ active, payload, series, matches }: TooltipProps) {
+function CrossExamTooltip({ active, payload, series, matches, injuryFor }: TooltipProps) {
   if (!active || !payload?.length) return null;
   const point = payload[0]?.payload;
   if (!point || typeof point.recorded_at !== "string") return null;
@@ -276,6 +294,8 @@ function CrossExamTooltip({ active, payload, series, matches }: TooltipProps) {
   return (
     <div className={styles.chartTooltip}>
       <span className={styles.chartTooltipDate}>{formatLongDate(point.recorded_at)}</span>
+      <InjuryTooltipLine
+        text={injuryFor?.(typeof point.day === "string" ? point.day : undefined) ?? null} />
       {match && (
         <span className={styles.chartTooltipValue}>
           {match.opponent

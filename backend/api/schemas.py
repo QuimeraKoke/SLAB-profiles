@@ -535,6 +535,20 @@ class EpisodeOut(Schema):
     latest_result_data: dict[str, Any] = {}
 
 
+class InjuryRangeOut(Schema):
+    """An injury as a date range, for time-axis charts (`exams.injury_ranges`)."""
+    id: UUID
+    player_id: UUID
+    player_name: str = ""
+    status: str  # "open" | "closed"
+    stage_label: str = ""
+    title: str = ""
+    started_at: datetime
+    ended_at: datetime | None = None
+    # body_part, lado, type, diagnosis, severity, dias_perdidos, recurrencia
+    summary: dict[str, Any] = {}
+
+
 class EpisodePatchIn(Schema):
     """Manual episode patch. Two independent things:
 

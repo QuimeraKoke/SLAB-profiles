@@ -15,7 +15,10 @@
 import React, { useMemo } from "react";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
 
+import { usePlayerInjuries } from "@/components/perfil/PlayerInjuries/PlayerInjuriesContext";
+import { injuriesBetween } from "@/lib/injuryRanges";
 import type { DashboardWidget, KpiCardPayload } from "@/lib/types";
+import { INJURY_INK } from "./InjuryBands";
 import styles from "./Widget.module.css";
 
 const AGG_LABEL: Record<string, string> = {
@@ -33,6 +36,16 @@ export default function KpiCard({ widget }: { widget: DashboardWidget }) {
   );
 
   const vacio = data.empty || data.value === null || data.value === undefined;
+
+  // Too small for a band: the sparkline only says, in words, that the period
+  // it summarises includes an injury — a total over a layoff reads otherwise.
+  const { injuries } = usePlayerInjuries();
+  const puntos = data.sparkline ?? [];
+  const enPeriodo = puntos.length
+    ? injuriesBetween(injuries, puntos[0].recorded_at.slice(0, 10),
+      puntos[puntos.length - 1].recorded_at.slice(0, 10))
+    : [];
+  const abierta = enPeriodo.some((l) => !l.ended_at);
 
   return (
     <div className={styles.widget}>
@@ -58,6 +71,12 @@ export default function KpiCard({ widget }: { widget: DashboardWidget }) {
               {typeof data.n === "number" && data.n > 0 && (
                 <span style={{ color: "#98a2b3" }}> · {data.n} registro
                   {data.n === 1 ? "" : "s"}</span>
+              )}
+              {enPeriodo.length > 0 && (
+                <span style={{ color: INJURY_INK }}>
+                  {abierta ? " · en lesión"
+                    : ` · ${enPeriodo.length} lesión${enPeriodo.length === 1 ? "" : "es"} en el período`}
+                </span>
               )}
             </div>
           </div>

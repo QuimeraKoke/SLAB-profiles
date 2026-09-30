@@ -22,6 +22,7 @@ import {
 
 import type { DashboardWidget, DualAxisBarLinePayload } from "@/lib/types";
 import { ChartWindowNav, fullRangeDomain, useChartWindow, windowRangeLabel } from "./ChartWindow";
+import { InjuryStrip, InjuryTooltipLine, injuryBandAreas, injuryDefs, useChartInjuries } from "./InjuryBands";
 import styles from "./Widget.module.css";
 
 const COLOR_BARRAS = "#2563eb";
@@ -45,6 +46,10 @@ export default function DualAxisBarLine({ widget }: { widget: DashboardWidget })
   })), [puntos]);
 
   const window = useChartWindow(filas);
+
+  const days = useMemo(() => filas.map((f) => f.recorded_at.slice(0, 10)), [filas]);
+  const lesiones = useChartInjuries(days);
+  const fullWidth = (widget.column_span ?? 12) >= 12;
 
   // Cada eje con su propio dominio sobre TODA la historia: es el punto del
   // gráfico, y además mantiene el marco quieto mientras se panea.
@@ -85,6 +90,11 @@ export default function DualAxisBarLine({ widget }: { widget: DashboardWidget })
           <ComposedChart data={window.data}
             margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            {injuryDefs(lesiones.patternId)}
+            {injuryBandAreas(lesiones.placed, {
+              patternId: lesiones.patternId, xDomain: window.xDomain, labels: fullWidth,
+              yAxisId: "barras",
+            })}
             <XAxis
               dataKey="idx" type="number" domain={window.xDomain}
               ticks={window.ticks}
@@ -122,6 +132,7 @@ export default function DualAxisBarLine({ widget }: { widget: DashboardWidget })
                   <div style={{ color: "#6b7280", fontSize: 11 }}>
                     Semana {f.week}
                   </div>
+                  <InjuryTooltipLine light text={lesiones.contextFor(f.recorded_at.slice(0, 10))} />
                   <div style={{ color: COLOR_BARRAS }}>
                     {tituloBarras}: {f.bars ?? "sin dato"}
                   </div>
@@ -140,6 +151,9 @@ export default function DualAxisBarLine({ widget }: { widget: DashboardWidget })
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      <InjuryStrip chart={lesiones} compact={!fullWidth}
+        fromDay={window.visible[0]?.recorded_at.slice(0, 10)}
+        toDay={window.visible[window.visible.length - 1]?.recorded_at.slice(0, 10)} />
     </div>
   );
 }

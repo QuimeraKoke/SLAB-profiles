@@ -16,6 +16,7 @@ import type { DashboardWidget, MultiLinePayload } from "@/lib/types";
 import { ChartWindowNav, fullRangeDomain, useChartWindow, windowRangeLabel } from "./ChartWindow";
 import { MovingAvgControl, trailingMean, useMovingAverage } from "./MovingAverage";
 import { referenceBandAreas } from "./ReferenceBands";
+import { InjuryStrip, InjuryTooltipLine, injuryBandAreas, injuryDefs, useChartInjuries } from "./InjuryBands";
 import styles from "./Widget.module.css";
 
 interface MultiLineProps {
@@ -88,6 +89,16 @@ export default function MultiLine({ widget }: MultiLineProps) {
   // Per-chart time window (latest first, chevrons to page through history).
   const window = useChartWindow(chartData);
 
+  // Rows here are keyed by full timestamp, not by day: injuries compare days.
+  const days = useMemo(
+    () => chartData.map((r) => String(r.recorded_at).slice(0, 10)), [chartData]);
+  const lesiones = useChartInjuries(days);
+  const fullWidth = (widget.column_span ?? 12) >= 12;
+  const visibleDay = (i: number) => {
+    const r = window.visible[i];
+    return r ? String(r.recorded_at).slice(0, 10) : undefined;
+  };
+
   // Fixed axis over the FULL history — the frame stays put while sliding.
   const yDomain = useMemo(
     () => fullRangeDomain(data.series.flatMap((s) => s.points.map((p) => p.value))),
@@ -128,6 +139,10 @@ export default function MultiLine({ widget }: MultiLineProps) {
             {data.series.length === 1
               ? referenceBandAreas(data.series[0].reference_ranges, yDomain)
               : null}
+            {injuryDefs(lesiones.patternId)}
+            {injuryBandAreas(lesiones.placed, {
+              patternId: lesiones.patternId, xDomain: window.xDomain, labels: fullWidth,
+            })}
             {/* Numeric idx axis: the viewport (domain) pans smoothly over
                 the full dataset. Explicit height keeps the title INSIDE
                 the axis band, clear of the legend row. */}
@@ -169,7 +184,7 @@ export default function MultiLine({ widget }: MultiLineProps) {
                   : undefined
               }
             />
-            <Tooltip content={<MultiLineTooltip series={data.series} />} cursor={{ stroke: "#9ca3af", strokeDasharray: "3 3" }} />
+            <Tooltip content={<MultiLineTooltip series={data.series} injuryFor={lesiones.contextFor} />} cursor={{ stroke: "#9ca3af", strokeDasharray: "3 3" }} />
             <Legend wrapperStyle={{ fontSize: 11, paddingTop: 6 }} iconType="circle" iconSize={8} />
             {ma.enabled &&
               data.series.map((series, i) => (
@@ -204,6 +219,8 @@ export default function MultiLine({ widget }: MultiLineProps) {
           </LineChart>
         </ResponsiveContainer>
       </div>
+      <InjuryStrip chart={lesiones} compact={!fullWidth}
+        fromDay={visibleDay(0)} toDay={visibleDay(window.visible.length - 1)} />
     </div>
   );
 }
@@ -212,9 +229,10 @@ interface TooltipProps {
   active?: boolean;
   payload?: Array<{ payload?: Record<string, string | number | null> }>;
   series: MultiLinePayload["series"];
+  injuryFor?: (day: string | undefined) => string | null;
 }
 
-function MultiLineTooltip({ active, payload, series }: TooltipProps) {
+function MultiLineTooltip({ active, payload, series, injuryFor }: TooltipProps) {
   if (!active || !payload?.length) return null;
   const point = payload[0]?.payload;
   if (!point || typeof point.recorded_at !== "string") return null;
@@ -224,6 +242,7 @@ function MultiLineTooltip({ active, payload, series }: TooltipProps) {
       <span className={styles.chartTooltipDate}>
         {formatLongDate(point.recorded_at as string)}
       </span>
+      <InjuryTooltipLine text={injuryFor?.((point.recorded_at as string).slice(0, 10)) ?? null} />
       {series.map((s) => {
         const value = point[s.key];
         if (typeof value !== "number") return null;

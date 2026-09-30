@@ -24,6 +24,7 @@ import type {
 import { ChartWindowNav, fullRangeDomain, useChartWindow, windowRangeLabel } from "./ChartWindow";
 import { MovingAvgControl, trailingMean, useMovingAverage } from "./MovingAverage";
 import { referenceBandAreas } from "./ReferenceBands";
+import { InjuryStrip, InjuryTooltipLine, injuryBandAreas, injuryDefs, useChartInjuries } from "./InjuryBands";
 import styles from "./Widget.module.css";
 
 interface LineWithSelectorProps {
@@ -106,6 +107,13 @@ export default function LineWithSelector({ widget, playerId }: LineWithSelectorP
   // Each chart owns its time window: latest points first, chevrons to page
   // back through history. Re-anchors when the user switches variable.
   const window = useChartWindow(activeSeries, undefined, activeField?.key);
+
+  // The viewed player's injuries on this axis. Only HIS: in the comparison
+  // modes the axis is still his timeline, and other players' injuries would be
+  // noise on it.
+  const days = useMemo(() => activeSeries.map((r) => r.day), [activeSeries]);
+  const lesiones = useChartInjuries(days);
+  const fullWidth = (widget.column_span ?? 12) >= 12;
 
   // Acute / chronic match-load reference lines for the active variable.
   const refLines = (activeField && data.reference_lines?.[activeField.key]) || [];
@@ -284,6 +292,10 @@ export default function LineWithSelector({ widget, playerId }: LineWithSelectorP
                   los children es el orden de pintado, y tienen que quedar
                   DEBAJO de la envolvente y de las líneas. */}
               {referenceBandAreas(activeField?.reference_ranges, yDomain)}
+              {injuryDefs(lesiones.patternId)}
+              {injuryBandAreas(lesiones.placed, {
+                patternId: lesiones.patternId, xDomain: window.xDomain, labels: fullWidth,
+              })}
               {/* Mean±SD envelope behind everything: "this player's normal
                   range". Shaded area + a dashed centre line at the mean. */}
               {band && (
@@ -360,6 +372,7 @@ export default function LineWithSelector({ widget, playerId }: LineWithSelectorP
                     unit={activeField?.unit ?? ""}
                     matches={data.matches}
                     meanName={meanName}
+                    injuryFor={lesiones.contextFor}
                   />
                 )}
                 cursor={{ stroke: "#9ca3af", strokeDasharray: "3 3" }}
@@ -442,6 +455,8 @@ export default function LineWithSelector({ widget, playerId }: LineWithSelectorP
             </LineChart>
           </ResponsiveContainer>
         </div>
+        <InjuryStrip chart={lesiones} compact={!fullWidth}
+          fromDay={window.visible[0]?.day} toDay={window.visible[window.visible.length - 1]?.day} />
         </>
       )}
     </div>
@@ -471,9 +486,10 @@ interface TooltipProps {
   unit: string;
   matches?: Record<string, CrossExamMatchInfo>;
   meanName: string;
+  injuryFor?: (day: string | undefined) => string | null;
 }
 
-function ChartTooltip({ active, payload, unit, matches, meanName }: TooltipProps) {
+function ChartTooltip({ active, payload, unit, matches, meanName, injuryFor }: TooltipProps) {
   if (!active || !payload?.length) return null;
   const point = payload[0]?.payload;
   if (!point || typeof point.value !== "number" || !point.recorded_at) return null;
@@ -486,6 +502,7 @@ function ChartTooltip({ active, payload, unit, matches, meanName }: TooltipProps
   return (
     <div className={styles.chartTooltip}>
       <span className={styles.chartTooltipDate}>{formatLongDate(point.recorded_at)}</span>
+      <InjuryTooltipLine text={injuryFor?.(point.day) ?? null} />
       {match && (
         <span className={styles.chartTooltipValue}>
           {match.opponent
