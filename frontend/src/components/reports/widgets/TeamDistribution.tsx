@@ -106,10 +106,13 @@ export default function TeamDistribution({ widget }: Props) {
                `activeTooltipIndex` que alimenta el tooltip, así que los dos no
                pueden discrepar. */
             onMouseMove={(state) => {
-              const i = state?.activeTooltipIndex;
-              setHoverIndex(
-                state?.isTooltipActive && typeof i === "number" ? i : null,
-              );
+              // Recharts 3 types the index as a STRING ("0", "1", …). A
+              // `typeof i === "number"` check discarded every value, so the
+              // detail row never rendered: the tooltip said "7 jugadores" and
+              // nothing said which.
+              const raw = state?.activeTooltipIndex;
+              const i = raw === null || raw === undefined ? NaN : Number(raw);
+              setHoverIndex(state?.isTooltipActive && Number.isInteger(i) ? i : null);
             }}
             onMouseLeave={() => setHoverIndex(null)}
           >
