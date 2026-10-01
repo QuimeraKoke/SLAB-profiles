@@ -186,3 +186,6 @@
   border-color: #0a2240;
   color: #fff;
 }
+
+/* "Médico · Lesiones": the layout name, only when the department has several. */
+.layoutName { font-weight: 500; color: #667085; }

@@ -101,6 +101,7 @@ from .schemas import (
     RosterEntryOut,
     RosterReplaceIn,
     TeamReportResponseOut,
+    TeamLayoutRefOut,
     TeamResultsIn,
     TeamResultsOut,
     TemplateOut,
@@ -658,10 +659,16 @@ def list_club_departments(
         ).filter(pk=with_team_layout_for).first()
         if category is None:
             return []
-        qs = qs.filter(
-            team_report_layouts__category=category,
-            team_report_layouts__is_active=True,
-        ).distinct()
+        from dashboards.models import TeamReportLayout
+
+        out = []
+        for d in qs.order_by("name"):
+            layouts = list(TeamReportLayout.menu_for(d, category))
+            if layouts:
+                out.append({"id": d.id, "name": d.name, "slug": d.slug, "club_id": d.club_id,
+                            "team_layouts": [{"id": l.id, "name": l.name, "slug": l.slug}
+                                             for l in layouts]})
+        return out
     return qs
 
 
@@ -2330,6 +2337,10 @@ def get_player_comparison(request, players: str, metrics: str,
 
 # ---------- Team reports ----------
 
+def _layout_ref(l) -> dict:
+    return {"id": l.id, "name": l.name, "slug": l.slug}
+
+
 @api.get("/reports/{department_slug}", response=TeamReportResponseOut)
 def get_team_report(
     request,
@@ -2342,8 +2353,13 @@ def get_team_report(
     match_id: str | None = None,
     match_ids: str | None = None,
     include_secondary: bool = True,
+    layout: str | None = None,
 ):
     """Return the active TeamReportLayout for `(department, category)`.
+
+    `layout` is the slug of one of the department's layouts for the category
+    (`/reportes/<dept>/<slug>`); without it, the default — the first in menu
+    order. An unknown slug returns `{layout: null}`, like no layout at all.
 
     Resolved server-side: every widget's payload is computed by the team
     aggregation registry and returned in `data`. Returns `{layout: null}`
@@ -2408,15 +2424,17 @@ def get_team_report(
 
     parsed_from, parsed_to = _parse_date_window(date_from, date_to)
 
+    layout_slug = layout
+    hermanos = list(TeamReportLayout.menu_for(dept, category))
     layout = (
-        TeamReportLayout.objects
-        .filter(department=dept, category=category, scope="period", is_active=True)
+        TeamReportLayout.menu_for(dept, category)
+        .filter(**({"slug": layout_slug} if layout_slug else {}))
         .select_related("department", "category")
         .prefetch_related("sections__widgets")
         .first()
     )
     if layout is None:
-        return {"layout": None}
+        return {"layout": None, "layouts": [_layout_ref(l) for l in hermanos]}
 
     # -------- Match selector resolution --------
     # The layout's stored config drives what the frontend renders + how
@@ -2545,11 +2563,13 @@ def get_team_report(
         )
 
     return {
+        "layouts": [_layout_ref(l) for l in hermanos],
         "layout": {
             "id": layout.id,
             "department": dept,
             "category": category,
             "name": layout.name,
+            "slug": layout.slug,
             "sections": sections_payload,
             "match_selector": {
                 "enabled": selector_enabled,
@@ -2694,6 +2714,7 @@ def download_team_report_docx(
     date_to: str | None = None,
     player_ids: str | None = None,
     match_id: str | None = None,
+    layout: str | None = None,
 ):
     """Render the team-view report as an editable Word document (landscape).
 
@@ -2764,9 +2785,11 @@ def download_team_report_docx(
         date_from=parsed_from,
         date_to=parsed_to,
         event_id=parsed_match_id,
+        layout_slug=layout,
     )
 
-    filename = f"reporte-{department_slug}-{category.name}.docx".replace(" ", "_")
+    filename = (f"reporte-{department_slug}{'-' + layout if layout else ''}"
+                f"-{category.name}.docx").replace(" ", "_")
     response = HttpResponse(docx_bytes, content_type=_DOCX_CONTENT_TYPE)
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response
@@ -2939,6 +2962,9 @@ def player_resumen_assistant(request, payload: PlayerResumenAssistantIn):
 class PromoteChartIn(Schema):
     category_id: str
     spec: dict
+    # The layout being viewed (a department can have several). Without it,
+    # the department's default layout.
+    layout_id: UUID | None = None
 
 
 class WidgetArrangeIn(Schema):
@@ -2978,10 +3004,128 @@ def promote_chart(request, department_slug: str, payload: PromoteChartIn):
     if dept is None:
         raise HttpError(404, "Department not found")
 
-    result = promote_chart_spec(category=category, department=dept, spec=payload.spec)
+    result = promote_chart_spec(category=category, department=dept, spec=payload.spec,
+                                layout_id=payload.layout_id)
     if result.get("error"):
         raise HttpError(400, result["error"])
     return result
+
+
+# ── Team report layouts — several per (department, category) ────────────────
+# A department can have one team layout (the menu shows "Dashboard → Médico"
+# as always) or several named ones (a submenu, "Dashboard → Médico → General
+# / Lesiones"). Managed from the report's edit mode, by whoever can edit its
+# widgets. `reorder` is registered before the `{layout_id}` routes for the
+# same reason as the widget routes below.
+
+
+class TeamLayoutCreateIn(Schema):
+    category_id: UUID
+    name: str
+
+
+class TeamLayoutPatchIn(Schema):
+    name: str
+
+
+class TeamLayoutReorderIn(Schema):
+    layout_ids: list[UUID]
+
+
+def _scoped_team_layout(request, layout_id):
+    from dashboards.models import TeamReportLayout
+
+    membership = get_membership(request.user)
+    layout = (TeamReportLayout.objects.filter(pk=layout_id, scope="period")
+              .exclude(slug=TeamReportLayout.PREVIEW_SLUG)
+              .select_related("department", "category").first())
+    if layout is None:
+        raise HttpError(404, "Layout not found")
+    visible = scope_categories(Category.objects.filter(pk=layout.category_id), membership).exists() \
+        and scope_departments(Department.objects.filter(pk=layout.department_id), membership).exists()
+    if not visible:
+        raise HttpError(404, "Layout not found")
+    return layout
+
+
+def _layout_name(raw: str) -> str:
+    name = (raw or "").strip()
+    if not name:
+        raise HttpError(400, "El nombre no puede estar vacío.")
+    if len(name) > 120:
+        raise HttpError(400, "El nombre es demasiado largo (máx. 120).")
+    return name
+
+
+@api.post("/reports/{department_slug}/layouts", response=TeamLayoutRefOut)
+@require_perm("dashboards.change_teamreportwidget")
+def create_team_layout(request, department_slug: str, payload: TeamLayoutCreateIn):
+    """A new, empty layout for the department — a new submenu item."""
+    from django.db.models import Max
+
+    from dashboards.models import TeamReportLayout
+
+    membership = get_membership(request.user)
+    category = scope_categories(Category.objects.all(), membership).filter(pk=payload.category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    dept = scope_departments(Department.objects.filter(club_id=category.club_id), membership) \
+        .filter(slug=department_slug).first()
+    if dept is None:
+        raise HttpError(404, "Department not found")
+    name = _layout_name(payload.name)
+    if TeamReportLayout.menu_for(dept, category).filter(name__iexact=name).exists():
+        raise HttpError(400, f"Ya hay una vista «{name}» en {dept.name}.")
+    ultimo = TeamReportLayout.menu_for(dept, category).aggregate(m=Max("sort_order"))["m"]
+    layout = TeamReportLayout.objects.create(
+        department=dept, category=category, scope="period", name=name, is_active=True,
+        sort_order=(ultimo + 1) if ultimo is not None else 0)
+    return _layout_ref(layout)
+
+
+@api.post("/reports/layouts/reorder")
+@require_perm("dashboards.change_teamreportwidget")
+def reorder_team_layouts(request, payload: TeamLayoutReorderIn):
+    """Menu order of a department's layouts; the first is the default."""
+    layouts = [_scoped_team_layout(request, i) for i in payload.layout_ids]
+    if len({(l.department_id, l.category_id) for l in layouts}) > 1:
+        raise HttpError(400, "Las vistas deben ser del mismo departamento y categoría.")
+    for i, l in enumerate(layouts):
+        if l.sort_order != i:
+            l.sort_order = i
+            l.save(update_fields=["sort_order", "updated_at"])
+    return {"ok": True}
+
+
+@api.patch("/reports/layouts/{layout_id}", response=TeamLayoutRefOut)
+@require_perm("dashboards.change_teamreportwidget")
+def rename_team_layout(request, layout_id: UUID, payload: TeamLayoutPatchIn):
+    """Rename; the URL slug follows the name so the address reads like the menu."""
+    from dashboards.models import TeamReportLayout
+
+    layout = _scoped_team_layout(request, layout_id)
+    name = _layout_name(payload.name)
+    if TeamReportLayout.menu_for(layout.department, layout.category) \
+            .filter(name__iexact=name).exclude(pk=layout.pk).exists():
+        raise HttpError(400, f"Ya hay una vista «{name}» en {layout.department.name}.")
+    layout.name = name
+    layout.slug = TeamReportLayout.unique_slug(layout.department_id, layout.category_id, name, layout.pk)
+    layout.save(update_fields=["name", "slug", "updated_at"])
+    return _layout_ref(layout)
+
+
+@api.delete("/reports/layouts/{layout_id}")
+@require_perm("dashboards.change_teamreportwidget")
+def delete_team_layout(request, layout_id: UUID):
+    """Delete a layout and its widgets. The last one of a department cannot go:
+    the department would vanish from the menu with it."""
+    from dashboards.models import TeamReportLayout
+
+    layout = _scoped_team_layout(request, layout_id)
+    if TeamReportLayout.menu_for(layout.department, layout.category).exclude(pk=layout.pk).count() == 0:
+        raise HttpError(400, "Es la única vista de este departamento: no se puede eliminar.")
+    layout.delete()
+    return {"ok": True}
 
 
 # ── Panel builder — arrange existing team-report widgets (§2.c) ──────────────

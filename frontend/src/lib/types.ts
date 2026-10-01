@@ -44,11 +44,21 @@ export interface Club {
   logo_url?: string | null;
 }
 
+/** A team report layout as the menu sees it (Dashboard → <dept> → <name>). */
+export interface TeamLayoutRef {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface Department {
   id: string;
   name: string;
   slug: string;
   club_id: string;
+  /** Only from `/clubs/{id}/departments?with_team_layout_for=<category>`:
+   *  this department's team layouts for that category, in menu order. */
+  team_layouts?: TeamLayoutRef[];
 }
 
 export interface Category {
@@ -1802,9 +1812,12 @@ export interface TeamReportResponse {
     department: Department;
     category: Category;
     name: string;
+    slug: string;
     sections: TeamReportSection[];
     match_selector: TeamMatchSelectorConfig;
   } | null;
+  /** Every layout of this (department, category), in menu order. */
+  layouts: TeamLayoutRef[];
 }
 
 /** Combined, cross-department MATCH report shown in the Partidos view.

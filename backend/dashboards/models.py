@@ -580,7 +580,22 @@ class TeamReportLayout(models.Model):
     name = models.CharField(
         max_length=120,
         default="Default",
-        help_text="Internal label shown in admin lists.",
+        help_text=(
+            "Visible name. With one layout per (department, category) it only "
+            "shows in admin; with several, it is the item in the Dashboard "
+            "submenu (Dashboard → Médico → <name>)."
+        ),
+    )
+    slug = models.SlugField(
+        max_length=80, blank=True, default="",
+        help_text=(
+            "URL segment: /reportes/<department>/<slug>. Unique within the "
+            "(department, category); generated from the name when blank."
+        ),
+    )
+    sort_order = models.IntegerField(
+        default=0,
+        help_text="Order in the submenu; the first one opens at /reportes/<department>.",
     )
     is_active = models.BooleanField(
         default=True,
@@ -615,10 +630,12 @@ class TeamReportLayout(models.Model):
 
     class Meta:
         constraints = [
+            # Several period layouts per (department, category) — one per
+            # submenu item — told apart by their slug.
             models.UniqueConstraint(
-                fields=["department", "category"],
+                fields=["department", "category", "slug"],
                 condition=models.Q(scope="period"),
-                name="uniq_team_period_layout",
+                name="uniq_team_period_layout_slug",
             ),
             models.UniqueConstraint(
                 fields=["category"],
@@ -626,9 +643,49 @@ class TeamReportLayout(models.Model):
                 name="uniq_team_match_layout",
             ),
         ]
-        ordering = ("category__name", "scope")
+        ordering = ("category__name", "scope", "sort_order", "created_at")
         verbose_name = "Team report — Layout"
         verbose_name_plural = "Team report — Layouts"
+
+    # Preview layouts (`chart_spec.preview_chart_spec`) are inactive scratch
+    # rows; they never appear in a menu.
+    PREVIEW_SLUG = "vista-previa-interna"
+
+    def save(self, *args, **kwargs):
+        if self.scope == LayoutScope.PERIOD and not self.slug:
+            self.slug = self.unique_slug(self.department_id, self.category_id, self.name, self.pk)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def unique_slug(cls, department_id, category_id, name: str, exclude_pk=None) -> str:
+        from django.utils.text import slugify
+
+        base = slugify(name or "")[:70] or "vista"
+        taken = set(
+            cls.objects.filter(department_id=department_id, category_id=category_id,
+                               scope=LayoutScope.PERIOD)
+            .exclude(pk=exclude_pk).values_list("slug", flat=True))
+        slug, n = base, 2
+        while slug in taken:
+            slug, n = f"{base}-{n}", n + 1
+        return slug
+
+    @classmethod
+    def menu_for(cls, department, category):
+        """The period layouts a (department, category) shows, in menu order.
+        The first is the default one — what `/reportes/<department>` opens."""
+        return (cls.objects
+                .filter(department=department, category=category, scope=LayoutScope.PERIOD,
+                        is_active=True)
+                .exclude(slug=cls.PREVIEW_SLUG)
+                .order_by("sort_order", "created_at"))
+
+    @classmethod
+    def resolve(cls, department, category, slug: str | None = None):
+        """The layout to show: the one with `slug`, or the default. None if the
+        department has none for this category (or `slug` names none)."""
+        qs = cls.menu_for(department, category)
+        return qs.filter(slug=slug).first() if slug else qs.first()
 
     def clean(self) -> None:
         super().clean()

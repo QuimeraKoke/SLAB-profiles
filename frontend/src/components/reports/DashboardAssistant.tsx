@@ -22,6 +22,8 @@ interface Props {
   };
   /** Called after a chart is promoted, so the page can refetch the layout. */
   onPromoted?: () => void;
+  /** The team layout being viewed: a promoted chart goes there. */
+  layoutId?: string;
 }
 
 const SUGGESTIONS = [
@@ -41,6 +43,7 @@ export default function DashboardAssistant({
   departmentName,
   filters,
   onPromoted,
+  layoutId,
 }: Props) {
   const { toast } = useToast();
 
@@ -71,7 +74,7 @@ export default function DashboardAssistant({
         try {
           await api(`/reports/${departmentSlug}/widgets`, {
             method: "POST",
-            body: JSON.stringify({ category_id: categoryId, spec: c.spec }),
+            body: JSON.stringify({ category_id: categoryId, spec: c.spec, layout_id: layoutId ?? null }),
           });
           toast.success("Gráfico agregado al panel.");
           onPromoted?.();

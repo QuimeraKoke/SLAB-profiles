@@ -462,7 +462,10 @@ class DepartmentsWithTeamLayoutTests(TestCase):
     def _slugs(self, **kw):
         r = self.rf.get("/x")
         r.user = self.su
-        return sorted(d.slug for d in self.view(r, str(self.club.id), **kw))
+        # With `with_team_layout_for` the view returns dicts (they carry the
+        # department's layouts for the submenu); without it, model instances.
+        return sorted(d["slug"] if isinstance(d, dict) else d.slug
+                      for d in self.view(r, str(self.club.id), **kw))
 
     def test_sin_el_parametro_devuelve_todos(self):
         # Los otros cuatro consumidores no deben cambiar de comportamiento.
@@ -498,3 +501,15 @@ class DepartmentsWithTeamLayoutTests(TestCase):
                                         scope="match")
         self.assertEqual(
             self._slugs(with_team_layout_for=str(self.cat.id)), ["fisico"])
+
+    def test_lista_las_vistas_del_departamento_en_orden_de_menu(self):
+        """Dos layouts en Físico → el submenú Físico → General / Lesiones."""
+        from dashboards.models import TeamReportLayout
+
+        TeamReportLayout.objects.create(department=self.con, category=self.cat,
+                                        name="Lesiones", sort_order=5)
+        r = self.rf.get("/x")
+        r.user = self.su
+        (fis,) = self.view(r, str(self.club.id), with_team_layout_for=str(self.cat.id))
+        self.assertEqual([l["name"] for l in fis["team_layouts"]], ["Default", "Lesiones"])
+        self.assertEqual(fis["team_layouts"][1]["slug"], "lesiones")

@@ -46,6 +46,7 @@ def render_team_docx(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    layout_slug: str | None = None,
 ) -> bytes:
     """Download entry point for the team report (.docx). Resolves the
     department's InsightAgent, builds the squad data payload, reuses the
@@ -58,9 +59,11 @@ def render_team_docx(
         get_saved_team_file, get_saved_team_narrative, report_signature, save_team_file,
     )
 
+    # The layout being viewed — a department can have several; without a
+    # slug, its default (first in menu order).
     layout = (
-        TeamReportLayout.objects
-        .filter(department=department, category=category, scope="period", is_active=True)
+        TeamReportLayout.menu_for(department, category)
+        .filter(**({"slug": layout_slug} if layout_slug else {}))
         .prefetch_related("sections__widgets__data_sources")
         .first()
     )
@@ -95,7 +98,8 @@ def render_team_docx(
     )
     fingerprint = agent.config_fingerprint() if agent else "builtin"
     signature = report_signature(
-        full_payload, model=model, kind=f"team:{department.slug}",
+        full_payload, model=model,
+        kind=f"team:{department.slug}:{layout.slug if layout is not None else ''}",
         render_version=_TEAM_RENDER_VERSION, agent_fingerprint=fingerprint,
     )
 

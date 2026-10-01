@@ -3055,6 +3055,32 @@ donde no había; no toca el resto). Se exporta a Excel; el Word todavía no
 dibuja estos tres. Pendiente: opciones en el modal "Agregar gráfico" (hoy se
 editan en el admin), y una vista "Formativo completo" entre categorías.
 
+### 3.62 Varias vistas de equipo por departamento (2026-10-01)
+
+Un departamento puede tener **un** layout de equipo por categoría — el menú
+muestra "Dashboard → Médico", como siempre — o **varios con nombre**, y
+entonces el departamento es un submenú: **Dashboard → Médico → General /
+Lesiones**.
+
+* Modelo: `TeamReportLayout.slug` + `sort_order`; la restricción "uno por
+  (departamento, categoría)" pasa a "slug único dentro de (departamento,
+  categoría)". La migración 0040 nombra "General" (`general`) a los que
+  tenían nombre genérico. `TeamReportLayout.menu_for()` / `resolve()` son
+  la única forma de elegir uno.
+* URL: `/reportes/<depto>` abre el primero (los links viejos siguen
+  sirviendo); `/reportes/<depto>/<vista>` uno en particular. Breadcrumb
+  Dashboard › Médico › Lesiones.
+* Lo que sigue a la vista abierta: el reporte (`?layout=`), "Agregar
+  gráfico", "Promover al panel" del asistente (`layout_id`), el Word
+  (`?layout=`, también en la clave de caché) y el PDF.
+* Gestión desde "Editar panel" (permiso `dashboards.change_teamreportwidget`,
+  el mismo que editar widgets): nueva vista, renombrar (el slug sigue al
+  nombre), subir/bajar, eliminar (con ConfirmDialog danger; la última no).
+  El sidebar se refresca con el evento `slab:team-layouts-changed`.
+* Primer uso: `seed_injury_team_layout` deja el reporte de lesiones en su
+  propia vista "Lesiones" — en Primer Equipo y SUB-20 mueve la sección desde
+  "General"; en las Series, donde era lo único, renombra el layout.
+
 ## 4. Management commands
 
 All under `backend/exams/management/commands/`. Run via

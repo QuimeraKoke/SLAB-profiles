@@ -29,6 +29,7 @@ import { useAuth } from "@/context/AuthContext";
 import { hasPermission } from "@/lib/permissions";
 import { useAssistant } from "@/context/AssistantContext";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
+import { TEAM_LAYOUTS_CHANGED } from "@/components/reports/LayoutManager";
 import type { ApiUser, Department } from "@/lib/types";
 import styles from "./Sidebar.module.css";
 
@@ -50,6 +51,10 @@ function displayName(user: ApiUser | null): string {
 interface NavLeaf {
   label: string;
   href: string;
+  /** A third level: a department with several team layouts lists them here
+   *  (Dashboard → Médico → General / Lesiones). The first child is what
+   *  `href` itself opens. */
+  children?: NavLeaf[];
 }
 
 interface NavGroup {
@@ -135,6 +140,15 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   // A team layout is per (department, category), so this re-fetches when the
   // picker changes — the Formativo, for instance, has Físico in all 12 series
   // but Táctico only in the 8 that play matches.
+  // Bumped when the report's layout manager creates/renames/reorders/deletes
+  // a layout, so the Dashboard submenu reflects it without a reload.
+  const [layoutsVersion, setLayoutsVersion] = useState(0);
+  useEffect(() => {
+    const bump = () => setLayoutsVersion((v) => v + 1);
+    window.addEventListener(TEAM_LAYOUTS_CHANGED, bump);
+    return () => window.removeEventListener(TEAM_LAYOUTS_CHANGED, bump);
+  }, []);
+
   useEffect(() => {
     if (!membership || !categoryId) return;
     let cancelled = false;
@@ -153,17 +167,25 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
     return () => {
       cancelled = true;
     };
-  }, [membership, categoryId]);
+  }, [membership, categoryId, layoutsVersion]);
 
   const reportsGroup: NavGroup | null =
     departments.length > 0
       ? {
           label: "Dashboard",
           icon: BarChart3,
-          subItems: departments.map((d) => ({
-            label: d.name,
-            href: `/reportes/${d.slug}`,
-          })),
+          // One layout → a plain item, exactly as before. Several → the
+          // department becomes a submenu of its layouts, in menu order.
+          subItems: departments.map((d) => {
+            const layouts = d.team_layouts ?? [];
+            return {
+              label: d.name,
+              href: `/reportes/${d.slug}`,
+              ...(layouts.length > 1
+                ? { children: layouts.map((l) => ({ label: l.name, href: `/reportes/${d.slug}/${l.slug}` })) }
+                : {}),
+            };
+          }),
         }
       : null;
 
@@ -406,6 +428,12 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
                     const isSubActive =
                       pathname === subItem.href ||
                       pathname.startsWith(`${subItem.href}/`);
+                    if (subItem.children) {
+                      return (
+                        <NestedGroup key={subItem.href} item={subItem} active={isSubActive}
+                          pathname={pathname} onNavigate={onClose} />
+                      );
+                    }
                     return (
                       <Link
                         key={subItem.href}
@@ -444,5 +472,53 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
         </button>
       </div>
     </aside>
+  );
+}
+
+
+/** A sub-item with its own children — the third level of the menu. Opens by
+ *  itself when the current page is inside it, and toggles with its chevron
+ *  otherwise. The first child is also active at the parent's own URL, which
+ *  opens the same layout. */
+function NestedGroup({
+  item, active, pathname, onNavigate,
+}: {
+  item: NavLeaf;
+  active: boolean;
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  const [open, setOpen] = useState(active);
+  // Follow navigation INTO the group (from a link elsewhere), never close it
+  // behind the user's back — the "adjust state during render" pattern.
+  const [prevActive, setPrevActive] = useState(active);
+  if (prevActive !== active) {
+    setPrevActive(active);
+    if (active) setOpen(true);
+  }
+  const panelId = `nav-${item.href.replace(/[^a-z0-9]/gi, "-")}`;
+  const children = item.children ?? [];
+  return (
+    <div>
+      <button type="button"
+        className={`${styles.subItem} ${styles.subGroupToggle} ${active ? styles.subGroupActive : ""}`}
+        aria-expanded={open} aria-controls={panelId} onClick={() => setOpen((v) => !v)}>
+        <span>{item.label}</span>
+        {open ? <ChevronDown size={14} aria-hidden="true" /> : <ChevronRight size={14} aria-hidden="true" />}
+      </button>
+      <div id={panelId} className={styles.subSubList} hidden={!open}>
+        {children.map((c, i) => {
+          const isActive = pathname === c.href || pathname.startsWith(`${c.href}/`)
+            || (i === 0 && pathname === item.href);
+          return (
+            <Link key={c.href} href={c.href} onClick={onNavigate}
+              className={`${styles.subItem} ${styles.subSubItem} ${isActive ? styles.subSubItemActive : ""}`}
+              aria-current={isActive ? "page" : undefined}>
+              {c.label}
+            </Link>
+          );
+        })}
+      </div>
+    </div>
   );
 }

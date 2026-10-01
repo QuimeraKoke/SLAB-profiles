@@ -1,13 +1,22 @@
-"""Add the "Lesiones" section to the Médico TEAM layout of each category.
+"""The injury report as its own "Lesiones" team layout in Médico.
 
 It reproduces the club's injury sheet — "Lesionados actuales", "Lesionados en
 el año", days lost per player, and the breakdowns by region, type, muscle,
 position, cause, context and recurrence — with the three injury widgets of
 `dashboards/team_injuries.py`.
 
-Add-only: a category's Médico team layout is created if it has none, and the
-section is skipped when one with the same title already exists. Nothing else
-in an existing layout is touched (Primer Equipo's is hand-built).
+A department can have several team layouts (Dashboard → Médico → General /
+Lesiones), so the injury report gets its OWN layout instead of a section in
+the general one. Per category, idempotent:
+
+* a "Lesiones" layout already holding the section → nothing to do;
+* the section sits in another Médico layout (where an earlier version of
+  this command put it):
+    - that layout has nothing else → it is renamed "Lesiones" (no empty
+      "General" left behind);
+    - it has other sections → the section MOVES to a new "Lesiones" layout,
+      keeping any edit made to it;
+* no section anywhere → a "Lesiones" layout is created with it.
 
 "Lesionados en el período" follows the report page's date selector — pick
 "este año" there to get the sheet's "Lesionados en el año".
@@ -89,22 +98,44 @@ class Command(BaseCommand):
             "APLICADO" if opts["commit"] else "PLAN — nada escrito, repetir con --commit"))
 
     def _seccion(self, medico, cat) -> str:
-        layout = TeamReportLayout.objects.filter(department=medico, category=cat,
-                                                 scope="period").first()
-        creado = layout is None
-        if creado:
-            layout = TeamReportLayout.objects.create(department=medico, category=cat,
-                                                     name=medico.name, scope="period",
-                                                     is_active=True)
-        elif layout.sections.filter(title=TITULO).exists():
+        from django.db.models import Max
+
+        propio = TeamReportLayout.objects.filter(department=medico, category=cat, scope="period",
+                                                 slug="lesiones").first()
+        if propio and propio.sections.filter(title=TITULO).exists():
             return "ya estaba"
-        # First, pushing the rest down: it is what this report is opened for.
-        layout.sections.update(sort_order=F("sort_order") + 1)
-        sec = TeamReportSection.objects.create(layout=layout, title=TITULO, is_collapsible=True,
+
+        suelta = (TeamReportSection.objects
+                  .filter(layout__department=medico, layout__category=cat,
+                          layout__scope="period", title=TITULO)
+                  .exclude(layout__slug="lesiones").select_related("layout").first())
+        if suelta is not None:
+            origen = suelta.layout
+            if origen.sections.exclude(pk=suelta.pk).count() == 0 and propio is None:
+                origen.name = "Lesiones"
+                origen.slug = TeamReportLayout.unique_slug(medico.id, cat.id, "Lesiones", origen.pk)
+                origen.save(update_fields=["name", "slug", "updated_at"])
+                return "layout renombrado a «Lesiones»"
+            destino = propio or self._nuevo(medico, cat)
+            suelta.layout = destino
+            suelta.sort_order = 0
+            suelta.save(update_fields=["layout", "sort_order"])
+            return f"sección movida de «{origen.name}» a «Lesiones»"
+
+        destino = propio or self._nuevo(medico, cat)
+        sec = TeamReportSection.objects.create(layout=destino, title=TITULO, is_collapsible=True,
                                                default_collapsed=False, sort_order=0)
         for i, w in enumerate(WIDGETS):
             TeamReportWidget.objects.create(
                 section=sec, chart_type=w["chart_type"], title=w["title"],
                 column_span=w["column_span"], display_config=w.get("display_config", {}),
                 sort_order=i)
-        return f"{'layout creado + ' if creado else ''}sección agregada ({len(WIDGETS)} widgets)"
+        return f"layout «Lesiones» con la sección ({len(WIDGETS)} widgets)"
+
+    def _nuevo(self, medico, cat):
+        from django.db.models import Max
+
+        ultimo = TeamReportLayout.menu_for(medico, cat).aggregate(m=Max("sort_order"))["m"]
+        return TeamReportLayout.objects.create(
+            department=medico, category=cat, scope="period", name="Lesiones", slug="lesiones",
+            is_active=True, sort_order=(ultimo + 1) if ultimo is not None else 0)

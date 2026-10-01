@@ -107,12 +107,15 @@ def render_team_pdf(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    layout_slug: str | None = None,
 ) -> bytes:
     """Build the team report PDF as bytes. Same filter inputs as the
     `/reports/{slug}` HTTP endpoint so caller code can share parsing."""
+    # The layout being viewed — a department can have several; without a
+    # slug, its default (first in menu order).
     layout = (
-        TeamReportLayout.objects
-        .filter(department=department, category=category, scope="period", is_active=True)
+        TeamReportLayout.menu_for(department, category)
+        .filter(**({"slug": layout_slug} if layout_slug else {}))
         .prefetch_related("sections__widgets__data_sources")
         .first()
     )

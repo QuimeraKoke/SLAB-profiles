@@ -311,3 +311,30 @@
     transition: none;
   }
 }
+
+
+/* Third level: a department with several team layouts. */
+.subGroupToggle {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+  justify-content: space-between;
+  align-items: center;
+  padding-right: 18px;
+}
+.subGroupToggle:focus-visible { outline: 2px solid #6366f1; outline-offset: -2px; }
+.subGroupActive { color: white; }
+.subSubList { display: flex; flex-direction: column; }
+.subSubList[hidden] { display: none; }
+.subSubItem { padding-left: 70px; font-size: 0.78rem; }
+.subSubItemActive {
+  color: white;
+  background-color: rgba(255, 255, 255, 0.08);
+  font-weight: 500;
+  border-left: 3px solid #6366f1;
+  padding-left: 67px;
+}

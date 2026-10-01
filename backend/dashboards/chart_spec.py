@@ -262,6 +262,7 @@ def promote_chart_spec(
     category: Category,
     department: Department,
     spec: dict[str, Any],
+    layout_id=None,
 ) -> dict[str, Any]:
     """Persist ``spec`` as a real `TeamReportWidget` (+ data sources) on the
     department's active layout, under a "Mis gráficos" section (created on
@@ -275,13 +276,21 @@ def promote_chart_spec(
         return {"error": str(e)}
 
     with transaction.atomic():
-        layout, _created = TeamReportLayout.objects.get_or_create(
-            department=department, category=category, scope="period",
-            defaults={"name": "Default", "is_active": True},
-        )
-        if not layout.is_active:
-            layout.is_active = True
-            layout.save(update_fields=["is_active"])
+        # The layout being viewed when one is given; otherwise the department's
+        # default (first in menu order), created if it has none. A
+        # `get_or_create` on (department, category) raised as soon as a
+        # department had two layouts.
+        layout = None
+        if layout_id:
+            layout = TeamReportLayout.menu_for(department, category).filter(pk=layout_id).first()
+            if layout is None:
+                return {"error": "La vista elegida no existe en este departamento."}
+        if layout is None:
+            layout = TeamReportLayout.menu_for(department, category).first()
+        if layout is None:
+            layout = TeamReportLayout.objects.create(
+                department=department, category=category, scope="period",
+                name="General", is_active=True)
 
         section = (
             layout.sections.filter(title=_PROMOTED_SECTION_TITLE)

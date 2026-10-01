@@ -1,0 +1,90 @@
+/* "Vistas de <departamento>" — shown in the report's edit mode. */
+
+.panel {
+  border: 1px dashed #c7d2fe;
+  border-radius: 10px;
+  background: #f8f9ff;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.head { display: flex; flex-direction: column; gap: 2px; }
+.title { margin: 0; font-size: 0.9rem; font-weight: 700; color: #1d2939; }
+.hint { margin: 0; font-size: 0.78rem; color: #667085; }
+
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid #eaecf0;
+  font-size: 0.85rem;
+}
+.current { border-color: #a5b4fc; }
+.name { font-weight: 600; color: #1d2939; }
+.badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #4f46e5;
+  background: #eef2ff;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+.actions { margin-left: auto; display: flex; gap: 4px; }
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #475467;
+  cursor: pointer;
+}
+.icon:hover:not(:disabled) { border-color: #98a2b3; color: #1d2939; }
+.icon:disabled { opacity: 0.4; cursor: default; }
+.icon:focus-visible, .add:focus-visible, .primary:focus-visible, .ghost:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 1px;
+}
+.danger:hover:not(:disabled) { border-color: #f04438; color: #b42318; }
+
+.inline { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex: 1; }
+.input {
+  flex: 1;
+  min-width: 180px;
+  padding: 6px 10px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.input[aria-invalid="true"] { border-color: #f04438; }
+.primary, .ghost, .add {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.primary { border: 1px solid #4f46e5; background: #4f46e5; color: #ffffff; }
+.primary:disabled { opacity: 0.5; cursor: default; }
+.ghost { border: 1px solid #d0d5dd; background: #ffffff; color: #344054; }
+.add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid #c7d2fe;
+  background: #ffffff;
+  color: #4f46e5;
+}
+.error { margin: 0; font-size: 0.8rem; color: #b42318; }

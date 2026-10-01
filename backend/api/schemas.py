@@ -147,11 +147,22 @@ class ClubOut(Schema):
             return None
 
 
+class TeamLayoutRefOut(Schema):
+    """A team report layout as the menu sees it: Dashboard → <dept> → <name>."""
+    id: UUID
+    name: str
+    slug: str
+
+
 class DepartmentOut(Schema):
     id: UUID
     name: str
     slug: str
     club_id: UUID
+    # Only with `?with_team_layout_for=<category>`: the department's layouts
+    # for that category, in menu order. One → a plain menu item; several → a
+    # submenu.
+    team_layouts: list[TeamLayoutRefOut] = []
 
 
 class CategoryOut(Schema):
@@ -745,14 +756,19 @@ class TeamReportLayoutOut(Schema):
     department: DepartmentOut
     category: CategoryOut
     name: str
+    slug: str = ""
     sections: list[TeamReportSectionOut] = []
     match_selector: MatchSelectorConfigOut = MatchSelectorConfigOut()
 
 
 class TeamReportResponseOut(Schema):
-    """Wrapper so the frontend treats `layout=None` as 'no report configured'."""
+    """Wrapper so the frontend treats `layout=None` as 'no report configured'.
+
+    `layouts`: every layout the (department, category) has, in menu order —
+    the editor lists them to rename, reorder or delete."""
 
     layout: TeamReportLayoutOut | None = None
+    layouts: list[TeamLayoutRefOut] = []
 
 
 class MatchInfoOut(Schema):

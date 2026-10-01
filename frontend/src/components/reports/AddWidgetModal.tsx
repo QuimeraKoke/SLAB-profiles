@@ -31,6 +31,8 @@ interface Props {
   /** When set, the modal edits that widget in place (pre-filled) instead of
    *  creating a new one; its display_config is preserved on save (§5). */
   editWidgetId?: string | null;
+  /** Team scope: the layout being viewed — new widgets go there. */
+  layoutId?: string;
   onClose: () => void;
   onAdded: () => void;
 }
@@ -60,7 +62,7 @@ function aggregationFor(chartType: string): string {
  *  both the team-report layout and the per-player profile layout via `scope`.
  *  Create reuses the promote-from-spec endpoint; edit PATCHes config in place. */
 export default function AddWidgetModal({
-  open, deptSlug, categoryId, scope = "team", playerId, editWidgetId, onClose, onAdded,
+  open, deptSlug, categoryId, scope = "team", playerId, editWidgetId, layoutId, onClose, onAdded,
 }: Props) {
   const { toast } = useToast();
   const isEdit = !!editWidgetId;
@@ -162,7 +164,7 @@ export default function AddWidgetModal({
         await addPlayerWidget(playerId as string, deptSlug, spec);
         toast.success("Gráfico agregado.");
       } else {
-        await addWidget(deptSlug, categoryId, spec);
+        await addWidget(deptSlug, categoryId, spec, layoutId);
         toast.success("Gráfico agregado.");
       }
       setFields([]);

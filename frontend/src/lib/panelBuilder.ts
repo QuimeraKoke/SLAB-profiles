@@ -85,10 +85,14 @@ export function fetchWidgetOptions(deptSlug: string, categoryId: string): Promis
   return api<WidgetOptions>(`/reports/${deptSlug}/widget-options?category_id=${categoryId}`);
 }
 
-export function addWidget(deptSlug: string, categoryId: string, spec: WidgetSpec): Promise<unknown> {
+/** `layoutId`: the team layout being viewed (a department can have several);
+ *  without it the backend uses the department's default layout. */
+export function addWidget(
+  deptSlug: string, categoryId: string, spec: WidgetSpec, layoutId?: string,
+): Promise<unknown> {
   return api(`/reports/${deptSlug}/widgets`, {
     method: "POST",
-    body: JSON.stringify({ category_id: categoryId, spec }),
+    body: JSON.stringify({ category_id: categoryId, spec, layout_id: layoutId ?? null }),
   });
 }
 
