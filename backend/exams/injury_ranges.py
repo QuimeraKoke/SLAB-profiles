@@ -60,7 +60,7 @@ def injury_ranges(episodes: Iterable[Episode]) -> list[dict[str, Any]]:
     por_ep: dict = defaultdict(list)
     for r in (ExamResult.objects.filter(episode__in=episodios)
               .only("episode_id", "recorded_at", "result_data")
-              .order_by("recorded_at")):
+              .order_by("recorded_at", "created_at")):
         por_ep[r.episode_id].append(r.result_data or {})
 
     salida = []

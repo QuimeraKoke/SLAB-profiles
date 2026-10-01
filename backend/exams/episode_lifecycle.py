@@ -87,6 +87,23 @@ def _placeholders(template_str: str) -> list[str]:
     return re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", template_str)
 
 
+def latest_result(episode: Episode):
+    """The result that defines an episode's current state.
+
+    Latest by `recorded_at` (the clinical date), and among results with the
+    SAME timestamp, the one saved last. Without the tie-break the winner was
+    arbitrary: stage changes dated with a day picker are all stamped 00:00, so
+    "RTP" and "Dar de alta" on the same day tied — and on prod the alta lost
+    in 3 episodes, leaving them open with the staff told "Etapa actualizada".
+    """
+    return (
+        ExamResult.objects
+        .filter(episode=episode)
+        .order_by("-recorded_at", "-created_at")
+        .first()
+    )
+
+
 def refresh_episode_from_results(episode: Episode) -> None:
     """Recompute the Episode's derived fields from its latest linked result.
 
@@ -97,12 +114,7 @@ def refresh_episode_from_results(episode: Episode) -> None:
     stage_field = cfg.get("stage_field")
     closed_stage = cfg.get("closed_stage")
 
-    latest = (
-        ExamResult.objects
-        .filter(episode=episode)
-        .order_by("-recorded_at")
-        .first()
-    )
+    latest = latest_result(episode)
     if latest is None:
         return
 

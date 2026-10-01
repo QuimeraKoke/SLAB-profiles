@@ -5582,13 +5582,9 @@ from exams.models import Episode  # noqa: E402
 
 
 def _serialize_episode(episode: Episode) -> dict:
+    from exams.episode_lifecycle import latest_result
     from exams.episode_lifecycle import stage_label as _episode_stage_label
-    latest = (
-        ExamResult.objects
-        .filter(episode=episode)
-        .order_by("-recorded_at")
-        .first()
-    )
+    latest = latest_result(episode)
     return {
         "id": episode.id,
         "player_id": episode.player_id,
@@ -5762,6 +5758,47 @@ def update_episode(request, episode_id: str, payload: EpisodePatchIn):
     return _serialize_episode(episode)
 
 
+def _stage_timestamp(effective_date: str | None, latest) -> datetime:
+    """When a stage change happened — stamped so it becomes the episode's
+    LATEST result, or refused with a message instead of silently losing.
+
+    A stage change used to be stamped at 00:00 of the picked day, so it lost
+    to any result recorded later that day (an injury registered at 10:30 and
+    moved to "intermedia" the same day kept "aguda"), and a date before the
+    latest result made it invisible. Now:
+
+    * no date, or today → now;
+    * the latest result's own day → one second after it (keeps the day);
+    * a later past day → noon of that day;
+    * a future day, or one before the latest result → 400, with the reason.
+    """
+    from datetime import timedelta as _td
+
+    from django.utils import timezone as _tz
+    from django.utils.dateparse import parse_date
+
+    ahora = _tz.now()
+    if not effective_date:
+        return ahora
+    d = parse_date(effective_date.strip())
+    if d is None:
+        raise HttpError(400, "effective_date inválido (YYYY-MM-DD).")
+    hoy = _tz.localdate()
+    if d > hoy:
+        raise HttpError(400, "La fecha efectiva no puede ser futura.")
+    ultimo = _tz.localtime(latest.recorded_at) if latest else None
+    if ultimo and d < ultimo.date():
+        raise HttpError(400, (
+            f"La fecha efectiva ({d:%d/%m/%Y}) es anterior a la última actualización "
+            f"de esta lesión ({ultimo:%d/%m/%Y}): el cambio no quedaría como la etapa actual."))
+    if d == hoy:
+        return max(ahora, ultimo + _td(seconds=1)) if ultimo else ahora
+    if ultimo and d == ultimo.date():
+        return ultimo + _td(seconds=1)
+    return _tz.make_aware(datetime.combine(d, datetime.min.time().replace(hour=12)),
+                          _tz.get_default_timezone())
+
+
 @api.post("/episodes/{episode_id}/stage", response=EpisodeOut)
 @require_perm("exams.change_episode")
 def advance_episode_stage(request, episode_id: str, payload: StageAdvanceIn):
@@ -5788,23 +5825,17 @@ def advance_episode_stage(request, episode_id: str, payload: StageAdvanceIn):
     if valid and new_stage not in valid:
         raise HttpError(400, f"Etapa inválida: {new_stage}.")
 
-    latest = (
-        ExamResult.objects.filter(episode=episode).order_by("-recorded_at").first()
-    )
-    base = dict((latest.inputs_snapshot or latest.result_data) if latest else {})
+    from exams.episode_lifecycle import latest_result
+    latest = latest_result(episode)
+    # The definition is carried forward from the latest result's DATA.
+    # (`inputs_snapshot` is the formula engine's audit of external inputs, not
+    # the result — reading it first would drop the region/type/diagnosis of any
+    # template whose formulas reference other exams.)
+    base = dict(latest.result_data if latest else {})
+    base.pop("origen_id", None)   # an importer's dedup key belongs to its own row
     base[stage_field] = new_stage
 
-    from django.utils import timezone as _tz
-    from django.utils.dateparse import parse_date
-    if payload.effective_date:
-        d = parse_date(payload.effective_date.strip())
-        if d is None:
-            raise HttpError(400, "effective_date inválido (YYYY-MM-DD).")
-        recorded_at = _tz.make_aware(
-            datetime.combine(d, datetime.min.time()), _tz.get_default_timezone()
-        )
-    else:
-        recorded_at = _tz.now()
+    recorded_at = _stage_timestamp(payload.effective_date, latest)
 
     result_data, inputs_snapshot = compute_result_data(template, base, player=episode.player)
     ExamResult.objects.create(
