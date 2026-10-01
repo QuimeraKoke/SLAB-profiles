@@ -1,7 +1,8 @@
 """Seed (or refresh) the 'Notas diarias' template of every department.
 
 Each submission is one daily entry: the doctor sets the date (defaults to today
-in the form), an optional subject line, and a free-form note body.
+in the form), an optional subject line, a free-form note body, and optionally
+attaches documents (a report, an image, a PDF).
 
 One name, one identity per department
 -------------------------------------
@@ -58,6 +59,13 @@ DAILY_NOTES_SCHEMA: dict = {
             "key": "nota", "label": "Nota", "type": "text",
             "multiline": True, "rows": 8, "required": True,
             "placeholder": "Observaciones del día, intervenciones, hallazgos…",
+        },
+        {
+            # Optional, and stored as attachments (AttachmentSource.EXAM_FIELD,
+            # field_key="documentos"), not in result_data — so adding it to a
+            # template that already has entries changes none of them.
+            "key": "documentos", "label": "Documentos", "type": "file",
+            "placeholder": "Informe, imagen o PDF relacionado con la nota.",
         },
     ]
 }
@@ -165,6 +173,8 @@ class Command(BaseCommand):
             template.is_locked = False
             update_fields.append("is_locked")
         template.save(update_fields=update_fields)
+        # The normalised field rows follow the JSON, as in every other seed.
+        template.rebuild_template_fields()
 
         # Honor `--all-applicable-categories` on UPDATE too. Templates created
         # without categories on a prior run would otherwise stay detached and

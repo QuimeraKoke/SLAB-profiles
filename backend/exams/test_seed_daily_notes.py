@@ -59,3 +59,19 @@ class SeedDailyNotesTests(TestCase):
         self.correr()
         self.correr()
         self.assertEqual(ExamTemplate.objects.filter(name="Notas diarias").count(), 2)
+
+    def test_todas_llevan_documentos_y_la_historia_no_cambia(self):
+        vieja = ExamTemplate.objects.create(
+            name="Notas diarias Físico", slug="notas_diarias_fisico",
+            department=self.fisico, config_schema={}, is_locked=True)
+        p = Player.objects.create(category=self.pe, first_name="A", last_name="B")
+        r = ExamResult.objects.create(player=p, template=vieja, recorded_at=timezone.now(),
+                                      result_data={"fecha": "2026-09-30", "nota": "x"})
+        self.correr()
+        for t in ExamTemplate.objects.filter(name="Notas diarias"):
+            campo = next(f for f in t.config_schema["fields"] if f["key"] == "documentos")
+            self.assertEqual(campo["type"], "file")
+            self.assertFalse(campo.get("required"), "opcional: las notas sin adjunto siguen válidas")
+            self.assertTrue(t.template_fields.filter(key="documentos").exists())
+        r.refresh_from_db()
+        self.assertEqual(r.result_data, {"fecha": "2026-09-30", "nota": "x"})
