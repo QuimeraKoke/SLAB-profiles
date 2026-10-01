@@ -8,20 +8,12 @@ import { usePermission } from "@/lib/permissions";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import type { CalendarEvent, EventType } from "@/lib/types";
 import styles from "./ProfileEvents.module.css";
+import { EVENT_TYPE_LABEL } from "@/lib/eventTypes";
 
 interface ProfileEventsProps {
   playerId: string;
 }
 
-const EVENT_TYPE_LABEL: Record<EventType, string> = {
-  match: "Partido",
-  training: "Entrenamiento",
-  medical_checkup: "Chequeo médico",
-  physical_test: "Test físico",
-  team_speech: "Charla / reunión",
-  nutrition: "Nutricional",
-  other: "Otro",
-};
 
 const EVENT_TYPE_TONE: Record<EventType, string> = {
   match: "match",

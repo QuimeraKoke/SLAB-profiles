@@ -5,6 +5,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import type { ExamField, ExamResult, ExamTemplate } from "@/lib/types";
 import styles from "./ProfileTimeline.module.css";
+import ResultDetailModal from "./ResultDetailModal";
 
 interface ProfileTimelineProps {
   playerId: string;
@@ -14,6 +15,7 @@ export default function ProfileTimeline({ playerId }: ProfileTimelineProps) {
   const [results, setResults] = useState<ExamResult[] | null>(null);
   const [templates, setTemplates] = useState<ExamTemplate[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [abierto, setAbierto] = useState<ExamResult | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,10 +101,19 @@ export default function ProfileTimeline({ playerId }: ProfileTimelineProps) {
         {sorted.map((result) => {
           const template = templateById.get(result.template_id);
           return (
-            <TimelineItem key={result.id} result={result} template={template} />
+            <TimelineItem key={result.id} result={result} template={template}
+              onOpen={() => setAbierto(result)} />
           );
         })}
       </ol>
+
+      <ResultDetailModal
+        result={abierto}
+        template={abierto ? templateById.get(abierto.template_id) : undefined}
+        playerId={playerId}
+        effectiveDate={abierto ? effectiveDate(abierto) : null}
+        onClose={() => setAbierto(null)}
+      />
     </section>
   );
 }
@@ -110,9 +121,10 @@ export default function ProfileTimeline({ playerId }: ProfileTimelineProps) {
 interface TimelineItemProps {
   result: ExamResult;
   template: ExamTemplate | undefined;
+  onOpen: () => void;
 }
 
-function TimelineItem({ result, template }: TimelineItemProps) {
+function TimelineItem({ result, template, onOpen }: TimelineItemProps) {
   const fields = template?.config_schema?.fields ?? [];
   const summary = summarizeResult(result, fields);
   // Display the effective date (doctor-typed `fecha` when present) so the
@@ -133,7 +145,10 @@ function TimelineItem({ result, template }: TimelineItemProps) {
 
       <div className={styles.dot} aria-hidden="true" />
 
-      <div className={styles.card}>
+      {/* The whole card opens the full record: a button, so it is reachable
+          by keyboard and announced as opening a dialog. */}
+      <button type="button" className={`${styles.card} ${styles.cardButton}`} onClick={onOpen}
+        aria-haspopup="dialog">
         <header className={styles.cardHeader}>
           {template?.department && (
             <span className={styles.departmentBadge}>{template.department.name}</span>
@@ -144,7 +159,7 @@ function TimelineItem({ result, template }: TimelineItemProps) {
         </header>
 
         {summary && <p className={styles.summary}>{summary}</p>}
-      </div>
+      </button>
     </li>
   );
 }
