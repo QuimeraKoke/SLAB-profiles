@@ -1,8 +1,8 @@
 "use client";
 
-import React from "react";
+import React, { useId, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, ArrowUpRight, CalendarClock, ClipboardList, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CalendarClock, ChevronDown, ClipboardList, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
@@ -195,23 +195,44 @@ export default function LesionadoCard({
 
 // "Hoy vs. cuando estaba OK" — per-session training GPS, current week of
 // work vs. the healthy pre-injury baseline. Meter toward 100% (= habitual).
+/** Collapsed by default: the comparison only matters for some injuries (a
+ *  muscle injury back on the pitch, not a broken hand), and open it took most
+ *  of every card. The header stays visible closed — it still says whether
+ *  there is field work since the injury — and the chevron opens the rows. */
 function GpsCompareBlock({ compare }: { compare: GpsCompare | null }) {
+  const [abierto, setAbierto] = useState(false);
+  const rowsId = useId();
   if (!compare) {
     return <p className={styles.noGps}>Sin datos GPS para comparar.</p>;
   }
   const withCurrent = compare.metrics.some((m) => m.current !== null);
+  const ventana = withCurrent && compare.current_to
+    ? `semana al ${fmtDay(compare.current_to)} vs. ${compare.baseline_days / 7} sem. previas a la lesión`
+    : "sin trabajo de cancha desde la lesión";
+  if (!withCurrent) {
+    // Nothing to expand: the header alone is the whole message.
+    return (
+      <div className={styles.gps}>
+        <div className={styles.gpsHead}>
+          <span>GPS · actual vs. habitual pre-lesión</span>
+          <span className={styles.gpsWindow}>{ventana}</span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={styles.gps}>
-      <div className={styles.gpsHead}>
-        <span>GPS · actual vs. habitual pre-lesión</span>
-        <span className={styles.gpsWindow}>
-          {withCurrent && compare.current_to
-            ? `semana al ${fmtDay(compare.current_to)} vs. ${compare.baseline_days / 7} sem. previas a la lesión`
-            : "sin trabajo de cancha desde la lesión"}
+      <button type="button" className={`${styles.gpsHead} ${styles.gpsToggle}`}
+        aria-expanded={abierto} aria-controls={rowsId} onClick={() => setAbierto((v) => !v)}>
+        <span className={styles.gpsTitle}>
+          <ChevronDown size={14} aria-hidden="true"
+            className={`${styles.gpsChevron} ${abierto ? styles.gpsChevronOpen : ""}`} />
+          GPS · actual vs. habitual pre-lesión
         </span>
-      </div>
-      {withCurrent && (
-        <div className={styles.gpsRows}>
+        <span className={styles.gpsWindow}>{ventana}</span>
+      </button>
+      {abierto && (
+        <div className={styles.gpsRows} id={rowsId}>
           {compare.metrics.map((m) => (
             <div key={m.key} className={styles.gpsRow}>
               <span className={styles.gpsLabel}>{m.label}</span>

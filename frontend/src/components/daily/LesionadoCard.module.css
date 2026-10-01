@@ -350,3 +350,21 @@
   gap: 6px;
   flex-shrink: 0;
 }
+
+/* GPS block header as a toggle (collapsed by default). */
+.gpsToggle {
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 0;
+  /* Only the family: size, weight and colour stay .gpsHead's. */
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gpsToggle:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; border-radius: 4px; }
+.gpsTitle { display: inline-flex; align-items: center; gap: 4px; }
+.gpsChevron { flex: none; transition: transform 150ms ease; transform: rotate(-90deg); }
+.gpsChevronOpen { transform: rotate(0deg); }
+/* Collapsed (or nothing to expand): no gap under the header. */
+.gpsHead:last-child { margin-bottom: 0; }
