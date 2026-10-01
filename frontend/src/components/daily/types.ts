@@ -75,6 +75,8 @@ export interface GpsCompare {
 }
 
 export interface DailyAlert {
+  /** Present on live alerts — lets the meeting dismiss them ("Descartar"). */
+  id?: string;
   severity: string;
   message: string;
   source_type?: string;

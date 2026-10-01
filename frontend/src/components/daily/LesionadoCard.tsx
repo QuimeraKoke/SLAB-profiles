@@ -8,6 +8,7 @@ import { api, ApiError } from "@/lib/api";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast/Toast";
 import type { DailyLesionado, DailyNote, GpsCompare } from "./types";
+import DismissAlertButton from "./DismissAlertButton";
 import PlanList from "./PlanList";
 import styles from "./LesionadoCard.module.css";
 
@@ -34,6 +35,7 @@ export default function LesionadoCard({
   onEditPlan,
   onEditNote,
   canNote,
+  canDismissAlerts = false,
   plans,
   onChanged,
 }: {
@@ -43,6 +45,8 @@ export default function LesionadoCard({
   onEditPlan: (note: DailyNote) => void;
   onEditNote: (note: DailyNote) => void;
   canNote: boolean;
+  /** `goals.change_alert` — shows "Descartar" on each alert. */
+  canDismissAlerts?: boolean;
   plans: DailyNote[];
   onChanged: () => void;
 }) {
@@ -124,9 +128,12 @@ export default function LesionadoCard({
       {row.alerts.length > 0 && (
         <ul className={styles.alerts}>
           {row.alerts.map((a, i) => (
-            <li key={i} className={a.severity === "critical" ? styles.alertCrit : styles.alertWarn}>
+            <li key={a.id ?? i} className={a.severity === "critical" ? styles.alertCrit : styles.alertWarn}>
               <AlertTriangle size={13} aria-hidden="true" />
-              {a.message}
+              <span>{a.message}</span>
+              {canDismissAlerts && a.id && (
+                <DismissAlertButton alertId={a.id} message={a.message} onDismissed={onChanged} />
+              )}
             </li>
           ))}
         </ul>

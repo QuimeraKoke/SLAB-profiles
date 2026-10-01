@@ -20,6 +20,7 @@ import { useCategoryContext } from "@/context/CategoryContext";
 import { usePermission } from "@/lib/permissions";
 import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
 import RosterTable, { RosterRow } from "@/components/equipo/RosterTable";
+import DismissAlertButton from "@/components/daily/DismissAlertButton";
 import LesionadoCard from "@/components/daily/LesionadoCard";
 import KineTable from "@/components/daily/KineTable";
 import NoteModal from "@/components/daily/NoteModal";
@@ -92,6 +93,7 @@ export default function DailyPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const canNote = usePermission("core.add_dailynote");
+  const canDismissAlerts = usePermission("goals.change_alert");
 
   // URL is the source of truth for the meeting date (deep-linkable).
   const date = searchParams.get("date") ?? todayIso();
@@ -384,6 +386,7 @@ export default function DailyPage() {
                     key={l.player_id}
                     row={l}
                     canNote={canNote}
+                    canDismissAlerts={canDismissAlerts}
                     onAddNote={(pid) => openNote(pid)}
                     onAddPlan={(pid) => openPlan(pid)}
                     onEditPlan={openEdit}
@@ -436,6 +439,7 @@ export default function DailyPage() {
                     key={row.player_id}
                     row={row}
                     canNote={canNote}
+                    canDismissAlerts={canDismissAlerts}
                     onAddNote={openNote}
                     onAddPlan={openPlan}
                     onEditPlan={openEdit}
@@ -553,6 +557,7 @@ function Kpi({
 function AlertCard({
   row,
   canNote,
+  canDismissAlerts,
   onAddNote,
   onAddPlan,
   onEditPlan,
@@ -561,6 +566,7 @@ function AlertCard({
 }: {
   row: DailyAlertRow;
   canNote: boolean;
+  canDismissAlerts: boolean;
   onAddNote: (playerId: string) => void;
   onAddPlan: (playerId: string) => void;
   onEditPlan: (note: DailyNote) => void;
@@ -587,9 +593,12 @@ function AlertCard({
       </div>
       <ul className={styles.alertMsgs}>
         {row.alerts.map((a, i) => (
-          <li key={i} className={a.severity === "critical" ? styles.msgCrit : styles.msgWarn}>
+          <li key={a.id ?? i} className={a.severity === "critical" ? styles.msgCrit : styles.msgWarn}>
             <AlertTriangle size={12} aria-hidden="true" />
-            {a.message}
+            <span>{a.message}</span>
+            {canDismissAlerts && a.id && (
+              <DismissAlertButton alertId={a.id} message={a.message} onDismissed={onChanged} />
+            )}
           </li>
         ))}
       </ul>

@@ -249,7 +249,8 @@ def _lesionado(p, episode, acwr_meta, wellness, player_alerts, player_notes,
         "gps_compare": gps_compare,
         "wellness": wellness,
         "alerts": [
-            {"severity": a.severity, "message": a.message} for a in player_alerts[:3]
+            {"id": str(a.id), "severity": a.severity, "message": a.message}
+            for a in player_alerts[:3]
         ],
         "notes": player_notes,
     }
@@ -301,6 +302,8 @@ def _alert_rows(players, alerts_by_player) -> list[dict]:
             "worst": player_alerts[0].severity,
             "alerts": [
                 {
+                    # The id lets the meeting dismiss it in place ("Descartar").
+                    "id": str(a.id),
                     "severity": a.severity,
                     "message": a.message,
                     "source_type": a.source_type,
