@@ -426,6 +426,10 @@ class Command(BaseCommand):
                     continue
                 cadencia = _cadencia(tpl.slug)
                 fechas = _fechas(desde, ahora, cadencia)
+                if tpl.slug == ANTRO_SLUG:
+                    # Crecimiento needs measurements ≥ 6 months apart, and a
+                    # year to trust a velocity: two years, quarterly.
+                    fechas = _fechas(ahora - timedelta(days=730), ahora, 91)
                 if not fechas:
                     continue
                 nuevos = []
@@ -451,6 +455,8 @@ class Command(BaseCommand):
                                 crudo[clave] = v
                         if not crudo:
                             continue
+                        if tpl.slug == ANTRO_SLUG and "talla" in dist:
+                            crudo |= _antropometria(jugador, pid, cuando, ahora, dist["talla"])
                         datos, snapshot = compute_result_data(
                             tpl, crudo, player=jugador)
                         nuevos.append(ExamResult(
@@ -518,10 +524,25 @@ class Command(BaseCommand):
         por_partido = [t for t in plantillas.values() if t.link_to_match]
         jugados = futuros = participaciones = resultados = 0
 
+        # Who plays where. A player's identity for the data generator stays
+        # his HOME category and place in it, wherever he plays.
+        plantel = {n: list(Player.objects.filter(category=c).order_by("last_name", "first_name"))
+                   for n, c in cats.items()}
+        identidad = {p.id: (n, idx, len(lst))
+                     for n, lst in plantel.items() for idx, p in enumerate(lst)}
+        self.promovidos = _promociones(list(cats), plantel)
+        arriba = {p.id for lista in self.promovidos.values() for p in lista}
+        from core.models import Bracket
+
+        # `is_senior` is a property (`age is None`), not a column.
+        primera = next((b for b in Bracket.ladder() if b.is_senior), None)
+
         for nombre, cat in cats.items():
             src = equivalencias.get(nombre)
-            jugadores = list(Player.objects.filter(category=cat)
-                             .order_by("last_name", "first_name"))
+            # The ones playing up all season are not in their own team's
+            # sheets; the ones coming from below are.
+            jugadores = ([p for p in plantel[nombre] if p.id not in arriba]
+                         + self.promovidos.get(nombre, []))
             if not jugadores:
                 continue
             dists = {}
@@ -535,7 +556,9 @@ class Command(BaseCommand):
                             dists[tpl.id] = (tpl, campos, d)
 
             ts = cat.team_seasons.select_related("bracket").order_by("-season").first()
-            bracket = ts.bracket if ts else None
+            # Primer Equipo has no TeamSeason; its matches are Primera's —
+            # without a bracket Desarrollo cannot see a youth playing there.
+            bracket = ts.bracket if ts else (primera if cat.is_senior else None)
             cuando = primero
             i = 0
             while cuando <= ultimo:
@@ -606,9 +629,9 @@ class Command(BaseCommand):
                     if minutos == 0:
                         continue
                     # Sólo quien jugó tiene datos de partido.
-                    base = cuantil_de_jugador(
-                        jugadores.index(j), len(jugadores))
-                    pid = f"{nombre}|{jugadores.index(j)}"
+                    casa, idx_casa, n_casa = identidad[j.id]
+                    base = cuantil_de_jugador(idx_casa, n_casa)
+                    pid = f"{casa}|{idx_casa}"
                     for tpl, campos, dist in dists.values():
                         crudo = {}
                         for clave, d in dist.items():
@@ -645,10 +668,31 @@ class Command(BaseCommand):
                 i += 1
 
         self._microciclo(cats)
+        self._convocados(cats, primero)
         self.rep["partidos_jugados"] = jugados
         self.rep["partidos_futuros"] = futuros
         self.rep["convocatorias"] = participaciones
         self.rep["resultados_de_partido"] = resultados
+
+    # ── 7e · convocados ──────────────────────────────────────────────────
+    def _convocados(self, cats, desde) -> None:
+        """Los que juegan arriba quedan convocados a esa categoría, como en el
+        club real (`PlayerCallUp`): aparecen en su plantel con el badge, y
+        Desarrollo los cuenta como jugando sobre su edad."""
+        from core.models import PlayerCallUp
+
+        n = 0
+        for destino, jugadores in self.promovidos.items():
+            cat = cats[destino]
+            for j in jugadores:
+                PlayerCallUp.objects.get_or_create(
+                    player=j, category=cat,
+                    defaults={"status": (PlayerCallUp.STATUS_PROMOTION if cat.is_senior
+                                         else PlayerCallUp.STATUS_CALL_UP),
+                              "active": True, "since": desde.date(),
+                              "note": f"Juega la temporada en {destino}"})
+                n += 1
+        self.rep["convocados_arriba"] = n
 
     # ── 7d · día de microciclo de las sesiones ───────────────────────────
     def _microciclo(self, cats) -> None:
@@ -973,6 +1017,19 @@ class Command(BaseCommand):
                 "No existe el grupo Editor: el usuario demo entra sin "
                 "permisos. Corré `seed_role_groups`.")
 
+        # Desarrollo y Crecimiento: un permiso aparte que Editor no trae. Va al
+        # USUARIO, no al grupo — darlo a Editor se lo daría a los Editores de
+        # los clubes reales.
+        from django.contrib.auth.models import Permission
+
+        perm = Permission.objects.filter(content_type__app_label="core",
+                                         codename="view_development").first()
+        if perm is not None:
+            usuario.user_permissions.add(perm)
+            self.rep["permiso_desarrollo"] = 1
+        else:
+            self.avisos.append("No existe core.view_development: sin Desarrollo ni Crecimiento.")
+
     # ── reporte ──────────────────────────────────────────────────────────
     def _imprimir(self, opts) -> None:
         cab = "APLICADO" if opts["commit"] else "SIMULACIÓN (sin --commit no escribe)"
@@ -1094,6 +1151,85 @@ def _datos_de_partido(rival: str, de_local: bool, gf: int, gc: int, cuando) -> d
         "opponent_quality": str(puesto), "opponent_rank": puesto,
         "md_label": "MD", "md_label_source": "club",
     }
+
+
+ANTRO_SLUG = "pentacompartimental"
+
+
+def _q(clave: str) -> float:
+    """A stable quantile in (0.03, 0.97) for one (player, trait)."""
+    from core.demo_distribution import indice_estable
+
+    return 0.03 + 0.94 * indice_estable(clave, 10_000) / 10_000
+
+
+def _velocidad(edad: float, aphv: float) -> float:
+    """cm/año a esa edad: ~5,5 en la niñez, ~9,5 en el pico (APHV), ~0 tres
+    años después. Una curva de libro, no la de nadie en particular."""
+    from math import exp
+
+    fondo = 5.5 if edad <= aphv else 5.5 * exp(-(edad - aphv) / 1.0)
+    return fondo + 4.0 * exp(-0.5 * ((edad - aphv) / 0.85) ** 2)
+
+
+def _antropometria(jugador, pid: str, cuando, ahora, dist_talla) -> dict:
+    """Talla, talla sentado y peso de UNA curva de crecimiento por jugador.
+
+    Muestrearlas por separado en cada medición daba tallas que bajaban
+    (144,2 → 143,2 → 146,5 → 143,2 cm) y 13 kg de diferencia en un mes, y
+    Crecimiento calculaba velocidades de nada. Acá cada jugador tiene su edad
+    de pico (temprano, normal o tardío), su talla de HOY sacada de la
+    distribución real de su categoría, y la curva hacia atrás; la talla
+    sentado y el peso siguen a la talla.
+    """
+    from statistics import NormalDist
+
+    nac = jugador.date_of_birth
+    if nac is None:
+        return {}
+    edad = lambda t: (t.date() - nac).days / 365.25
+    aphv = NormalDist(13.8, 0.9).inv_cdf(_q(pid + "|aphv"))
+    hoy = dist_talla.muestrear(_q(pid + "|talla"))
+    if hoy is None:
+        return {}
+    # Talla en `cuando` = la de hoy menos lo que creció entre medio.
+    a, b = edad(cuando), edad(ahora)
+    paso, crecio, x = 0.02, 0.0, a
+    while x < b:
+        crecio += _velocidad(x + paso / 2, aphv) * min(paso, b - x)
+        x += paso
+    talla = hoy - crecio
+    ratio = NormalDist(0.522, 0.011).inv_cdf(_q(pid + "|sentado")) - 0.004 * (min(a, 18) - 13)
+    imc = NormalDist(19.6, 1.6).inv_cdf(_q(pid + "|imc")) + 0.45 * (min(a, 19) - 14)
+    return {"talla": round(talla, 1), "talla_sentado": round(talla * ratio, 1),
+            "peso": round(imc * (talla / 100) ** 2, 1)}
+
+
+def _promociones(categorias: list[str], plantel: dict) -> dict[str, list]:
+    """destino → los que juegan ahí la temporada entera, desde abajo.
+
+    Los dos mejores de cada juvenil juegan un escalón arriba; en Sub 14 y
+    Sub 16 el mejor salta DOS (lo que Desarrollo destaca); los dos mejores de
+    Sub 20 están en proyección al Primer Equipo. "Mejor" = el cuantil de
+    habilidad más alto del plantel, el mismo que usa el generador.
+    """
+    juveniles = [c for c in categorias if c != "Primer Equipo"]
+    out: dict[str, list] = {}
+    for k, nombre in enumerate(juveniles):
+        lst = plantel.get(nombre) or []
+        if len(lst) < 3:
+            continue
+        mejores = lst[-3:][::-1]        # idx más alto = cuantil más alto
+        arriba1 = juveniles[k + 1] if k + 1 < len(juveniles) else (
+            "Primer Equipo" if "Primer Equipo" in categorias else None)
+        if arriba1 is None:
+            continue
+        if nombre in ("Sub 14", "Sub 16") and k + 2 < len(juveniles):
+            out.setdefault(juveniles[k + 2], []).append(mejores[0])
+            out.setdefault(arriba1, []).extend(mejores[1:3])
+        else:
+            out.setdefault(arriba1, []).extend(mejores[0:2])
+    return out
 
 
 def _cadencia(slug: str) -> int:
