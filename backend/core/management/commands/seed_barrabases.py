@@ -133,6 +133,7 @@ class Command(BaseCommand):
             self._partidos(club, cats, equivalencias, plantillas,
                            opts["months"], deptos)
             self._layouts(club, origen, cats, equivalencias, plantillas, deptos)
+            self._reporte_partido(origen, cats, equivalencias, plantillas)
             self._casos(cats)
             self._alertas(cats)
             self._usuario(club, opts["email"], opts["password"])
@@ -594,13 +595,13 @@ class Command(BaseCommand):
                         rol, minutos, asistencia = "suplente_ingresa", 10 + (pos % 3) * 10, "attended"
                     else:
                         rol, minutos, asistencia = "no_citado", 0, "scheduled"
+                    goles = 1 if (pos < 11 and indice_estable(f"{nombre}|{i}|{pos}|gol", 12) == 0) else 0
+                    amarillas = 1 if indice_estable(f"{nombre}|{i}|{pos}|ama", 14) == 0 else 0
                     nuevos_part.append(EventParticipant(
                         event=evento, player=j, match_role=rol,
                         attendance=asistencia, minutes_played=minutos,
                         position_played=j.position,
-                        goals=1 if (pos < 11 and indice_estable(f"{nombre}|{i}|{pos}|gol", 12) == 0) else 0,
-                        yellow_cards=1 if indice_estable(f"{nombre}|{i}|{pos}|ama", 14) == 0 else 0,
-                        red_cards=0,
+                        goals=goles, yellow_cards=amarillas, red_cards=0,
                     ))
                     if minutos == 0:
                         continue
@@ -619,6 +620,15 @@ class Command(BaseCommand):
                                 crudo[clave] = v
                         if not crudo:
                             continue
+                        if tpl.slug == "rendimiento_de_partido":
+                            # The match sheet already says who started, for how
+                            # long, who scored and who was booked: drawing them
+                            # again gave a player 0 minutes next to 9 km of GPS.
+                            crudo |= {"minutes_played": float(minutos),
+                                      "started_eleven": pos < 11,
+                                      "goals": float(goles),
+                                      "yellow_cards": float(amarillas),
+                                      "red_card": False}
                         if tpl.slug == "gps_partido":
                             crudo = _a_sus_minutos(crudo, minutos)
                             crudo |= _datos_de_partido(rival, de_local, gf, gc, cuando)
@@ -757,6 +767,70 @@ class Command(BaseCommand):
 
         self.rep["layouts_jugador"] = jugador
         self.rep["layouts_equipo"] = equipo
+
+    # ── 8b · reporte de partido ──────────────────────────────────────────
+    def _reporte_partido(self, origen, cats, equivalencias, plantillas) -> None:
+        """El reporte combinado que se abre desde Partidos, en CADA categoría.
+
+        Es un layout aparte (`scope="match"`, sin departamento) y `_layouts`
+        clona sólo los de período: sin esto cada partido de la demo decía
+        "Sin reporte para este partido" aunque tuviera GPS y rendimiento
+        vinculados. El club de origen tiene reporte de partido sólo en Primer
+        Equipo, así que una categoría sin el suyo toma ese — quedándose sólo
+        con los widgets cuyos datos esa categoría tiene: un widget vacío en una
+        demo parece una falla, no una ausencia.
+        """
+        from dashboards.models import (
+            TeamReportLayout, TeamReportSection, TeamReportWidget,
+            TeamReportWidgetDataSource,
+        )
+        from exams.models import ExamResult
+
+        respaldo = (TeamReportLayout.objects.filter(category__club=origen, scope="match")
+                    .order_by("-category__is_senior").first())
+        n = widgets = 0
+        for nombre, cat in cats.items():
+            if TeamReportLayout.objects.filter(category=cat, scope="match").exists():
+                continue
+            src = equivalencias.get(nombre)
+            lay = (TeamReportLayout.objects.filter(category=src, scope="match").first()
+                   if src else None) or respaldo
+            if lay is None:
+                continue
+            con_datos = set(ExamResult.objects.filter(player__category=cat)
+                            .values_list("template_id", flat=True).distinct())
+            nuevo = TeamReportLayout.objects.create(
+                department=None, category=cat, name=lay.name, slug=lay.slug,
+                is_active=lay.is_active, scope="match",
+                match_selector_config=lay.match_selector_config)
+            for sec in lay.sections.all():
+                fuentes_ok = []
+                for w in sec.widgets.all():
+                    ds = [(d, plantillas.get(d.template_id)) for d in w.data_sources.all()]
+                    if ds and all(t is not None and t.id in con_datos for _, t in ds):
+                        fuentes_ok.append((w, ds))
+                if not fuentes_ok:
+                    continue
+                ns = TeamReportSection.objects.create(
+                    layout=nuevo, title=sec.title, sort_order=sec.sort_order,
+                    is_collapsible=sec.is_collapsible,
+                    default_collapsed=sec.default_collapsed)
+                for w, ds in fuentes_ok:
+                    nw = TeamReportWidget.objects.create(
+                        section=ns, chart_type=w.chart_type, title=w.title,
+                        description=w.description, column_span=w.column_span,
+                        sort_order=w.sort_order, display_config=w.display_config,
+                        chart_height=w.chart_height)
+                    for d, t in ds:
+                        TeamReportWidgetDataSource.objects.create(
+                            widget=nw, template=t, field_keys=d.field_keys,
+                            aggregation=d.aggregation,
+                            aggregation_param=d.aggregation_param,
+                            label=d.label, color=d.color, sort_order=d.sort_order)
+                    widgets += 1
+            n += 1
+        self.rep["reportes_partido"] = n
+        self.rep["reportes_partido_widgets"] = widgets
 
     # ── 9 · casos clínicos ───────────────────────────────────────────────
     def _casos(self, cats) -> None:
