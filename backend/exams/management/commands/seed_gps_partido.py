@@ -31,8 +31,15 @@ def build_config_schema() -> dict:
     """The training schema minus the fields that don't apply to matches:
     `rpe` (subjective effort is logged on trainings) and `tipo_sesion` (every
     row here IS a match, so the type is redundant — client, 2026-07-13)."""
+    from exams.formativo_gps_ingest import CAMPOS_PARTIDO, CAMPOS_SESION_PARTIDO
+
     schema = copy.deepcopy(_SESSION_SCHEMA)
-    schema["fields"] = [f for f in schema["fields"] if f["key"] not in ("rpe", "tipo_sesion")]
+    # md_label is inherited from the session schema; the match fields are
+    # added whole below.
+    quitar = {"rpe", "tipo_sesion", *CAMPOS_SESION_PARTIDO}
+    schema["fields"] = [f for f in schema["fields"] if f["key"] not in quitar]
+    # Whom, where, how it went (2026-10-01) — see formativo_gps_ingest.
+    schema["fields"] += [copy.deepcopy(c) for c in CAMPOS_PARTIDO]
     return schema
 
 

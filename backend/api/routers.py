@@ -2467,7 +2467,33 @@ def get_team_report(
     selector_options: list[Event] = []
     parsed_match_id: _UUID | None = None
     parsed_match_ids: list[_UUID] = []
-    if selector_enabled:
+    selector_source = "gps_days" if raw_cfg.get("source") == "gps_days" else "events"
+    day_options: list[dict] = []
+    match_day = None
+    team = None
+    if selector_enabled and selector_source == "gps_days":
+        # Match days from the data, not from Events — `dashboards.match_days`.
+        from dashboards import match_days
+        from dashboards.team_aggregation import _INCLUDE_SECONDARY, _roster_query
+
+        if raw_cfg.get("team"):
+            from dashboards import team_scope
+
+            team = team_scope.for_category(category)
+        if team is not None:
+            day_options = match_days.options(rows_q=team.rows, limit=selector_show_recent)
+        else:
+            tok = _INCLUDE_SECONDARY.set(include_secondary)
+            try:
+                roster_ids = [p.id for p in _roster_query(category, None, None)]
+            finally:
+                _INCLUDE_SECONDARY.reset(tok)
+            day_options = match_days.options(roster_ids, limit=selector_show_recent)
+        match_day = match_days.parse_day(match_id)
+        if match_day is None or match_day.isoformat() not in {o["id"] for o in day_options}:
+            match_day = (match_days.parse_day(day_options[0]["id"])
+                         if day_options and selector_required else None)
+    elif selector_enabled:
         # Recent matches in scope: matches tied to this category, of the
         # configured event_type, newest first. Soft cap via show_recent.
         # `past_only` clips out scheduled / future matches — useful for
@@ -2526,10 +2552,37 @@ def get_team_report(
             if parsed_match_id is None and selector_required and selector_options:
                 parsed_match_id = selector_options[0].id
 
+    def _window(widget):
+        """(date_from, date_to) for one widget. Only a gps_days layout splits
+        them: `scope: "match"` widgets read the chosen day (nothing when no
+        day is chosen), the rest the page's period."""
+        if selector_source != "gps_days" or not selector_enabled:
+            return parsed_from, parsed_to
+        if (widget.display_config or {}).get("scope") == "match":
+            from dashboards.match_days import day_bounds, empty_window
+
+            return day_bounds(match_day) if match_day else empty_window()
+        return parsed_from, parsed_to
+
     sections_payload = []
     for section in layout.sections.all():
         widgets_payload = []
         for widget in section.widgets.all():
+            w_from, w_to = _window(widget)
+            data = resolve_team_widget(
+                widget, category,
+                position_id=parsed_position_id,
+                player_ids=parsed_player_ids or None,
+                date_from=w_from,
+                date_to=w_to,
+                event_id=parsed_match_id,
+                event_ids=parsed_match_ids or None,
+                include_secondary=include_secondary,
+                team=team,
+            )
+            if match_day is not None and isinstance(data, dict):
+                # Period charts mark the chosen match on their timeline.
+                data["highlight_iso"] = match_day.isoformat()
             widgets_payload.append(
                 {
                     "id": widget.id,
@@ -2539,16 +2592,7 @@ def get_team_report(
                     "column_span": widget.column_span,
                     "chart_height": widget.chart_height,
                     "sort_order": widget.sort_order,
-                    "data": resolve_team_widget(
-                        widget, category,
-                        position_id=parsed_position_id,
-                        player_ids=parsed_player_ids or None,
-                        date_from=parsed_from,
-                        date_to=parsed_to,
-                        event_id=parsed_match_id,
-                        event_ids=parsed_match_ids or None,
-                        include_secondary=include_secondary,
-                    ),
+                    "data": data,
                 }
             )
         sections_payload.append(
@@ -2570,6 +2614,7 @@ def get_team_report(
             "category": category,
             "name": layout.name,
             "slug": layout.slug,
+            "default_period_days": layout.default_period_days,
             "sections": sections_payload,
             "match_selector": {
                 "enabled": selector_enabled,
@@ -2586,9 +2631,11 @@ def get_team_report(
                         "location": e.location or "",
                     }
                     for e in selector_options
-                ],
-                "selected_id": parsed_match_id,
+                ] if selector_source == "events" else day_options,
+                "selected_id": (str(parsed_match_id) if parsed_match_id
+                                else (match_day.isoformat() if match_day else None)),
                 "selected_ids": parsed_match_ids,
+                "source": selector_source,
             },
         }
     }

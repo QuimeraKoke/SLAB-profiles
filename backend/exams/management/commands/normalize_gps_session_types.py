@@ -25,7 +25,8 @@ from django.db import transaction
 from exams.models import ExamResult
 from goals.models import AlertRule
 
-_KEEP = {"entrenamiento", "reintegro"}
+# "amistoso" is back (2026-10-01, see seed_gps_session): never collapse it.
+_KEEP = {"entrenamiento", "reintegro", "amistoso"}
 
 
 class Command(BaseCommand):

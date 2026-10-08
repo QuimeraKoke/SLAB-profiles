@@ -127,6 +127,10 @@ interface TimelineItemProps {
 function TimelineItem({ result, template, onOpen }: TimelineItemProps) {
   const fields = template?.config_schema?.fields ?? [];
   const summary = summarizeResult(result, fields);
+  const tipo = sessionKind(result, fields);
+  // The microcycle day of a GPS session ("MD-2") — the club's own code.
+  const md = fields.some((f) => f.key === "md_label") && typeof result.result_data?.md_label === "string"
+    ? result.result_data.md_label as string : null;
   // Display the effective date (doctor-typed `fecha` when present) so the
   // timeline reads as a clinical record, not a save-event log.
   const recorded = effectiveDate(result);
@@ -156,12 +160,29 @@ function TimelineItem({ result, template, onOpen }: TimelineItemProps) {
           <span className={styles.templateName}>
             {template?.name ?? "Examen sin plantilla"}
           </span>
+          {(tipo || md) && (
+            <span className={styles.chips}>
+              {md && <span className={styles.mdChip} title="Día de microciclo">{md}</span>}
+              {tipo && <span className={styles.kindChip}>{tipo}</span>}
+            </span>
+          )}
         </header>
 
         {summary && <p className={styles.summary}>{summary}</p>}
       </button>
     </li>
   );
+}
+
+/** A GPS session that is not a regular training — "Amistoso" (the club's
+ *  `MD AMISTOSO`), "Reintegro" — says so on the card: its load is not a
+ *  training's. Regular training (the default) gets no chip. */
+function sessionKind(result: ExamResult, fields: ExamField[]): string | null {
+  const field = fields.find((f) => f.key === "tipo_sesion");
+  const value = result.result_data?.tipo_sesion;
+  if (!field || typeof value !== "string" || value === "entrenamiento") return null;
+  if (!(field.options ?? []).includes(value)) return null;
+  return field.option_labels?.[value] ?? value;
 }
 
 const MAX_SUMMARY_LEN = 110;

@@ -55,6 +55,7 @@ from django.utils import timezone
 
 from core.models import Club, Player
 from exams.calculations import compute_result_data
+from exams.microcycle import MD_SOURCE_CLUB, MD_SOURCE_KEY
 from exams.models import ExamResult, ExamTemplate
 
 ORIGEN = "planilla_club_formativo_gps"
@@ -107,9 +108,9 @@ ESPERADAS = frozenset({"tot_dur", "tot_dist", "mpm", "acc", "dec", "max_vel",
 MARCAS_PARTIDO = ("LOCALIA", "CALIDAD OPONENTE", "RESULTADO")
 
 # Columns that are NOT metrics and are skipped on purpose: identity, the
-# microcycle day (derived by `exams.microcycle` from the club's own match
-# dates), the free-text note, and the three match markers that decide which
-# exam a row lands in.
+# microcycle code (CÓDIGO — stored as the row's `md_label`, see
+# `md_del_club`), the free-text note (the opponent) and the three match
+# markers (stored as match fields, see `CAMPOS_PARTIDO`).
 NO_METRICAS = frozenset({
     "FECHA", "JUGADOR", "FECHA DE NACIMIENTO", "EDAD", "CATEGORIA", "POSICION",
     "CODIGO", "MICRO", "OBSERVACION", *MARCAS_PARTIDO,
@@ -148,6 +149,13 @@ class Fila:
     es_partido: bool
     datos: dict[str, Any]
     observacion: str = ""
+    # The match columns as the club wrote them: LOCALIA, CALIDAD OPONENTE,
+    # RESULTADO (normalised headers → raw cell text).
+    marcas: dict[str, str] = dc_field(default_factory=dict)
+
+    @property
+    def partido(self) -> dict[str, Any]:
+        return datos_de_partido(self.codigo, self.observacion, self.marcas)
 
     @property
     def slug(self) -> str:
@@ -155,8 +163,124 @@ class Fila:
 
     @property
     def origen_id(self) -> str:
-        return "|".join([norm(self.nombre), self.dia.isoformat(), self.hoja,
-                         self.codigo or "-", self.slug])
+        return origen_id(self.nombre, self.dia, self.hoja, self.codigo, self.slug)
+
+
+# Match-day codes the club refines in place: in Sept 2026 it re-coded every
+# past `MD` row as `MD OFICIAL` or `MD AMISTOSO`. They are the same row, so
+# they share an identity — with the raw code in it, the next sync imported
+# each re-coded row again (1.153 matches + 871 sessions twice, 2026-09-24).
+# `repair_formativo_gps` cleaned that up. The raw code stays in
+# `origen_codigo` and the session label.
+CODIGOS_MD = frozenset({"MD", "MD OFICIAL", "MD AMISTOSO"})
+
+
+# ---------------------------------------------------------------------------
+# What kind of match, against whom, where and how it went
+# ---------------------------------------------------------------------------
+# The club's sheet says it in four columns the import used only to tell a
+# match from a session: OBSERVACIÓN (the opponent — "ENTRENAMIENTO" on a
+# training), LOCALÍA (LOCAL / VISITA), CALIDAD OPONENTE (the opponent's table
+# position at the time, or the knockout stage: "3", "SEMIFINAL", "4TOS DE
+# FINAL", "CAMPEON") and RESULTADO (GANADO / EMPATADO / PERDIDO); the match
+# type is in CÓDIGO (MD OFICIAL / MD AMISTOSO). They are stored on the row
+# (`CAMPOS_PARTIDO`) and refreshed on every sync — the club fills them in
+# after the fact — without touching the metrics.
+CAMPOS_PARTIDO: tuple[dict, ...] = (
+    {"key": "opponent", "label": "Rival", "type": "text", "group": "Partido"},
+    {"key": "match_type", "label": "Tipo de partido", "type": "categorical",
+     "group": "Partido", "options": ["official", "friendly"],
+     "option_labels": {"official": "Oficial", "friendly": "Amistoso"}},
+    {"key": "venue", "label": "Localía", "type": "categorical", "group": "Partido",
+     "options": ["home", "away"], "option_labels": {"home": "Local", "away": "Visita"}},
+    {"key": "result", "label": "Resultado", "type": "categorical", "group": "Partido",
+     "options": ["won", "drawn", "lost"],
+     "option_labels": {"won": "Ganado", "drawn": "Empatado", "lost": "Perdido"}},
+    {"key": "opponent_quality", "label": "Calidad del rival", "type": "text",
+     "group": "Partido"},
+    {"key": "opponent_rank", "label": "Posición del rival en la tabla", "type": "number",
+     "group": "Partido", "min": 1, "max": 40, "direction_of_good": "neutral"},
+    # The microcycle day: the club's CÓDIGO (`md_del_club`), or derived from
+    # the calendar (`exams.microcycle`) when the club gave none.
+    {"key": "md_label", "label": "Día de microciclo", "type": "text", "group": "Sesión"},
+)
+CAMPOS_PARTIDO, CAMPO_MD = CAMPOS_PARTIDO[:-1], CAMPOS_PARTIDO[-1]
+# A friendly is a session (no match markers): it only knows whom and what.
+CAMPOS_SESION_PARTIDO = ("opponent", "match_type")
+CLAVES_PARTIDO = tuple(c["key"] for c in CAMPOS_PARTIDO)
+
+_LOCALIA = {"LOCAL": "home", "VISITA": "away"}
+_RESULTADO = {"GANADO": "won", "EMPATADO": "drawn", "PERDIDO": "lost"}
+
+
+def datos_de_partido(codigo: str, observacion: str, marcas: dict[str, str]) -> dict[str, Any]:
+    """The match fields of one sheet row; {} for a training."""
+    out: dict[str, Any] = {}
+    rival = (observacion or "").strip()
+    # Not opponents: what the club writes on a training or a sparring session.
+    if rival and norm(rival) not in {"ENTRENAMIENTO", "SESION", "SPARRING"}:
+        out["opponent"] = rival
+    if codigo == "MD AMISTOSO":
+        out["match_type"] = "friendly"
+    elif codigo == "MD OFICIAL" or (codigo == "MD" and marcas):
+        out["match_type"] = "official"
+    if (v := _LOCALIA.get(norm(marcas.get("LOCALIA", "")))):
+        out["venue"] = v
+    if (v := _RESULTADO.get(norm(marcas.get("RESULTADO", "")))):
+        out["result"] = v
+    calidad = (marcas.get("CALIDAD OPONENTE") or "").strip()
+    if calidad:
+        out["opponent_quality"] = calidad
+        # "3" or "4 (CAMPEÓN)" → a table position; a knockout stage has none.
+        if (m := re.match(r"^(\d{1,2})\b", calidad)):
+            out["opponent_rank"] = int(m.group(1))
+    if not out.get("match_type") and not out.get("opponent"):
+        return {}
+    return out
+
+
+_MD_N = re.compile(r"^MD[+-]\d{1,2}$")
+
+
+def md_del_club(codigo: str, es_partido: bool) -> tuple[bool, str | None]:
+    """(the club said something, the label). The club's CÓDIGO IS the
+    microcycle day: "MD-2", "MD+1"; a match day — any MD variant, or a match
+    row — is "MD"; "NO MD" is the club saying the session sits in no
+    microcycle (None, authored). An empty code says nothing: the derived
+    label (`exams.microcycle`) applies."""
+    if es_partido:
+        return True, "MD"
+    if _MD_N.match(codigo):
+        return True, codigo
+    if codigo in CODIGOS_MD:
+        return True, "MD"
+    if codigo == "NO MD":
+        return True, None
+    return False, None
+
+
+def asegurar_campos(template: ExamTemplate, claves: tuple[str, ...]) -> list[str]:
+    """Add the match fields `claves` to `template` if missing (in place — never
+    by re-seeding it, which would overwrite its whole schema). Returns the
+    keys added; the caller saves."""
+    schema = template.config_schema or {}
+    fields = schema.setdefault("fields", [])
+    tiene = {f.get("key") for f in fields}
+    nuevas = [dict(c) for c in (*CAMPOS_PARTIDO, CAMPO_MD)
+              if c["key"] in claves and c["key"] not in tiene]
+    fields.extend(nuevas)
+    template.config_schema = schema
+    return [c["key"] for c in nuevas]
+TIPO_AMISTOSO = "amistoso"
+
+
+def codigo_identidad(codigo: str) -> str:
+    return "MD" if codigo in CODIGOS_MD else codigo
+
+
+def origen_id(nombre: str, dia: date, hoja: str, codigo: str, slug: str) -> str:
+    return "|".join([norm(nombre), dia.isoformat(), hoja,
+                     codigo_identidad(codigo) or "-", slug])
 
 
 @dataclass
@@ -170,6 +294,7 @@ class Reporte:
     sesiones: int = 0
     md_sin_marca: int = 0
     con_evento: int = 0
+    partido_actualizados: int = 0
     sin_jugador: list[str] = dc_field(default_factory=list)
     sin_plantilla: list[str] = dc_field(default_factory=list)
     fuera_de_rango: list[str] = dc_field(default_factory=list)
@@ -276,6 +401,8 @@ def _parse_sheet(
             codigo=str(get(i_cod) or "").strip().upper(),
             es_partido=any(get(i) not in (None, "") for i in i_marcas),
             datos=datos, observacion=str(get(i_obs) or "").strip(),
+            marcas={m: str(get(ix[m])).strip() for m in MARCAS_PARTIDO
+                    if m in ix and get(ix[m]) not in (None, "")},
         ))
     from exams.formativo_sources import fechas_invertidas
 
@@ -307,21 +434,96 @@ def build_matcher(club: Club):
     return match
 
 
-def _eventos_por_dia(club) -> dict[tuple[Any, date], Any]:
-    """Match events keyed by (category, day), to link the `partido` rows.
+# Words that say nothing about WHICH opponent: legal forms, articles, and our
+# own name (an event title reads "COLO COLO vs UNIVERSIDAD DE CHILE").
+_RUIDO_RIVAL = frozenset({
+    "DE", "DEL", "LA", "EL", "LOS", "CLUB", "CD", "FC", "SADP", "SAD", "CSD",
+    "DEPORTES", "DEPORTIVO", "UNIVERSIDAD", "CHILE", "VS", "SAN", "SANTA",
+    "UNIDO", "CIUDAD",
+})
+# How far the club's GPS date and the fixture's date may disagree. The sheet
+# records the day the team played; a fixture moved by the federation keeps its
+# old date in COMET for a while. Same opponent, same team, ≤3 days apart is
+# one match — nobody plays the same rival twice in a week.
+MAX_DIAS_RIVAL = 3
 
-    `ExamResult.event` is nullable, so a row whose match is not in SLAB still
-    imports — it just cannot be read from the match's own view. The club's
-    export starts in 2024 and the COMET events start 2025-01-23, so the whole
-    first season has no event to link to and that is expected.
+
+def _tokens_rival(texto: str) -> set[str]:
+    # "O´HIGGINS", "O'Higgins" and "Ohiggins" are one club: apostrophes join.
+    texto = re.sub(r"[´'`’]", "", texto or "")
+    return {w for w in norm(texto).replace(".", " ").split()
+            if len(w) >= 3 and w not in _RUIDO_RIVAL}
+
+
+class EventMatcher:
+    """Finds the match a `gps_partido` row belongs to.
+
+    By the TEAM that played — the sheet: `U18` → bracket `Sub 18` — not by the
+    player's category. A player plays up: a Serie 2009 in the U18 match is on
+    the U18 sheet, and their category has no 2026 matches at all, so looking it
+    up by category left every one of them unlinked, and linked a SUB-20 who
+    played the U18 match to the SUB-20 match of the same day.
+
+    Then by the OPPONENT, which the club writes in `OBSERVACION`: the fixture's
+    date can be off by a day or three (see `MAX_DIAS_RIVAL`). Without an
+    opponent only a same-day match of that team counts, and only if it is the
+    only one.
     """
-    from events.models import Event
 
-    return {
-        (e.category_id, e.starts_at.date()): e
-        for e in Event.objects.filter(category__club=club, event_type="match")
-        .only("id", "category_id", "starts_at")
-    }
+    def __init__(self, club: Club):
+        from events.models import Event
+
+        self.por_bracket: dict[str, list[tuple[date, set[str], Any]]] = defaultdict(list)
+        eventos = list(Event.objects.filter(category__club=club, event_type="match")
+                       .select_related("bracket", "opponent_team"))
+        # A match created by hand (or by a GPS upload) has no bracket: it is
+        # its category's usual one.
+        usual: dict = defaultdict(Counter)
+        for e in eventos:
+            if e.bracket_id:
+                usual[e.category_id][e.bracket.name] += 1
+        for e in eventos:
+            br = e.bracket.name if e.bracket_id else (
+                usual[e.category_id].most_common(1)[0][0] if usual[e.category_id] else None)
+            if br is None:
+                continue
+            rival = e.opponent_team.name if e.opponent_team else _rival_del_titulo(e.title)
+            self.por_bracket[br].append(
+                (timezone.localtime(e.starts_at).date(), _tokens_rival(rival), e))
+
+    @staticmethod
+    def bracket_de_hoja(hoja: str) -> str | None:
+        m = re.fullmatch(r"U(\d{2})", hoja.strip().upper())
+        return f"Sub {m.group(1)}" if m else None
+
+    def evento(self, hoja: str, dia: date, rival: str):
+        br = self.bracket_de_hoja(hoja)
+        if br is None:
+            return None
+        cerca = [(abs((d - dia).days), toks, e) for d, toks, e in self.por_bracket.get(br, [])
+                 if abs((d - dia).days) <= MAX_DIAS_RIVAL]
+        buscado = _tokens_rival(rival)
+        if buscado:
+            puntaje = [(len(buscado & toks), -dist, e) for dist, toks, e in cerca]
+            puntaje = sorted((p for p in puntaje if p[0] > 0), key=lambda p: p[:2], reverse=True)
+            if not puntaje or (len(puntaje) > 1 and puntaje[0][:2] == puntaje[1][:2]):
+                return None
+            return puntaje[0][2]
+        mismo_dia = [e for dist, _, e in cerca if dist == 0]
+        return mismo_dia[0] if len(mismo_dia) == 1 else None
+
+
+def _rival_del_titulo(titulo: str) -> str:
+    """"COLO COLO vs UNIVERSIDAD DE CHILE" → "COLO COLO"."""
+    lados = re.split(r"\s+vs\.?\s+", titulo or "", flags=re.I)
+    otros = [l for l in lados if "CHILE" not in norm(l)]
+    return otros[0] if otros else (titulo or "")
+
+
+def rival_de_sesion(sesion: str) -> str:
+    """The opponent from a stored label: "Partido 2026-09-05 · MD · WANDERERS"."""
+    partes = (sesion or "").split(" · ")
+    return partes[2] if len(partes) >= 3 else ""
 
 
 def _descartar_fuera_de_rango(template: ExamTemplate, datos: dict) -> list[str]:
@@ -350,7 +552,7 @@ def run(origen: str, club: Club, *, commit: bool = False,
     if solo_hojas:
         filas = [f for f in filas if f.hoja in solo_hojas]
     match = build_matcher(club)
-    eventos = _eventos_por_dia(club)
+    eventos = EventMatcher(club)
     rep = Reporte()
     rep.columnas_sin_mapear = faltantes
     rep.columnas_desconocidas = desconocidas
@@ -366,10 +568,12 @@ def run(origen: str, club: Club, *, commit: bool = False,
             rep.sin_plantilla.append(slug)
 
     ids = [f.origen_id for f in filas if f.dia]
-    en_base = set(
-        ExamResult.objects.filter(result_data__origen=ORIGEN,
-                                  result_data__origen_id__in=ids)
-        .values_list("result_data__origen_id", flat=True))
+    en_base: dict[str, ExamResult] = {
+        r.result_data["origen_id"]: r
+        for r in ExamResult.objects.filter(result_data__origen=ORIGEN,
+                                           result_data__origen_id__in=ids)
+        .select_related("template").only("id", "result_data", "template__slug")}
+    a_refrescar: dict[Any, ExamResult] = {}
     vistos: set[str] = set()
     a_crear: list[ExamResult] = []
 
@@ -384,7 +588,17 @@ def run(origen: str, club: Club, *, commit: bool = False,
             rep.sin_datos += 1
             continue
         if fila.origen_id in en_base:
+            if fila.origen_id in vistos:
+                # A second sheet row with the same identity (a training and a
+                # "SPARRING" the same day): only the first one is the row's,
+                # as on creation — refreshing from both would flip it each sync.
+                rep.duplicados_en_archivo += 1
+                continue
+            vistos.add(fila.origen_id)
             rep.ya_existian += 1
+            existente = en_base[fila.origen_id]
+            if _refrescar_partido(existente, fila):
+                a_refrescar[existente.pk] = existente
             continue
         if fila.origen_id in vistos:
             rep.duplicados_en_archivo += 1
@@ -405,15 +619,19 @@ def run(origen: str, club: Club, *, commit: bool = False,
 
         datos["fecha"] = fila.dia.isoformat()
         # A human label for the row, since the club has no session name. The
-        # microcycle day is NOT stored as a metric: `exams.microcycle` derives
-        # it from the club's own match dates.
+        # microcycle day is the club's own CÓDIGO (`md_label`, below).
         etiqueta = "Partido" if fila.es_partido else "Sesión"
         datos["sesion"] = f"{etiqueta} {fila.dia.isoformat()}" + (
             f" · {fila.codigo}" if fila.codigo else "")
         if not fila.es_partido:
-            datos["tipo_sesion"] = "entrenamiento"
+            # A friendly the club codes `MD AMISTOSO` stays a session (it has
+            # no match markers) but is labelled as one: not a regular training.
+            datos["tipo_sesion"] = (TIPO_AMISTOSO if fila.codigo == "MD AMISTOSO"
+                                    else "entrenamiento")
         if fila.observacion:
             datos["sesion"] += f" · {fila.observacion[:60]}"
+        datos.update(_partido_para(fila.partido, template.slug))
+        datos.update(_md_para(fila) or {})
 
         datos, snapshot = compute_result_data(template, datos, player=player)
         datos["origen"] = ORIGEN
@@ -421,7 +639,8 @@ def run(origen: str, club: Club, *, commit: bool = False,
         datos["origen_id"] = fila.origen_id
         datos["origen_codigo"] = fila.codigo or ""
 
-        evento = eventos.get((player.category_id, fila.dia)) if fila.es_partido else None
+        evento = (eventos.evento(fila.hoja, fila.dia, fila.observacion)
+                  if fila.es_partido else None)
         if evento is not None:
             rep.con_evento += 1
         a_crear.append(ExamResult(
@@ -439,12 +658,48 @@ def run(origen: str, club: Club, *, commit: bool = False,
                 rep.md_sin_marca += 1
         vistos.add(fila.origen_id)
 
+    rep.partido_actualizados = len(a_refrescar)
+    if commit and a_refrescar:
+        ExamResult.objects.bulk_update(list(a_refrescar.values()), ["result_data"],
+                                       batch_size=500)
     if commit and a_crear:
         with transaction.atomic():
             ExamResult.objects.bulk_create(a_crear, batch_size=500)
             if fire_alerts:
                 _fire_band_alerts(a_crear)
     return rep
+
+
+def _partido_para(datos: dict, slug: str) -> dict:
+    claves = CLAVES_PARTIDO if slug == SLUG_PARTIDO else CAMPOS_SESION_PARTIDO
+    return {k: v for k, v in datos.items() if k in claves}
+
+
+_CLAVES_MD = ("md_label", MD_SOURCE_KEY)
+
+
+def _md_para(fila: Fila) -> dict | None:
+    """The microcycle keys the sheet sets, or None when it sets none."""
+    dijo, label = md_del_club(fila.codigo, fila.es_partido)
+    return {"md_label": label, MD_SOURCE_KEY: MD_SOURCE_CLUB} if dijo else None
+
+
+def _refrescar_partido(r: ExamResult, fila: Fila) -> bool:
+    """Bring an existing row's match fields and the club's microcycle day in
+    line with the sheet. Only those keys: a re-sync never rewrites a metric."""
+    claves = CLAVES_PARTIDO if r.template.slug == SLUG_PARTIDO else CAMPOS_SESION_PARTIDO
+    nuevos = _partido_para(fila.partido, r.template.slug)
+    md = _md_para(fila)
+    if md is not None:
+        claves = (*claves, *_CLAVES_MD)
+        nuevos |= md
+    actual = {k: r.result_data.get(k) for k in claves if k in r.result_data}
+    if actual == nuevos:
+        return False
+    for k in claves:
+        r.result_data.pop(k, None)
+    r.result_data.update(nuevos)
+    return True
 
 
 def _fire_band_alerts(results: list[ExamResult]) -> int:

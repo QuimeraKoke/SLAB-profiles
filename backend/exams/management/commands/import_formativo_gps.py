@@ -60,6 +60,8 @@ class Command(BaseCommand):
                 f"      de ellas {rep.md_sin_marca} son día de partido SIN "
                 f"localía/resultado → van a sesión"))
         self.stdout.write(f"  ya estaban en base  : {rep.ya_existian}")
+        self.stdout.write(f"  datos del club actualizados (rival, localía, MD±n…): "
+                          f"{rep.partido_actualizados}")
         self.stdout.write(f"  repetidas en el xlsx: {rep.duplicados_en_archivo}")
         self.stdout.write(f"  filas sin métricas  : {rep.sin_datos}")
         if rep.sin_fecha:

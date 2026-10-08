@@ -13,11 +13,14 @@ can show a friendly stub instead of crashing.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from contextvars import ContextVar
 from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
+
+from django.db.models import Q
 
 from core.models import Category, Player, Position
 from exams.bands import band_for_value as _band_for_value
@@ -38,6 +41,43 @@ _INCLUDE_SECONDARY: ContextVar[bool] = ContextVar(
     "team_include_secondary", default=True,
 )
 
+# A widget's `display_config.min_values` — {"tot_dur": 60} — drops readings
+# below the threshold from everything it aggregates: a 10-minute substitute
+# pulls a squad's match mean down as much as a full match pushes it up. Same
+# ContextVar pattern, applied in `_apply_date_window`, which every
+# ExamResult-based resolver goes through.
+_ROW_MIN: ContextVar[dict[str, float]] = ContextVar("team_row_min", default={})
+_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,60}$")
+
+# A match-based layout scoped to the category's TEAM (`dashboards.team_scope`):
+# results are only the team's match rows, the roster adds everyone who played
+# them, and "call-up" flags mean "not one of the team's cohorts".
+_TEAM: ContextVar[Any] = ContextVar("team_scope", default=None)
+
+
+# `display_config.only_values` — {"md_label": ["MD-1", "MD-2"]} — keeps only
+# readings whose field is one of those values: a training chart of the
+# microcycle's high-load days, a match chart of home games. Same mechanism.
+_ROW_ONLY: ContextVar[dict[str, list]] = ContextVar("team_row_only", default={})
+
+
+def _row_only(display_config: dict) -> dict[str, list]:
+    raw = display_config.get("only_values") or {}
+    if not isinstance(raw, dict):
+        return {}
+    return {k: [x for x in v if isinstance(x, (str, int, float))]
+            for k, v in raw.items()
+            if isinstance(k, str) and _KEY_RE.match(k) and isinstance(v, list) and v}
+
+
+def _row_min(display_config: dict) -> dict[str, float]:
+    raw = display_config.get("min_values") or {}
+    if not isinstance(raw, dict):
+        return {}
+    return {k: float(v) for k, v in raw.items()
+            if isinstance(k, str) and _KEY_RE.match(k)
+            and isinstance(v, (int, float)) and not isinstance(v, bool)}
+
 
 # ---------------------------------------------------------------------------
 # Public dispatcher
@@ -55,6 +95,7 @@ def resolve_team_widget(
     event_id: UUID | None = None,
     event_ids: Sequence[UUID] | None = None,
     include_secondary: bool = True,
+    team: Any = None,
 ) -> dict[str, Any]:
     """Resolve a team-scoped widget against a category roster.
 
@@ -91,6 +132,9 @@ def resolve_team_widget(
         "event_ids": event_ids,
     }
     token = _INCLUDE_SECONDARY.set(include_secondary)
+    min_token = _ROW_MIN.set(_row_min(widget.display_config or {}))
+    only_token = _ROW_ONLY.set(_row_only(widget.display_config or {}))
+    team_token = _TEAM.set(team)
     try:
         # Same reason as the flag above: the band a team chart draws has to be
         # this category's, and threading it through 16 resolvers for one lookup
@@ -99,23 +143,30 @@ def resolve_team_widget(
             result = _dispatch_team_widget(widget, category, common)
     finally:
         _INCLUDE_SECONDARY.reset(token)
+        _ROW_MIN.reset(min_token)
+        _ROW_ONLY.reset(only_token)
 
-    # Tell the frontend which of this widget's roster players are call-ups
-    # (home category differs) so it can badge them. Empty when secondaries are
-    # excluded or the category has none. Cheap roster re-query (~30 rows).
-    if isinstance(result, dict) and "call_up_player_ids" not in result:
-        if include_secondary:
-            inner = _INCLUDE_SECONDARY.set(True)
-            try:
-                result["call_up_player_ids"] = [
-                    str(p.id)
-                    for p in _roster_query(category, position_id, player_ids)
-                    if p.category_id != category.id
-                ]
-            finally:
-                _INCLUDE_SECONDARY.reset(inner)
-        else:
-            result["call_up_player_ids"] = []
+    try:
+        # Tell the frontend which of this widget's roster players are call-ups
+        # (home category differs — or, on a team-scoped layout, not one of the
+        # team's cohorts) so it can badge them. Empty when secondaries are
+        # excluded or the category has none. Cheap roster re-query (~30 rows).
+        if isinstance(result, dict) and "call_up_player_ids" not in result:
+            if include_secondary:
+                own = team.own_categories if team is not None else {category.id}
+                inner = _INCLUDE_SECONDARY.set(True)
+                try:
+                    result["call_up_player_ids"] = [
+                        str(p.id)
+                        for p in _roster_query(category, position_id, player_ids)
+                        if p.category_id not in own
+                    ]
+                finally:
+                    _INCLUDE_SECONDARY.reset(inner)
+            else:
+                result["call_up_player_ids"] = []
+    finally:
+        _TEAM.reset(team_token)
     return result
 
 
@@ -167,6 +218,10 @@ def _dispatch_team_widget(
             ChartType.TEAM_INJURY_LIST.value: team_injuries.resolve_list,
             ChartType.TEAM_INJURY_BREAKDOWN.value: team_injuries.resolve_breakdown,
         }[chart_type](widget, category, **common)
+    if chart_type == ChartType.TEAM_GAUGE.value:
+        from . import team_gauge
+
+        return team_gauge.resolve(widget, category, **common)
     return _empty(widget, chart_type, error=f"Unsupported chart type: {chart_type}")
 
 
@@ -195,6 +250,11 @@ def _roster_query(
     qs = players_in_category(
         category, include_call_ups=_INCLUDE_SECONDARY.get(),
     )
+    team = _TEAM.get()
+    if team is not None:
+        qs = Player.objects.filter(Q(pk__in=qs.values("pk")) | Q(pk__in=team.players))
+        if not _INCLUDE_SECONDARY.get():
+            qs = qs.filter(category_id__in=team.own_categories)
     if position_id is not None:
         qs = qs.filter(position_id=position_id)
     if player_ids:
@@ -230,6 +290,13 @@ def _apply_date_window(
         qs = qs.filter(event_id__in=list(event_ids))
     elif event_id is not None:
         qs = qs.filter(event_id=event_id)
+    team = _TEAM.get()
+    if team is not None:
+        qs = qs.filter(team.rows)
+    for key, values in _ROW_ONLY.get().items():
+        qs = qs.filter(**{f"result_data__{key}__in": values})
+    for key, minimum in _ROW_MIN.get().items():
+        qs = qs.filter(**{f"result_data__{key}__gte": minimum})
     return qs
 
 
@@ -593,7 +660,12 @@ def _resolve_team_roster_matrix(
         {
             "coloring":  "none" | "vs_team_range",      // default "none"
             "variation": "off"  | "absolute" | "percent" // default "off"
+            "source_suffix": true | false               // default true
         }
+
+    `source_suffix: false` drops the " · <template>" a multi-source matrix
+    appends to each column label, for sources whose field labels already
+    say which test they are (T10, CMJ, VO2max…).
 
     When `variation != "off"`, each cell carries the previous numeric value
     on the same field (taken from the next-most-recent reading where that
@@ -675,7 +747,7 @@ def _resolve_team_roster_matrix(
             synthetic = _make_key(source.pk, fk)
             meta = _field_meta(source.template, fk)
             label = meta["label"]
-            if multi_source:
+            if multi_source and (widget.display_config or {}).get("source_suffix", True):
                 # Disambiguate: "Peso · Antropo" vs "Peso · GPS".
                 label = f"{label} · {source.template.name}"
             columns.append(
@@ -1010,6 +1082,12 @@ def _bucket_start(dt: datetime, bucket_size: str) -> datetime:
     1st of the month for months). Used to align readings into bins."""
     if bucket_size == "month":
         return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if bucket_size == "day":
+        # One point per match day: the local day, so a 21:00 kick-off stays
+        # on its date.
+        from django.utils import timezone as _tz
+
+        return _tz.localtime(dt).replace(hour=0, minute=0, second=0, microsecond=0)
     # week: align to Monday
     days_to_monday = dt.weekday()
     monday = dt.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -1024,6 +1102,8 @@ _MONTHS_ES = ["ene", "feb", "mar", "abr", "may", "jun",
 def _bucket_label(start: datetime, bucket_size: str, week_style: str = "iso") -> str:
     if bucket_size == "month":
         return f"{_MONTHS_ES[start.month - 1]} {start.year}"
+    if bucket_size == "day":
+        return f"{start.day} {_MONTHS_ES[start.month - 1]}"
     # week: `date` → the week's Monday as "10 feb"; `iso` → "S07 2026".
     if week_style == "date":
         return f"{start.day} {_MONTHS_ES[start.month - 1]}"
@@ -1117,7 +1197,7 @@ def _resolve_team_trend_line(
     multi_source = len(sources) > 1
     display_config = widget.display_config or {}
     bucket_raw = display_config.get("bucket_size", "week")
-    bucket_size = bucket_raw if bucket_raw in {"week", "month"} else "week"
+    bucket_size = bucket_raw if bucket_raw in {"week", "month", "day"} else "week"
     group_raw = display_config.get("group_by", "none")
     group_by = group_raw if group_raw in {"none", "position"} else "none"
     # X-axis label style for week buckets: "iso" (S07 2026, default) or "date"
@@ -1176,6 +1256,7 @@ def _resolve_team_trend_line(
     # We aggregate per bucket at the end.
     buckets: dict[str, dict[str, list[float]]] = {}
     bucket_starts: dict[str, datetime] = {}
+    day_rows: list[tuple] = []   # day buckets: to name each match's opponent
 
     for source in sources:
         source_synthetics = [
@@ -1190,8 +1271,10 @@ def _resolve_team_trend_line(
                 player_id__in=player_index.keys(),
             ),
             date_from, date_to, event_id, event_ids=event_ids,
-        ).order_by("recorded_at").values("recorded_at", "result_data")
+        ).order_by("recorded_at").values("recorded_at", "result_data", "event__title")
         for row in results:
+            if bucket_size == "day":
+                day_rows.append((row["recorded_at"], row["event__title"], row["result_data"]))
             start = _bucket_start(row["recorded_at"], bucket_size)
             iso = start.date().isoformat()
             bucket_starts.setdefault(iso, start)
@@ -1206,6 +1289,11 @@ def _resolve_team_trend_line(
     # Render bucket list newest-last so the line chart reads left → right
     # in chronological order.
     sorted_isos = sorted(bucket_starts.keys())
+    rivals: dict[str, str] = {}
+    if day_rows:
+        from .match_days import opponents_by_day
+
+        rivals = opponents_by_day(day_rows)
     buckets_payload = []
     for iso in sorted_isos:
         start = bucket_starts[iso]
@@ -1215,13 +1303,14 @@ def _resolve_team_trend_line(
             values = per_field.get(f["key"]) or []
             if values:
                 means[f["key"]] = round(sum(values) / len(values), 4)
-        buckets_payload.append(
-            {
-                "label": _bucket_label(start, bucket_size, week_style),
-                "iso": iso,
-                "values": means,
-            }
-        )
+        entry = {
+            "label": _bucket_label(start, bucket_size, week_style),
+            "iso": iso,
+            "values": means,
+        }
+        if iso in rivals:
+            entry["detail"] = f"vs {rivals[iso]}"
+        buckets_payload.append(entry)
 
     has_any_data = any(b["values"] for b in buckets_payload)
 
@@ -1234,6 +1323,29 @@ def _resolve_team_trend_line(
         "grouping": "none",
         "buckets": buckets_payload,
         "empty": not has_any_data,
+        "display": _trend_display(display_config),
+    }
+
+
+def _trend_display(display_config: dict) -> dict:
+    """Rendering options the frontend reads verbatim (`TeamTrendLine.tsx`).
+
+    * `point_labels`: "none" (default) | "value" | "value_pct" — the value on
+      each point, optionally with the % change from the previous one: what an
+      evaluation history is read for.
+    * `style`: "line" (default) | "area".
+    * `series`: "select" (default: one field at a time, with the selector) |
+      "all" (every field as its own line — COD left vs right, where the gap
+      between the two IS the reading).
+    """
+    def pick(key, allowed, default):
+        v = display_config.get(key, default)
+        return v if v in allowed else default
+
+    return {
+        "point_labels": pick("point_labels", {"none", "value", "value_pct"}, "none"),
+        "style": pick("style", {"line", "area"}, "line"),
+        "series": pick("series", {"select", "all"}, "select"),
     }
 
 
@@ -3358,6 +3470,15 @@ def _resolve_team_match_summary(
         display_config = {"per_player_aggregator": "sum" | "avg" | "max" | "latest"}
     Default "latest" — match reports usually want the single match's
     reading even if a player has multiple records in the date window.
+
+    `headline`: "sum" (default) | "avg" — which number the card leads with.
+    A squad's summed distance says how many players ran, not how hard.
+
+    `compare_previous`: N — each card also carries `prev_avg`, the mean of
+    the squad's per-match mean over the N match days before `date_from`
+    (same template, roster and `min_values`), and `delta_pct`. Meant for a
+    match-scoped card ("this match vs the last five"), where the club's own
+    sheet had an "Objetivo" column nobody filled.
     """
     source = widget.data_sources.first()
     if source is None:
@@ -3465,14 +3586,60 @@ def _resolve_team_match_summary(
                 "min": None, "max": None, "n": 0,
             })
 
-    return {
+    headline = "avg" if display_config.get("headline") == "avg" else "sum"
+    n_prev = display_config.get("compare_previous")
+    if isinstance(n_prev, int) and n_prev > 0 and date_from is not None:
+        prev = _previous_match_means(template, list(player_index), field_keys,
+                                     before=date_from, n=n_prev)
+        for card in cards:
+            p = prev["means"].get(card["field_key"])
+            card["prev_avg"] = round(p, 4) if p is not None else None
+            card["delta_pct"] = (round((card["avg"] - p) / abs(p) * 100, 1)
+                                 if p and card["avg"] is not None else None)
+
+    payload = {
         "chart_type": ChartType.TEAM_MATCH_SUMMARY.value,
         "title": widget.title,
         "cards": cards,
         "sample_size": sample_size,
         "per_player_aggregator": pp_agg,
+        "headline": headline,
         "empty": sample_size == 0,
     }
+    if isinstance(n_prev, int) and n_prev > 0 and date_from is not None:
+        payload["compare"] = {"n": prev["n"], "requested": n_prev}
+    return payload
+
+
+def _previous_match_means(template, player_ids, field_keys, *, before, n):
+    """Mean over the last `n` match days before `before` of the squad's mean
+    that day (each player's day mean first, so a player with two readings
+    counts once)."""
+    from django.utils import timezone as _tz
+
+    rows = _apply_date_window(
+        ExamResult.objects.filter(template__family_id=template.family_id,
+                                  player_id__in=player_ids),
+        before - timedelta(days=365), before - timedelta(microseconds=1),
+    ).values_list("recorded_at", "player_id", "result_data")
+    per_day: dict = {}
+    for recorded, pid, data in rows:
+        day = _tz.localtime(recorded).date()
+        for fk in field_keys:
+            v = _safe_float((data or {}).get(fk))
+            if v is not None:
+                per_day.setdefault(day, {}).setdefault(fk, {}).setdefault(pid, []).append(v)
+    days = sorted(per_day)[-n:]
+    means = {}
+    for fk in field_keys:
+        day_means = []
+        for d in days:
+            by_player = per_day[d].get(fk) or {}
+            if by_player:
+                vals = [sum(v) / len(v) for v in by_player.values()]
+                day_means.append(sum(vals) / len(vals))
+        means[fk] = sum(day_means) / len(day_means) if day_means else None
+    return {"n": len(days), "means": means}
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ import TeamActivityLog from "./TeamActivityLog";
 import TeamAlerts from "./TeamAlerts";
 import TeamDailyGroupedBars from "./TeamDailyGroupedBars";
 import TeamDistribution from "./TeamDistribution";
+import TeamGauge from "./TeamGauge";
 import TeamGoalProgress from "./TeamGoalProgress";
 import TeamHorizontalComparison from "./TeamHorizontalComparison";
 import { TeamInjuryBreakdown, TeamInjuryKpis, TeamInjuryList } from "./TeamInjuries";
@@ -43,6 +44,7 @@ const teamWidgetRegistry: Record<
   team_injury_kpis: TeamInjuryKpis,
   team_injury_list: TeamInjuryList,
   team_injury_breakdown: TeamInjuryBreakdown,
+  team_gauge: TeamGauge,
 };
 
 export function renderTeamWidget(widget: TeamReportWidget): React.ReactNode {

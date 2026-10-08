@@ -39,10 +39,10 @@ D = datetime(2026, 3, 11)
 
 def fila(nombre="CESAR PEREZ GALLEGOS", dia=D, codigo="MD-4", *,
          localia=None, calidad=None, resultado=None, hr=(None, None),
-         vmax=21.8, dur=36.8):
+         vmax=21.8, dur=36.8, obs=""):
     return [dia, nombre, datetime(2011, 6, 23), 15, "U15", "EXTREMO", codigo,
             1.0, dur, 2856.4, 77.6, 27.0, 10.0, vmax, 42.6, 262.4, 118.0, 3.0,
-            hr[0], hr[1], "", localia, calidad, resultado]
+            hr[0], hr[1], obs, localia, calidad, resultado]
 
 
 def escribir(ruta: Path, hojas: dict[str, list[list]]) -> None:
@@ -206,14 +206,197 @@ class FormativoGpsTests(TestCase):
             fila(codigo="MD", localia="VISITA", resultado="0-3")]}, commit=True)
         self.assertEqual(rep.partidos, 1)
 
+    def partido(self, dias=0, titulo="Universidad de Chile vs Colo Colo", bracket="Sub 15",
+                categoria=None):
+        from datetime import timedelta
+
+        return Event.objects.create(
+            club=self.club, category=categoria or self.cat, department=self.dept,
+            event_type="match", title=titulo, bracket=Bracket.objects.get(name=bracket),
+            starts_at=timezone.make_aware(D + timedelta(days=dias, hours=15)))
+
     def test_vincula_el_partido_al_evento_de_ese_dia(self):
-        ev = Event.objects.create(
-            club=self.club, category=self.cat, department=self.dept,
-            event_type="match", title="vs Rival",
-            starts_at=timezone.make_aware(D))
+        ev = self.partido()
         self.correr({"U15": [
             fila(codigo="MD", localia="LOCAL", resultado="1-0")]}, commit=True)
         self.assertEqual(ExamResult.objects.get().event, ev)
+
+    def test_vincula_por_el_equipo_de_la_hoja_no_por_la_categoria(self):
+        """Un Serie 2011 que juega en la U16 está en la hoja U16: su partido es
+        el Sub 16 — de otra categoría —, no el Sub 15 del mismo día."""
+        otra = Category.objects.create(club=self.club, name="Serie 2010", cohort_year=2010)
+        self.partido(titulo="U. de Chile vs Palestino")                    # Sub 15
+        sub16 = self.partido(titulo="U. de Chile vs Palestino", bracket="Sub 16",
+                             categoria=otra)
+        self.correr({"U16": [fila(codigo="MD", localia="LOCAL", obs="PALESTINO")]},
+                    commit=True)
+        self.assertEqual(ExamResult.objects.get().event, sub16)
+
+    def test_el_rival_vincula_aunque_la_fecha_del_fixture_difiera(self):
+        ev = self.partido(dias=2, titulo="Universidad de Chile vs O'Higgins")
+        self.partido(dias=0, titulo="Universidad de Chile vs Palestino")
+        self.correr({"U15": [fila(codigo="MD", localia="LOCAL", obs="O´HIGGINS")]},
+                    commit=True)
+        self.assertEqual(ExamResult.objects.get().event, ev)
+
+    def test_otro_rival_no_se_vincula(self):
+        self.partido(titulo="Universidad de Chile vs Palestino")
+        self.correr({"U15": [fila(codigo="MD", localia="LOCAL", obs="COQUIMBO UNIDO")]},
+                    commit=True)
+        self.assertIsNone(ExamResult.objects.get().event)
+
+    def test_recodificar_md_como_oficial_no_duplica(self):
+        """El club re-codificó sus MD como «MD OFICIAL»: es la misma fila."""
+        self.correr({"U15": [fila(codigo="MD", localia="LOCAL")]}, commit=True)
+        rep = self.correr({"U15": [fila(codigo="MD OFICIAL", localia="LOCAL")]}, commit=True)
+        self.assertEqual((rep.creados, rep.ya_existian), (0, 1))
+        self.assertEqual(ExamResult.objects.count(), 1)
+
+    def test_guarda_rival_localia_calidad_y_resultado(self):
+        self.correr({"U15": [fila(codigo="MD OFICIAL", localia="VISITA", calidad="4 (CAMPEÓN)",
+                                  resultado="GANADO", obs="COLO COLO")]}, commit=True)
+        d = ExamResult.objects.get().result_data
+        self.assertEqual(
+            {k: d.get(k) for k in ing.CLAVES_PARTIDO},
+            {"opponent": "COLO COLO", "match_type": "official", "venue": "away",
+             "result": "won", "opponent_quality": "4 (CAMPEÓN)", "opponent_rank": 4})
+
+    def test_una_fase_no_es_una_posicion(self):
+        self.correr({"U15": [fila(codigo="MD OFICIAL", localia="LOCAL",
+                                  calidad="SEMIFINAL", resultado="PERDIDO")]}, commit=True)
+        d = ExamResult.objects.get().result_data
+        self.assertEqual((d["opponent_quality"], d.get("opponent_rank")), ("SEMIFINAL", None))
+
+    def test_el_amistoso_guarda_rival_y_tipo(self):
+        self.correr({"U15": [fila(codigo="MD AMISTOSO", obs="AUDAX ITALIANO")]}, commit=True)
+        d = ExamResult.objects.get().result_data
+        self.assertEqual((d["opponent"], d["match_type"]), ("AUDAX ITALIANO", "friendly"))
+        self.assertNotIn("venue", d)
+
+    def test_un_entrenamiento_no_tiene_rival(self):
+        self.correr({"U15": [fila(codigo="MD-2", obs="ENTRENAMIENTO")]}, commit=True)
+        self.assertNotIn("opponent", ExamResult.objects.get().result_data)
+
+    def test_la_sync_actualiza_los_datos_de_partido_sin_tocar_metricas(self):
+        """El club completa la localía / el resultado después."""
+        self.correr({"U15": [fila(codigo="MD OFICIAL", localia="LOCAL")]}, commit=True)
+        r = ExamResult.objects.get()
+        r.result_data["tot_dist"] = 1.0       # a metric the sync must not rewrite
+        r.save(update_fields=["result_data"])
+        rep = self.correr({"U15": [fila(codigo="MD OFICIAL", localia="LOCAL",
+                                        resultado="EMPATADO", obs="PALESTINO")]}, commit=True)
+        r.refresh_from_db()
+        self.assertEqual(rep.partido_actualizados, 1)
+        self.assertEqual((r.result_data["result"], r.result_data["opponent"]),
+                         ("drawn", "PALESTINO"))
+        self.assertEqual(r.result_data["tot_dist"], 1.0)
+        rep = self.correr({"U15": [fila(codigo="MD OFICIAL", localia="LOCAL",
+                                        resultado="EMPATADO", obs="PALESTINO")]})
+        self.assertEqual(rep.partido_actualizados, 0, "idempotente")
+
+    def test_dos_filas_con_la_misma_identidad_no_se_pisan(self):
+        hojas = {"U15": [fila(codigo="MD-1", obs="ENTRENAMIENTO"), fila(codigo="MD-1", obs="SPARRING")]}
+        self.correr(hojas, commit=True)
+        self.assertEqual(self.correr(hojas).partido_actualizados, 0)
+
+    def test_el_md_del_club_es_el_dia_de_microciclo(self):
+        self.correr({"U15": [fila(codigo="MD-2"), fila(dia=datetime(2026, 3, 12), codigo="MD+1"),
+                             fila(dia=datetime(2026, 3, 13), codigo="NO MD"),
+                             fila(dia=datetime(2026, 3, 14), codigo="MD OFICIAL",
+                                  localia="LOCAL")]}, commit=True)
+        por_dia = {r.recorded_at.date().day: r.result_data for r in ExamResult.objects.all()}
+        self.assertEqual(por_dia[11]["md_label"], "MD-2")
+        self.assertEqual(por_dia[12]["md_label"], "MD+1")
+        self.assertIsNone(por_dia[13]["md_label"], "NO MD: el club dice que no hay microciclo")
+        self.assertEqual(por_dia[14]["md_label"], "MD")
+        self.assertTrue(all(d["md_label_source"] == "club" for d in por_dia.values()))
+
+    def test_el_calendario_no_pisa_el_md_del_club(self):
+        from exams.microcycle import apply_md_labels
+
+        self.partido(dias=1)          # by the calendar this session would be MD-1
+        self.correr({"U15": [fila(codigo="MD-3")]}, commit=True)
+        r = ExamResult.objects.select_related("player").get()
+        self.assertEqual(apply_md_labels([r]), [])
+        self.assertEqual(r.result_data["md_label"], "MD-3")
+
+    def test_la_sync_pone_el_md_a_filas_viejas(self):
+        self.correr({"U15": [fila(codigo="MD-4")]}, commit=True)
+        r = ExamResult.objects.get()
+        for k in ("md_label", "md_label_source"):
+            r.result_data.pop(k)
+        r.save(update_fields=["result_data"])
+        self.assertEqual(self.correr({"U15": [fila(codigo="MD-4")]}, commit=True)
+                         .partido_actualizados, 1)
+        r.refresh_from_db()
+        self.assertEqual(r.result_data["md_label"], "MD-4")
+
+    def test_repair_quita_una_reimportacion_y_deja_la_vieja(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        self.correr({"U15": [fila(codigo="MD-2")]}, commit=True)
+        viejo = ExamResult.objects.get()
+        ExamResult.objects.create(player=viejo.player, template=viejo.template,
+                                  recorded_at=viejo.recorded_at,
+                                  result_data=dict(viejo.result_data))
+        call_command("repair_formativo_gps", "--club", self.club.name, "--commit",
+                     stdout=StringIO())
+        self.assertEqual(list(ExamResult.objects.values_list("pk", flat=True)), [viejo.pk])
+
+    def test_un_amistoso_es_sesion_pero_marcada(self):
+        self.correr({"U15": [fila(codigo="MD AMISTOSO")]}, commit=True)
+        r = ExamResult.objects.get()
+        self.assertEqual((r.template.slug, r.result_data["tipo_sesion"]),
+                         ("gps_sesion", "amistoso"))
+
+    def test_repair_marca_los_amistosos_y_agrega_la_opcion(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        t = ExamTemplate.objects.get(slug="gps_sesion")
+        self.correr({"U15": [fila(codigo="MD AMISTOSO")]}, commit=True)
+        r = ExamResult.objects.get()
+        r.result_data["tipo_sesion"] = "entrenamiento"       # as the old sync left it
+        r.save(update_fields=["result_data"])
+        call_command("repair_formativo_gps", "--club", self.club.name, "--commit",
+                     stdout=StringIO())
+        r.refresh_from_db()
+        t.refresh_from_db()
+        self.assertEqual(r.result_data["tipo_sesion"], "amistoso")
+        campo = next(f for f in t.config_schema["fields"] if f["key"] == "tipo_sesion")
+        self.assertIn("amistoso", campo["options"])
+        self.assertEqual(campo["option_labels"]["amistoso"], "Amistoso")
+
+    def test_repair_quita_el_duplicado_y_deja_el_mas_nuevo(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        ev = self.partido(titulo="U. de Chile vs Palestino")
+        self.correr({"U15": [fila(codigo="MD", localia="LOCAL", obs="PALESTINO")]},
+                    commit=True)
+        viejo = ExamResult.objects.get()
+        # The duplicate as the old identity created it: raw code in the id,
+        # corrected numbers, no event.
+        nuevo = ExamResult.objects.create(
+            player=viejo.player, template=viejo.template, recorded_at=viejo.recorded_at,
+            result_data=viejo.result_data | {
+                "origen_codigo": "MD OFICIAL", "tot_dist": 3000.0,
+                "origen_id": viejo.result_data["origen_id"].replace("|MD|", "|MD OFICIAL|")})
+        ExamResult.objects.filter(pk=viejo.pk).update(event=None)
+        call_command("repair_formativo_gps", "--club", self.club.name, "--commit",
+                     stdout=StringIO())
+        queda = ExamResult.objects.get()
+        self.assertEqual(queda.pk, nuevo.pk)
+        self.assertEqual(queda.result_data["tot_dist"], 3000.0)
+        self.assertEqual(queda.event, ev)
+        self.assertEqual(queda.result_data["origen_id"], viejo.result_data["origen_id"])
+        # And the next sync recognises it.
+        rep = self.correr({"U15": [fila(codigo="MD OFICIAL", localia="LOCAL", obs="PALESTINO")]})
+        self.assertEqual(rep.ya_existian, 1)
 
     def test_un_partido_sin_evento_en_SLAB_igual_se_importa(self):
         # El archivo arranca en 2024 y los eventos COMET en 2025-01-23: toda

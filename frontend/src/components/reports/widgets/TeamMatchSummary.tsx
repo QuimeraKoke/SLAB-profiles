@@ -33,6 +33,7 @@ export default function TeamMatchSummary({ widget }: Props) {
     );
   }
 
+  const avgFirst = data.headline === "avg";
   return (
     <div className={styles.widget}>
       <Header data={data} title={widget.title} description={widget.description} />
@@ -47,9 +48,20 @@ export default function TeamMatchSummary({ widget }: Props) {
               <div className={styles.noData}>—</div>
             ) : (
               <>
-                <div className={styles.cardSum}>{formatNumber(card.sum)}</div>
+                {avgFirst ? (
+                  <>
+                    <div className={styles.cardSum}>{formatNumber(card.avg ?? 0)}</div>
+                    <span className={styles.cardHint}>media por jugador</span>
+                    {data.compare && <Delta pct={card.delta_pct ?? null} prev={card.prev_avg ?? null}
+                      n={data.compare.n} />}
+                  </>
+                ) : (
+                  <div className={styles.cardSum}>{formatNumber(card.sum)}</div>
+                )}
                 <div className={styles.cardSubRow}>
-                  <Stat label="AVG" value={card.avg} />
+                  {avgFirst
+                    ? <Stat label="SUMA" value={card.sum} />
+                    : <Stat label="AVG" value={card.avg} />}
                   <Stat label="STD" value={card.std} />
                 </div>
                 <div className={styles.cardSubRow}>
@@ -84,6 +96,24 @@ function Header({
         </span>
       )}
     </header>
+  );
+}
+
+/** "▲ 4,2 % vs últimos 5" — neutral ink: more distance is not better or
+ *  worse by itself, so the arrow says direction, not judgement. */
+function Delta({ pct, prev, n }: { pct: number | null; prev: number | null; n: number }) {
+  if (prev === null || n === 0) {
+    return <span className={styles.delta}>sin partidos previos</span>;
+  }
+  if (pct === null) {   // previous mean was 0: no percentage to give
+    return <span className={styles.delta}>antes: {formatNumber(prev)}</span>;
+  }
+  const arrow = pct > 0 ? "▲" : pct < 0 ? "▼" : "=";
+  return (
+    <span className={styles.delta} title={`Media de los ${n} partidos anteriores: ${formatNumber(prev)}`}>
+      <span aria-hidden="true">{arrow}</span> {Math.abs(pct).toLocaleString(undefined, { maximumFractionDigits: 1 })}%
+      {" "}vs {n === 1 ? "el partido anterior" : `últimos ${n}`}
+    </span>
   );
 }
 

@@ -178,3 +178,24 @@
   outline: 2px solid #1d4ed8;
   outline-offset: 2px;
 }
+
+.chips { margin-left: auto; display: inline-flex; gap: 4px; }
+.mdChip {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #344054;
+  background: #f2f4f7;
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.kindChip {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 999px;
+  padding: 1px 8px;
+  white-space: nowrap;
+}

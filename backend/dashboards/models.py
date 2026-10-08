@@ -293,6 +293,12 @@ class ChartType(models.TextChoices):
         "team_injury_breakdown",
         "Team — injuries by a dimension (count or days lost; bars / donut / table)",
     )
+    # One metric's latest value on an arc between the squad's min and max,
+    # coloured by the club's bands (see `dashboards/team_gauge.py`).
+    TEAM_GAUGE = (
+        "team_gauge",
+        "Team — gauge (latest value vs. squad range and bands)",
+    )
 
 
 class Aggregation(models.TextChoices):
@@ -597,6 +603,13 @@ class TeamReportLayout(models.Model):
         default=0,
         help_text="Order in the submenu; the first one opens at /reportes/<department>.",
     )
+    default_period_days = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text=(
+            "Period the report opens with (last N days) until the user picks "
+            "another. Empty = the report page's usual default."
+        ),
+    )
     is_active = models.BooleanField(
         default=True,
         help_text=(
@@ -773,6 +786,7 @@ class TeamReportWidget(models.Model):
             (ChartType.TEAM_INJURY_KPIS.value, ChartType.TEAM_INJURY_KPIS.label),
             (ChartType.TEAM_INJURY_LIST.value, ChartType.TEAM_INJURY_LIST.label),
             (ChartType.TEAM_INJURY_BREAKDOWN.value, ChartType.TEAM_INJURY_BREAKDOWN.label),
+            (ChartType.TEAM_GAUGE.value, ChartType.TEAM_GAUGE.label),
         ],
     )
     title = models.CharField(max_length=160)

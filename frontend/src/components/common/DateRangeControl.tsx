@@ -119,13 +119,18 @@ export default function DateRangeControl({ value, onChange, variant = "default" 
 /** Default value matching "Últimos 30 días". Exported so callers can
  *  initialize state without duplicating the date math. */
 export function defaultDateRange(): DateRangeValue {
+  return lastDaysRange(30);
+}
+
+/** The last `days` days up to today — on its preset when there is one
+ *  ("365" → "Último año"), "custom" otherwise. */
+export function lastDaysRange(days: number): DateRangeValue {
   const to = new Date();
   const from = new Date();
-  from.setDate(from.getDate() - 30);
-  return {
-    preset: "30",
-    date: { from: iso(from), to: iso(to) },
-  };
+  from.setDate(from.getDate() - days);
+  const presets: DatePreset[] = ["30", "60", "90", "180", "365", "730"];
+  const preset = presets.find((p) => p === String(days)) ?? "custom";
+  return { preset, date: { from: iso(from), to: iso(to) } };
 }
 
 function iso(d: Date): string {

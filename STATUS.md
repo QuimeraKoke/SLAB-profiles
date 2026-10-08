@@ -3081,6 +3081,123 @@ Lesiones**.
   propia vista "Lesiones" — en Primer Equipo y SUB-20 mueve la sección desde
   "General"; en las Series, donde era lo único, renombra el layout.
 
+### 3.63 Físico › Evaluaciones — la planilla de evaluaciones del formativo (2026-10-01)
+
+Segunda vista de Físico (Dashboard → Físico → General / **Evaluaciones**) en
+SUB-20 y Series 2008–2018, sin Primer Equipo. Replica las páginas Power BI
+del club: una evolución por test y los velocímetros de sprint.
+
+* Secciones: **Última evaluación del plantel** (una sola matriz con todos
+  los tests: T10, T30, COD izq/der, CMJ, Tiro, Palier, VO2max, 1RM, FR, con
+  borde por banda de la categoría) → **Fuerza — Sentadilla** (1RM / FR /
+  velocidad última carga) → **Velocidad** (T10/T30 en s + velocímetro km/h)
+  → **COD 505** (izquierda y derecha juntas + asimetría) → **Neuromuscular**
+  (CMJ / Tiro) → **Resistencia — Yo-Yo IR1** (Palier / Metros / VAM /
+  VO2max). Cada categoría recibe solo los bloques y columnas de los que
+  tiene datos (≥ 5 valores del campo, no solo de la plantilla): las Series
+  2014–2018 no corren Yo-Yo ni fuerza, y 2015–2018 no tienen COD.
+* Widget nuevo **`team_gauge`** (`dashboards/team_gauge.py`,
+  `TeamGauge.tsx`): media del último valor de cada jugador (o el valor del
+  jugador si el filtro deja uno) sobre un arco del mínimo al máximo del
+  plantel, coloreado con las bandas. `display_config.bands_from` presta las
+  bandas de otro campo por conversión recíproca (`km/h = k / s`, k = 36 para
+  T10 y 108 para T30), así el velocímetro usa las bandas de T10 del club sin
+  mantener un segundo juego.
+* Campos calculados nuevos en `carreras`: `t10_kmh`, `t30_kmh`
+  (`seed_formativo_templates` + `recompute_calculated_fields`).
+* `team_trend_line` gana `display_config`: `point_labels` none|value|value_pct
+  (valor + % vs el punto anterior), `style` line|area, `series` select|all
+  (todas las métricas a la vez, con leyenda). Con etiquetas, el eje Y se
+  ajusta a los datos y los segmentos son rectos.
+* `team_roster_matrix`: `source_suffix: false` saca el " · <plantilla>" de
+  las columnas de una matriz multi-fuente.
+* `TeamReportLayout.default_period_days` (migración 0041): el período con
+  que abre la vista hasta que el usuario elija otro — Evaluaciones abre en
+  "Último año" (las evaluaciones son pocos días por temporada).
+* Seed: `seed_evaluaciones_layout` (plan sin `--commit`; idempotente;
+  `--rebuild` reemplaza las secciones de una vista existente).
+
+### 3.64 Físico › GPS partido + reparación del GPS formativo (2026-10-01)
+
+**Datos (antes del layout).** Dos problemas en el GPS que llega de la
+planilla del club (`exams/formativo_gps_ingest.py`):
+
+* **Duplicados re-codificados.** En sept. 2026 el club re-codificó sus filas
+  `MD` como `MD OFICIAL` / `MD AMISTOSO`; el código era parte de la identidad
+  de la fila, así que la sync del 24-09 importó cada una otra vez (~1.460
+  partidos + ~800 sesiones, mismos números salvo correcciones del club). Ahora
+  la identidad usa `codigo_identidad()` (las tres variantes = `MD`) y
+  `repair_formativo_gps` borra el duplicado viejo, deja el nuevo (trae las
+  correcciones) y reescribe `origen_id`.
+* **Vínculo al partido.** La sync buscaba el partido en la categoría del
+  JUGADOR; pero la planilla es por EQUIPO (un Serie 2009 juega en la U18) y
+  la fecha del fixture a veces difiere 1–3 días. `EventMatcher`: hoja → bracket
+  (`U18` → `Sub 18`) + rival (`OBSERVACIÓN` vs título del evento) en ±3 días;
+  sin rival, solo un partido único el mismo día. Corrige además los vinculados
+  al partido de otro equipo. Queda sin vínculo: U11 (sin fixtures) y rivales
+  que no están en el calendario.
+* **Amistosos.** Siguen en `gps_sesion` (no tienen marcas de partido), pero
+  vuelve el tipo de sesión "amistoso" (sacado en julio): la sync lo pone a las
+  filas `MD AMISTOSO`, `repair_formativo_gps` lo agrega a la plantilla (en su
+  lugar, sin re-sembrarla) y marca las existentes (812). Se ve como chip en la
+  línea de tiempo del jugador y en el detalle; el Daily ya los excluía de la
+  comparación de entrenamientos de los lesionados (`_MATCH_TIPOS`).
+* **Datos del partido de la planilla.** OBSERVACIÓN (rival), LOCALÍA,
+  CALIDAD OPONENTE (posición del rival en la tabla, o la fase: "SEMIFINAL",
+  "4TOS DE FINAL", "CAMPEON") y RESULTADO, más el tipo desde CÓDIGO, se
+  guardan en la fila: `opponent`, `match_type` (official/friendly), `venue`
+  (home/away), `result` (won/drawn/lost), `opponent_quality` (tal cual) y
+  `opponent_rank` (número, si es posición) — `CAMPOS_PARTIDO`. Los amistosos
+  (en `gps_sesion`) solo llevan rival y tipo. La sync los **refresca en cada
+  corrida** en filas ya importadas (el club los completa después) sin tocar
+  métricas; `repair_formativo_gps` agrega los campos a las plantillas en su
+  lugar. El selector y los tooltips de GPS partido los muestran ("U18 ·
+  Local · Ganado · Rival 3º en la tabla").
+* **Día de microciclo del club.** El CÓDIGO de la planilla (MD-2, MD+1…) se
+  guarda como `md_label` de la fila (`md_del_club`: partido / variantes MD →
+  "MD"; "NO MD" → sin microciclo) con `md_label_source: "club"`, que
+  `exams.microcycle.apply_md_labels` / `backfill_md_labels` ya no pisan (el
+  derivado del calendario de la CATEGORÍA del jugador acertaba en ~20 % de
+  las sesiones formativas). Campo "Día de microciclo" en ambas plantillas,
+  chip en la línea de tiempo, y filtro genérico de widgets de equipo
+  `display_config.only_values` (`{"md_label": ["MD-1"]}`).
+* ⚠️ **Orden en prod**: el worker y el beat de Celery deben correr el código
+  nuevo ANTES de `repair_formativo_gps`. Localmente un worker con el código
+  viejo (identidad con el código crudo) re-importó las 2.328 filas que el
+  repair acababa de normalizar; el repair ahora también limpia ese caso
+  (mismo código dos veces = re-importación, queda la fila vieja).
+* `repair_formativo_gps` — plan sin `--commit`; `--backup` imprime en JSON
+  todas las filas que tocaría (entre `BACKUP_BEGIN/END`); idempotente.
+
+**Layout** (SUB-20 y Series 2008–2015; `seed_gps_partido_layout`):
+
+* Selector de **días de partido desde el GPS** (`match_selector_config.source
+  = "gps_days"`, `dashboards/match_days.py`), no de Events: el id es la fecha,
+  el título el rival, y "U20 · U18" los equipos del día. Abre en el último.
+* Cada widget elige su ventana con `display_config.scope`: `"match"` = el día
+  elegido; el resto = el período de la página (que en estos layouts no se
+  oculta). Los gráficos de período reciben `highlight_iso` y marcan el partido.
+* **El partido**: resumen (media por jugador como titular + Δ% vs los 5
+  partidos anteriores: `team_match_summary` `headline: "avg"`,
+  `compare_previous`), velocímetro Vmáx/Distancia (media en el rango del
+  plantel + el máximo y quién: `team_gauge` `show_top`), ranking HSR, matriz
+  jugador por jugador. **Evolución por partido**: carga externa con selector
+  (un punto por partido: `bucket_size: "day"`, tooltip con el rival) y
+  Acc + Dec juntas.
+* **Partidos del EQUIPO, como los convocados** (`match_selector_config.team`,
+  `dashboards/team_scope.py`): la vista de una categoría lee los partidos de
+  su equipo según `TeamSeason` (hoja `U18` + temporada; en 2026 la U18 son
+  Serie 2008 y 2009) con TODOS los que los jugaron. Los de otras cohortes
+  (un Serie 2010 que jugó arriba, un SUB-20 que bajó) aparecen con el badge
+  "CONV." como un `PlayerCallUp`, pero SÍ cuentan en las cifras del partido:
+  lo jugaron. "Incluir convocados" desmarcado los saca.
+* Suplentes fuera de las medias: `display_config.min_values` (`{"tot_dur": N}`,
+  aplicado en `_apply_date_window`), con N = ⅔ del partido completo de cada
+  categoría según sus datos (65 min en SUB-20, 40 en Serie 2015).
+* Respecto del Power BI: sin sumas de temporada, sin "Objetivo (Blank)", sin
+  la suma de velocidades máximas (16.159 km/h), sin gráficos de dos ejes, sin
+  el 100 % apilado Acc/Dec. A:C quedó fuera por ahora (decisión del club).
+
 ## 4. Management commands
 
 All under `backend/exams/management/commands/`. Run via

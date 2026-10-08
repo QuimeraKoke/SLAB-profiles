@@ -131,6 +131,16 @@ G_VEL, G_COD = "Velocidad", "Cambio de dirección (COD 505)"
 CARRERAS = {"fields": [
     *_serie("t10", "T10", "s", G_VEL, ["t10_1", "t10_2", "t10_3"], 1.0, 4.0, True),
     *_serie("t30", "T30", "s", G_VEL, ["t30_1", "t30_2", "t30_3"], 3.0, 9.0, True),
+    # The same sprint as a speed: 10 m and 30 m over the best time, in km/h
+    # (36 = 10 m × 3.6, 108 = 30 m × 3.6). The club reads its gauges in km/h
+    # — 1.80 s on T10 is 20 km/h. No `chart_type`: the evolution is charted in
+    # seconds; these feed the gauge (`team_gauge`) and the tables.
+    {"key": "t10_kmh", "label": "T10 — velocidad media", "type": "calculated", "unit": "km/h",
+     "group": G_VEL, "direction_of_good": "up",
+     "formula": "round(36 / [t10_best] * 100) / 100"},
+    {"key": "t30_kmh", "label": "T30 — velocidad media", "type": "calculated", "unit": "km/h",
+     "group": G_VEL, "direction_of_good": "up",
+     "formula": "round(108 / [t30_best] * 100) / 100"},
     *_serie("cod_der", "COD 505 derecha", "s", G_COD,
             ["cod_der_1", "cod_der_2", "cod_der_3"], 1.5, 5.0, True),
     *_serie("cod_izq", "COD 505 izquierda", "s", G_COD,

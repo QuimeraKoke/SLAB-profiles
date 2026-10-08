@@ -126,3 +126,11 @@
   color: #9ca3af;
   font-size: 0.9rem;
 }
+
+.cardHint { font-size: 0.68rem; color: #9ca3af; margin-top: -4px; }
+.delta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #344054;
+  font-variant-numeric: tabular-nums;
+}

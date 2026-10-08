@@ -43,14 +43,16 @@ CONFIG_SCHEMA: dict = {
         {
             "key": "tipo_sesion", "label": "Tipo de sesión",
             "type": "categorical", "group": "Sesión",
-            # Simplified taxonomy (client, 2026-07-13): only regular training
-            # vs return-to-play. Friendlies / tactical work / other collapse
-            # into "entrenamiento"; matches live on gps_partido, which drops
-            # this field entirely.
-            "options": ["entrenamiento", "reintegro"],
+            # Simplified taxonomy (client, 2026-07-13): regular training vs
+            # return-to-play; matches live on gps_partido, which drops this
+            # field entirely. "amistoso" came back 2026-10-01: the club codes
+            # friendlies `MD AMISTOSO` and wants them told apart from a
+            # regular training (they stay here, not in gps_partido).
+            "options": ["entrenamiento", "reintegro", "amistoso"],
             "option_labels": {
                 "entrenamiento": "Entrenamiento",
                 "reintegro": "Reintegro",
+                "amistoso": "Amistoso",
             },
         },
         # --- Load / volume ---
@@ -161,6 +163,16 @@ CONFIG_SCHEMA: dict = {
         },
     ],
 }
+
+
+# A friendly is filed as a session: it still has an opponent and a type.
+# Lazy-free import is fine — formativo_gps_ingest imports no seed module.
+from exams.formativo_gps_ingest import CAMPOS_PARTIDO as _CAMPOS_PARTIDO  # noqa: E402
+
+from exams.formativo_gps_ingest import CAMPO_MD as _CAMPO_MD  # noqa: E402
+
+CONFIG_SCHEMA["fields"] += [dict(c) for c in _CAMPOS_PARTIDO
+                            if c["key"] in ("opponent", "match_type")] + [dict(_CAMPO_MD)]
 
 
 INPUT_CONFIG: dict = {

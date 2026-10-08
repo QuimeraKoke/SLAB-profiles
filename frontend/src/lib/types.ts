@@ -1244,12 +1244,17 @@ export interface TeamTrendLinePayload {
   grouping?: "none" | "position";
   fields: { key: string; label: string; unit: string }[];
   default_field_key: string;
-  bucket_size: "week" | "month";
+  /** "day" = one point per match day (GPS partido). */
+  bucket_size: "week" | "month" | "day";
+  /** On a match-based layout: the chosen match's day, to mark it. */
+  highlight_iso?: string;
   /** Present only when `grouping === "position"`. */
   groups?: TeamPositionGroup[];
   buckets: {
     label: string;
     iso: string;
+    /** Day buckets: the match ("vs Deportes Temuco"). */
+    detail?: string;
     /** Present when `grouping === "none"` (or omitted = "none"). */
     values?: Record<string, number>;
     /** Present when `grouping === "position"`. Mapping position_id →
@@ -1258,6 +1263,12 @@ export interface TeamTrendLinePayload {
   }[];
   empty?: boolean;
   error?: string;
+  /** Rendering options (`_trend_display` in team_aggregation.py). */
+  display?: {
+    point_labels: "none" | "value" | "value_pct";
+    style: "line" | "area";
+    series: "select" | "all";
+  };
 }
 
 /** Histogram of latest values across the roster for one metric. */
@@ -1393,9 +1404,16 @@ export interface TeamMatchSummaryPayload {
     min: number | null;
     max: number | null;
     n: number;
+    /** With `compare_previous`: the squad's mean over the previous matches. */
+    prev_avg?: number | null;
+    delta_pct?: number | null;
   }[];
   sample_size: number;
   per_player_aggregator?: "sum" | "avg" | "max" | "latest";
+  /** Which number each card leads with. */
+  headline?: "sum" | "avg";
+  /** `n` previous match days actually found (≤ `requested`). */
+  compare?: { n: number; requested: number };
   empty?: boolean;
   error?: string;
 }
@@ -1665,6 +1683,7 @@ export type TeamWidgetData =
   | TeamInjuryKpisPayload
   | TeamInjuryListPayload
   | TeamInjuryBreakdownPayload
+  | TeamGaugePayload
   | UnsupportedPayload
   | EmptyPayload;
 
@@ -1712,10 +1731,42 @@ export interface TeamMatchSelectorConfig {
   /** Multi-mode counterpart: list of resolved match IDs. Empty in
    *  single-mode (frontend should ignore in that branch). */
   selected_ids?: string[];
+  /** "gps_days": options are match DAYS ("2026-09-26") from the GPS data,
+   *  and the page keeps its period selector for the non-match widgets. */
+  source?: "events" | "gps_days";
 }
 
 /** Team injury widgets — `dashboards/team_injuries.py`. `period.from` is null
  *  when the report has no lower date bound (whole history). */
+/** `team_gauge`: one metric's latest value against the squad's range. */
+export interface TeamGaugeField {
+  key: string;
+  label: string;
+  unit: string;
+  direction_of_good?: "up" | "down" | "neutral";
+  /** Mean of each player's latest value — or that player's own value when
+   *  the report is filtered to exactly one (`subject`). */
+  value: number | null;
+  n: number;
+  min: number | null;
+  max: number | null;
+  bands: ReferenceBand[];
+  subject: string | null;
+  /** With `show_top`: the squad's highest value and its owner. */
+  top?: number | null;
+  top_subject?: string | null;
+}
+
+export interface TeamGaugePayload {
+  chart_type: "team_gauge";
+  title: string;
+  description?: string;
+  fields: TeamGaugeField[];
+  default_field_key: string;
+  empty?: boolean;
+  error?: string;
+}
+
 interface TeamInjuryBase {
   title: string;
   description?: string;
@@ -1813,6 +1864,9 @@ export interface TeamReportResponse {
     category: Category;
     name: string;
     slug: string;
+    /** The period the report opens with (last N days), until the user picks
+     *  another. null = the page's usual default. */
+    default_period_days?: number | null;
     sections: TeamReportSection[];
     match_selector: TeamMatchSelectorConfig;
   } | null;

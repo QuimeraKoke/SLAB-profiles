@@ -1,0 +1,79 @@
+.widget {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.title { margin: 0; font-size: 0.95rem; font-weight: 600; color: #111827; }
+.description { margin: 4px 0 0; font-size: 0.78rem; color: #6b7280; }
+
+.tag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6d28d9;
+  background: #ede9fe;
+  padding: 4px 10px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.selectLabel { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.selectHint {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+  font-weight: 600;
+}
+.select {
+  font-size: 0.85rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 5px 10px;
+  background: #ffffff;
+  color: #111827;
+  cursor: pointer;
+  max-width: 100%;
+}
+.select:focus { outline: 2px solid #6366f1; outline-offset: -1px; border-color: transparent; }
+
+.svg { width: 100%; max-width: 340px; align-self: center; height: auto; display: block; }
+.end { font-size: 10px; fill: #667085; font-variant-numeric: tabular-nums; }
+.value { font-size: 26px; font-weight: 700; fill: #111827; font-variant-numeric: tabular-nums; }
+.unit { font-size: 12px; font-weight: 600; fill: #667085; }
+.who { font-size: 9.5px; fill: #667085; }
+
+.legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 12px;
+  font-size: 0.72rem;
+  color: #4b5563;
+}
+.legendItem { display: inline-flex; align-items: center; gap: 5px; }
+.current { font-weight: 700; color: #111827; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.range { color: #9ca3af; font-variant-numeric: tabular-nums; }
+
+.empty {
+  padding: 20px 16px;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 0.85rem;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 6px;
+}
+.top { margin: 0; text-align: center; font-size: 0.8rem; color: #475467; }
+.top strong { color: #111827; font-variant-numeric: tabular-nums; }

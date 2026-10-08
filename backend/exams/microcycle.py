@@ -18,6 +18,13 @@ from datetime import date
 
 MAX_OFFSET_DAYS = 7
 
+# A label the club AUTHORED (its sheet's CÓDIGO: MD-2, MD+1…) beats one this
+# module derives: the club knows its own week, the calendar here does not
+# always (a player playing up, a moved fixture, a team with no fixtures).
+# Results carrying this marker are never relabelled.
+MD_SOURCE_KEY = "md_label_source"
+MD_SOURCE_CLUB = "club"
+
 
 def microcycle_label(session_date: date, match_dates) -> str | None:
     """Label ``session_date`` by proximity to the nearest date in
@@ -78,6 +85,8 @@ def apply_md_labels(results) -> list:
                 ).values_list("starts_at", flat=True)
             )
         for r in rs:
+            if (r.result_data or {}).get(MD_SOURCE_KEY) == MD_SOURCE_CLUB:
+                continue
             sd = _session_date(r)
             label = microcycle_label(sd, match_dates) if sd is not None else None
             data = r.result_data or {}

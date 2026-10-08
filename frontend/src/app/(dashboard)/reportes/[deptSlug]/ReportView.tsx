@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import DownloadExcelButton from "@/components/reports/DownloadExcelButton";
@@ -8,6 +8,7 @@ import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
 import MatchSelector from "@/components/reports/MatchSelector";
 import MatchMultiSelector from "@/components/reports/MatchMultiSelector";
 import ReportFilters, { defaultFilters, groupPlayersByPosition } from "@/components/reports/ReportFilters";
+import { lastDaysRange } from "@/components/common/DateRangeControl";
 import type { ReportFiltersValue } from "@/components/reports/ReportFilters";
 import TeamReportDashboard from "@/components/reports/TeamReportDashboard";
 import LayoutManager, { TEAM_LAYOUTS_CHANGED } from "@/components/reports/LayoutManager";
@@ -52,6 +53,16 @@ export default function ReportView({ deptSlug, layoutSlug }: { deptSlug: string;
   const [players, setPlayers] = useState<PlayerSummary[]>([]);
   // Team-tab filters.
   const [filters, setFilters] = useState<ReportFiltersValue>(() => defaultFilters());
+  // Until the user picks a period, each layout opens on its own default
+  // (`default_period_days`, e.g. a year for Físico › Evaluaciones; 30 days
+  // otherwise). Once they pick one, it sticks across layouts.
+  const periodPicked = useRef(false);
+  const changeFilters = (next: ReportFiltersValue) => {
+    if (next.date.from !== filters.date.from || next.date.to !== filters.date.to) {
+      periodPicked.current = true;
+    }
+    setFilters(next);
+  };
   const [layout, setLayout] = useState<TeamReportResponse["layout"] | null>(null);
   const [layoutFetched, setLayoutFetched] = useState(false);
   const [layouts, setLayouts] = useState<TeamLayoutRef[]>([]);
@@ -164,7 +175,9 @@ export default function ReportView({ deptSlug, layoutSlug }: { deptSlug: string;
     // resolver. We still send them on the first request (before layout
     // is loaded) because we don't yet know whether the layout uses match
     // selection; the backend ignores the dates for match-scoped widgets.
-    const skipDates = layout?.match_selector?.enabled === true;
+    // A "gps_days" layout keeps the period: only its match widgets read the day.
+    const skipDates = layout?.match_selector?.enabled === true
+      && layout.match_selector.source !== "gps_days";
     if (!skipDates && filters.date.from) params.set("date_from", filters.date.from);
     if (!skipDates && filters.date.to) params.set("date_to", filters.date.to);
     if (matchFromUrl) params.set("match_id", matchFromUrl);
@@ -181,6 +194,13 @@ export default function ReportView({ deptSlug, layoutSlug }: { deptSlug: string;
         setLayouts(data.layouts ?? []);
         setLayoutFetched(true);
         setError(null);
+        if (!periodPicked.current) {
+          const want = lastDaysRange(data.layout?.default_period_days ?? 30);
+          // Comparing the dates (not the preset) can't loop on a "custom" N.
+          if (want.date.from !== filters.date.from) {
+            setFilters((prev) => ({ ...prev, preset: want.preset, date: want.date }));
+          }
+        }
         // Required-mode auto-pick: if the backend selected match(es) for
         // us (URL was empty), reflect it in the URL so deep-linking +
         // the picker's value stay coherent.
@@ -254,8 +274,9 @@ export default function ReportView({ deptSlug, layoutSlug }: { deptSlug: string;
               positions={positions}
               players={players}
               value={filters}
-              onChange={setFilters}
-              hideDateRange={layout?.match_selector?.enabled === true}
+              onChange={changeFilters}
+              hideDateRange={layout?.match_selector?.enabled === true
+                && layout.match_selector.source !== "gps_days"}
             />
           </div>
           <div className={styles.group}>

@@ -722,8 +722,9 @@ class TeamReportSectionOut(Schema):
 
 class MatchSelectorOptionOut(Schema):
     """One option in the match-selector dropdown — surfaces the data the
-    frontend needs to render and identify each pickable match."""
-    id: UUID
+    frontend needs to render and identify each pickable match. `id` is the
+    Event's UUID — or, with `source="gps_days"`, the match DAY "YYYY-MM-DD"."""
+    id: str
     title: str
     starts_at: datetime
     location: str = ""
@@ -747,8 +748,12 @@ class MatchSelectorConfigOut(Schema):
     label: str = "Partido"
     show_recent: int = 10
     options: list[MatchSelectorOptionOut] = []
-    selected_id: UUID | None = None
+    selected_id: str | None = None
     selected_ids: list[UUID] = []
+    # "events" (default) or "gps_days" — see `dashboards.match_days`. With
+    # gps_days the page keeps its period selector: only the widgets with
+    # `display_config.scope = "match"` read the chosen day.
+    source: str = "events"
 
 
 class TeamReportLayoutOut(Schema):
@@ -757,6 +762,7 @@ class TeamReportLayoutOut(Schema):
     category: CategoryOut
     name: str
     slug: str = ""
+    default_period_days: int | None = None
     sections: list[TeamReportSectionOut] = []
     match_selector: MatchSelectorConfigOut = MatchSelectorConfigOut()
 
