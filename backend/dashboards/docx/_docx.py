@@ -257,13 +257,26 @@ def add_chart_images(doc: Document, figs: list, *, max_width_cm: float) -> None:
             continue
 
 
-def render_widget(doc: Document, widget, payload: dict, *, width_cm: float) -> None:
+def render_widget(doc: Document, widget, payload: dict, *, width_cm: float,
+                  con_tabla: bool = True) -> bool:
     """Render one widget: title, chart image(s) reused from the PDF chart
-    renderers, then a native Word table of its data. Never raises."""
+    renderers, then a native Word table of its data. Never raises.
+
+    `con_tabla=False` (the executive report): the chart alone, and nothing at
+    all when there is no chart — returns whether anything was drawn."""
+    if not con_tabla:
+        if not payload or payload.get("empty"):
+            return False
+        figs = _widget_figs(widget, payload, width_cm)
+        if not figs:
+            return False
+        widget_title(doc, getattr(widget, "title", "") or "", getattr(widget, "description", None))
+        add_chart_images(doc, figs, max_width_cm=width_cm)
+        return True
     widget_title(doc, getattr(widget, "title", "") or "", getattr(widget, "description", None))
     if not payload or payload.get("empty"):
         body(doc, "Sin datos en el período seleccionado.", muted=True)
-        return
+        return False
 
     # Charts: drive the unchanged PDF renderer, harvest its PNGs.
     figs: list = []
@@ -281,6 +294,19 @@ def render_widget(doc: Document, widget, payload: dict, *, width_cm: float) -> N
     rendered = _render_payload_table(doc, getattr(widget, "chart_type", ""), payload, width_cm)
     if not figs and not rendered:
         _generic_table(doc, payload, width_cm)
+    return True
+
+
+def _widget_figs(widget, payload: dict, width_cm: float) -> list:
+    try:
+        from dashboards.pdf.charts import render_widget_for_pdf
+        from dashboards.pdf.charts._mpl import capture_docx_figures
+
+        with capture_docx_figures() as sink:
+            render_widget_for_pdf(widget, payload, max_width_cm=width_cm)
+        return list(sink)
+    except Exception:  # noqa: BLE001
+        return []
 
 
 # ─── Payload → table adapters (shapes verified against live resolvers) ──

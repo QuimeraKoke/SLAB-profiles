@@ -41,7 +41,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from django.db.models import Case, IntegerField, Value, When
+from django.db.models import Case, IntegerField, Q, Value, When
 from django.utils import timezone
 
 from core.models import Player
@@ -199,11 +199,19 @@ def _is_tracked_field(spec: dict, rule_keys: set[tuple[UUID, str]],
     return False
 
 
-def build_triage_payload(player: Player) -> dict:
+def build_triage_payload(player: Player, desde: datetime | None = None,
+                         hasta: datetime | None = None) -> dict:
     """Returns the full triage payload as a plain dict — Ninja serializes
-    it via TriageOut and the PDF generator consumes it directly."""
-    now = timezone.now()
-    window_start = now - timedelta(days=HISTORY_DAYS)
+    it via TriageOut and the PDF generator consumes it directly.
+
+    With a period (the downloadable report's), everything is AS OF its end:
+    readings up to `hasta`, the metric history over [desde, hasta] instead of
+    the last 30 days, the alerts that fired inside it (resolved or not), the
+    last match before `hasta`, and only metrics read during the period.
+    Without one, the screen's "now" view, unchanged."""
+    periodo = desde is not None or hasta is not None
+    now = hasta or timezone.now()
+    window_start = desde or (now - timedelta(days=HISTORY_DAYS))
 
     templates = _player_templates(player)
     templates_by_id = {t.id: t for t in templates}
@@ -219,9 +227,11 @@ def build_triage_payload(player: Player) -> dict:
         default=Value(3),
         output_field=IntegerField(),
     )
+    alertas = (Alert.objects.filter(player=player, fired_at__lte=now)
+               .filter(Q(last_fired_at__gte=window_start) | Q(fired_at__gte=window_start))
+               if periodo else Alert.objects.filter(player=player, status=AlertStatus.ACTIVE))
     alerts_qs = (
-        Alert.objects
-        .filter(player=player, status=AlertStatus.ACTIVE)
+        alertas
         .annotate(_severity_rank=severity_rank)
         .order_by("_severity_rank", "-fired_at")[:MAX_ALERTS]
     )
@@ -249,7 +259,7 @@ def build_triage_payload(player: Player) -> dict:
             return results_by_template[template_id]
         qs = (
             ExamResult.objects
-            .filter(player=player, template_id=template_id)
+            .filter(player=player, template_id=template_id, recorded_at__lte=now)
             .order_by("-recorded_at")
         )
         results = list(qs)
@@ -308,6 +318,8 @@ def build_triage_payload(player: Player) -> dict:
             current, previous = _two_most_recent(results, field_key)
             if current is None:
                 continue  # never recorded — skip the empty row
+            if periodo and current[1] < window_start:
+                continue  # not read during the period
 
             # 30-day history for sparkline (oldest → newest).
             history: list[dict] = []
@@ -338,7 +350,7 @@ def build_triage_payload(player: Player) -> dict:
     other_metrics.sort(key=lambda m: (m["template_label"], m["field_label"]))
 
     # ─── 4) Last match ───────────────────────────────────────────────
-    last_match = _build_last_match(player)
+    last_match = _build_last_match(player, hasta=now if periodo else None)
 
     return {
         "player": {
@@ -375,7 +387,7 @@ def build_triage_payload(player: Player) -> dict:
     }
 
 
-def _build_last_match(player: Player) -> dict | None:
+def _build_last_match(player: Player, hasta: datetime | None = None) -> dict | None:
     """Return the most recent match event for this player's CATEGORY,
     with the player's participation (or "no citado" sentinel) and any
     match-linked performance results.
@@ -387,7 +399,7 @@ def _build_last_match(player: Player) -> dict | None:
     if player.category is None:
         return None
 
-    now = timezone.now()
+    now = hasta or timezone.now()
     # Most recent past match first; fall back to upcoming if no past exists.
     past = (
         Event.objects

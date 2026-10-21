@@ -2,8 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 
-import DownloadPlayerExcelButton from "@/components/perfil/ProfileDepartment/DownloadPlayerExcelButton";
-import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
+import ReportDownloadDialog from "@/components/reports/ReportDownloadDialog/ReportDownloadDialog";
 import { api, ApiError } from "@/lib/api";
 import { usePermission } from "@/lib/permissions";
 import type {
@@ -192,18 +191,14 @@ export default function ProfileDepartment({
         </div>
         <div className={styles.controls}>
           {layout && (
-            <DownloadPlayerExcelButton
-              playerName={playerName}
-              department={department}
-              sections={layout.sections}
-              dateFrom=""
-              dateTo=""
-            />
-          )}
-          {layout && (
-            <DownloadPdfButton
-              endpoint={playerDeptDocxEndpoint(playerId, department.slug, "", "")}
-              filename={`reporte-${playerName}-${department.slug}.docx`.replace(/\s+/g, "_")}
+            <ReportDownloadDialog
+              title={`Informe de ${department.name} · ${playerName}`}
+              endpoint={({ dateFrom, dateTo, formato }) =>
+                playerDeptDocxEndpoint(playerId, department.slug, dateFrom, dateTo, formato)}
+              filename={(formato) =>
+                `informe-${formato}-${playerName}-${department.slug}.docx`.replace(/\s+/g, "_")}
+              excel={(dateFrom, dateTo) =>
+                exportarExcel(playerId, playerName, department, dateFrom, dateTo)}
             />
           )}
           {layout && canEditPanel && editMode && (
@@ -253,17 +248,39 @@ export default function ProfileDepartment({
   );
 }
 
-/** Word report endpoint for a player's department, carrying the current date
- *  window so the .docx matches what's on screen. */
+/** Word report endpoint for a player's department over a period, in a format. */
 function playerDeptDocxEndpoint(
   playerId: string,
   slug: string,
   dateFrom: string,
   dateTo: string,
+  formato: string,
 ): string {
-  const sp = new URLSearchParams();
+  const sp = new URLSearchParams({ formato });
   if (dateFrom) sp.set("date_from", dateFrom);
   if (dateTo) sp.set("date_to", dateTo);
   const qs = sp.toString();
   return `/players/${playerId}/departments/${slug}/report.docx${qs ? `?${qs}` : ""}`;
+}
+
+/** The department's views as Excel, over the chosen period: the layout is
+ *  fetched again WITH the window (on screen it has none — each chart pans
+ *  its own history), so the file holds only that period. */
+async function exportarExcel(
+  playerId: string,
+  playerName: string,
+  department: Department,
+  dateFrom: string,
+  dateTo: string,
+): Promise<void> {
+  const [{ buildPlayerFilename, buildPlayerWorkbook }, XLSX] = await Promise.all([
+    import("@/lib/export/playerReport"),
+    import("xlsx"),
+  ]);
+  const sp = new URLSearchParams({ department: department.slug, date_from: dateFrom, date_to: dateTo });
+  const data = await api<DepartmentLayoutResponse>(`/players/${playerId}/views?${sp}`);
+  const sections = data.layout?.sections ?? [];
+  const generatedAt = new Date();
+  const wb = buildPlayerWorkbook(XLSX, sections, { playerName, department, dateFrom, dateTo, generatedAt });
+  XLSX.writeFile(wb, buildPlayerFilename(playerName, department.slug, generatedAt));
 }

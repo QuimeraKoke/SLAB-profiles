@@ -3198,6 +3198,39 @@ planilla del club (`exams/formativo_gps_ingest.py`):
   la suma de velocidades máximas (16.159 km/h), sin gráficos de dos ejes, sin
   el 100 % apilado Acc/Dec. A:C quedó fuera por ahora (decisión del club).
 
+### 3.65 Informes Word ejecutivos y con período (2026-10-21)
+
+Los tres Word (jugador por departamento, Resumen S-LAB, equipo por
+departamento) se descargan desde un diálogo **«Descargar informe»**
+(`ReportDownloadDialog`): período (presets 30 días–2 años o a medida; en el
+dashboard, el de la página) y formato **Ejecutivo** (por defecto) / Completo
+/ Excel (datos, sólo en el perfil).
+
+* **Período siempre** (`dashboards/report_period.Periodo`): sin fechas, los
+  últimos 30 días — nunca "todo el historial". Se compara con el período
+  anterior de igual duración. El agente de IA recibe el período en su
+  payload (firma de caché por período).
+* **Ejecutivo** (1–2 páginas, `dashboards/docx/executive.py`): Lo esencial
+  (resumen + 3 hallazgos) → Indicadores (≤ 6: primero lo que tiene banda o
+  regla, luego dirección de lo bueno, luego lo graficado; máx. 2 por
+  plantilla; "mejor" sobre "promedio"; cambio leído como mejora/empeora) →
+  Disponibilidad (lesiones que tocan el período, días perdidos dentro) →
+  Alertas del período → Gráficos clave (los primeros que dibujan, sin
+  tabla) → Próximos pasos. Se arma cada vez; el análisis de IA queda en
+  caché y lo comparte con el Completo.
+* **Resumen S-LAB con período**: `build_triage_payload`,
+  `build_player_analysis` y `build_player_season_summary` aceptan
+  `desde/hasta` opcionales (sin ellos, la pantalla queda igual): alertas
+  disparadas en el período, métricas leídas en él, último partido antes de
+  su fin, partidos/GPS del período, semanas del período; el ACWR sólo si el
+  período termina hoy o ayer.
+* **Equipo**: el resumen usa las alertas del período (la disponibilidad
+  sigue siendo "hoy", rotulada así); el Word pasa el partido / los partidos /
+  el día de partido elegidos y respeta el `scope` por widget y el alcance de
+  equipo de GPS partido.
+* Sin gráfico en Word (como antes): roster matrix, leaderboard, gauge,
+  widgets de lesiones — en el Completo salen como tabla; el Ejecutivo los omite.
+
 ## 4. Management commands
 
 All under `backend/exams/management/commands/`. Run via

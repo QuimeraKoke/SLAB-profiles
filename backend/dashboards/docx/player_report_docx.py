@@ -35,9 +35,19 @@ def render_or_get_player_docx(
     department: Department,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    formato: str = "completo",
 ) -> bytes:
     """Download entry point for the per-department report (.docx). Reuses
-    the cached narrative for this data+agent signature when present."""
+    the cached narrative for this data+agent signature when present.
+
+    Always over a period (default: the last 30 days — `Periodo.de`), which
+    the agent is told. `formato="ejecutivo"`: the one-to-two page version
+    (`dashboards/docx/executive.py`); it shares the narrative with the full
+    one and is rendered fresh each time (cheap: two charts)."""
+    from dashboards.report_period import Periodo
+
+    periodo = Periodo.de(date_from, date_to)
+    date_from, date_to = periodo.desde, periodo.hasta
     from django.conf import settings
 
     from dashboards.pdf.narrative import generate_player_narrative, resolve_insight_agent
@@ -52,21 +62,28 @@ def render_or_get_player_docx(
     fingerprint = agent.config_fingerprint() if agent else "builtin"
 
     payload = build_department_payload(player, department, date_from, date_to)
+    payload["periodo"] = periodo.clave()
     kind = f"dept:{department.slug}"
     signature = report_signature(
         payload, model=model, kind=kind,
         render_version=_DEPT_RENDER_VERSION, agent_fingerprint=fingerprint,
     )
 
-    saved = get_saved_file(player, kind, signature, fmt="docx")
-    if saved is not None:
-        return saved
+    if formato != "ejecutivo":
+        saved = get_saved_file(player, kind, signature, fmt="docx")
+        if saved is not None:
+            return saved
 
     narrative = get_saved_narrative(player, kind, signature)
     if narrative is None:
         narrative = generate_player_narrative(payload, agent=agent)
 
-    docx_bytes = _render(player, department, payload, narrative, date_from, date_to)
+    if formato == "ejecutivo":
+        if narrative:
+            _guardar_narrativa(player, kind, signature, model, narrative)
+        return _render_ejecutivo(player, department, narrative, periodo)
+
+    docx_bytes = _render(player, department, payload, narrative, date_from, date_to, periodo)
     try:
         save_file(player, kind, signature, docx_bytes,
                   fmt="docx", model=model, narrative=narrative)
@@ -76,7 +93,80 @@ def render_or_get_player_docx(
     return docx_bytes
 
 
-def _render(player, department, payload, narrative, date_from, date_to) -> bytes:
+def _guardar_narrativa(player, kind, signature, model, narrative) -> None:
+    """The executive file is not cached, its narrative is: the full report of
+    the same period then costs no second LLM call (and vice versa)."""
+    try:
+        from dashboards.models import PlayerReportSnapshot
+
+        PlayerReportSnapshot.objects.get_or_create(
+            player=player, kind=kind, data_hash=signature,
+            defaults={"model": model, "narrative": narrative})
+    except Exception:  # noqa: BLE001 — best-effort
+        pass
+
+
+def _templates(department, category):
+    from exams.models import ExamTemplate
+
+    return (ExamTemplate.objects
+            .filter(department=department, applicable_categories=category, is_active_version=True)
+            .distinct())
+
+
+def _layout(department, category):
+    return (DepartmentLayout.objects
+            .filter(department=department, category=category, is_active=True)
+            .prefetch_related("sections__widgets__data_sources").first())
+
+
+GRAFICOS_CLAVE = 2
+
+
+def _render_ejecutivo(player, department, narrative, periodo) -> bytes:
+    from dashboards.pdf.scaffold import logo_image_for_club
+
+    from . import executive as ex
+
+    doc = _docx.new_document()
+    width = _docx.PORTRAIT_CONTENT_CM
+    category = player.category
+    club = category.club if category else None
+    _docx.report_header(
+        doc,
+        club_name=club.name if club else "",
+        club_logo=_safe_logo(logo_image_for_club, club),
+        title=f"{player.first_name} {player.last_name}".strip(),
+        subtitle=f"Informe ejecutivo · {department.name}",
+        meta=[
+            ("Equipo", category.season_label() if category else ""),
+            ("Período", periodo.etiqueta()),
+            ("Comparado con", periodo.anterior().etiqueta()),
+            ("Generado", timezone.now().astimezone(_DISPLAY_TZ).strftime("%d/%m/%Y · %H:%M")),
+        ],
+    )
+    ex.lo_esencial(doc, narrative)
+    _docx.section_heading(doc, "Indicadores del período")
+    ex.tabla_indicadores(doc, ex.indicadores(_templates(department, category), category,
+                                             [player.id], periodo),
+                         width_cm=width, titulo_periodo="Período")
+    ex.disponibilidad(doc, [player], periodo, width_cm=width)
+    ex.alertas(doc, [player], periodo, department=department, width_cm=width)
+
+    layout = _layout(department, category)
+    if layout is not None:
+        ex.graficos_clave(
+            doc,
+            [(w, (lambda w=w: resolve_widget(w, player.id, date_from=periodo.desde,
+                                             date_to=periodo.hasta)))
+             for section in layout.sections.all() for w in section.widgets.all()],
+            maximo=GRAFICOS_CLAVE, width_cm=width)
+    ex.proximos_pasos(doc, narrative)
+    ex.nota_final(doc)
+    return _docx.to_bytes(doc)
+
+
+def _render(player, department, payload, narrative, date_from, date_to, periodo=None) -> bytes:
     from dashboards.pdf.scaffold import logo_image_for_club
 
     doc = _docx.new_document()
@@ -92,7 +182,7 @@ def _render(player, department, payload, narrative, date_from, date_to) -> bytes
         subtitle=f"Reporte de {department.name}",
         meta=[
             ("Equipo", category.season_label() if category else ""),
-            ("Período", _format_period(date_from, date_to)),
+            ("Período", periodo.etiqueta() if periodo else _format_period(date_from, date_to)),
             ("Generado", timezone.now().astimezone(_DISPLAY_TZ).strftime("%d/%m/%Y · %H:%M")),
         ],
     )
@@ -101,6 +191,16 @@ def _render(player, department, payload, narrative, date_from, date_to) -> bytes
     if narrative:
         _docx.section_heading(doc, "Análisis del período")
         _docx.add_narrative(doc, narrative)
+
+    # The period's indicators against the previous one — same as the
+    # executive report, so both versions open with the same numbers.
+    if periodo is not None:
+        from . import executive as ex
+
+        _docx.section_heading(doc, "Indicadores del período")
+        ex.tabla_indicadores(doc, ex.indicadores(_templates(department, category), category,
+                                                 [player.id], periodo),
+                             width_cm=width, titulo_periodo="Período")
 
     # Médico: injury history first — the doctor's primary question.
     if department.slug == "medico":

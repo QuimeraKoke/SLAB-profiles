@@ -68,13 +68,13 @@ RENDER_VERSION = 2
 # never collides with the web's light narrative. Bump the render version when
 # the report layout changes.
 _ANALYSIS_KIND = "resumen"
-_ANALYSIS_RENDER_VERSION = 2
+_ANALYSIS_RENDER_VERSION = 3  # v3: period-scoped sections
 
 
 # ─── Public entry points ──────────────────────────────────────────────
 
 
-def report_inputs(player: Player):
+def report_inputs(player: Player, periodo=None):
     """Shared inputs for the analytical Resumen report (PDF + Word): the agent,
     model, content signature, and the triage + analysis payloads. Both
     renderers use this so they hit the SAME content-addressed cache (kind
@@ -90,9 +90,13 @@ def report_inputs(player: Player):
     ) or getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
     fingerprint = agent.config_fingerprint() if agent else "builtin"
 
-    triage = build_triage_payload(player)
-    analysis = build_player_analysis(player)
+    desde, hasta = (periodo.desde, periodo.hasta) if periodo is not None else (None, None)
+    triage = build_triage_payload(player, desde, hasta)
+    analysis = build_player_analysis(player, desde, hasta)
     payload = {"triage": triage, "analysis": analysis}
+    if periodo is not None:
+        # The agent is told which period it is reading.
+        payload["periodo"] = periodo.clave()
     signature = report_signature(
         payload, model=model, kind=_ANALYSIS_KIND,
         render_version=_ANALYSIS_RENDER_VERSION, agent_fingerprint=fingerprint,

@@ -2761,7 +2761,9 @@ def download_team_report_docx(
     date_to: str | None = None,
     player_ids: str | None = None,
     match_id: str | None = None,
+    match_ids: str | None = None,
     layout: str | None = None,
+    formato: str | None = None,
 ):
     """Render the team-view report as an editable Word document (landscape).
 
@@ -2774,6 +2776,7 @@ def download_team_report_docx(
     from django.http import HttpResponse
 
     from dashboards.docx.team_report_docx import render_team_docx
+    from dashboards.report_period import formato as _formato
 
     membership = get_membership(request.user)
 
@@ -2814,6 +2817,7 @@ def download_team_report_docx(
     parsed_from, parsed_to = _parse_date_window(date_from, date_to)
 
     parsed_match_id: _UUID | None = None
+    match_day = None
     if match_id:
         try:
             mid = _UUID(match_id)
@@ -2823,6 +2827,19 @@ def download_team_report_docx(
             pk=mid, category_id=category.id,
         ).exists():
             parsed_match_id = mid
+        elif mid is None:
+            # A "gps_days" layout picks a match DAY, not an Event.
+            from dashboards.match_days import parse_day
+
+            match_day = parse_day(match_id)
+    parsed_match_ids: list[_UUID] = []
+    for raw in (match_ids or "").split(","):
+        try:
+            cand = _UUID(raw.strip())
+        except (TypeError, ValueError):
+            continue
+        if Event.objects.filter(pk=cand, category_id=category.id).exists():
+            parsed_match_ids.append(cand)
 
     docx_bytes = render_team_docx(
         department=dept,
@@ -2832,7 +2849,10 @@ def download_team_report_docx(
         date_from=parsed_from,
         date_to=parsed_to,
         event_id=parsed_match_id,
+        event_ids=parsed_match_ids or None,
+        match_day=match_day,
         layout_slug=layout,
+        formato=_formato(formato),
     )
 
     filename = (f"reporte-{department_slug}{'-' + layout if layout else ''}"
@@ -4646,7 +4666,8 @@ def delete_kine_entry(request, entry_id: UUID):
 
 
 @api.get("/players/{player_id}/triage.docx")
-def download_player_triage_docx(request, player_id: str):
+def download_player_triage_docx(request, player_id: str, date_from: str | None = None,
+                                date_to: str | None = None, formato: str | None = None):
     """Editable Resumen (Word) — one-page snapshot of alerts, alerted metrics
     with previous reading, other tracked metrics with 30d trail, and the
     last match's citation status. Shares its data layer with the JSON
@@ -4664,7 +4685,11 @@ def download_player_triage_docx(request, player_id: str):
 
     # Content-addressed: returns the saved Word file for this data signature
     # if it exists, else generates once and persists it (see report_cache).
-    docx_bytes = render_or_get_triage_docx(player)
+    from dashboards.report_period import Periodo, formato as _formato
+
+    parsed_from, parsed_to = _parse_date_window(date_from, date_to)
+    docx_bytes = render_or_get_triage_docx(
+        player, periodo=Periodo.de(parsed_from, parsed_to), formato=_formato(formato))
     name = f"{player.first_name}-{player.last_name}".replace(" ", "_")
     filename = f"resumen-{name}.docx"
     response = HttpResponse(docx_bytes, content_type=_DOCX_CONTENT_TYPE)
@@ -4679,8 +4704,10 @@ def download_player_department_docx(
     department_slug: str,
     date_from: str | None = None,
     date_to: str | None = None,
+    formato: str | None = None,
 ):
-    """Per-player department report as an editable Word document (portrait A4)."""
+    """Per-player department report as an editable Word document (portrait A4).
+    `formato`: "ejecutivo" (default, 1–2 pages) or "completo"."""
     from django.http import HttpResponse
 
     from dashboards.docx.player_report_docx import render_or_get_player_docx
@@ -4703,9 +4730,11 @@ def download_player_department_docx(
 
     # Content-addressed: uses the department's InsightAgent + saved snapshot
     # (same data + agent config ⇒ same report, generated once).
+    from dashboards.report_period import formato as _formato
+
     docx_bytes = render_or_get_player_docx(
         player=player, department=dept,
-        date_from=parsed_from, date_to=parsed_to,
+        date_from=parsed_from, date_to=parsed_to, formato=_formato(formato),
     )
 
     name = f"{player.first_name}-{player.last_name}".replace(" ", "_")

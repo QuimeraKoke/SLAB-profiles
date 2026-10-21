@@ -47,7 +47,7 @@ _CELL_HORIZONTAL_PADDING_CM = 0.4
 
 # Bump when the department report's rendered layout changes, to supersede
 # previously saved snapshots without a data change.
-_DEPT_RENDER_VERSION = 1
+_DEPT_RENDER_VERSION = 2  # v2: indicators of the period at the top
 
 # Display timezone for cover-page "Generado" timestamp.
 # Mirrors team_report._DISPLAY_TZ.

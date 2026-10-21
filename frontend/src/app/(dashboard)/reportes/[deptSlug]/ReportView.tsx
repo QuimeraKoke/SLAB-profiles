@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import DownloadExcelButton from "@/components/reports/DownloadExcelButton";
-import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
+import ReportDownloadDialog from "@/components/reports/ReportDownloadDialog/ReportDownloadDialog";
 import MatchSelector from "@/components/reports/MatchSelector";
 import MatchMultiSelector from "@/components/reports/MatchMultiSelector";
 import ReportFilters, { defaultFilters, groupPlayersByPosition } from "@/components/reports/ReportFilters";
@@ -25,6 +25,7 @@ import type {
   PlayerSummary,
   Position,
   TeamLayoutRef,
+  TeamMatchSelectorConfig,
   TeamReportResponse,
 } from "@/lib/types";
 import styles from "./page.module.css";
@@ -306,11 +307,20 @@ export default function ReportView({ deptSlug, layoutSlug }: { deptSlug: string;
               />
             )}
             {layout && categoryId && (
-              <DownloadPdfButton
-                endpoint={`/reports/${department.slug}/team.docx?${teamDocxQuery(categoryId, filters)}${layout.slug ? `&layout=${encodeURIComponent(layout.slug)}` : ""}`}
+              <ReportDownloadDialog
+                title={`Informe de ${department.name}${layouts.length > 1 ? ` · ${layout.name}` : ""}`}
+                fixedPeriod={{
+                  label: periodLabel(filters.date.from, filters.date.to, layout.match_selector),
+                  dateFrom: filters.date.from,
+                  dateTo: filters.date.to,
+                }}
+                endpoint={({ formato }) =>
+                  `/reports/${department.slug}/team.docx?${teamDocxQuery(categoryId, filters, layout.match_selector)}`
+                  + `${layout.slug ? `&layout=${encodeURIComponent(layout.slug)}` : ""}&formato=${formato}`}
                 // Nombre de ARCHIVO: el guardado, no la etiqueta. "Serie 2014 — Sub 12"
-                  // metería espacios y una raya en el nombre del archivo.
-                  filename={`reporte-${department.slug}${layouts.length > 1 ? `-${layout.slug}` : ""}-${layout.category.name}.docx`.replace(/\s+/g, "_")}
+                // metería espacios y una raya en el nombre del archivo.
+                filename={(formato) =>
+                  `informe-${formato}-${department.slug}${layouts.length > 1 ? `-${layout.slug}` : ""}-${layout.category.name}.docx`.replace(/\s+/g, "_")}
               />
             )}
             {editMode && categoryId && (
@@ -472,14 +482,47 @@ function filterPlayerNames(playerIds: string[], players: PlayerSummary[]): strin
 }
 
 /** Query string for the team Word report endpoint — mirrors the current
- *  on-screen filters so the .docx matches what the user is looking at. */
-function teamDocxQuery(categoryId: string, filters: ReportFiltersValue): string {
+ *  on-screen filters so the .docx matches what the user is looking at,
+ *  including the match (or match day) a match layout has chosen. */
+function teamDocxQuery(
+  categoryId: string,
+  filters: ReportFiltersValue,
+  selector?: TeamMatchSelectorConfig,
+): string {
   const sp = new URLSearchParams({ category_id: categoryId });
   if (filters.positionId) sp.set("position_id", filters.positionId);
   if (filters.playerIds.length > 0) sp.set("player_ids", filters.playerIds.join(","));
   if (filters.date.from) sp.set("date_from", filters.date.from);
   if (filters.date.to) sp.set("date_to", filters.date.to);
+  if (selector?.enabled) {
+    if (selector.mode === "multi" && selector.selected_ids?.length) {
+      sp.set("match_ids", selector.selected_ids.join(","));
+    } else if (selector.selected_id) {
+      sp.set("match_id", selector.selected_id);
+    }
+  }
   return sp.toString();
+}
+
+function fmtDate(iso: string): string {
+  const [y, m, d] = iso.split("-");
+  return y && m && d ? `${d}/${m}/${y}` : iso;
+}
+
+/** What the team report will cover, in words, for the download dialog. */
+function periodLabel(from: string, to: string, selector?: TeamMatchSelectorConfig): string {
+  const periodo = from && to ? `${fmtDate(from)} – ${fmtDate(to)}` : "Últimos 30 días";
+  if (!selector?.enabled) return periodo;
+  if (selector.source === "gps_days") {
+    return selector.selected_id
+      ? `Partido del ${fmtDate(selector.selected_id)} · evolución ${periodo}` : periodo;
+  }
+  if (selector.mode === "multi") {
+    const n = selector.selected_ids?.length ?? 0;
+    return n ? `${n} partido(s) seleccionado(s)` : periodo;
+  }
+  const m = selector.options.find((o) => o.id === selector.selected_id);
+  return m ? `Partido: ${m.title}` : periodo;
 }
 
 function Placeholder({ departmentName }: { departmentName: string }) {

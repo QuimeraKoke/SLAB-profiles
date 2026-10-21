@@ -46,15 +46,31 @@ _STRONG_R = 0.6   # |r| at/above which a correlation is "strong"
 _MIN_SERIES = 4   # min paired points for a meaningful correlation/trend
 
 
-def build_player_analysis(player: Player) -> dict[str, Any]:
-    """Assemble the analysis payload for `player`. Never raises."""
+def build_player_analysis(player: Player, desde=None, hasta=None) -> dict[str, Any]:
+    """Assemble the analysis payload for `player`. Never raises.
+
+    With a period (the downloadable report's): the match load and its
+    correlations over the matches inside it, the training weeks inside it,
+    the position benchmark on the last match before its end. The ACWR is the
+    one number computed "as of today" only, so it is shown only for a period
+    that ends today or yesterday."""
     match_tpl = _active_template(_GPS_MATCH_SLUG, player)
     train_tpl = _active_template(_GPS_TRAIN_SLUG, player)
+    v = (desde, hasta)
     return {
-        "match_load": _match_load(player, match_tpl),
-        "training": _training(player, train_tpl, match_tpl),
-        "position": _position_context(player, match_tpl),
+        "match_load": _match_load(player, match_tpl, v),
+        "training": _training(player, train_tpl, match_tpl, v),
+        "position": _position_context(player, match_tpl, v),
     }
+
+
+def _ventana(qs, v):
+    desde, hasta = v if v else (None, None)
+    if desde is not None:
+        qs = qs.filter(recorded_at__gte=desde)
+    if hasta is not None:
+        qs = qs.filter(recorded_at__lte=hasta)
+    return qs
 
 
 # ─── helpers ──────────────────────────────────────────────────────────────
@@ -116,12 +132,12 @@ def _trend(values: list[float]) -> dict[str, Any] | None:
     }
 
 
-def _match_load(player: Player, match_tpl: ExamTemplate | None) -> dict[str, Any]:
+def _match_load(player: Player, match_tpl: ExamTemplate | None, v=None) -> dict[str, Any]:
     if match_tpl is None:
         return {"n_matches": 0, "metrics": [], "correlations": [], "primary": None}
     rows = list(
-        ExamResult.objects
-        .filter(player=player, template__family_id=match_tpl.family_id)
+        _ventana(ExamResult.objects
+                 .filter(player=player, template__family_id=match_tpl.family_id), v)
         .order_by("recorded_at")
         .values_list("result_data", flat=True)
     )
@@ -182,7 +198,7 @@ def _match_load(player: Player, match_tpl: ExamTemplate | None) -> dict[str, Any
     }
 
 
-def _weekly_load(player: Player, match_tpl, train_tpl) -> list[dict[str, Any]]:
+def _weekly_load(player: Player, match_tpl, train_tpl, v=None) -> list[dict[str, Any]]:
     """Combined match+training distance per ISO week (newest last). Training
     also tracks player_load. Used for microcycle comparison + the ACWR trend."""
     weeks: dict[tuple[int, int], dict[str, float]] = {}
@@ -203,13 +219,15 @@ def _weekly_load(player: Player, match_tpl, train_tpl) -> list[dict[str, Any]]:
 
     if train_tpl is not None:
         add(
-            ExamResult.objects.filter(player=player, template__family_id=train_tpl.family_id)
+            _ventana(ExamResult.objects.filter(player=player,
+                                               template__family_id=train_tpl.family_id), v)
             .values_list("recorded_at", "result_data"),
             "tot_dist", "player_load",
         )
     if match_tpl is not None:
         add(
-            ExamResult.objects.filter(player=player, template__family_id=match_tpl.family_id)
+            _ventana(ExamResult.objects.filter(player=player,
+                                               template__family_id=match_tpl.family_id), v)
             .values_list("recorded_at", "result_data"),
             "tot_dist",
         )
@@ -226,14 +244,20 @@ def _weekly_load(player: Player, match_tpl, train_tpl) -> list[dict[str, Any]]:
     ]
 
 
-def _training(player: Player, train_tpl, match_tpl) -> dict[str, Any]:
+def _training(player: Player, train_tpl, match_tpl, v=None) -> dict[str, Any]:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
     from api.roster import _player_acwr
 
+    hasta = (v or (None, None))[1]
+    actual = hasta is None or hasta.date() >= timezone.localdate() - timedelta(days=1)
     acwr_val = None
-    if player.category_id:
+    if player.category_id and actual:
         acwr_val = _player_acwr(player.category, [player.id]).get(player.id)
 
-    weekly = _weekly_load(player, match_tpl, train_tpl)
+    weekly = _weekly_load(player, match_tpl, train_tpl, v)
 
     # Microcycle comparison: current (last) week vs the mean of the prior up-to-3.
     micro = None
@@ -253,7 +277,8 @@ def _training(player: Player, train_tpl, match_tpl) -> dict[str, Any]:
 
     return {
         "acwr": _acwr_block(acwr_val),
-        "weekly": weekly[-8:],
+        # A period shows its own weeks; the screen keeps the last eight.
+        "weekly": weekly if (v and any(v)) else weekly[-8:],
         "microcycle": micro,
     }
 
@@ -272,15 +297,15 @@ def _acwr_block(value: float | None) -> dict[str, Any] | None:
     return {"value": value, "band": band, "label": label}
 
 
-def _position_context(player: Player, match_tpl: ExamTemplate | None) -> dict[str, Any]:
+def _position_context(player: Player, match_tpl: ExamTemplate | None, v=None) -> dict[str, Any]:
     if match_tpl is None or not player.category_id or player.position_id is None:
         return {"position_label": None, "metrics": []}
     from dashboards.references import peer_comparison
 
     # Latest match reading per field for this player → the value we benchmark.
     latest = (
-        ExamResult.objects
-        .filter(player=player, template__family_id=match_tpl.family_id)
+        _ventana(ExamResult.objects
+                 .filter(player=player, template__family_id=match_tpl.family_id), v)
         .order_by("-recorded_at")
         .values_list("result_data", flat=True)
         .first()

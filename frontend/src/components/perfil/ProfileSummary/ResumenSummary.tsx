@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Activity, Gauge, Stethoscope, Sparkles } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
-import DownloadPdfButton from "@/components/reports/DownloadPdfButton";
+import ReportDownloadDialog from "@/components/reports/ReportDownloadDialog/ReportDownloadDialog";
 import type {
   ResumenCardsResponse,
   ResumenGpsCard,
@@ -81,9 +81,12 @@ export default function ResumenSummary({ playerId, playerName }: Props) {
         </h3>
         {data?.number && <span className={styles.number}>#{data.number}</span>}
         <span className={styles.download}>
-          <DownloadPdfButton
-            endpoint={`/players/${playerId}/triage.docx`}
-            filename={`resumen-${playerName}.docx`.replace(/\s+/g, "_")}
+          <ReportDownloadDialog
+            title={`Resumen S-LAB · ${playerName}`}
+            endpoint={({ dateFrom, dateTo, formato }) =>
+              `/players/${playerId}/triage.docx?${new URLSearchParams({
+                date_from: dateFrom, date_to: dateTo, formato })}`}
+            filename={(formato) => `resumen-${formato}-${playerName}.docx`.replace(/\s+/g, "_")}
           />
         </span>
       </header>

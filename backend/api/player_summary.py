@@ -21,13 +21,27 @@ from events.models import Event, EventParticipant
 from exams.models import Episode, ExamResult, ExamTemplate
 
 
-def build_player_season_summary(player: Player) -> dict[str, Any]:
-    """Assemble the three Resumen cards for `player`. Never raises."""
+def build_player_season_summary(player: Player, desde=None, hasta=None) -> dict[str, Any]:
+    """Assemble the three Resumen cards for `player`. Never raises.
+
+    With a period (the downloadable report's) every card covers only it: the
+    matches and GPS inside [desde, hasta], and the episodes that overlap it.
+    Without one, all-time — the screen's career overview."""
+    v = (desde, hasta)
     return {
-        "estadisticas": _season_match_stats(player),
-        "rendimiento_fisico": _gps_averages(player),
-        "reporte_medico": _medical(player),
+        "estadisticas": _season_match_stats(player, v),
+        "rendimiento_fisico": _gps_averages(player, v),
+        "reporte_medico": _medical(player, v, limit=6 if (desde or hasta) else 3),
     }
+
+
+def _ventana(qs, campo: str, v) -> Any:
+    desde, hasta = v if v else (None, None)
+    if desde is not None:
+        qs = qs.filter(**{f"{campo}__gte": desde})
+    if hasta is not None:
+        qs = qs.filter(**{f"{campo}__lte": hasta})
+    return qs
 
 
 def _avg(values: list[Any]) -> float | None:
@@ -46,7 +60,7 @@ def _active_template(slug: str, player: Player) -> ExamTemplate | None:
     return qs.order_by("-is_active_version", "-version").first()
 
 
-def _season_match_stats(player: Player) -> dict[str, Any]:
+def _season_match_stats(player: Player, v=None) -> dict[str, Any]:
     """Partidos jugados / minutos / goles / asistencias / amarillas / rojas.
 
     Primary source is `EventParticipant` (the authoritative box score). When a
@@ -55,8 +69,9 @@ def _season_match_stats(player: Player) -> dict[str, Any]:
     results. Totals are rounded to integers (some sources store synthetic
     fractional values; partial goals/minutes make no sense in a season tally)."""
     parts = list(
-        EventParticipant.objects
-        .filter(player=player, event__event_type=Event.TYPE_MATCH)
+        _ventana(EventParticipant.objects
+                 .filter(player=player, event__event_type=Event.TYPE_MATCH),
+                 "event__starts_at", v)
         .values_list("match_role", "minutes_played", "goals", "yellow_cards", "red_cards")
     )
     if any((p[1] or 0) > 0 for p in parts):
@@ -64,14 +79,14 @@ def _season_match_stats(player: Player) -> dict[str, Any]:
             "partidos_jugados": sum(1 for p in parts if (p[1] or 0) > 0),
             "minutos_totales": round(sum((p[1] or 0) for p in parts)),
             "goles": round(sum((p[2] or 0) for p in parts)),
-            "asistencias": _sum_field(player, "assists"),
+            "asistencias": _sum_field(player, "assists", v),
             "amarillas": round(sum((p[3] or 0) for p in parts)),
             "rojas": round(sum((p[4] or 0) for p in parts)),
         }
-    return _season_stats_from_rendimiento(player)
+    return _season_stats_from_rendimiento(player, v)
 
 
-def _season_stats_from_rendimiento(player: Player) -> dict[str, Any]:
+def _season_stats_from_rendimiento(player: Player, v=None) -> dict[str, Any]:
     """Fallback box score from `rendimiento_de_partido` results (used when the
     club records performance on the exam rather than EventParticipant, e.g. the
     demo). All sums rounded to integers."""
@@ -82,8 +97,8 @@ def _season_stats_from_rendimiento(player: Player) -> dict[str, Any]:
             "asistencias": None, "amarillas": 0, "rojas": 0,
         }
     rows = list(
-        ExamResult.objects
-        .filter(player=player, template__family_id=tpl.family_id)
+        _ventana(ExamResult.objects.filter(player=player, template__family_id=tpl.family_id),
+                 "recorded_at", v)
         .values_list("result_data", flat=True)
     )
 
@@ -104,7 +119,7 @@ def _season_stats_from_rendimiento(player: Player) -> dict[str, Any]:
     }
 
 
-def _sum_field(player: Player, key: str) -> int | None:
+def _sum_field(player: Player, key: str, v=None) -> int | None:
     """Rounded sum of a numeric field across the player's match-performance
     results. Returns None when the template/field isn't present so the UI can
     show '—' rather than a misleading 0."""
@@ -113,9 +128,9 @@ def _sum_field(player: Player, key: str) -> int | None:
         return None
     total = 0.0
     found = False
-    for rd in ExamResult.objects.filter(
+    for rd in _ventana(ExamResult.objects.filter(
         player=player, template__family_id=tpl.family_id,
-    ).values_list("result_data", flat=True):
+    ), "recorded_at", v).values_list("result_data", flat=True):
         v = (rd or {}).get(key)
         if isinstance(v, (int, float)):
             total += v
@@ -123,14 +138,14 @@ def _sum_field(player: Player, key: str) -> int | None:
     return round(total) if found else None
 
 
-def _gps_averages(player: Player) -> dict[str, Any]:
+def _gps_averages(player: Player, v=None) -> dict[str, Any]:
     """Per-match GPS averages over `gps_partido`."""
     tpl = _active_template("gps_partido", player)
     if tpl is None:
         return {"partidos_con_gps": 0}
     rows = list(
-        ExamResult.objects
-        .filter(player=player, template__family_id=tpl.family_id)
+        _ventana(ExamResult.objects.filter(player=player, template__family_id=tpl.family_id),
+                 "recorded_at", v)
         .values_list("result_data", flat=True)
     )
 
@@ -147,15 +162,20 @@ def _gps_averages(player: Player) -> dict[str, Any]:
     }
 
 
-def _medical(player: Player, limit: int = 3) -> dict[str, Any]:
+def _medical(player: Player, v=None, limit: int = 3) -> dict[str, Any]:
     """Current availability status + the most recent episodes (open or closed,
-    newest first) with their stage/status for the badge."""
-    episodes = list(
-        Episode.objects
-        .filter(player=player)
-        .select_related("template")
-        .order_by("-started_at")[:limit]
-    )
+    newest first) with their stage/status for the badge. With a period, the
+    episodes that OVERLAP it (began before its end, not closed before its
+    start)."""
+    from django.db.models import Q
+
+    qs = Episode.objects.filter(player=player)
+    desde, hasta = v if v else (None, None)
+    if hasta is not None:
+        qs = qs.filter(started_at__lte=hasta)
+    if desde is not None:
+        qs = qs.filter(Q(ended_at__isnull=True) | Q(ended_at__gte=desde))
+    episodes = list(qs.select_related("template").order_by("-started_at")[:limit])
     return {
         "player_status": player.status,
         "player_status_label": player.get_status_display(),

@@ -28,27 +28,45 @@ _DISPLAY_TZ = ZoneInfo("America/Santiago")
 _SEVERITY = {"critical": "Crítica", "warning": "Advertencia", "info": "Info"}
 
 
-def render_or_get_triage_docx(player: Player) -> bytes:
+def render_or_get_triage_docx(player: Player, periodo=None, formato: str = "completo") -> bytes:
     """Download entry point. Returns the saved Word file for the player's
     current data signature if one exists; otherwise renders once (reusing a
     cached analysis narrative when present), persists, and returns it. Shares
-    the PDF's content-addressed cache (kind `resumen`)."""
+    the PDF's content-addressed cache (kind `resumen`).
+
+    `periodo` (`dashboards.report_period.Periodo`): every section covers it —
+    the season cards, the match load, the training weeks, the metric
+    evolution, the alerts — instead of the screen's mix of windows (all-time,
+    30 days, 8 weeks, active now). `formato="ejecutivo"`: one or two pages."""
     from dashboards.pdf.narrative import generate_player_analysis_narrative
     from dashboards.pdf.report_cache import (
         get_saved_file, get_saved_narrative, save_file,
     )
 
-    agent, model, signature, triage, analysis, payload = report_inputs(player)
+    agent, model, signature, triage, analysis, payload = report_inputs(player, periodo)
 
-    saved = get_saved_file(player, _ANALYSIS_KIND, signature, fmt="docx")
-    if saved is not None:
-        return saved
+    if formato != "ejecutivo":
+        saved = get_saved_file(player, _ANALYSIS_KIND, signature, fmt="docx")
+        if saved is not None:
+            return saved
 
     narrative = get_saved_narrative(player, _ANALYSIS_KIND, signature)
     if narrative is None:
         narrative = generate_player_analysis_narrative(payload, agent=agent)
 
-    docx_bytes = _render(triage, analysis, player, narrative)
+    if formato == "ejecutivo":
+        if narrative:
+            try:
+                from dashboards.models import PlayerReportSnapshot
+
+                PlayerReportSnapshot.objects.get_or_create(
+                    player=player, kind=_ANALYSIS_KIND, data_hash=signature,
+                    defaults={"model": model, "narrative": narrative})
+            except Exception:  # noqa: BLE001 — best-effort
+                pass
+        return _render_ejecutivo(triage, player, narrative, periodo)
+
+    docx_bytes = _render(triage, analysis, player, narrative, periodo)
     try:
         save_file(player, _ANALYSIS_KIND, signature, docx_bytes,
                   fmt="docx", model=model, narrative=narrative)
@@ -58,7 +76,80 @@ def render_or_get_triage_docx(player: Player) -> bytes:
     return docx_bytes
 
 
-def _render(triage: dict, analysis: dict, player: Player, narrative: dict | None) -> bytes:
+def _render_ejecutivo(triage: dict, player: Player, narrative: dict | None, periodo) -> bytes:
+    """One or two pages: what the agent concluded, the indicators against the
+    previous period, the period's match tally, injuries, alerts, next steps."""
+    from api.player_summary import player_squad_number
+    from dashboards.pdf.scaffold import logo_image_for_club
+    from exams.models import ExamTemplate
+
+    from . import executive as ex
+
+    doc = _docx.new_document()
+    width = _docx.PORTRAIT_CONTENT_CM
+    category = player.category
+    club = category.club if category else None
+    number = player_squad_number(player)
+    meta = [("Equipo", category.season_label() if category else "")]
+    if number:
+        meta.append(("Dorsal", f"#{number}"))
+    meta += [("Estado hoy", _STATUS_BADGE.get(player.status, (str(player.status).upper(), None))[0]),
+             ("Período", periodo.etiqueta()),
+             ("Comparado con", periodo.anterior().etiqueta()),
+             ("Generado", triage["generated_at"].astimezone(_DISPLAY_TZ).strftime("%d/%m/%Y")
+              if not periodo else _now_label())]
+    _docx.report_header(
+        doc, club_name=club.name if club else "",
+        club_logo=_safe_logo(logo_image_for_club, club),
+        title=f"{player.first_name} {player.last_name}".strip(),
+        subtitle="Resumen ejecutivo", meta=meta,
+    )
+    ex.lo_esencial(doc, narrative)
+    _docx.section_heading(doc, "Indicadores del período")
+    plantillas = (ExamTemplate.objects.filter(applicable_categories=category,
+                                              is_active_version=True).distinct()
+                  if category else [])
+    ex.tabla_indicadores(doc, ex.indicadores(plantillas, category, [player.id], periodo),
+                         width_cm=width, titulo_periodo="Período")
+    _partidos_del_periodo(doc, player, periodo, width)
+    ex.disponibilidad(doc, [player], periodo, width_cm=width)
+    ex.alertas(doc, [player], periodo, width_cm=width)
+    ex.proximos_pasos(doc, narrative)
+    ex.nota_final(doc)
+    return _docx.to_bytes(doc)
+
+
+def _now_label() -> str:
+    from django.utils import timezone
+
+    return timezone.now().astimezone(_DISPLAY_TZ).strftime("%d/%m/%Y · %H:%M")
+
+
+def _partidos_del_periodo(doc, player, periodo, width) -> None:
+    """The season cards, as one line each, for the period."""
+    from api.player_summary import build_player_season_summary
+
+    data = build_player_season_summary(player, periodo.desde, periodo.hasta)
+    est, gps = data["estadisticas"], data["rendimiento_fisico"]
+    _docx.section_heading(doc, "Partidos del período")
+    if not est.get("partidos_jugados") and not gps.get("partidos_con_gps"):
+        _docx.body(doc, "Sin partidos jugados en el período.")
+        return
+    filas = [["Partidos jugados", est.get("partidos_jugados", 0)],
+             ["Minutos", f"{est.get('minutos_totales', 0)} min"],
+             ["Goles · asistencias",
+              f"{est.get('goles', 0)} · {est['asistencias'] if est.get('asistencias') is not None else '—'}"]]
+    if gps.get("partidos_con_gps"):
+        d = gps.get("distancia_promedio")
+        v = gps.get("v_max_promedio")
+        filas += [["Distancia por partido (GPS)",
+                   "—" if d is None else f"{round(d):,} m".replace(",", ".")],
+                  ["Velocidad máxima promedio", "—" if v is None else f"{v:.1f} km/h"]]
+    _docx.add_table(doc, ["", "Período"], filas, width_cm=width, numeric_from=1)
+
+
+def _render(triage: dict, analysis: dict, player: Player, narrative: dict | None,
+            periodo=None) -> bytes:
     """Analytical Resumen report (Word): Resumen → Análisis → Conclusiones."""
     from dashboards.pdf.scaffold import logo_image_for_club
     from api.player_summary import player_squad_number
@@ -76,10 +167,10 @@ def _render(triage: dict, analysis: dict, player: Player, narrative: dict | None
     meta = [("Equipo", player.category.season_label() if player.category else "")]
     if number:
         meta.append(("Dorsal", f"#{number}"))
-    meta += [
-        ("Estado", status_label),
-        ("Generado", gen.strftime("%d/%m/%Y · %H:%M")),
-    ]
+    meta += [("Estado hoy" if periodo else "Estado", status_label)]
+    if periodo is not None:
+        meta.append(("Período", periodo.etiqueta()))
+    meta.append(("Generado", (_now_label() if periodo else gen.strftime("%d/%m/%Y · %H:%M"))))
     _docx.report_header(
         doc,
         club_name=club.name if club else "",
@@ -96,7 +187,7 @@ def _render(triage: dict, analysis: dict, player: Player, narrative: dict | None
     acwr = (analysis.get("training") or {}).get("acwr")
     if acwr:
         _docx.body(doc, f"ACWR {acwr['value']} — {acwr['label']}.")
-    _render_season_summary(doc, player, width)
+    _render_season_summary(doc, player, width, periodo)
 
     # ── ANÁLISIS ──
     _docx.section_heading(doc, "Análisis")
@@ -107,8 +198,9 @@ def _render(triage: dict, analysis: dict, player: Player, narrative: dict | None
     _render_training(doc, analysis.get("training") or {}, width)
     _render_position(doc, analysis.get("position") or {}, width)
 
-    # Evolución de métricas (30 días) — per-metric line chart (the timeline).
-    _docx.widget_title(doc, "Evolución de métricas (30 días)")
+    # Evolución de métricas — per-metric line chart over the period.
+    _docx.widget_title(doc, "Evolución de métricas del período" if periodo
+                       else "Evolución de métricas (30 días)")
     others = triage.get("other_metrics") or []
     if others:
         for m in others:
@@ -126,8 +218,8 @@ def _render(triage: dict, analysis: dict, player: Player, narrative: dict | None
     else:
         _docx.body(doc, "Sin métricas registradas.", muted=True)
 
-    # Alertas activas
-    _docx.widget_title(doc, "Alertas activas")
+    # Alertas (del período, o activas sin período)
+    _docx.widget_title(doc, "Alertas del período" if periodo else "Alertas activas")
     alerts = triage.get("alerts") or []
     if alerts:
         _docx.add_table(
@@ -220,13 +312,14 @@ def _render_position(doc, position: dict, width: float) -> None:
     )
 
 
-def _render_season_summary(doc, player, width: float) -> None:
+def _render_season_summary(doc, player, width: float, periodo=None) -> None:
     """3-card season block (estadísticas de juego · rendimiento físico ·
     reporte médico) under a 'Resumen de temporada' heading. Reuses the same
     `build_player_season_summary` aggregation as the web + the PDF ficha."""
     from api.player_summary import build_player_season_summary
 
-    data = build_player_season_summary(player)
+    data = (build_player_season_summary(player, periodo.desde, periodo.hasta) if periodo
+            else build_player_season_summary(player))
     est = data["estadisticas"]
     gps = data["rendimiento_fisico"]
     med = data["reporte_medico"]
@@ -240,7 +333,7 @@ def _render_season_summary(doc, player, width: float) -> None:
     def _d1(v):
         return "—" if v is None else f"{v:.1f}"
 
-    _docx.section_heading(doc, "Resumen de temporada")
+    _docx.section_heading(doc, "Resumen del período" if periodo else "Resumen de temporada")
 
     _docx.widget_title(doc, "Estadísticas de juego")
     _docx.add_table(

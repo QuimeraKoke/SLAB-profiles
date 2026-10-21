@@ -27,7 +27,7 @@ from dashboards.team_aggregation import resolve_team_widget
 from dashboards.pdf.team_report import _format_period
 
 _DISPLAY_TZ = ZoneInfo("America/Santiago")
-_TEAM_RENDER_VERSION = 1
+_TEAM_RENDER_VERSION = 2  # v2: period-scoped summary + indicators; executive format
 
 _STATUS_LABELS = {
     "available": "Disponible",
@@ -46,7 +46,10 @@ def render_team_docx(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     event_id: UUID | None = None,
+    event_ids: list[UUID] | None = None,
+    match_day=None,
     layout_slug: str | None = None,
+    formato: str = "completo",
 ) -> bytes:
     """Download entry point for the team report (.docx). Resolves the
     department's InsightAgent, builds the squad data payload, reuses the
@@ -68,28 +71,57 @@ def render_team_docx(
         .first()
     )
 
+    from dashboards.report_period import Periodo
+
+    # Without a match selection the report covers a period — never "all
+    # time" (default: the last 30 days), and the agent is told which.
+    por_partido = bool(event_id or event_ids or match_day)
+    periodo = Periodo.de(date_from, date_to)
+    date_from, date_to = periodo.desde, periodo.hasta
+
+    # The same windows the screen uses: a "gps_days" layout reads the chosen
+    # day in its match widgets and the period in the rest, scoped to the
+    # category's TEAM when it says so (`api.routers.get_team_report`).
+    cfg = (layout.match_selector_config or {}) if layout is not None else {}
+    gps_days = cfg.get("enabled") and cfg.get("source") == "gps_days"
+    team = None
+    if gps_days and cfg.get("team"):
+        from dashboards import team_scope
+
+        team = team_scope.for_category(category)
+
+    def ventana(w):
+        if gps_days and (w.display_config or {}).get("scope") == "match":
+            from dashboards.match_days import day_bounds, empty_window
+
+            return day_bounds(match_day) if match_day else empty_window()
+        return date_from, date_to
+
     # Resolve every widget ONCE; reused for the narrative payload + rendering.
     resolved: list[tuple[object, str | None, dict]] = []
     if layout is not None:
         for section in layout.sections.all():
             for w in section.widgets.all():
+                w_from, w_to = ventana(w)
                 payload = resolve_team_widget(
                     w, category,
                     position_id=position_id, player_ids=player_ids,
-                    date_from=date_from, date_to=date_to, event_id=event_id,
+                    date_from=w_from, date_to=w_to, event_id=event_id,
+                    event_ids=event_ids, team=team,
                 )
                 resolved.append((w, section.title, payload))
 
-    exec_stats, by_status = _exec_data(department, category, position_id, player_ids)
+    exec_stats, by_status = _exec_data(department, category, position_id, player_ids, periodo)
 
     # Full payload → signature (accurate dedup); trimmed copy → LLM prompt.
     full_payload = _team_payload(
         department, category, exec_stats, resolved,
         filters={"position_id": str(position_id) if position_id else None,
                  "player_ids": sorted(str(p) for p in (player_ids or [])),
-                 "date_from": str(date_from) if date_from else None,
-                 "date_to": str(date_to) if date_to else None,
-                 "event_id": str(event_id) if event_id else None},
+                 "periodo": periodo.clave(),
+                 "event_id": str(event_id) if event_id else None,
+                 "event_ids": sorted(str(e) for e in (event_ids or [])),
+                 "match_day": match_day.isoformat() if match_day else None},
     )
 
     agent = resolve_insight_agent(department.slug)
@@ -103,18 +135,30 @@ def render_team_docx(
         render_version=_TEAM_RENDER_VERSION, agent_fingerprint=fingerprint,
     )
 
-    saved = get_saved_team_file(department, category, signature)
-    if saved is not None:
-        return saved
+    if formato != "ejecutivo":
+        saved = get_saved_team_file(department, category, signature)
+        if saved is not None:
+            return saved
 
     narrative = get_saved_team_narrative(department, category, signature)
     if narrative is None:
         narrative = generate_player_narrative(_trim(full_payload), agent=agent)
 
+    etiqueta = (_format_period(date_from, date_to, event_id, layout)
+                if (event_id and not match_day) else periodo.etiqueta())
+    if match_day:
+        etiqueta = f"Partido del {match_day.strftime('%d/%m/%Y')} · evolución {periodo.etiqueta()}"
+    if formato == "ejecutivo":
+        if narrative:
+            _guardar_narrativa(department, category, signature, model, narrative)
+        return _render_ejecutivo(department, category, layout, resolved, narrative, periodo,
+                                 etiqueta, position_id, player_ids, por_partido)
+
     docx_bytes = _render(
         department, category, exec_stats, by_status, resolved, narrative,
         layout_present=layout is not None,
-        period_label=_format_period(date_from, date_to, event_id, layout),
+        period_label=etiqueta,
+        periodo=periodo, roster=_roster(category, position_id, player_ids),
     )
     try:
         save_team_file(department, category, signature, docx_bytes,
@@ -125,8 +169,74 @@ def render_team_docx(
     return docx_bytes
 
 
+def _guardar_narrativa(department, category, signature, model, narrative) -> None:
+    """Executive files are not cached; their narrative is, so the full report
+    of the same period costs no second LLM call."""
+    try:
+        from dashboards.models import TeamReportSnapshot
+
+        TeamReportSnapshot.objects.get_or_create(
+            department=department, category=category, data_hash=signature,
+            defaults={"model": model, "narrative": narrative})
+    except Exception:  # noqa: BLE001 — best-effort
+        pass
+
+
+def _roster(category, position_id, player_ids):
+    qs = Player.objects.filter(category=category, is_active=True)
+    if position_id is not None:
+        qs = qs.filter(position_id=position_id)
+    if player_ids:
+        qs = qs.filter(id__in=player_ids)
+    return list(qs)
+
+
+GRAFICOS_CLAVE = 3
+
+
+def _render_ejecutivo(department, category, layout, resolved, narrative, periodo, etiqueta,
+                      position_id, player_ids, por_partido) -> bytes:
+    from dashboards.pdf.scaffold import logo_image_for_club
+    from exams.models import ExamTemplate
+
+    from . import executive as ex
+
+    doc = _docx.new_document(landscape=True)
+    width = _docx.LANDSCAPE_CONTENT_CM
+    roster = _roster(category, position_id, player_ids)
+    _docx.report_header(
+        doc,
+        club_name=category.club.name if category else "",
+        club_logo=_safe_logo(logo_image_for_club, category.club if category else None),
+        title=f"Informe ejecutivo · {department.name}",
+        subtitle=(f"Vista «{layout.name}»" if layout is not None else "Vista de equipo"),
+        meta=[
+            ("Equipo", category.season_label() if category else ""),
+            ("Período", etiqueta),
+            ("Comparado con", periodo.anterior().etiqueta()),
+            ("Plantel", f"{len(roster)} jugadores"),
+            ("Generado", timezone.now().astimezone(_DISPLAY_TZ).strftime("%d/%m/%Y · %H:%M")),
+        ],
+    )
+    ex.lo_esencial(doc, narrative)
+    _docx.section_heading(doc, "Indicadores del plantel")
+    plantillas = (ExamTemplate.objects
+                  .filter(department=department, applicable_categories=category,
+                          is_active_version=True).distinct())
+    ex.tabla_indicadores(doc, ex.indicadores(plantillas, category, [p.id for p in roster], periodo),
+                         width_cm=width, titulo_periodo="Media del plantel")
+    ex.disponibilidad(doc, roster, periodo, width_cm=width)
+    ex.alertas(doc, roster, periodo, department=department, width_cm=width)
+
+    ex.graficos_clave(doc, [(w, payload) for w, _section, payload in resolved],
+                      maximo=GRAFICOS_CLAVE, width_cm=width)
+    ex.proximos_pasos(doc, narrative)
+    ex.nota_final(doc)
+    return _docx.to_bytes(doc)
+
+
 def _render(department, category, exec_stats, by_status, resolved, narrative,
-            *, layout_present, period_label) -> bytes:
+            *, layout_present, period_label, periodo=None, roster=None) -> bytes:
     from dashboards.pdf.scaffold import logo_image_for_club
 
     doc = _docx.new_document(landscape=True)
@@ -150,11 +260,25 @@ def _render(department, category, exec_stats, by_status, resolved, narrative,
         _docx.section_heading(doc, "Análisis del equipo")
         _docx.add_narrative(doc, narrative)
 
-    # Executive summary (availability + active-alert counts).
+    if periodo is not None and roster is not None:
+        from exams.models import ExamTemplate
+
+        from . import executive as ex
+
+        _docx.section_heading(doc, "Indicadores del plantel")
+        plantillas = (ExamTemplate.objects
+                      .filter(department=department, applicable_categories=category,
+                              is_active_version=True).distinct())
+        ex.tabla_indicadores(doc, ex.indicadores(plantillas, category, [p.id for p in roster],
+                                                 periodo),
+                             width_cm=width, titulo_periodo="Media del plantel")
+
+    # Executive summary (availability now + the period's alerts).
     _docx.section_heading(doc, "Resumen ejecutivo")
     _docx.add_table(
         doc,
-        ["Plantel", "Disponibles", "No disponibles", "Críticas", "Advertencias"],
+        ["Plantel", "Disponibles hoy", "No disponibles hoy",
+         "Alertas críticas del período", "Advertencias del período"],
         [[exec_stats["roster"], exec_stats["available"], exec_stats["not_available"],
           exec_stats["crit"], exec_stats["warn"]]],
         width_cm=width, numeric_from=0,
@@ -186,7 +310,7 @@ def _render(department, category, exec_stats, by_status, resolved, narrative,
     return _docx.to_bytes(doc)
 
 
-def _exec_data(department, category, position_id, player_ids):
+def _exec_data(department, category, position_id, player_ids, periodo=None):
     from goals.models import Alert, AlertStatus
     from dashboards.pdf.executive_summary import _filter_alerts_by_department
 
@@ -198,7 +322,14 @@ def _exec_data(department, category, position_id, player_ids):
     roster = list(roster_qs)
 
     available = sum(1 for p in roster if p.status == "available")
-    alerts = list(Alert.objects.filter(player__in=roster, status=AlertStatus.ACTIVE))
+    if periodo is not None:
+        # The period's alerts — fired (or fired again) inside it — not "now".
+        from django.db.models import Q
+
+        alerts = list(Alert.objects.filter(player__in=roster, fired_at__lte=periodo.hasta)
+                      .filter(Q(fired_at__gte=periodo.desde) | Q(last_fired_at__gte=periodo.desde)))
+    else:
+        alerts = list(Alert.objects.filter(player__in=roster, status=AlertStatus.ACTIVE))
     dept_alerts = _filter_alerts_by_department(alerts, department)
 
     by_status: dict[str, list[str]] = {}
