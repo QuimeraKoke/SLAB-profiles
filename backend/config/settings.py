@@ -250,6 +250,13 @@ PESO_DIARIO_SHEET_ID = env("PESO_DIARIO_SHEET_ID",
                            default="1I27xvuHdPt82DT1ts4CNoVQxhDBPTdZiT-JYets0Xqc")
 PESO_DIARIO_CLUB = env("PESO_DIARIO_CLUB", default="Universidad de Chile")
 
+# Formativo physios' log (tab "f") → Kinesiología's "Notas diarias". Default id
+# for the same reason as the weigh-in: not a secret, and a sync that needs env
+# vars on three services to stop being a silent no-op stays unsynced. Blank it
+# to disable.
+KINE_FORMATIVO_SHEET_ID = env("KINE_FORMATIVO_SHEET_ID",
+                              default="1Y-ETmLM04MuNXH9TjS4HXz6AqpT8qCh8OKyeEkI9wEc")
+
 # Wellness del formativo: OCHO documentos, uno por categoría, cada uno con sus
 # hojas `CHECK IN` y `CHECK OUT`. Van como lista separada por comas en una sola
 # variable en vez de ocho: la cantidad cambia cuando el club abre o cierra una

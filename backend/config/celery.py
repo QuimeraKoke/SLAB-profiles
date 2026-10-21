@@ -111,6 +111,14 @@ app.conf.beat_schedule = {
     # cambió. Minutos :05/:20/:35/:50 — fuera de :00 (fixtures), :15
     # (Catapult), :25 (formativo), :30 (VALD) y :40 (wellness). Lee la
     # pestaña entera, así toma también las correcciones de días anteriores.
+    # Notas de kinesiología del formativo (planilla de los kinesiólogos, hoja
+    # "f"). Cada hora en :10 — libre de :00 (fixtures), :05/:20/:35/:50 (peso),
+    # :15 (Catapult), :25 (formativo), :30 (VALD) y :40 (wellness). Lee la hoja
+    # entera: es espejo, así que también toma correcciones y borrados.
+    "kine-formativo-hourly": {
+        "task": "exams.tasks.sync_kine_formativo",
+        "schedule": crontab(minute=10),
+    },
     "peso-diario-15min": {
         "task": "exams.tasks.sync_peso_diario",
         "schedule": crontab(minute="5,20,35,50"),

@@ -201,6 +201,9 @@ function summarizeResult(result: ExamResult, fields: ExamField[]): string | null
   const body = longTextField ? String(data[longTextField.key]) : null;
 
   if (subject && body) {
+    // A subject that is the body's own opening words (imported notes) would
+    // print the same text twice.
+    if (body.startsWith(subject.replace(/…$/, ""))) return truncate(body, MAX_SUMMARY_LEN);
     return truncate(`${subject} — ${body}`, MAX_SUMMARY_LEN);
   }
   if (subject) {

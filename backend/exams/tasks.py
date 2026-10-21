@@ -143,6 +143,36 @@ def sync_peso_diario(commit: bool = True) -> dict:
     return out
 
 
+@shared_task(name="exams.tasks.sync_kine_formativo")
+def sync_kine_formativo(commit: bool = True) -> dict:
+    """Formativo physios' log → Kinesiología notes. See `exams/kine_notes_ingest.py`."""
+    from core.models import Club
+    from exams import kine_notes_ingest as ing
+    from integrations.google_sheets import GoogleSheetsError
+
+    creds_file, creds_json = _formativo_creds()
+    if not settings.KINE_FORMATIVO_SHEET_ID or not (creds_file or creds_json):
+        return {"status": "skipped", "reason": "not configured"}
+    club = Club.objects.filter(name=settings.FORMATIVO_CLUB).first()
+    if club is None:
+        return {"status": "skipped", "reason": "club not found"}
+    try:
+        rep = ing.run(settings.KINE_FORMATIVO_SHEET_ID, club, commit=commit,
+                      creds_file=creds_file, creds_json=creds_json)
+    except (GoogleSheetsError, ValueError) as exc:
+        logger.warning("kine formativo sync failed: %s", exc)
+        return {"status": "error", "error": str(exc)}
+    out = {"status": "ok", "creadas": rep.creadas, "actualizadas": rep.actualizadas,
+           "borradas": rep.borradas,
+           "sin_cambio": rep.sin_cambio, "sin_jugador": len(rep.sin_jugador),
+           "fecha_invalida": len(rep.fecha_invalida),
+           "borrado_bloqueado": rep.borrado_bloqueado}
+    if rep.borrado_bloqueado:
+        logger.warning("kine formativo: borrado masivo bloqueado — %s", out)
+    logger.info("kine formativo sync: %s", out)
+    return out
+
+
 @shared_task(name="exams.tasks.sync_formativo_sheets")
 def sync_formativo_sheets(commit: bool = True, alerts: bool = False) -> dict:
     """Pull both Formativo sheets into their exams.

@@ -71,6 +71,41 @@ DAILY_NOTES_SCHEMA: dict = {
 }
 
 
+# Kinesiología's notes also say WHO treated and WHAT kind of intervention it
+# was — two selectors, filled from the physios' sheet (`exams.kine_notes_ingest`).
+DEPARTAMENTOS_CON_TRATANTE = {"kinesiologico"}
+
+
+def con_campos_kine(schema: dict | None, extra: dict[str, list[str]] | None = None) -> dict:
+    """`DAILY_NOTES_SCHEMA` plus the two selectors, keeping every option the
+    template already has (a physio the sync added stays when this seed runs
+    again) and adding the `extra` values. Options are the labels themselves."""
+    import copy
+
+    from exams.kine_notes_ingest import CAMPO_TIPO, CAMPO_TRATANTE, TIPOS, TRATANTES
+
+    actuales = {f.get("key"): list(f.get("options") or [])
+                for f in (schema or {}).get("fields", [])}
+    extra = extra or {}
+    out = copy.deepcopy(DAILY_NOTES_SCHEMA)
+    selectores = []
+    for base, defecto in ((CAMPO_TRATANTE, TRATANTES), (CAMPO_TIPO, TIPOS)):
+        opciones: list[str] = []
+        for o in [*defecto, *actuales.get(base["key"], []), *extra.get(base["key"], [])]:
+            if o and o not in opciones:
+                opciones.append(o)
+        selectores.append(dict(base, options=opciones))
+    # After the date: who and what come before the subject and the note.
+    out["fields"][1:1] = selectores
+    return out
+
+
+def schema_for(department: Department, actual: dict | None) -> dict:
+    if department.slug in DEPARTAMENTOS_CON_TRATANTE:
+        return con_campos_kine(actual)
+    return DAILY_NOTES_SCHEMA
+
+
 class Command(BaseCommand):
     help = "Create or refresh the 'Notas diarias' template of each department."
 
@@ -167,7 +202,7 @@ class Command(BaseCommand):
 
         antes = template.name
         template.name = name
-        template.config_schema = DAILY_NOTES_SCHEMA
+        template.config_schema = schema_for(department, template.config_schema)
         update_fields = ["name", "config_schema", "updated_at"]
         if unlock and template.is_locked:
             template.is_locked = False
