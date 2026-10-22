@@ -2520,6 +2520,20 @@ class TeamLeaderboardDeviationTests(TestCase):
         self.assertEqual(spike["tone"], "ok")
         self.assertEqual(spike["bar"], 0.0)
 
+    def test_worse_direction_defaults_from_the_field(self):
+        # No worse_direction on the widget: a "more is better" field (a jump)
+        # must not flag a HIGH reading; a "less is better" one (CK) must.
+        for good, tono in (("up", "ok"), ("down", "crit")):
+            schema = dict(self.template.config_schema)
+            schema["fields"] = [{**schema["fields"][0], "direction_of_good": good}]
+            self.template.config_schema = schema
+            self.template.save(update_fields=["config_schema"])
+            payload = resolve_team_widget(
+                self._widget({"style": "vertical_bars", "height_mode": "deviation"}), self.cat,
+            )
+            spike = {r["player_name"]: r for r in payload["rows"]}["Spike S"]
+            self.assertEqual(spike["tone"], tono, good)
+
 
 class LineSelectorSdBandTests(TestCase):
     """§4 profile line: opt-in mean±SD envelope on line_with_selector."""

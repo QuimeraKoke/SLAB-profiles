@@ -17,6 +17,7 @@ import { api, ApiError } from "@/lib/api";
 import { usePermission } from "@/lib/permissions";
 import type { ExamField, ExamResult, ExamTemplate } from "@/lib/types";
 import styles from "./DepartmentCard.module.css";
+import { deltaTone, deltaToneTitle } from "@/lib/deltaTone";
 
 interface DepartmentCardProps {
   template: ExamTemplate;
@@ -242,8 +243,9 @@ function MiniLineChart({
         </span>
         {field.unit && <span className={styles.chartUnit}>{field.unit}</span>}
         {delta !== null && (
-          <span className={delta >= 0 ? styles.up : styles.down}>
-            {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(2)}
+          <span className={styles[`delta_${deltaTone(delta, field.direction_of_good)}`]}
+            title={deltaToneTitle(deltaTone(delta, field.direction_of_good))}>
+            {delta > 0 ? "▲" : delta < 0 ? "▼" : "="} {Math.abs(delta).toFixed(2)}
           </span>
         )}
       </div>
@@ -330,8 +332,9 @@ function StatStrip({
                 {f.unit ? ` ${f.unit}` : ""}
               </span>
               {delta !== null && (
-                <span className={delta >= 0 ? styles.up : styles.down}>
-                  {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(2)}
+                <span className={styles[`delta_${deltaTone(delta, f.direction_of_good)}`]}
+                  title={deltaToneTitle(deltaTone(delta, f.direction_of_good))}>
+                  {delta > 0 ? "▲" : delta < 0 ? "▼" : "="} {Math.abs(delta).toFixed(2)}
                 </span>
               )}
             </div>

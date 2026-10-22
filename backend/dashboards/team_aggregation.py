@@ -2406,8 +2406,11 @@ def _resolve_team_leaderboard(
     #   deviation_metric : "z" (default) | "cv"
     #   color_mode       : "none" | "semaforo" (defaults to semaforo in
     #                      deviation mode) — traffic-light per bar.
-    #   worse_direction  : "high" (default) | "low" | "both" — which way is bad
-    #                      (CK: high). Good-direction deviations read as ok.
+    #   worse_direction  : "high" | "low" | "both" — which way is bad (CK:
+    #                      high). Unset → from the field's direction_of_good
+    #                      ("up" → low, "down" → high, neutral → both), so a
+    #                      CMJ above its basal is never flagged. Good-direction
+    #                      deviations read as ok.
     #   deviation_bands  : {"warn": 1.5, "crit": 2.5} thresholds on the metric.
     height_mode = display_config.get("height_mode")
     height_mode = height_mode if height_mode in {"value", "deviation"} else "value"
@@ -2417,7 +2420,9 @@ def _resolve_team_leaderboard(
     if color_mode not in {"none", "semaforo"}:
         color_mode = "semaforo" if height_mode == "deviation" else "none"
     worse_direction = display_config.get("worse_direction")
-    worse_direction = worse_direction if worse_direction in {"high", "low", "both"} else "high"
+    if worse_direction not in {"high", "low", "both"}:
+        good = _field_meta(template, field_keys[0]).get("direction_of_good")
+        worse_direction = {"up": "low", "down": "high"}.get(good, "both")
     _bands = display_config.get("deviation_bands") or {}
     try:
         warn_at = float(_bands.get("warn", 1.5))

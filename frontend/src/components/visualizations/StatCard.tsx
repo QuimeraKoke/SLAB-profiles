@@ -1,5 +1,6 @@
 import React from "react";
 import type { VisualizerProps } from "./types";
+import { deltaTone, deltaToneTitle } from "@/lib/deltaTone";
 import styles from "./StatCard.module.css";
 
 function formatValue(value: unknown): string {
@@ -33,8 +34,9 @@ export default function StatCard({ field, series }: VisualizerProps) {
       </div>
       <div className={styles.meta}>
         {delta !== null && (
-          <span className={delta >= 0 ? styles.up : styles.down}>
-            {delta >= 0 ? "▲" : "▼"} {Math.abs(delta).toFixed(2)}
+          <span className={styles[`delta_${deltaTone(delta, field.direction_of_good)}`]}
+            title={deltaToneTitle(deltaTone(delta, field.direction_of_good))}>
+            {delta > 0 ? "▲" : delta < 0 ? "▼" : "="} {Math.abs(delta).toFixed(2)}
             {field.unit ? ` ${field.unit}` : ""}
           </span>
         )}

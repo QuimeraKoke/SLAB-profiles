@@ -43,15 +43,11 @@
   color: #6b7280;
 }
 
-.up {
-  color: #059669;
-  font-weight: 600;
-}
-
-.down {
-  color: #dc2626;
-  font-weight: 600;
-}
+/* Delta tones — see lib/deltaTone.ts */
+.delta_good, .delta_bad, .delta_neutral, .delta_flat { font-weight: 600; }
+.delta_good { color: #059669; }
+.delta_bad { color: #dc2626; }
+.delta_neutral, .delta_flat { color: #667085; }
 
 .count {
   color: #9ca3af;

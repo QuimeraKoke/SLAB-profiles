@@ -2,6 +2,7 @@
 
 import React from "react";
 
+import { deltaTone, deltaToneTitle } from "@/lib/deltaTone";
 import { bandColor, findBandForValue } from "@/lib/reference";
 import type { ComparisonTablePayload, DashboardWidget } from "@/lib/types";
 import styles from "./Widget.module.css";
@@ -76,9 +77,8 @@ export default function ComparisonTable({ widget }: ComparisonTableProps) {
                         <span>{formatValue(value)}</span>
                         {row.deltas[i] !== null && row.deltas[i] !== 0 && (
                           <span
-                            className={
-                              (row.deltas[i] as number) > 0 ? styles.up : styles.down
-                            }
+                            className={styles[`delta_${deltaTone(row.deltas[i], row.direction_of_good)}`]}
+                            title={deltaToneTitle(deltaTone(row.deltas[i], row.direction_of_good))}
                           >
                             {(row.deltas[i] as number) > 0 ? "▲" : "▼"}{" "}
                             {Math.abs(row.deltas[i] as number).toFixed(1)}

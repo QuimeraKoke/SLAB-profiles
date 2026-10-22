@@ -132,17 +132,14 @@
   flex-wrap: wrap;
 }
 
-.up {
-  color: #dc2626;
+/* Delta tones — see lib/deltaTone.ts */
+.delta_good, .delta_bad, .delta_neutral, .delta_flat {
   font-size: 0.75rem;
   font-weight: 600;
 }
-
-.down {
-  color: #059669;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
+.delta_good { color: #059669; }
+.delta_bad { color: #dc2626; }
+.delta_neutral, .delta_flat { color: #667085; }
 
 .flat {
   color: #9ca3af;

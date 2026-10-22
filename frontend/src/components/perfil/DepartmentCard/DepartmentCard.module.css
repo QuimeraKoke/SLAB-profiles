@@ -172,17 +172,14 @@
   color: #111827;
 }
 
-.up {
+/* Delta tones — see lib/deltaTone.ts */
+.delta_good, .delta_bad, .delta_neutral, .delta_flat {
   font-size: 0.75rem;
-  color: #059669;
   font-weight: 600;
 }
-
-.down {
-  font-size: 0.75rem;
-  color: #dc2626;
-  font-weight: 600;
-}
+.delta_good { color: #059669; }
+.delta_bad { color: #dc2626; }
+.delta_neutral, .delta_flat { color: #667085; }
 
 /* ---------- table ---------- */
 
