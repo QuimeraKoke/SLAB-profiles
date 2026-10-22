@@ -50,7 +50,7 @@ interface DynamicUploaderProps {
   onCancel?: () => void;
 }
 
-export type FormValue = string | number | boolean | null | BodyMapValue;
+export type FormValue = string | number | boolean | null | BodyMapValue | string[];
 
 function todayISO(): string {
   const d = new Date();
@@ -74,6 +74,7 @@ function localDateInput(iso?: string | null): string {
 
 export function defaultValue(field: ExamField): FormValue {
   if (field.type === "boolean") return false;
+  if (field.type === "categorical" && field.multiple) return [];
   if (field.type === "date") return todayISO();
   if (field.type === "bodymap") return emptyBodyMapValue();
   return "";
@@ -134,6 +135,7 @@ export default function DynamicUploader({
             if (hasSource) {
               // Respect the saved blank — don't auto-fill today / 0 / etc.
               if (f.type === "bodymap") return [f.key, emptyBodyMapValue()];
+              if (f.type === "categorical" && f.multiple) return [f.key, []];
               return [f.key, f.type === "boolean" ? false : ""];
             }
             return [f.key, defaultValue(f)];
@@ -143,6 +145,9 @@ export default function DynamicUploader({
             return [f.key, typeof raw === "number" ? raw : Number(raw)];
           }
           if (f.type === "bodymap") return [f.key, normalizeBodyMapValue(raw)];
+          if (f.type === "categorical" && f.multiple) {
+            return [f.key, Array.isArray(raw) ? raw.map(String) : [String(raw)]];
+          }
           return [f.key, String(raw)];
         }),
     );
@@ -289,6 +294,16 @@ export default function DynamicUploader({
           continue;
         }
         raw[f.key] = bm;
+        continue;
+      }
+      if (Array.isArray(v)) {
+        // Multiple choice: an empty selection is a saved empty list only
+        // when it means something ("takes nothing now"), i.e. not required.
+        if (v.length === 0 && f.required) {
+          setError(`Elegí al menos una opción en "${f.label}"`);
+          return;
+        }
+        raw[f.key] = v;
         continue;
       }
       if (v === "" || v === null) {
@@ -613,6 +628,31 @@ export function FieldInput({ field, value, onChange }: FieldInputProps) {
           onChange={(v) => onChange(v)}
         />
       </div>
+    );
+  }
+
+  if (field.type === "categorical" && field.multiple && field.options?.length) {
+    const labels = field.option_labels ?? {};
+    const elegidos = Array.isArray(value) ? value : [];
+    const alternar = (o: string) =>
+      onChange(elegidos.includes(o) ? elegidos.filter((x) => x !== o) : [...elegidos, o]);
+    return (
+      <fieldset className={`${styles.field} ${styles.fullWidth} ${styles.multi}`}>
+        <legend className={styles.label}>
+          {label}{field.required ? " *" : ""}
+          <span className={styles.multiCount}>
+            {elegidos.length ? ` · ${elegidos.length} seleccionado(s)` : ""}
+          </span>
+        </legend>
+        <div className={styles.multiGrid}>
+          {field.options.map((o) => (
+            <label key={o} className={`${styles.multiOption} ${elegidos.includes(o) ? styles.multiOn : ""}`}>
+              <input type="checkbox" checked={elegidos.includes(o)} onChange={() => alternar(o)} />
+              {labels[o] ?? o}
+            </label>
+          ))}
+        </div>
+      </fieldset>
     );
   }
 

@@ -17,6 +17,7 @@ import type {
   CalendarEvent,
   Episode,
   ExamInputMode,
+  ExamResult,
   ExamTemplate,
   PlayerDetail,
 } from "@/lib/types";
@@ -130,6 +131,32 @@ export default function RegistrarExamPage({ params }: PageProps) {
   const shouldFetchContinue = Boolean(
     template?.is_episodic && episodeChoice && episodeChoice !== "new",
   );
+
+  // `modifiers.prefill_from_last` (e.g. Suplementación: the current regimen
+  // is edited, not re-entered): the form starts from the player's latest
+  // record of this template. Dates are not carried — the new record starts
+  // today.
+  const shouldPrefillLast = Boolean(
+    template && !template.is_episodic && template.input_config?.modifiers?.prefill_from_last,
+  );
+  const [lastInitial, setLastInitial] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => {
+    if (!shouldPrefillLast || !template || !player) return;
+    let cancelled = false;
+    api<ExamResult[]>(`/players/${player.id}/results?template=${template.id}`)
+      .then((rows) => {
+        if (cancelled) return;
+        const ultimo = [...rows].sort((a, b) => b.recorded_at.localeCompare(a.recorded_at))[0];
+        const prefill: Record<string, unknown> = { ...(ultimo?.result_data ?? {}) };
+        const hoy = new Date().toLocaleDateString("en-CA");
+        for (const f of template.config_schema?.fields ?? []) {
+          if (f.type === "date") prefill[f.key] = hoy;
+        }
+        setLastInitial(ultimo ? prefill : {});
+      })
+      .catch(() => { if (!cancelled) setLastInitial({}); });
+    return () => { cancelled = true; };
+  }, [shouldPrefillLast, template, player]);
   useEffect(() => {
     if (!shouldFetchContinue || !episodeChoice) return;
     let cancelled = false;
@@ -298,6 +325,8 @@ export default function RegistrarExamPage({ params }: PageProps) {
               onCancel={goBack}
             />
           )
+        ) : shouldPrefillLast && lastInitial === null ? (
+          <div style={{ padding: 24, color: "#6b7280" }}>Cargando el último registro…</div>
         ) : shouldFetchContinue && continueInitial === null ? (
           // Continuing an existing episode — wait until we've fetched the
           // latest result so DynamicUploader's useState initializer reads
@@ -317,7 +346,9 @@ export default function RegistrarExamPage({ params }: PageProps) {
             initialValues={
               template.is_episodic && episodeChoice && episodeChoice !== "new"
                 ? continueInitial ?? undefined
-                : undefined
+                : shouldPrefillLast && lastInitial && Object.keys(lastInitial).length
+                  ? lastInitial
+                  : undefined
             }
             onSaved={goBack}
             onCancel={goBack}

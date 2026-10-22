@@ -248,3 +248,15 @@
   border: 1px solid currentColor;
   background: color-mix(in srgb, currentColor 8%, #ffffff);
 }
+
+/* Multiple-choice categorical: a grid of checkable chips. */
+.multi { border: 0; padding: 0; margin: 0; min-width: 0; }
+.multiCount { font-weight: 400; color: #667085; }
+.multiGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; margin-top: 6px; }
+.multiOption {
+  display: flex; align-items: center; gap: 8px; padding: 7px 10px;
+  border: 1px solid #d0d5dd; border-radius: 8px; background: #ffffff;
+  font-size: 0.85rem; color: #344054; cursor: pointer;
+}
+.multiOption input { accent-color: #4f46e5; }
+.multiOn { border-color: #a5b4fc; background: #eef2ff; color: #1d2939; font-weight: 600; }

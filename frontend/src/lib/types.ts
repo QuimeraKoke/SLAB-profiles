@@ -304,6 +304,9 @@ export interface ExamField {
    *  keep storage in a stable vocabulary (e.g. English keys for episode
    *  stages) while showing localized strings to the doctor. */
   option_labels?: Record<string, string>;
+  /** Categorical only: pick SEVERAL options; the value is a list of them
+   *  (e.g. every supplement a player takes). */
+  multiple?: boolean;
   /** Optional region map for the body_map_heatmap widget. Maps each option
    *  string to a body region name (e.g. {"Muslo der.": "right_thigh"}). */
   option_regions?: Record<string, string>;

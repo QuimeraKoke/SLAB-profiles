@@ -63,6 +63,10 @@ def _humanize(value: Any, field: dict) -> Any:
         return ""
     if field.get("type") == "categorical" and isinstance(value, str):
         return (field.get("option_labels") or {}).get(value, value)
+    if isinstance(value, list):
+        # A multiple-choice list ("Creatina, Omega 3"): one cell, its labels.
+        labels = field.get("option_labels") or {}
+        return ", ".join(str(labels.get(v, v)) for v in value)
     return value
 
 

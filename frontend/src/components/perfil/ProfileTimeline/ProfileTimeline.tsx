@@ -216,6 +216,13 @@ function summarizeResult(result: ExamResult, fields: ExamField[]): string | null
     return truncate(body, MAX_SUMMARY_LEN);
   }
 
+  // Multiple choice (Suplementación): the options picked.
+  const multi = fields.find((f) => f.type === "categorical" && f.multiple && Array.isArray(data[f.key]));
+  if (multi) {
+    const lista = (data[multi.key] as unknown[]).map(String);
+    return lista.length ? truncate(lista.join(", "), MAX_SUMMARY_LEN) : `${multi.label}: ninguno`;
+  }
+
   // Measurement templates: top calculated values inline.
   const calculated = fields
     .filter((f) => f.type === "calculated" && data[f.key] != null)

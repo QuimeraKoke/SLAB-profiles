@@ -536,6 +536,8 @@ function pickColumns(fields: ExamField[]): ExamField[] {
 
 function formatValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
+  // Multiple choice (e.g. supplements): the options, comma-separated.
+  if (Array.isArray(value)) return value.length ? value.map(String).join(", ") : "—";
   if (typeof value === "number") {
     return Number.isInteger(value) ? String(value) : value.toFixed(2);
   }
