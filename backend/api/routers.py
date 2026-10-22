@@ -2010,6 +2010,63 @@ def list_player_results(
     return [_serialize_result(r) for r in qs]
 
 
+# ── MD+2: the post-match check (CK, hydration, CMJ, central fatigue) ────────
+
+
+class Md2In(Schema):
+    category_id: str
+    event_id: str
+    filas: list[dict] = []
+
+
+def _md2_contexto(request, category_id: str, event_id: str | None):
+    from api import md2
+
+    membership = get_membership(request.user)
+    category = scope_categories(Category.objects.select_related("club"), membership) \
+        .filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    opciones = md2.partidos_jugados(category)
+    evento = None
+    if event_id:
+        evento = Event.objects.filter(pk=event_id, category=category,
+                                      event_type=Event.TYPE_MATCH).first()
+    evento = evento or (opciones[0] if opciones else None)
+    if evento is None:
+        return None, category, membership
+    return md2.contexto(category, evento), category, membership
+
+
+@api.get("/md2")
+def md2_view(request, category_id: str, event_id: str | None = None):
+    """The MD+2 screen: the match (latest played unless `event_id`), the four
+    tests that apply to the category, and per player what was entered for
+    this match's MD+2 with its traffic light. See `api/md2.py`."""
+    from api import md2
+
+    ctx, category, _ = _md2_contexto(request, category_id, event_id)
+    if ctx is None:
+        return {"partido": None, "opciones": [], "pruebas": [], "jugadores": []}
+    return md2.payload(ctx)
+
+
+@api.post("/md2")
+@require_perm("exams.add_examresult")
+def md2_save(request, payload: Md2In):
+    """Save the table: per player and test, the MD+2 result of the match
+    (created or updated; empty cells are skipped)."""
+    from api import md2
+
+    ctx, category, membership = _md2_contexto(request, payload.category_id, payload.event_id)
+    if ctx is None or str(ctx.evento.id) != str(payload.event_id):
+        raise HttpError(404, "Match not found")
+    permitidos = {str(p) for p in scope_players(Player.objects.all(), membership)
+                  .values_list("id", flat=True)}
+    out = md2.guardar(ctx, payload.filas, allowed_players=permitidos)
+    return {**out, **md2.payload(ctx)}
+
+
 @api.get("/players/{player_id}/views", response=LayoutResponseOut)
 def get_player_view(
     request,

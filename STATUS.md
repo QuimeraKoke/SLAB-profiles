@@ -3231,6 +3231,29 @@ dashboard, el de la página) y formato **Ejecutivo** (por defecto) / Completo
 * Sin gráfico en Word (como antes): roster matrix, leaderboard, gauge,
   widgets de lesiones — en el Completo salen como tabla; el Ejecutivo los omite.
 
+### 3.66 Pantalla MD+2 (2026-10-22)
+
+`/md2` (Operativa): dos días después de un partido, CK, hidratación
+(densidad urinaria), CMJ y fatiga central en una sola pantalla
+(`api/md2.py`, `GET/POST /md2`).
+
+* **Partido automático**: el último JUGADO de la categoría (con ficha o
+  status PLAYED — el calendario tiene duplicados COMET/API-Football y copas
+  sólo programadas); se puede elegir otro. Fecha MD+2 = partido + 2 días.
+* **Jugadores**: los que jugaron (titular / suplente que ingresa, o minutos —
+  la ficha COMET trae el rol, no siempre los minutos) primero; el resto del
+  plantel plegado.
+* **Carga** (`?modo=carga`, permiso `exams.add_examresult`): una tabla para
+  las cuatro pruebas; guarda por jugador y prueba un resultado vinculado al
+  partido, `md_label = "MD+2"` (del club) y fechado MD+2; re-guardar
+  actualiza. Se crean con `create` → alertas y estado como siempre.
+* **Semáforo**: por prueba y general (la peor). CK / hidratación / fatiga
+  central: bandas (de la categoría si hay); CMJ: caída frente al promedio de
+  sus últimas 5 mediciones (5 % vigilar, 10 % alerta).
+* Pruebas por categoría: las que aplican (las 4 juntas sólo en Primer
+  Equipo hoy). `seed_md2` agrega bandas a CK (<500 / 500–1.000 / ≥1.000,
+  editables) y a densidad urinaria (las de `fase_densidad`, + unidad g/mL).
+
 ## 4. Management commands
 
 All under `backend/exams/management/commands/`. Run via

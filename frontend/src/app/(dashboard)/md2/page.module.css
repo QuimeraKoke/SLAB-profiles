@@ -1,0 +1,62 @@
+.page { padding: 24px 28px 96px; display: flex; flex-direction: column; gap: 18px; max-width: 1400px; }
+.header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.title { margin: 0; font-size: 1.5rem; font-weight: 700; color: #101828; }
+.subtitle { margin: 4px 0 0; color: #475467; font-size: 0.92rem; }
+.hoy { margin-left: 8px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; color: #ffffff;
+  background: #4f46e5; border-radius: 999px; padding: 2px 8px; }
+.controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.selectLabel { display: flex; flex-direction: column; gap: 4px; font-size: 0.7rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em; color: #667085; }
+.select { height: 38px; min-width: 280px; max-width: 100%; border: 1px solid #d0d5dd; border-radius: 8px;
+  padding: 0 10px; font: inherit; font-size: 0.85rem; text-transform: none; letter-spacing: 0; color: #101828;
+  font-weight: 400; background: #ffffff; }
+.primary, .secondary { height: 38px; padding: 0 16px; border-radius: 8px; font: inherit; font-size: 0.85rem;
+  font-weight: 600; cursor: pointer; }
+.primary { border: 1px solid #4f46e5; background: #4f46e5; color: #ffffff; }
+.primary:disabled { opacity: 0.5; cursor: default; }
+.secondary { border: 1px solid #d0d5dd; background: #ffffff; color: #344054; }
+.primary:focus-visible, .secondary:focus-visible, .select:focus-visible, .input:focus-visible {
+  outline: 2px solid #1d4ed8; outline-offset: 1px; }
+
+.resumen { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; padding: 12px 16px;
+  background: #ffffff; border: 1px solid #eaecf0; border-radius: 10px; font-size: 0.88rem; color: #344054; }
+.resumen > span { display: inline-flex; align-items: center; gap: 6px; }
+.h2 { margin: 0 0 8px; font-size: 0.95rem; color: #101828; }
+
+.tableWrap { overflow-x: auto; background: #ffffff; border: 1px solid #eaecf0; border-radius: 10px; }
+.table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.table th, .table td { padding: 8px 10px; border-bottom: 1px solid #f2f4f7; text-align: left; vertical-align: middle; }
+.table thead th { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: #667085;
+  background: #f9fafb; font-weight: 700; white-space: nowrap; }
+.subhead th { text-transform: none; letter-spacing: 0; font-weight: 600; font-size: 0.72rem; }
+.colJugador { min-width: 190px; position: sticky; left: 0; background: #ffffff; z-index: 1; }
+thead .colJugador { background: #f9fafb; }
+.nombre { display: block; font-weight: 600; color: #101828; }
+.meta { display: block; font-size: 0.72rem; color: #667085; font-weight: 400; }
+.celda { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.valor { font-variant-numeric: tabular-nums; font-weight: 600; color: #101828; }
+.detalle { font-size: 0.72rem; color: #667085; }
+.input { width: 76px; height: 32px; border: 1px solid #d0d5dd; border-radius: 6px; padding: 0 6px; font: inherit;
+  font-size: 0.85rem; font-variant-numeric: tabular-nums; }
+
+.dot { display: inline-block; width: 12px; height: 12px; border-radius: 999px; flex-shrink: 0; }
+.dotGrande { width: 16px; height: 16px; }
+.verde { background: #16a34a; }
+.amarillo { background: #f59e0b; }
+.rojo { background: #dc2626; }
+.sinNivel { background: #ffffff; border: 2px solid #d0d5dd; }
+
+.otros > summary { cursor: pointer; font-weight: 600; color: #344054; padding: 6px 0; }
+.otros[open] > summary { margin-bottom: 8px; }
+.saveBar { position: sticky; bottom: 0; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  padding: 12px 16px; background: #ffffff; border: 1px solid #eaecf0; border-radius: 10px;
+  box-shadow: 0 -4px 12px rgba(16, 24, 40, 0.06); padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+.leyenda { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; font-size: 0.8rem; color: #344054; }
+.leyenda > span { display: inline-flex; align-items: center; gap: 6px; }
+.muted { color: #667085; font-size: 0.82rem; }
+.error { color: #b42318; }
+
+@media (max-width: 640px) {
+  .page { padding: 16px 16px 96px; }
+  .select { min-width: 0; width: 100%; }
+}

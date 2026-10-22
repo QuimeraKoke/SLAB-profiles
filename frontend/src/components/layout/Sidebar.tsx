@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
+import { HeartPulse,
   Users,
   User,
   BarChart3,
@@ -82,6 +82,9 @@ const STATIC_NAV: NavGroup[] = [
   { label: "Equipo", icon: Users, href: "/equipo", activePrefixes: ["/perfil"] },
   { label: "Partidos", icon: Calendar, href: "/partidos" },
   { label: "Cargar GPS", icon: Activity, href: "/gps-entrenamiento" },
+  // Two days after a match: CK, hydration, CMJ and central fatigue, entered
+  // and read as a traffic light on one screen.
+  { label: "MD+2", icon: HeartPulse, href: "/md2" },
 ];
 
 // IA-1: "Configuraciones" carried both daily ops (Jugadores) and admin
