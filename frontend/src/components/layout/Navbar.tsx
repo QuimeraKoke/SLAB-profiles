@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { Bell, Menu } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
@@ -50,6 +51,8 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
   const dropdownRef = useRef<HTMLDivElement>(null);
   const bellRef = useRef<HTMLButtonElement>(null);
   const { categories, categoryId, setCategoryId } = useCategoryContext();
+  const router = useRouter();
+  const pathname = usePathname();
   const { membership } = useAuth();
   const club = membership?.club ?? null;
   const clubInitial = club?.name?.trim()?.[0]?.toUpperCase() ?? "·";
@@ -191,7 +194,13 @@ export default function Navbar({ onMenuClick }: NavbarProps = {}) {
             <select
               className={styles.categorySelect}
               value={categoryId ?? ""}
-              onChange={(e) => setCategoryId(e.target.value)}
+              onChange={(e) => {
+                setCategoryId(e.target.value);
+                // A new team/series starts at its command centre: the page
+                // underneath (a player's profile, a match, a report) usually
+                // belongs to the previous one.
+                if (pathname !== "/centro-de-mando") router.push("/centro-de-mando");
+              }}
               aria-label="Seleccionar equipo o serie"
             >
               {categories.map((c) => (
