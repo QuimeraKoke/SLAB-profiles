@@ -73,15 +73,59 @@ class Md2Tests(TestCase):
         permitidos = {str(self.a.id), str(self.b.id)}
         out = md2.guardar(ctx, [{"player_id": str(self.a.id), "valores": {"ck": {"valor": "1250"}}}],
                           allowed_players=permitidos)
-        self.assertEqual(out, {"creados": 1, "actualizados": 0})
+        self.assertEqual(out, {"creados": 1, "actualizados": 0, "conflictos": []})
         r = ExamResult.objects.get(template=self.ck)
         self.assertEqual((r.event, r.result_data["md_label"], r.result_data["valor"]),
                          (self.partido, "MD+2", 1250.0))
         self.assertEqual(timezone.localtime(r.recorded_at).date(), md2.fecha_md2(self.partido))
         out = md2.guardar(ctx, [{"player_id": str(self.a.id), "valores": {"ck": {"valor": "900"}}}],
                           allowed_players=permitidos)
-        self.assertEqual(out, {"creados": 0, "actualizados": 1})
+        self.assertEqual(out, {"creados": 0, "actualizados": 1, "conflictos": []})
         self.assertEqual(ExamResult.objects.get(template=self.ck).result_data["valor"], 900.0)
+
+    def test_dos_personas_en_campos_distintos_se_complementan(self):
+        ctx, a = self.ctx(), str(self.a.id)
+        md2.guardar(ctx, [{"player_id": a, "valores": {"ck": {"valor": 300}}}], allowed_players={a})
+        md2.guardar(ctx, [{"player_id": a, "valores": {"cmj": {"jump_height": 41}}}],
+                    allowed_players={a})
+        self.assertEqual(ExamResult.objects.filter(event=self.partido).count(), 2)
+        self.assertEqual(ExamResult.objects.get(template=self.ck).result_data["valor"], 300.0)
+
+    def test_misma_celda_cambiada_por_otro_es_conflicto(self):
+        ctx, a = self.ctx(), str(self.a.id)
+        # B saved 700 while A was looking at an empty cell; A now types 800.
+        md2.guardar(ctx, [{"player_id": a, "valores": {"ck": {"valor": 700}}}], allowed_players={a})
+        out = md2.guardar(ctx, [{"player_id": a, "valores": {"ck": {"valor": 800}},
+                                 "previos": {"ck": {"valor": None}}}], allowed_players={a})
+        self.assertEqual(out["actualizados"], 0)
+        self.assertEqual([(c["campo"], c["guardado"], c["propuesto"]) for c in out["conflictos"]],
+                         [("valor", 700.0, 800.0)])
+        self.assertEqual(ExamResult.objects.get(template=self.ck).result_data["valor"], 700.0)
+        # A chooses to replace.
+        out = md2.guardar(ctx, [{"player_id": a, "valores": {"ck": {"valor": 800}}, "forzar": True}],
+                          allowed_players={a})
+        self.assertEqual((out["actualizados"], out["conflictos"]), (1, []))
+        self.assertEqual(ExamResult.objects.get(template=self.ck).result_data["valor"], 800.0)
+
+    def test_sin_conflicto_si_lo_que_vio_es_lo_guardado_o_coincide(self):
+        ctx, a = self.ctx(), str(self.a.id)
+        md2.guardar(ctx, [{"player_id": a, "valores": {"ck": {"valor": 700}}}], allowed_players={a})
+        out = md2.guardar(ctx, [{"player_id": a, "valores": {"ck": {"valor": 650}},
+                                 "previos": {"ck": {"valor": "700"}}}], allowed_players={a})
+        self.assertEqual((out["actualizados"], out["conflictos"]), (1, []))
+        out = md2.guardar(ctx, [{"player_id": a, "valores": {"ck": {"valor": 650}},
+                                 "previos": {"ck": {"valor": None}}}], allowed_players={a})
+        self.assertEqual(out["conflictos"], [], "el otro escribió lo mismo: no hay nada que decidir")
+
+    def test_version_cambia_al_guardar(self):
+        ctx, a = self.ctx(), str(self.a.id)
+        v0 = md2.version(ctx)
+        self.assertEqual(v0, md2.version(ctx))
+        md2.guardar(ctx, [{"player_id": a, "valores": {"ck": {"valor": 300}}}], allowed_players={a})
+        v1 = md2.version(ctx)
+        self.assertNotEqual(v0, v1)
+        md2.guardar(ctx, [{"player_id": a, "valores": {"ck": {"valor": 310}}}], allowed_players={a})
+        self.assertNotEqual(v1, md2.version(ctx))
 
     def test_no_guarda_jugadores_fuera_de_su_alcance(self):
         out = md2.guardar(self.ctx(), [{"player_id": str(self.a.id), "valores": {"ck": {"valor": 1}}}],

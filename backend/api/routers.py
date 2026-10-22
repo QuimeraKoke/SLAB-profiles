@@ -2048,7 +2048,19 @@ def md2_view(request, category_id: str, event_id: str | None = None):
     ctx, category, _ = _md2_contexto(request, category_id, event_id)
     if ctx is None:
         return {"partido": None, "opciones": [], "pruebas": [], "jugadores": []}
-    return md2.payload(ctx)
+    return {**md2.payload(ctx), "version": md2.version(ctx)}
+
+
+@api.get("/md2/version")
+def md2_version(request, category_id: str, event_id: str):
+    """Has anyone saved this match's MD+2 since? A 16-char fingerprint the
+    screen polls every 30 s; the full table is fetched only when it moves."""
+    from api import md2
+
+    ctx, _category, _ = _md2_contexto(request, category_id, event_id)
+    if ctx is None or str(ctx.evento.id) != str(event_id):
+        raise HttpError(404, "Match not found")
+    return {"version": md2.version(ctx)}
 
 
 @api.post("/md2")
@@ -2064,7 +2076,7 @@ def md2_save(request, payload: Md2In):
     permitidos = {str(p) for p in scope_players(Player.objects.all(), membership)
                   .values_list("id", flat=True)}
     out = md2.guardar(ctx, payload.filas, allowed_players=permitidos)
-    return {**out, **md2.payload(ctx)}
+    return {**out, **md2.payload(ctx), "version": md2.version(ctx)}
 
 
 @api.get("/players/{player_id}/views", response=LayoutResponseOut)

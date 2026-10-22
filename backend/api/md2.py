@@ -279,10 +279,65 @@ def _luz(pr: Prueba, datos: dict, bandas: dict, referencia: float | None) -> dic
 
 # ─── saving ────────────────────────────────────────────────────────────
 
+def version(ctx: Contexto) -> str:
+    """A fingerprint of this match's MD+2 results: what the screen polls
+    every 30 s to learn — cheaply — whether someone else saved something."""
+    import hashlib
+    import json
+
+    from exams.models import ExamResult
+
+    filas = (ExamResult.objects
+             .filter(event=ctx.evento, result_data__md_label=MD_LABEL,
+                     template__family_id__in=[t.family_id for _, t in ctx.pruebas])
+             .order_by("pk").values_list("pk", "result_data"))
+    h = hashlib.sha1()
+    for pk, data in filas:
+        h.update(str(pk).encode())
+        h.update(json.dumps(data, sort_keys=True, default=str).encode())
+    return h.hexdigest()[:16]
+
+
+def _igual(a, b) -> bool:
+    if a in (None, "") or b in (None, ""):
+        return a in (None, "") and b in (None, "")
+    try:
+        return abs(float(a) - float(b)) < 1e-9
+    except (TypeError, ValueError):
+        return str(a) == str(b)
+
+
+def _bloquear(evento, player_id, family_id) -> None:
+    """One writer at a time per (match, player, test), held to the end of
+    the transaction: two people saving the same player's test in the same
+    second then end in ONE combined record, not two (the second waits and
+    finds the first's)."""
+    import hashlib
+
+    from django.db import connection
+
+    if connection.vendor != "postgresql":
+        return
+    clave = int(hashlib.sha1(f"md2|{evento.pk}|{player_id}|{family_id}".encode())
+                .hexdigest()[:15], 16)
+    with connection.cursor() as cur:
+        cur.execute("SELECT pg_advisory_xact_lock(%s)", [clave])
+
+
 def guardar(ctx: Contexto, filas: list[dict], *, allowed_players: set) -> dict:
-    """Upsert, per player and test, the MD+2 result of this match. A test
-    whose cells are all empty is skipped (and an existing one is left as
-    it is — clearing is the record's delete, not a blank cell)."""
+    """Upsert, per player and test, the MD+2 result of this match.
+
+    Several people fill the screen at once (each area its tests), so:
+    * only the cells someone EDITED are sent, and they are merged into the
+      record — two people on different fields of one test complement;
+    * each edited cell carries the value its author SAW (`previos`; a cell
+      without one is not checked). If the
+      stored value has changed since — someone else saved it — and differs
+      from the new one, the cell is NOT overwritten: it comes back as a
+      conflict for the author to decide (`forzar` resends it to replace);
+    * creation is serialised per (match, player, test) (`_bloquear`).
+    A test whose cells are all empty is skipped (and an existing one is left
+    as it is — clearing is the record's delete, not a blank cell)."""
     from django.db import transaction
 
     from core.models import Player
@@ -294,31 +349,52 @@ def guardar(ctx: Contexto, filas: list[dict], *, allowed_players: set) -> dict:
     cuando = timezone.make_aware(datetime.combine(dia, time(9, 0)))
     pruebas = {pr.key: (pr, t) for pr, t in ctx.pruebas}
     creados = actualizados = 0
-    with transaction.atomic():
-        for fila in filas:
-            pid = str(fila.get("player_id") or "")
-            if pid not in allowed_players:
+    conflictos: list[dict] = []
+    for fila in filas:
+        pid = str(fila.get("player_id") or "")
+        if pid not in allowed_players:
+            continue
+        player = Player.objects.get(pk=pid)
+        previos_fila = fila.get("previos") or {}
+        forzar = bool(fila.get("forzar"))
+        for key, valores in (fila.get("valores") or {}).items():
+            if key not in pruebas or not isinstance(valores, dict):
                 continue
-            player = Player.objects.get(pk=pid)
-            for key, valores in (fila.get("valores") or {}).items():
-                if key not in pruebas or not isinstance(valores, dict):
+            pr, t = pruebas[key]
+            crudo = {}
+            for c in pr.campos:
+                v = valores.get(c)
+                if v in (None, ""):
                     continue
-                pr, t = pruebas[key]
-                crudo = {c: valores.get(c) for c in pr.campos
-                         if valores.get(c) not in (None, "")}
-                if not crudo:
+                try:
+                    crudo[c] = float(v)
+                except (TypeError, ValueError):
                     continue
-                for c, v in list(crudo.items()):
-                    try:
-                        crudo[c] = float(v)
-                    except (TypeError, ValueError):
-                        crudo.pop(c)
-                if not crudo:
-                    continue
-                existente = (ExamResult.objects.filter(
+            if not crudo:
+                continue
+            previos = previos_fila.get(key) or {}
+            with transaction.atomic():
+                _bloquear(ctx.evento, pid, t.family_id)
+                existente = (ExamResult.objects.select_for_update().filter(
                     player=player, template__family_id=t.family_id, event=ctx.evento,
                     result_data__md_label=MD_LABEL).first())
                 base = dict(existente.result_data or {}) if existente else {}
+                if existente and not forzar:
+                    for c in list(crudo):
+                        guardado = base.get(c)
+                        if (c in previos and guardado not in (None, "")
+                                and not _igual(guardado, previos.get(c))
+                                and not _igual(guardado, crudo[c])):
+                            conflictos.append({
+                                "player_id": pid,
+                                "nombre": f"{player.first_name} {player.last_name}".strip(),
+                                "prueba": key, "prueba_label": pr.label, "campo": c,
+                                "campo_label": _campo(t, c).get("label") or c,
+                                "guardado": guardado, "propuesto": crudo[c],
+                            })
+                            crudo.pop(c)
+                if not crudo:
+                    continue
                 base.update(crudo)
                 base.update({"fecha": dia.isoformat(), "md_label": MD_LABEL,
                              MD_SOURCE_KEY: MD_SOURCE_CLUB})
@@ -334,4 +410,4 @@ def guardar(ctx: Contexto, filas: list[dict], *, allowed_players: set) -> dict:
                                               recorded_at=cuando, result_data=datos,
                                               inputs_snapshot=snapshot)
                     creados += 1
-    return {"creados": creados, "actualizados": actualizados}
+    return {"creados": creados, "actualizados": actualizados, "conflictos": conflictos}
