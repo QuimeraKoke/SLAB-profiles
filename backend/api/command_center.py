@@ -1,9 +1,8 @@
 """Command-center ("Centro de mando") dashboard aggregation.
 
 One read that assembles the whole screen from data SLAB already owns:
-player state, alerts, events, GPS load, wellness. The expensive LLM
-**briefing** is generated + cached separately (see
-`dashboards/docx`/`pdf` narrative layer) and folded in by the endpoint.
+player state, alerts, events, GPS load, wellness. No LLM call: the AI
+briefing cards that used to sit here were removed (cost without readers).
 
 Everything returned here is JSON-serializable (dates → isoformat).
 """

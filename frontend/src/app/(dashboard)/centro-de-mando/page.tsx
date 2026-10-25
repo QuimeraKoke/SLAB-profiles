@@ -19,7 +19,6 @@ import Hero from "@/components/command/Hero";
 import KpiStrip from "@/components/command/KpiStrip";
 import SquadStatus from "@/components/command/SquadStatus";
 import DecisionTable from "@/components/command/DecisionTable";
-import BriefingPanel from "@/components/command/BriefingPanel";
 import WellnessRoleTabs, { ROLE_LABEL } from "@/components/command/WellnessRoleTabs";
 import type {
   CommandCenter,
@@ -110,7 +109,6 @@ export default function CommandCenterPage() {
         <div className={styles.grid}>
           <main className={styles.main}>
             <DecisionTable decisions={data.decisions} />
-            <BriefingPanel categoryId={categoryId} />
           </main>
 
           <aside className={styles.rail}>

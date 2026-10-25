@@ -124,23 +124,6 @@ export interface CCRecentItem {
   at: string | null;
 }
 
-export interface BriefingItem {
-  department: string;
-  department_label: string;
-  priority: "alta" | "media" | "baja";
-  tags: string[];
-  title: string;
-  recommendation: string;
-  evidence: string[];
-  confidence: number;
-  owner_role: string;
-  timing: string;
-  cta_label: string;
-  players: string[];
-  /** Roster ids resolved from `players` (§7.2) — powers deep-links + actions. */
-  player_ids: string[];
-}
-
 export interface CCCheckinNonResponder {
   player_id: string;
   name: string;

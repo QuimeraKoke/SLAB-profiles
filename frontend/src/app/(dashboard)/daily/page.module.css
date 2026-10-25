@@ -444,32 +444,6 @@
   .recapChevron { display: none; }
 }
 
-/* ── Resumen IA del día ── */
-.aiSummary {
-  border: 1px solid #ddd6fe;
-  background: linear-gradient(180deg, #faf5ff 0%, #f8fafc 100%);
-  border-radius: 12px;
-  padding: 14px 18px;
-  margin-bottom: 16px;
-}
-.aiHead {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #6d28d9;
-  margin-bottom: 8px;
-}
-.aiBody {
-  font-size: 0.9rem;
-  line-height: 1.55;
-  color: #1f2937;
-  white-space: pre-wrap;
-}
-
 /* The Check-IN/Check-OUT toggle inside the wellness KPI. It renders only for
    the categories that fill both forms, so the extra row costs nothing to the
    rest. `align-self` keeps it from stretching across the card. */

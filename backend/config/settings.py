@@ -21,9 +21,6 @@ ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["*"])
 # Player metric/clinical data is sent to the Anthropic API when enabled.
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
 ANTHROPIC_MODEL = env("ANTHROPIC_MODEL", default="claude-opus-4-8")
-# Cheaper/faster model for the recurring Daily AI recap (one call per category
-# per day). Separate from ANTHROPIC_MODEL so it can stay on a low-cost tier.
-DAILY_SUMMARY_MODEL = env("DAILY_SUMMARY_MODEL", default="claude-haiku-4-5-20251001")
 # Player readiness is a bounded JSON refinement over an already-computed
 # deterministic score (fires per exam change, per player — the busiest LLM
 # site). A cheap tier is plenty. Separate from ANTHROPIC_MODEL so it stays low.

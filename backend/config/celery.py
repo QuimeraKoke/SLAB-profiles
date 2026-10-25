@@ -17,19 +17,11 @@ app.autodiscover_tasks()
 
 
 # Beat schedule. 05:00 server-time gives the doctor a fresh batch of
-# overnight goal checks before a typical morning briefing.
+# overnight goal checks before the morning Daily.
 app.conf.beat_schedule = {
     "evaluate-due-goals-daily": {
         "task": "goals.tasks.evaluate_due_goals",
         "schedule": crontab(hour=5, minute=0),
-    },
-    # AI recap of the day that just ended (00:00 local). Pre-warms the saved
-    # DailySummary so the morning Daily shows it instantly; lazy on-demand
-    # generation covers any other day when first viewed. Uses DAILY_SUMMARY_MODEL
-    # (Haiku); no-op if ANTHROPIC_API_KEY is unset.
-    "generate-daily-summaries": {
-        "task": "dashboards.tasks.generate_daily_summaries",
-        "schedule": crontab(hour=0, minute=0),
     },
     # Alert hygiene: resolve alerts whose anchoring reading is >30 days old
     # (04:45, before the goal evaluator and the morning Daily).
