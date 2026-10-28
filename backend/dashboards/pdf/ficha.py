@@ -36,7 +36,7 @@ from reportlab.pdfgen import canvas as rl_canvas
 
 from core.models import Player
 from dashboards import category_bands
-from exams.bands import band_for_value
+from exams.bands import band_for_value, band_level
 from exams.models import ExamResult, ExamTemplate
 
 _TZ = ZoneInfo("America/Santiago")
@@ -64,14 +64,6 @@ SECTION_COLORS = {
 POS_GREEN = colors.HexColor("#15803d")
 NEG_RED = colors.HexColor("#b42318")
 
-# Every scale the club uses, on one ladder: 0 = worst … 6 = best. A label the
-# ladder doesn't know is judged by its position (bands listed worst→best).
-_LADDER = {
-    "muy deficiente": 0, "deficiente": 1, "regular": 2, "aceptable": 2.5,
-    "bueno": 3.5, "muy bueno": 4, "excelente": 5, "elite": 6, "élite": 6,
-    "elevado": 0.5, "bajo": 0.5, "vigilar": 1.5, "normal": 3.5, "estable": 3.5,
-    "alta variabilidad": 0.5, "profesional / bueno": 4,
-}
 STRONG_AT = 4      # Muy bueno and up
 WEAK_AT = 1        # Deficiente and down
 
@@ -241,15 +233,7 @@ def _field(t: ExamTemplate, key: str) -> dict:
                  if isinstance(f, dict) and f.get("key") == key), {})
 
 
-def _level(band: dict, bands: list[dict]) -> float:
-    label = str(band.get("label") or "").strip().lower()
-    for name, v in _LADDER.items():
-        if label == name or label.startswith(name + " ("):
-            return v
-    if label.startswith("alerta"):
-        return 0.5
-    i = bands.index(band) if band in bands else 0
-    return 6 * i / max(1, len(bands) - 1)
+_level = band_level
 
 
 def period_start(today: date | None = None) -> datetime:

@@ -19,7 +19,7 @@ from typing import Any
 
 from core.models import Category
 from dashboards import category_bands
-from exams.bands import band_for_value
+from exams.bands import band_for_value, band_rank
 from exams.models import ExamResult, ExamTemplate
 
 # The club's sheet, in its order: (group, [(template slug, field, label, unit)]).
@@ -54,6 +54,12 @@ def _num(v: Any) -> float | None:
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _score(levels: list[int]) -> dict | None:
+    if not levels:
+        return None
+    return {"value": round(sum(levels) / len(levels), 2), "n": len(levels)}
 
 
 def build_evaluation_grid(category: Category) -> dict[str, Any]:
@@ -102,7 +108,12 @@ def build_evaluation_grid(category: Category) -> dict[str, Any]:
             bands = bands_by_field.get((t.family_id or t.id, key)) or []
             if not bands:
                 continue
-            columns.append({"key": key, "label": label, "unit": unit, "bands": bands})
+            field = next((f for f in (t.config_schema or {}).get("fields", [])
+                          if isinstance(f, dict) and f.get("key") == key), {})
+            columns.append({"key": key, "label": label, "unit": unit, "bands": bands,
+                            # Breaks ties inside a band when sorting: a lower
+                            # T10 is the better one.
+                            "direction": field.get("direction_of_good") or "up"})
         if columns:
             groups.append({"name": name, "columns": columns})
 
@@ -121,16 +132,31 @@ def build_evaluation_grid(category: Category) -> dict[str, Any]:
                 cells[c["key"]] = hit | {
                     "band": (band or {}).get("label"),
                     "color": (band or {}).get("color"),
+                    # 1 = Muy deficiente … 7 = Elite: tests in s, cm and kg
+                    # become comparable, so they can be averaged.
+                    "level": band_rank(band, c["bands"]) if band else None,
                 }
+        # The summary: mean level per group and overall, over the tests the
+        # player HAS — a missing test is not a 1, and `n` says how many counted.
+        groups_score = {}
+        for g in groups:
+            lv = [cells[c["key"]]["level"] for c in g["columns"]
+                  if cells.get(c["key"], {}).get("level") is not None]
+            groups_score[g["name"]] = _score(lv)
+        todos = [x["level"] for x in cells.values() if x.get("level") is not None]
         rows.append({
             "player_id": str(p.id),
             "name": f"{p.first_name} {p.last_name}".strip(),
             "position": p.position.name if p.position_id else "",
             "cells": cells,
+            "groups": groups_score,
+            "overall": _score(todos),
         })
 
-    # The legend: the first full scale (every test uses the same seven names).
-    legend = next(([{"label": b.get("label"), "color": b.get("color")} for b in c["bands"]]
+    # The legend: the first full scale (every test uses the same seven names),
+    # worst → best, so a level n is legend[n - 1].
+    legend = next(([{"label": b.get("label"), "color": b.get("color")}
+                    for b in sorted(c["bands"], key=lambda b: band_rank(b, c["bands"]))]
                    for g in groups for c in g["columns"] if c["bands"]), [])
     for g in groups:
         for c in g["columns"]:

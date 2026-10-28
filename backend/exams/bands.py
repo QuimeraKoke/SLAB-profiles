@@ -104,3 +104,31 @@ def _redness_score(hex_color: Any) -> int:
     except ValueError:
         return 0
     return r - max(g, b)
+
+
+# Every scale the club uses, on one ladder: 0 = worst … 6 = best. A label the
+# ladder doesn't know is judged by its position in the list (worst → best).
+LADDER = {
+    "muy deficiente": 0, "deficiente": 1, "regular": 2, "aceptable": 2.5,
+    "bueno": 3.5, "muy bueno": 4, "excelente": 5, "elite": 6, "élite": 6,
+    "elevado": 0.5, "bajo": 0.5, "vigilar": 1.5, "normal": 3.5, "estable": 3.5,
+    "alta variabilidad": 0.5, "profesional / bueno": 4,
+}
+
+
+def band_level(band: dict, bands: list[dict]) -> float:
+    """Where `band` sits on the 0–6 ladder, whatever order `bands` is in."""
+    label = str(band.get("label") or "").strip().lower()
+    for name, v in LADDER.items():
+        if label == name or label.startswith(name + " ("):
+            return v
+    if label.startswith("alerta"):
+        return 0.5
+    i = bands.index(band) if band in bands else 0
+    return 6 * i / max(1, len(bands) - 1)
+
+
+def band_rank(band: dict, bands: list[dict]) -> int:
+    """1 = the scale's worst band … N = its best — a 7-band scale reads 1–7."""
+    orden = sorted(bands, key=lambda b: band_level(b, bands))
+    return orden.index(band) + 1 if band in orden else 1

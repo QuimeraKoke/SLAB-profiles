@@ -70,7 +70,15 @@ class EvaluationGridTests(TestCase):
         self.assertEqual((filas["Beto B"]["cmj_best"]["band"],
                           filas["Beto B"]["cmj_best"]["color"]), ("Muy Deficiente", "#FF0000"))
         self.assertEqual([b["label"] for b in d["legend"]],
-                         ["Muy Deficiente", "Regular", "Elite"])
+                         ["Muy Deficiente", "Regular", "Elite"],
+                         "peor → mejor aunque las bandas vengan al revés")
+
+    def test_el_resumen_promedia_niveles_por_cualidad(self):
+        filas = {r["name"]: r for r in build_evaluation_grid(self.cat)["rows"]}
+        ana, beto = filas["Ana A"], filas["Beto B"]
+        self.assertEqual(ana["cells"]["cmj_best"]["level"], 3, "Elite = 3.º de 3 bandas")
+        self.assertEqual(ana["groups"]["Neuromuscular"], {"value": 3.0, "n": 1})
+        self.assertEqual(beto["overall"], {"value": 1.0, "n": 1})
 
     def test_sin_bandas_no_hay_tabla(self):
         self.assertEqual(build_evaluation_grid(self.primer),

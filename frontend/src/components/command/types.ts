@@ -164,6 +164,14 @@ export interface CCEvalColumn {
   key: string;
   label: string;
   unit: string;
+  /** "down" = lower is better (seconds). */
+  direction: "up" | "down" | "neutral";
+}
+
+/** Mean band level (1 = Muy deficiente … 7 = Elite) over `n` tests. */
+export interface CCEvalScore {
+  value: number;
+  n: number;
 }
 
 export interface CCEvalCell {
@@ -172,6 +180,7 @@ export interface CCEvalCell {
   date: string;
   band: string | null;
   color: string | null;
+  level: number | null;
 }
 
 export interface CCEvaluationGrid {
@@ -181,6 +190,8 @@ export interface CCEvaluationGrid {
     name: string;
     position: string;
     cells: Record<string, CCEvalCell>;
+    groups: Record<string, CCEvalScore | null>;
+    overall: CCEvalScore | null;
   }[];
   legend: { label: string; color: string }[];
 }

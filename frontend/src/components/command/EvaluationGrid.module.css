@@ -206,3 +206,97 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+.headText {
+  flex: 1;
+  min-width: 0;
+}
+
+.toggle {
+  display: inline-flex;
+  border: 1px solid #d0d5dd;
+  border-radius: 8px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.toggleBtn,
+.toggleOn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border: 0;
+  cursor: pointer;
+}
+
+.toggleBtn {
+  background: #fff;
+  color: #475467;
+}
+
+.toggleOn {
+  background: #1e3a8a;
+  color: #fff;
+}
+
+.toggleBtn:focus-visible,
+.toggleOn:focus-visible,
+.sortBtn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
+.sortBtn {
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  text-align: inherit;
+}
+
+.col .sortBtn {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.sortIcon {
+  color: #c4cad3;
+}
+
+.sortOn {
+  color: #1e3a8a;
+}
+
+.overallHead {
+  color: #0a2240;
+}
+
+.overallCell {
+  background: #f8f9fc;
+}
+
+.footRow th,
+.footRow td {
+  position: sticky;
+  bottom: 0;
+  background: #f1f4fa;
+  font-weight: 700;
+  border-top: 1px solid #d0d5dd;
+  color: #0a2240;
+}
+
+.footRow th {
+  z-index: 2;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
