@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Activity, Gauge, Stethoscope, Sparkles } from "lucide-react";
 
 import { api, ApiError } from "@/lib/api";
+import FichaButton from "@/components/perfil/FichaButton";
 import ReportDownloadDialog from "@/components/reports/ReportDownloadDialog/ReportDownloadDialog";
 import type {
   ResumenCardsResponse,
@@ -81,6 +82,7 @@ export default function ResumenSummary({ playerId, playerName }: Props) {
         </h3>
         {data?.number && <span className={styles.number}>#{data.number}</span>}
         <span className={styles.download}>
+          <FichaButton playerId={playerId} playerName={playerName} />
           <ReportDownloadDialog
             title={`Resumen S-LAB · ${playerName}`}
             endpoint={({ dateFrom, dateTo, formato }) =>

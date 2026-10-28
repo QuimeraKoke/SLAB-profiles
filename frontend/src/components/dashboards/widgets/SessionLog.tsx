@@ -9,6 +9,9 @@
  * es un entrenamiento.
  *
  * Más reciente arriba: una bitácora se lee desde lo último hacia atrás.
+ *
+ * La versión de equipo (`team_session_log`) es la tabla GPS del club: suma
+ * Categoría, Posición y Jugador antes del día, y Observación al final.
  */
 
 import React from "react";
@@ -19,11 +22,15 @@ import styles from "./Widget.module.css";
 /** Filas visibles antes de que la tabla scrollee sola. Sin tope, un jugador
  *  con 150 sesiones empuja todo lo que va debajo fuera de la pantalla. */
 const ALTO_MAX = 360;
+/** La de equipo es la tabla de trabajo del cuerpo físico: más alta. */
+const ALTO_MAX_EQUIPO = 520;
 
 export default function SessionLog({ widget }: { widget: DashboardWidget }) {
   const data = widget.data as SessionLogPayload;
   const filas = data.rows ?? [];
   const columnas = data.columns ?? [];
+  const deEquipo = filas.some((f) => f.player !== undefined);
+  const conNota = filas.some((f) => f.note);
 
   if (data.empty || filas.length === 0) {
     return (
@@ -45,13 +52,23 @@ export default function SessionLog({ widget }: { widget: DashboardWidget }) {
         {widget.description && (
           <p className={styles.description}>{widget.description}</p>
         )}
+        {typeof data.total === "number" && data.total > filas.length && (
+          <p className={styles.description}>
+            Mostrando las {filas.length} más recientes de {data.total}.
+          </p>
+        )}
       </header>
 
-      <div style={{ maxHeight: ALTO_MAX, overflow: "auto" }}>
+      <div style={{ maxHeight: deEquipo ? ALTO_MAX_EQUIPO : ALTO_MAX, overflow: "auto" }}>
         <table style={tabla}>
           <thead>
             <tr>
               <th style={{ ...th, ...izq }}>Fecha</th>
+              {deEquipo && <>
+                <th style={{ ...th, ...izq }}>Categoría</th>
+                <th style={{ ...th, ...izq }}>Posición</th>
+                <th style={{ ...th, ...izq }}>Jugador</th>
+              </>}
               <th style={{ ...th, ...izq }}>MD</th>
               {columnas.map((c) => (
                 <th key={c.key} style={th}>
@@ -59,12 +76,18 @@ export default function SessionLog({ widget }: { widget: DashboardWidget }) {
                   {c.unit && <span style={unidad}> ({c.unit})</span>}
                 </th>
               ))}
+              {conNota && <th style={{ ...th, ...izq }}>Observación</th>}
             </tr>
           </thead>
           <tbody>
             {filas.map((f) => (
               <tr key={f.result_id}>
                 <td style={{ ...td, ...izq }}>{f.recorded_at.slice(0, 10)}</td>
+                {deEquipo && <>
+                  <td style={{ ...td, ...izq }}>{f.team || <span style={nulo}>—</span>}</td>
+                  <td style={{ ...td, ...izq }}>{f.position || <span style={nulo}>—</span>}</td>
+                  <td style={{ ...td, ...izq, fontWeight: 600 }}>{f.player}</td>
+                </>}
                 <td style={{ ...td, ...izq }}>
                   {/* Sin etiqueta = sesión a más de una semana de cualquier
                       partido. Un guión lo dice; un vacío parecería un error. */}
@@ -80,6 +103,9 @@ export default function SessionLog({ widget }: { widget: DashboardWidget }) {
                     </td>
                   );
                 })}
+                {conNota && (
+                  <td style={{ ...td, ...izq, color: "#667085" }}>{f.note || ""}</td>
+                )}
               </tr>
             ))}
           </tbody>

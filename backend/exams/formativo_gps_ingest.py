@@ -152,6 +152,8 @@ class Fila:
     # The match columns as the club wrote them: LOCALIA, CALIDAD OPONENTE,
     # RESULTADO (normalised headers → raw cell text).
     marcas: dict[str, str] = dc_field(default_factory=dict)
+    # The club's MICRO: the season's week number (1–48, restarts each year).
+    micro: int | None = None
 
     @property
     def partido(self) -> dict[str, Any]:
@@ -203,8 +205,14 @@ CAMPOS_PARTIDO: tuple[dict, ...] = (
     # The microcycle day: the club's CÓDIGO (`md_del_club`), or derived from
     # the calendar (`exams.microcycle`) when the club gave none.
     {"key": "md_label", "label": "Día de microciclo", "type": "text", "group": "Sesión"},
+    # The microcycle itself: the club's MICRO, its own week count of the
+    # season. Not the ISO week — the club starts it at preseason, so week 29
+    # is early August, not mid-July. The time charts group their axis by it.
+    {"key": "microciclo", "label": "Microciclo", "type": "number", "group": "Sesión",
+     "min": 1, "max": 60, "direction_of_good": "neutral"},
 )
-CAMPOS_PARTIDO, CAMPO_MD = CAMPOS_PARTIDO[:-1], CAMPOS_PARTIDO[-1]
+CAMPOS_PARTIDO, CAMPO_MD, CAMPO_MICRO = (
+    CAMPOS_PARTIDO[:-2], CAMPOS_PARTIDO[-2], CAMPOS_PARTIDO[-1])
 # A friendly is a session (no match markers): it only knows whom and what.
 CAMPOS_SESION_PARTIDO = ("opponent", "match_type")
 CLAVES_PARTIDO = tuple(c["key"] for c in CAMPOS_PARTIDO)
@@ -266,7 +274,7 @@ def asegurar_campos(template: ExamTemplate, claves: tuple[str, ...]) -> list[str
     schema = template.config_schema or {}
     fields = schema.setdefault("fields", [])
     tiene = {f.get("key") for f in fields}
-    nuevas = [dict(c) for c in (*CAMPOS_PARTIDO, CAMPO_MD)
+    nuevas = [dict(c) for c in (*CAMPOS_PARTIDO, CAMPO_MD, CAMPO_MICRO)
               if c["key"] in claves and c["key"] not in tiene]
     fields.extend(nuevas)
     template.config_schema = schema
@@ -366,6 +374,7 @@ def _parse_sheet(
                   if c.startswith("FECHA") and "NACIMIENTO" not in c), None)
     i_cod = ix.get("CODIGO")
     i_obs = ix.get("OBSERVACION")
+    i_micro = ix.get("MICRO")
     i_marcas = [ix[m] for m in MARCAS_PARTIDO if m in ix]
 
     faltantes = sorted(ESPERADAS - tomados)
@@ -403,10 +412,17 @@ def _parse_sheet(
             datos=datos, observacion=str(get(i_obs) or "").strip(),
             marcas={m: str(get(ix[m])).strip() for m in MARCAS_PARTIDO
                     if m in ix and get(ix[m]) not in (None, "")},
+            micro=_micro(get(i_micro)),
         ))
     from exams.formativo_sources import fechas_invertidas
 
     return filas, faltantes, desconocidas, fechas_invertidas(fechas_en_orden)
+
+
+def _micro(value) -> int | None:
+    """The MICRO cell as a week number; a blank or a stray text is None."""
+    n = _num(value)
+    return int(n) if n is not None and n == int(n) and 0 < n <= 60 else None
 
 
 def build_matcher(club: Club):
@@ -566,6 +582,11 @@ def run(origen: str, club: Club, *, commit: bool = False,
             or ExamTemplate.objects.filter(slug=slug, department__club=club).first())
         if plantillas[slug] is None:
             rep.sin_plantilla.append(slug)
+        elif commit and asegurar_campos(plantillas[slug], ("microciclo",)):
+            # Templates seeded before MICRO was kept (2026-10-28) get the
+            # field in place, so it shows in the field pickers and exports.
+            plantillas[slug].save(update_fields=["config_schema", "updated_at"])
+            plantillas[slug].rebuild_template_fields()
 
     ids = [f.origen_id for f in filas if f.dia]
     en_base: dict[str, ExamResult] = {
@@ -632,6 +653,8 @@ def run(origen: str, club: Club, *, commit: bool = False,
             datos["sesion"] += f" · {fila.observacion[:60]}"
         datos.update(_partido_para(fila.partido, template.slug))
         datos.update(_md_para(fila) or {})
+        if fila.micro is not None:
+            datos["microciclo"] = fila.micro
 
         datos, snapshot = compute_result_data(template, datos, player=player)
         datos["origen"] = ORIGEN
@@ -685,14 +708,19 @@ def _md_para(fila: Fila) -> dict | None:
 
 
 def _refrescar_partido(r: ExamResult, fila: Fila) -> bool:
-    """Bring an existing row's match fields and the club's microcycle day in
-    line with the sheet. Only those keys: a re-sync never rewrites a metric."""
+    """Bring an existing row's match fields, the club's microcycle day and its
+    microcycle number in line with the sheet. Only those keys: a re-sync never rewrites a metric."""
     claves = CLAVES_PARTIDO if r.template.slug == SLUG_PARTIDO else CAMPOS_SESION_PARTIDO
     nuevos = _partido_para(fila.partido, r.template.slug)
     md = _md_para(fila)
     if md is not None:
         claves = (*claves, *_CLAVES_MD)
         nuevos |= md
+    # The microcycle the club wrote, like the day: kept in step with the sheet
+    # (the club fills MICRO in after the fact on some tabs).
+    claves = (*claves, "microciclo")
+    if fila.micro is not None:
+        nuevos["microciclo"] = fila.micro
     actual = {k: r.result_data.get(k) for k in claves if k in r.result_data}
     if actual == nuevos:
         return False

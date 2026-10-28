@@ -35,7 +35,10 @@ export default function KpiCard({ widget }: { widget: DashboardWidget }) {
     [data.sparkline],
   );
 
-  const vacio = data.empty || data.value === null || data.value === undefined;
+  const texto = data.text ?? null;
+  const vacio = data.empty
+    || ((data.value === null || data.value === undefined) && !texto);
+  const nLabel = data.n_label ?? "registro";
 
   // Too small for a band: the sparkline only says, in words, that the period
   // it summarises includes an injury — a total over a layoff reads otherwise.
@@ -60,17 +63,27 @@ export default function KpiCard({ widget }: { widget: DashboardWidget }) {
       ) : (
         <div style={contenedor}>
           <div style={{ position: "relative", zIndex: 1 }}>
-            <div style={numero}>
-              {fmt(data.value as number)}
-              {data.field?.unit && <span style={unidad}> {data.field.unit}</span>}
-            </div>
+            {texto ? (
+              // Un texto (el último rival): sin unidad ni n, con su fecha.
+              <div style={{ ...numero, fontSize: 22, textTransform: "uppercase" }}>{texto}</div>
+            ) : (
+              <div style={numero}>
+                {fmt(data.value as number)}
+                {data.field?.unit && <span style={unidad}> {data.field.unit}</span>}
+              </div>
+            )}
             <div style={pie}>
-              {AGG_LABEL[data.agg] ?? data.agg}
+              {data.agg_label ?? AGG_LABEL[data.agg] ?? data.agg}
+              {data.subject && <span style={{ color: "#344054" }}> · {data.subject}</span>}
               {/* La `n` acompaña siempre: un "total del período" sobre dos
                   sesiones no se lee igual que sobre cuarenta. */}
-              {typeof data.n === "number" && data.n > 0 && (
-                <span style={{ color: "#98a2b3" }}> · {data.n} registro
-                  {data.n === 1 ? "" : "s"}</span>
+              {!texto && data.agg !== "last" && typeof data.n === "number" && data.n > 0 && (
+                <span style={{ color: "#98a2b3" }}> · {data.n} {nLabel === "sesión"
+                  ? (data.n === 1 ? "sesión" : "sesiones")
+                  : `registro${data.n === 1 ? "" : "s"}`}</span>
+              )}
+              {data.agg === "last" && data.last_recorded_at && (
+                <span style={{ color: "#98a2b3" }}> · {fmtDia(data.last_recorded_at)}</span>
               )}
               {enPeriodo.length > 0 && (
                 <span style={{ color: INJURY_INK }}>
@@ -99,8 +112,10 @@ export default function KpiCard({ widget }: { widget: DashboardWidget }) {
   );
 }
 
+// The number and its footnote sit above the sparkline, not over it: with a
+// season of sessions the curve fills its strip, and text over it was unreadable.
 const contenedor: React.CSSProperties = {
-  position: "relative", padding: "6px 4px 0", minHeight: 82,
+  position: "relative", padding: "6px 4px 0", minHeight: 104,
 };
 const numero: React.CSSProperties = {
   fontSize: 30, fontWeight: 800, color: "#0a2240", lineHeight: 1.1,
@@ -113,8 +128,13 @@ const pie: React.CSSProperties = {
   marginTop: 4, fontSize: 11, fontWeight: 600, color: "#667085",
 };
 const spark: React.CSSProperties = {
-  position: "absolute", inset: "auto 0 0 0", height: 42, opacity: 0.9,
+  position: "absolute", inset: "auto 0 0 0", height: 36, opacity: 0.9,
 };
+
+function fmtDia(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${y}`;
+}
 
 function fmt(v: number): string {
   return Number.isInteger(v)

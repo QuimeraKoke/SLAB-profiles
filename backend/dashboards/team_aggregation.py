@@ -96,6 +96,7 @@ def resolve_team_widget(
     event_ids: Sequence[UUID] | None = None,
     include_secondary: bool = True,
     team: Any = None,
+    md_labels: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Resolve a team-scoped widget against a category roster.
 
@@ -122,6 +123,10 @@ def resolve_team_widget(
     CALLED UP to this category are dropped from every widget's roster — the
     report page's "incluir secundarios" toggle. When True, each widget's
     payload also carries `call_up_player_ids` so the frontend can flag them.
+
+    `md_labels`: the report's "tipo de día" chips (MD-4, MD…). Only widgets
+    that opt in with `display_config.md_filter` read them — on top of their
+    own `only_values`, never widening it.
     """
     common = {
         "position_id": position_id,
@@ -133,7 +138,11 @@ def resolve_team_widget(
     }
     token = _INCLUDE_SECONDARY.set(include_secondary)
     min_token = _ROW_MIN.set(_row_min(widget.display_config or {}))
-    only_token = _ROW_ONLY.set(_row_only(widget.display_config or {}))
+    only = _row_only(widget.display_config or {})
+    if md_labels and (widget.display_config or {}).get("md_filter"):
+        own = only.get("md_label")
+        only["md_label"] = [m for m in md_labels if own is None or m in own] or ["∅"]
+    only_token = _ROW_ONLY.set(only)
     team_token = _TEAM.set(team)
     try:
         # Same reason as the flag above: the band a team chart draws has to be
@@ -222,6 +231,15 @@ def _dispatch_team_widget(
         from . import team_gauge
 
         return team_gauge.resolve(widget, category, **common)
+    if chart_type in (ChartType.TEAM_DUAL_AXIS_BAR_LINE.value, ChartType.TEAM_KPI_CARD.value,
+                      ChartType.TEAM_SESSION_LOG.value):
+        from . import gps_timeline
+
+        return {
+            ChartType.TEAM_DUAL_AXIS_BAR_LINE.value: gps_timeline.resolve_dual_axis,
+            ChartType.TEAM_KPI_CARD.value: gps_timeline.resolve_kpi,
+            ChartType.TEAM_SESSION_LOG.value: gps_timeline.resolve_session_log,
+        }[chart_type](widget, category, **common)
     return _empty(widget, chart_type, error=f"Unsupported chart type: {chart_type}")
 
 

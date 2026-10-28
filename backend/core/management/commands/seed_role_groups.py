@@ -1,6 +1,6 @@
 """Seed the canonical permission groups + backfill existing users.
 
-Three groups:
+Five groups:
 
 - **Editor** — full CRUD on the operational models a doctor/physio/etc.
   works with (ExamResult, Episode, Goal, Event, Player, Attachment,
@@ -18,6 +18,10 @@ Three groups:
   `StaffMembership`, but able to onboard the rest of the staff without
   a superuser touching the Django admin. Granting this group is what
   turns a membership into a club manager.
+
+- **Editor Formativo / Lectura Formativo** — Editor / Solo Lectura minus
+  the Operativa screens only the Primer Equipo uses (Cargar GPS, MD+2), so
+  the formativo staff's menu ends at Partidos.
 
 Contract visibility (`view_contract`) is intentionally left OUT of
 both groups. Admins grant it per-user from `/admin/auth/user/<id>/`
@@ -93,6 +97,16 @@ USER_MGMT_PERMS: list[tuple[str, str]] = [
 ]
 
 
+# Operativa screens only the Primer Equipo uses (Cargar GPS, MD+2). The three
+# base roles get them; the "… Formativo" twins are the same role WITHOUT them —
+# Django permissions only add up, so a formativo user loses the screens by
+# being in the twin group instead of the base one.
+PRIMER_EQUIPO_SCREEN_PERMS: list[tuple[str, str]] = [
+    ("core", "view_gps_upload"),
+    ("core", "view_md2"),
+]
+
+
 def _perms_for(actions: list[str]) -> list[Permission]:
     """Resolve `Permission` objects for each (action, app_label, model)
     tuple. Missing perms (e.g. before migrations) silently drop —
@@ -122,11 +136,15 @@ def _perms_by_codename(pairs: list[tuple[str, str]]) -> list[Permission]:
     return list(Permission.objects.filter(query))
 
 
-def _seed_group(name: str, actions: list[str]) -> tuple[Group, bool]:
-    """Create/update the group with the given action perms.
+def _seed_group(
+    name: str, actions: list[str], *, screens: bool = True,
+) -> tuple[Group, bool]:
+    """Create/update the group with the given action perms, plus the Primer
+    Equipo screens unless `screens=False` (the Formativo twins).
     Returns (group, created)."""
     group, created = Group.objects.get_or_create(name=name)
-    group.permissions.set(_perms_for(actions))
+    extra = _perms_by_codename(PRIMER_EQUIPO_SCREEN_PERMS) if screens else []
+    group.permissions.set(_perms_for(actions) + extra)
     return group, created
 
 
@@ -163,11 +181,24 @@ class Command(BaseCommand):
         admin_group.permissions.set(
             _perms_for(["view", "add", "change", "delete"])
             + _perms_by_codename(USER_MGMT_PERMS)
+            + _perms_by_codename(PRIMER_EQUIPO_SCREEN_PERMS)
         )
         self.stdout.write(self.style.SUCCESS(
             f"{'Created' if admin_created else 'Updated'} group 'Administrador' "
             f"with {admin_group.permissions.count()} permissions."
         ))
+
+        # Formativo twins: same actions as Editor / Solo Lectura, without the
+        # Primer Equipo screens in Operativa.
+        for name, actions in (
+            ("Editor Formativo", ["view", "add", "change", "delete"]),
+            ("Lectura Formativo", ["view"]),
+        ):
+            group, created = _seed_group(name, actions, screens=False)
+            self.stdout.write(self.style.SUCCESS(
+                f"{'Created' if created else 'Updated'} group '{name}' "
+                f"with {group.permissions.count()} permissions."
+            ))
 
         if opts["skip_backfill"]:
             self.stdout.write(self.style.NOTICE(

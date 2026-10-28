@@ -170,9 +170,11 @@ CONFIG_SCHEMA: dict = {
 from exams.formativo_gps_ingest import CAMPOS_PARTIDO as _CAMPOS_PARTIDO  # noqa: E402
 
 from exams.formativo_gps_ingest import CAMPO_MD as _CAMPO_MD  # noqa: E402
+from exams.formativo_gps_ingest import CAMPO_MICRO as _CAMPO_MICRO  # noqa: E402
 
 CONFIG_SCHEMA["fields"] += [dict(c) for c in _CAMPOS_PARTIDO
-                            if c["key"] in ("opponent", "match_type")] + [dict(_CAMPO_MD)]
+                            if c["key"] in ("opponent", "match_type")] + [
+                                dict(_CAMPO_MD), dict(_CAMPO_MICRO)]
 
 
 INPUT_CONFIG: dict = {

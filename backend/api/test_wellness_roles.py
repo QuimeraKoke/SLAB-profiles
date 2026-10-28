@@ -400,21 +400,25 @@ class BandasYAlertasDelFormativoTests(TestCase):
         self.assertFalse(AlertRule.objects.filter(
             template__slug="checkout_formativo", field_key="rpe").exists())
 
-    def test_cada_campo_vigilado_tiene_aviso_y_critica(self):
+    def test_cada_campo_vigilado_tiene_sus_severidades(self):
+        """El check-IN sólo alerta en 1 y 2 («Crítico»): un 3 sigue pintándose
+        «Aviso» pero no levanta alerta (pedido del club, 2026-10-28). El
+        check-OUT conserva las dos."""
         from goals.models import AlertRule
 
-        for slug, campos in (
+        for slug, campos, esperadas in (
             ("checkin_formativo", ["calidad_sueno", "nivel_fatiga",
                                    "nivel_estres", "estado_animo",
-                                   "dano_muscular"]),
+                                   "dano_muscular"], {"critical"}),
             ("checkout_formativo", ["dano_muscular", "partido_recuperacion",
-                                    "partido_explosivas", "partido_fisico"]),
+                                    "partido_explosivas", "partido_fisico"],
+             {"warning", "critical"}),
         ):
             for campo in campos:
                 sev = set(AlertRule.objects.filter(
                     template__slug=slug, field_key=campo,
                 ).values_list("severity", flat=True))
-                self.assertEqual(sev, {"warning", "critical"}, f"{slug}.{campo}")
+                self.assertEqual(sev, esperadas, f"{slug}.{campo}")
 
     def test_las_reglas_no_son_por_categoria(self):
         """Un 3 de sueño significa lo mismo en Serie 2018 que en SUB-20.
@@ -435,8 +439,8 @@ class BandasYAlertasDelFormativoTests(TestCase):
 
         for sev, valor_que_dispara, valor_que_no in (("critical", 2, 3),
                                                      ("warning", 3, 2)):
-            regla = AlertRule.objects.get(template__slug="checkin_formativo",
-                                          field_key="calidad_sueno",
+            regla = AlertRule.objects.get(template__slug="checkout_formativo",
+                                          field_key="dano_muscular",
                                           severity=sev)
             banda, disparan = _band_evaluation(regla, valor_que_dispara)
             self.assertIn(banda["label"], [b["label"] for b in disparan], sev)

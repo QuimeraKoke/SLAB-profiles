@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import ReportDownloadDialog from "@/components/reports/ReportDownloadDialog/ReportDownloadDialog";
 import { api, ApiError } from "@/lib/api";
@@ -16,6 +17,8 @@ import DepartmentCard from "@/components/perfil/DepartmentCard/DepartmentCard";
 import DepartmentDashboard from "@/components/dashboards/DepartmentDashboard";
 import MatchHistoryTable from "@/components/perfil/MatchHistoryTable/MatchHistoryTable";
 import AddWidgetModal from "@/components/reports/AddWidgetModal";
+import MdFilter from "@/components/common/MdFilter";
+import FichaButton from "@/components/perfil/FichaButton";
 import PlayerAssistant from "./PlayerAssistant";
 import styles from "./ProfileDepartment.module.css";
 
@@ -45,6 +48,8 @@ export default function ProfileDepartment({
   const [addOpen, setAddOpen] = useState(false);
   const [editWidgetId, setEditWidgetId] = useState<string | null>(null);
   const canEditPanel = usePermission("dashboards.change_widget");
+  // "Tipo de día" chips (MD-4, MD…) — URL-held, read by the GPS widgets only.
+  const mdParam = useSearchParams().get("md") ?? "";
 
   // Refetch only the results list. Used after a row is edited or deleted in
   // a child DepartmentCard so the table re-renders without thrashing the
@@ -84,6 +89,7 @@ export default function ProfileDepartment({
     // navigation in each widget) — there is no global date filter anymore.
     const dept = encodeURIComponent(department.slug);
     const layoutParams = new URLSearchParams({ department: department.slug });
+    if (mdParam) layoutParams.set("md", mdParam);
 
     Promise.all([
       api<ExamResult[]>(`/players/${playerId}/results?department=${dept}`),
@@ -105,7 +111,7 @@ export default function ProfileDepartment({
     return () => {
       cancelled = true;
     };
-  }, [playerId, department.slug, reloadKey]);
+  }, [playerId, department.slug, reloadKey, mdParam]);
 
   const renderBody = () => {
     if (results === null && !error) {
@@ -131,6 +137,7 @@ export default function ProfileDepartment({
             playerId={playerId}
             departmentSlug={department.slug}
           />
+          <MdFilter config={layout.md_filter} />
           <DepartmentDashboard
             sections={layout.sections}
             playerId={playerId}
@@ -190,6 +197,7 @@ export default function ProfileDepartment({
           )}
         </div>
         <div className={styles.controls}>
+          <FichaButton playerId={playerId} playerName={playerName} department={department.slug} />
           {layout && (
             <ReportDownloadDialog
               title={`Informe de ${department.name} · ${playerName}`}

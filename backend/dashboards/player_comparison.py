@@ -110,7 +110,7 @@ def compare(
             "line": p.position.role or None if p.position_id else None,
             # Vacío en TODO el formativo hoy (0 de 445). Quien dibuje la
             # tarjeta necesita un fallback de verdad, no un ícono roto.
-            "photo_url": p.photo_url or None,
+            "photo_url": p.photo_src,
             "date_of_birth": p.date_of_birth.isoformat() if p.date_of_birth else None,
             "values": {
                 k: _ultimo(series.get((p.id, k)) or []) for k in keys

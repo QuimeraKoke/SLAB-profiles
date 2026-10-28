@@ -958,14 +958,25 @@ export interface MultiLinePayload {
 /** Bitácora: una fila por sesión. Distinto de `ComparisonTablePayload`, que
  *  está transpuesto (filas = métricas). */
 export interface SessionLogPayload {
-  chart_type: "session_log";
+  chart_type: "session_log" | "team_session_log";
   columns: FieldMeta[];
   rows: {
     result_id: string;
     recorded_at: string;
     md_label: string | null;
+    /** Microciclo del club (MICRO), cuando la fila lo trae. */
+    micro?: number | null;
+    /** OBSERVACIÓN: el rival, o el tipo de sesión. */
+    note?: string;
+    /** Sólo en la versión de equipo: quién, en qué puesto y en qué equipo. */
+    player_id?: string;
+    player?: string;
+    position?: string;
+    team?: string;
     values: Record<string, number | null>;
   }[];
+  /** Equipo: filas en el período (la tabla muestra hasta `limit`). */
+  total?: number;
   empty?: boolean;
   error?: string;
 }
@@ -973,10 +984,18 @@ export interface SessionLogPayload {
 /** Número grande + sparkline. `agg` viaja para que la tarjeta pueda decir QUÉ
  *  está mostrando: suma, promedio, máximo o último. */
 export interface KpiCardPayload {
-  chart_type: "kpi_card";
+  chart_type: "kpi_card" | "team_kpi_card";
   field: FieldMeta | null;
   agg: string;
+  /** Equipo: cómo leer el número ("Promedio por sesión"). */
+  agg_label?: string;
   value: number | null;
+  /** Equipo, `agg: "last"` sobre un campo de texto: el último rival. */
+  text?: string | null;
+  /** Equipo, `agg: "max"`: de quién es el máximo. */
+  subject?: string | null;
+  /** Qué cuenta `n`: "sesión" o "registro". */
+  n_label?: string;
   sparkline: { recorded_at: string; value: number }[];
   n: number;
   last_recorded_at?: string | null;
@@ -986,7 +1005,7 @@ export interface KpiCardPayload {
 
 /** Barras + línea con eje secundario. Una sesión por punto. */
 export interface DualAxisBarLinePayload {
-  chart_type: "dual_axis_bar_line";
+  chart_type: "dual_axis_bar_line" | "team_dual_axis_bar_line";
   bars: FieldMeta | null;
   line: FieldMeta | null;
   points: {
@@ -996,8 +1015,12 @@ export interface DualAxisBarLinePayload {
     week: string;
     /** Día de microciclo. `null` a más de una semana de cualquier partido. */
     md_label: string | null;
+    /** Microciclo del club (MICRO): agrupa el eje. Sin él, la semana. */
+    micro?: number | null;
     bars: number | null;
     line: number | null;
+    /** Equipo: jugadores en la sesión (cada punto es su media). */
+    n?: number;
   }[];
   empty?: boolean;
   error?: string;
@@ -1095,6 +1118,14 @@ export interface DashboardSection {
   widgets: DashboardWidget[];
 }
 
+/** Los chips "tipo de día" (MD-4, MD…): activos cuando algún widget del
+ *  layout los sigue; `options` son los días que hay en los datos. */
+export interface MdFilterConfig {
+  enabled: boolean;
+  options: string[];
+  selected: string[];
+}
+
 export interface DepartmentLayoutResponse {
   layout: {
     id: string;
@@ -1102,6 +1133,7 @@ export interface DepartmentLayoutResponse {
     category_id: string;
     name: string;
     sections: DashboardSection[];
+    md_filter?: MdFilterConfig | null;
   } | null;
 }
 
@@ -1872,6 +1904,7 @@ export interface TeamReportResponse {
     default_period_days?: number | null;
     sections: TeamReportSection[];
     match_selector: TeamMatchSelectorConfig;
+    md_filter?: MdFilterConfig;
   } | null;
   /** Every layout of this (department, category), in menu order. */
   layouts: TeamLayoutRef[];

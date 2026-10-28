@@ -69,6 +69,8 @@ interface NavGroup {
   /** Action item (no route) — renders a <button> that runs this on click.
    *  Used by "Ask S-LAB AI" to open the floating chat (NAV-02). */
   onClick?: () => void;
+  /** Shown only to users holding this permission (`app_label.codename`). */
+  permission?: string;
 }
 
 // QW-10: Partidos promoted to a top-level entry — it's a daily flow for
@@ -81,10 +83,13 @@ const STATIC_NAV: NavGroup[] = [
   { label: "Daily", icon: Sunrise, href: "/daily" },
   { label: "Equipo", icon: Users, href: "/equipo", activePrefixes: ["/perfil"] },
   { label: "Partidos", icon: Calendar, href: "/partidos" },
-  { label: "Cargar GPS", icon: Activity, href: "/gps-entrenamiento" },
+  // Cargar GPS and MD+2 are Primer Equipo flows: the "… Formativo" roles
+  // don't hold their permission, so the formativo menu ends at Partidos.
+  { label: "Cargar GPS", icon: Activity, href: "/gps-entrenamiento",
+    permission: "core.view_gps_upload" },
   // Two days after a match: CK, hydration, CMJ and central fatigue, entered
   // and read as a traffic light on one screen.
-  { label: "MD+2", icon: HeartPulse, href: "/md2" },
+  { label: "MD+2", icon: HeartPulse, href: "/md2", permission: "core.view_md2" },
 ];
 
 // IA-1: "Configuraciones" carried both daily ops (Jugadores) and admin
@@ -238,7 +243,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
 
   // IA-2: visually group navigation by frequency-of-use (audit principle #4).
   // Operativa = daily; Análisis = read-only insight (dashboards + the S-LAB AI
-  // assistant); Administración = lower-traffic admin. NAV-11 moved "Uso" into
+  // assistant); Administración = lower-traffic admin (Datos + settings). NAV-11 moved "Uso" into
   // Administración; NAV-02 added the assistant entry. Role-aware hiding is
   // still TODO (P2) — for now everyone sees every group they can access.
   // Cohort development: reads across seasons, so it belongs in Análisis rather
@@ -276,7 +281,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   const navSections: Array<{ label: string | null; items: NavGroup[] }> = [
     {
       label: "Operativa",
-      items: STATIC_NAV,
+      items: STATIC_NAV.filter((i) => !i.permission || hasPermission(user, i.permission)),
     },
     {
       label: "Análisis",
@@ -288,13 +293,14 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
         // link es cosmético: la puerta real son los @require_perm del backend.
         // Pero un link que lleva a "no tenés permiso" es peor que no tenerlo.
         ...(canViewDevelopment ? [desarrolloItem, crecimientoItem] : []),
-        datosGroup,
         askAiItem,
       ],
     },
+    // Datos (carga / exportación / uso) is upkeep, not insight — it sits
+    // with the other admin surfaces rather than in Análisis.
     {
       label: "Administración",
-      items: [settingsGroup],
+      items: [datosGroup, settingsGroup],
     },
   ];
 

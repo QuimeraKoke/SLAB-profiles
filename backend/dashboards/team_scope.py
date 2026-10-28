@@ -40,8 +40,13 @@ def _hoja(bracket_name: str) -> str | None:
     return f"U{m.group(1)}" if m else None
 
 
-def for_category(category: Category, template_slug: str = "gps_partido") -> TeamScope | None:
-    """None when the category never entered a youth bracket (nothing to scope)."""
+def for_category(category: Category,
+                 template_slug: str | tuple[str, ...] = "gps_partido") -> TeamScope | None:
+    """None when the category never entered a youth bracket (nothing to scope).
+
+    `template_slug` may name several templates — the GPS timeline reads the
+    team's sessions and matches together."""
+    slugs = (template_slug,) if isinstance(template_slug, str) else tuple(template_slug)
     seasons = list(TeamSeason.objects.filter(team=category).select_related("bracket"))
     q = Q()
     own: set[UUID] = {category.id}
@@ -60,7 +65,7 @@ def for_category(category: Category, template_slug: str = "gps_partido") -> Team
     # The club, always: a sheet name ("U18") and a bracket ("Sub 18") are not
     # club-specific, and without it a demo club's GPS partido listed the real
     # club's matches and pulled its players into the roster (2026-10-08).
-    rows = q & Q(template__slug=template_slug,
+    rows = q & Q(template__slug__in=slugs,
                  player__category__club_id=category.club_id)
     players = frozenset(ExamResult.objects.filter(rows)
                         .values_list("player_id", flat=True).distinct())

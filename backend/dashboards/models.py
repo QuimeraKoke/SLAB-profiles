@@ -295,6 +295,23 @@ class ChartType(models.TextChoices):
     )
     # One metric's latest value on an arc between the squad's min and max,
     # coloured by the club's bands (see `dashboards/team_gauge.py`).
+    # GPS a lo largo del tiempo (`dashboards/gps_timeline.py`): the team
+    # versions of `dual_axis_bar_line`, `kpi_card` and `session_log` — one
+    # point per session (mean per player), the period's number, and the
+    # club's per-player GPS table. Same payload shapes as the per-player ones,
+    # so the profile and the report draw them with the same components.
+    TEAM_DUAL_AXIS_BAR_LINE = (
+        "team_dual_axis_bar_line",
+        "Team — bars + line on a secondary axis, one point per session",
+    )
+    TEAM_KPI_CARD = (
+        "team_kpi_card",
+        "Team — KPI card (period number + session sparkline)",
+    )
+    TEAM_SESSION_LOG = (
+        "team_session_log",
+        "Team — session log (one row per player and session)",
+    )
     TEAM_GAUGE = (
         "team_gauge",
         "Team — gauge (latest value vs. squad range and bands)",
@@ -787,6 +804,9 @@ class TeamReportWidget(models.Model):
             (ChartType.TEAM_INJURY_LIST.value, ChartType.TEAM_INJURY_LIST.label),
             (ChartType.TEAM_INJURY_BREAKDOWN.value, ChartType.TEAM_INJURY_BREAKDOWN.label),
             (ChartType.TEAM_GAUGE.value, ChartType.TEAM_GAUGE.label),
+            (ChartType.TEAM_DUAL_AXIS_BAR_LINE.value, ChartType.TEAM_DUAL_AXIS_BAR_LINE.label),
+            (ChartType.TEAM_KPI_CARD.value, ChartType.TEAM_KPI_CARD.label),
+            (ChartType.TEAM_SESSION_LOG.value, ChartType.TEAM_SESSION_LOG.label),
         ],
     )
     title = models.CharField(max_length=160)

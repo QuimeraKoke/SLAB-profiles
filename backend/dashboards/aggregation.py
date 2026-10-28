@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import re
 
+from collections.abc import Sequence
+from contextvars import ContextVar
 from datetime import datetime, timedelta
 from typing import Any, Callable
 from uuid import UUID
@@ -27,11 +29,17 @@ from .models import (
     iter_template_fields,
 )
 from .player_state import _GPS_TRAIN_SLUG, match_load_refs
-from . import category_bands
+from . import category_bands, gps_timeline
 from .stats import mean as _stats_mean, stdev as _stats_stdev
 
 
 # ---------- helpers ----------
+
+# The profile's "tipo de día" chips (MD-4, MD…): set per widget by
+# `resolve_widget` when the widget opts in (`display_config.md_filter`), read
+# by `_fetch_results` — the same ContextVar pattern the team resolvers use, so
+# no resolver signature changes for one filter.
+_MD_ONLY: ContextVar[list[str] | None] = ContextVar("player_md_only", default=None)
 
 def _fetch_results(
     template: ExamTemplate,
@@ -66,6 +74,8 @@ def _fetch_results(
         qs = qs.filter(recorded_at__gte=date_from)
     if date_to is not None:
         qs = qs.filter(recorded_at__lte=date_to)
+    if (md := _MD_ONLY.get()):
+        qs = qs.filter(result_data__md_label__in=md)
     qs = qs.order_by("recorded_at")
     if source.aggregation == Aggregation.LATEST:
         latest = qs.last()
@@ -75,6 +85,23 @@ def _fetch_results(
         n = max(int(source.aggregation_param or 1), 1)
         return list(qs.order_by("-recorded_at")[:n])[::-1]
     return list(qs)
+
+
+def _fetch_merged(
+    sources: list[WidgetDataSource],
+    player_id: UUID,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+) -> list[ExamResult]:
+    """`_fetch_results` over every source, merged chronologically — the GPS
+    timeline reads `gps_sesion` and `gps_partido` together, so the match sits
+    on the same axis as the week that led to it. One source: unchanged."""
+    if len(sources) == 1:
+        return _fetch_results(sources[0].template, player_id, sources[0], date_from, date_to)
+    out: list[ExamResult] = []
+    for s in sources:
+        out += _fetch_results(s.template, player_id, s, date_from, date_to)
+    return sorted(out, key=lambda r: (r.recorded_at, str(r.id)))
 
 
 def _read(result: ExamResult, key: str) -> Any:
@@ -1039,7 +1066,7 @@ def _resolve_dual_axis_bar_line(
         }
 
     template = source.template
-    results = _fetch_results(template, player_id, source, date_from, date_to)
+    results = _fetch_merged(sources, player_id, date_from, date_to)
 
     puntos: list[dict[str, Any]] = []
     for r in results:
@@ -1050,6 +1077,9 @@ def _resolve_dual_axis_bar_line(
             # acá y no en el frontend para que el PDF y la pantalla agrupen
             # igual sin duplicar la regla.
             "week": "%d-W%02d" % r.recorded_at.isocalendar()[:2],
+            # El microciclo del club (MICRO), cuando la fila lo trae: agrupa
+            # el eje como el Power BI del club. Sin él, la semana ISO.
+            "micro": gps_timeline.micro_of(datos),
             # Etiqueta de la barra. `None` cuando la sesión cae a más de una
             # semana de cualquier partido — no pertenece a ningún microciclo,
             # y decirlo es más honesto que inventarle uno.
@@ -1096,7 +1126,7 @@ def _resolve_kpi_card(
 
     agg = (cfg.get("agg") or "latest").lower()
     template = source.template
-    results = _fetch_results(template, player_id, source, date_from, date_to)
+    results = _fetch_merged(sources, player_id, date_from, date_to)
 
     serie = []
     for r in results:
@@ -1158,7 +1188,7 @@ def _resolve_session_log(
         }
 
     metas = [_field_meta(template, k) for k in claves]
-    results = _fetch_results(template, player_id, source, date_from, date_to)
+    results = _fetch_merged(sources, player_id, date_from, date_to)
 
     filas = []
     for r in results:
@@ -1167,6 +1197,9 @@ def _resolve_session_log(
             "result_id": str(r.id),
             "recorded_at": r.recorded_at.isoformat(),
             "md_label": datos.get("md_label") or None,
+            "micro": gps_timeline.micro_of(datos),
+            # La OBSERVACIÓN del club: el rival, o el tipo de sesión.
+            "note": gps_timeline.note_of(datos),
             "values": {k: _safe_float(datos.get(k)) for k in claves},
         })
     # Más reciente primero: una bitácora se lee desde lo último hacia atrás.
@@ -1205,12 +1238,17 @@ def resolve_widget(
     player_id: UUID,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
+    md_labels: Sequence[str] | None = None,
 ) -> dict[str, Any]:
     """Return a chart-ready payload for a widget bound to a player.
 
     Optional `date_from` / `date_to` bound `ExamResult.recorded_at`
     before aggregation. Per-resolver policy: most apply the bounds;
     `body_map_heatmap` ignores them by design (cumulative view).
+
+    `md_labels`: the profile's "tipo de día" chips. Only widgets with
+    `display_config.md_filter` read them — a check-in has no microcycle day,
+    and filtering it by one would just empty it.
     """
     sources = list(widget.data_sources.all())
     handler = _RESOLVERS.get(widget.chart_type)
@@ -1229,8 +1267,14 @@ def resolve_widget(
 
     categoria = (Player.objects.filter(pk=player_id)
                  .values_list("category_id", flat=True).first())
-    with category_bands.scope(categoria):
-        return handler(widget, sources, player_id, date_from, date_to)
+    md = (list(md_labels) if md_labels and (widget.display_config or {}).get("md_filter")
+          else None)
+    token = _MD_ONLY.set(md)
+    try:
+        with category_bands.scope(categoria):
+            return handler(widget, sources, player_id, date_from, date_to)
+    finally:
+        _MD_ONLY.reset(token)
 
 
 # ---------- goal_card -----------------------------------------------------

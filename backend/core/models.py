@@ -152,6 +152,16 @@ class Category(models.Model):
             # de `_has_perm`.
             ("view_player_comparison",
              "Puede ver el comparador de jugadores entre divisiones"),
+            #
+            # Pantallas de Operativa que sólo usa el Primer Equipo: la carga
+            # de GPS por sesión y el MD+2. Al revés que las dos de arriba,
+            # SÍ las tienen los grupos de siempre (Editor, Solo Lectura,
+            # Administrador) vía `seed_role_groups` — lo que las quita es
+            # asignar un rol "… Formativo", que replica al de base sin ellas.
+            # Los permisos de Django sólo suman, así que la resta se hace
+            # eligiendo el grupo, no negando una llave.
+            ("view_gps_upload", "Puede ver la pantalla Cargar GPS"),
+            ("view_md2", "Puede ver la pantalla MD+2"),
         ]
 
     def __str__(self) -> str:
@@ -604,11 +614,15 @@ class Player(models.Model):
     photo_url = models.URLField(
         max_length=500, blank=True,
         help_text=(
-            "Public URL of the player's headshot. Useful when the photo lives in "
-            "an external CDN / Google Drive; for SLAB-hosted photos the standard "
-            "ImageField on the admin should be used (future work)."
+            "Public URL of the player's headshot when it lives on an external "
+            "CDN (API-Football). Prefer `photo`: an external link can break."
         ),
     )
+    # A copy in SLAB's own storage (private bucket, signed URLs). Wins over
+    # `photo_url`. Filled by the formativo sync from the club's player sheet
+    # (`exams.formativo_jugadores`), whose Drive links are not a CDN — a
+    # changed permission or a rate limit would blank every ficha.
+    photo = models.FileField(upload_to="players/photos/", blank=True)
     # Cached "latest known" anthropometric values. Updated automatically when
     # an exam template field marks itself as `writes_to_player_field` (see
     # exams.models.TemplateField). Manually editable in admin as a fallback.
@@ -651,6 +665,17 @@ class Player(models.Model):
         if (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day):
             years -= 1
         return years
+
+    @property
+    def photo_src(self) -> str | None:
+        """What to show: our stored copy (a signed URL), else the external
+        link, else None."""
+        if self.photo:
+            try:
+                return self.photo.url
+            except (ValueError, AttributeError):
+                pass
+        return self.photo_url or None
 
     def __str__(self) -> str:
         return f"{self.first_name} {self.last_name}"

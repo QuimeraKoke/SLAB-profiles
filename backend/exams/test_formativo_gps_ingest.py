@@ -39,9 +39,9 @@ D = datetime(2026, 3, 11)
 
 def fila(nombre="CESAR PEREZ GALLEGOS", dia=D, codigo="MD-4", *,
          localia=None, calidad=None, resultado=None, hr=(None, None),
-         vmax=21.8, dur=36.8, obs=""):
+         vmax=21.8, dur=36.8, obs="", micro=1.0):
     return [dia, nombre, datetime(2011, 6, 23), 15, "U15", "EXTREMO", codigo,
-            1.0, dur, 2856.4, 77.6, 27.0, 10.0, vmax, 42.6, 262.4, 118.0, 3.0,
+            micro, dur, 2856.4, 77.6, 27.0, 10.0, vmax, 42.6, 262.4, 118.0, 3.0,
             hr[0], hr[1], obs, localia, calidad, resultado]
 
 
@@ -330,6 +330,35 @@ class FormativoGpsTests(TestCase):
                          .partido_actualizados, 1)
         r.refresh_from_db()
         self.assertEqual(r.result_data["md_label"], "MD-4")
+
+    # ── MICRO: el microciclo del club ───────────────────────────────────
+    def test_guarda_el_microciclo_del_club(self):
+        self.correr({"U15": [fila(micro=41.0), fila(dia=datetime(2026, 3, 12), micro=None),
+                             fila(dia=datetime(2026, 3, 13), micro="")]}, commit=True)
+        por_dia = {r.recorded_at.date().day: r.result_data for r in ExamResult.objects.all()}
+        self.assertEqual(por_dia[11]["microciclo"], 41)
+        self.assertNotIn("microciclo", por_dia[12], "una celda vacía no es el microciclo 0")
+        self.assertNotIn("microciclo", por_dia[13])
+
+    def test_el_microciclo_no_es_una_metrica_ni_una_columna_nueva(self):
+        rep = self.correr({"U15": [fila(micro=7.0)]})
+        self.assertNotIn("MICRO", " ".join(rep.columnas_desconocidas.get("U15", [])))
+
+    def test_la_sync_pone_el_microciclo_a_filas_viejas(self):
+        self.correr({"U15": [fila(micro=None)]}, commit=True)
+        r = ExamResult.objects.get()
+        self.assertNotIn("microciclo", r.result_data)
+        rep = self.correr({"U15": [fila(micro=12.0)]}, commit=True)
+        r.refresh_from_db()
+        self.assertEqual((rep.partido_actualizados, r.result_data["microciclo"]), (1, 12))
+        self.assertEqual(self.correr({"U15": [fila(micro=12.0)]}).partido_actualizados, 0,
+                         "idempotente")
+
+    def test_la_sync_agrega_el_campo_microciclo_a_la_plantilla(self):
+        self.correr({"U15": [fila()]}, commit=True)
+        for t in ExamTemplate.objects.all():
+            claves = [f["key"] for f in t.config_schema["fields"]]
+            self.assertEqual(claves.count("microciclo"), 1, t.slug)
 
     def test_repair_quita_una_reimportacion_y_deja_la_vieja(self):
         from io import StringIO

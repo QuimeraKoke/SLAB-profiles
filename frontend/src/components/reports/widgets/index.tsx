@@ -2,7 +2,10 @@
 
 import React from "react";
 
-import type { TeamReportWidget } from "@/lib/types";
+import DualAxisBarLine from "@/components/dashboards/widgets/DualAxisBarLine";
+import KpiCard from "@/components/dashboards/widgets/KpiCard";
+import SessionLog from "@/components/dashboards/widgets/SessionLog";
+import type { DashboardWidget, TeamReportWidget } from "@/lib/types";
 import TeamActiveRecords from "./TeamActiveRecords";
 import TeamActivityCoverage from "./TeamActivityCoverage";
 import TeamActivityLog from "./TeamActivityLog";
@@ -21,6 +24,13 @@ import TeamStackedBars from "./TeamStackedBars";
 import TeamStatusCounts from "./TeamStatusCounts";
 import TeamTrendLine from "./TeamTrendLine";
 import Unsupported from "./Unsupported";
+
+// GPS a lo largo del tiempo: el payload de equipo tiene la misma forma que el
+// del perfil, así que el reporte dibuja con los mismos componentes.
+const comoPerfil = (C: React.ComponentType<{ widget: DashboardWidget }>) =>
+  function TeamGpsWidget({ widget }: { widget: TeamReportWidget }) {
+    return <C widget={{ ...widget, display_config: {} } as unknown as DashboardWidget} />;
+  };
 
 const teamWidgetRegistry: Record<
   string,
@@ -45,6 +55,9 @@ const teamWidgetRegistry: Record<
   team_injury_list: TeamInjuryList,
   team_injury_breakdown: TeamInjuryBreakdown,
   team_gauge: TeamGauge,
+  team_dual_axis_bar_line: comoPerfil(DualAxisBarLine),
+  team_kpi_card: comoPerfil(KpiCard),
+  team_session_log: comoPerfil(SessionLog),
 };
 
 export function renderTeamWidget(widget: TeamReportWidget): React.ReactNode {

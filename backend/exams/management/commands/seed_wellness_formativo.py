@@ -246,6 +246,10 @@ CAMPOS_CON_ALERTA = {
 # evaluador cae a la heurística de "la banda más roja" y las dos reglas del
 # mismo campo dispararían por lo mismo.
 SEVERIDADES = (("critical", ["Crítico"]), ("warning", ["Aviso"]))
+# El check-IN sólo alerta en 1 y 2 («Crítico»): un 3 es un día regular, no
+# algo que el staff tenga que atender cada mañana (pedido del club,
+# 2026-10-28; ver goals/migrations/0018). El check-OUT mantiene las dos.
+SEVERIDADES_POR_PLANTILLA = {"checkin_formativo": (("critical", ["Crítico"]),)}
 
 
 INPUT_CONFIG = {
@@ -333,7 +337,7 @@ class Command(BaseCommand):
             if template is None:
                 continue
             for campo in campos:
-                for severidad, labels in SEVERIDADES:
+                for severidad, labels in SEVERIDADES_POR_PLANTILLA.get(slug, SEVERIDADES):
                     _, nueva = AlertRule.objects.get_or_create(
                         template=template, field_key=campo, category=None,
                         severity=severidad, kind="band",

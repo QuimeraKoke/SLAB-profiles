@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import DownloadExcelButton from "@/components/reports/DownloadExcelButton";
 import ReportDownloadDialog from "@/components/reports/ReportDownloadDialog/ReportDownloadDialog";
 import MatchSelector from "@/components/reports/MatchSelector";
+import MdFilter from "@/components/common/MdFilter";
 import MatchMultiSelector from "@/components/reports/MatchMultiSelector";
 import ReportFilters, { defaultFilters, groupPlayersByPosition } from "@/components/reports/ReportFilters";
 import { lastDaysRange } from "@/components/common/DateRangeControl";
@@ -48,6 +49,8 @@ export default function ReportView({ deptSlug, layoutSlug }: { deptSlug: string;
   // from "user explicitly cleared (param present, empty)". The required-
   // mode auto-pick only fires on the former.
   const matchIdsParam = searchParams.get("match_ids");
+  // "Tipo de día" chips (MD-4, MD…) — URL-held, read by the GPS widgets.
+  const mdParam = searchParams.get("md") ?? "";
 
   const [department, setDepartment] = useState<Department | null>(null);
   const [positions, setPositions] = useState<Position[]>([]);
@@ -188,6 +191,7 @@ export default function ReportView({ deptSlug, layoutSlug }: { deptSlug: string;
     // required-mode auto-fill, so we still send it.
     if (matchIdsParam !== null) params.set("match_ids", matchIdsParam);
     if (layoutSlug) params.set("layout", layoutSlug);
+    if (mdParam) params.set("md", mdParam);
     api<TeamReportResponse>(`/reports/${department.slug}?${params}`)
       .then((data) => {
         if (cancelled) return;
@@ -231,7 +235,7 @@ export default function ReportView({ deptSlug, layoutSlug }: { deptSlug: string;
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [department, categoryId, categoryLoading, filters, matchFromUrl, matchIdsParam, reloadKey, layoutSlug]);
+  }, [department, categoryId, categoryLoading, filters, matchFromUrl, matchIdsParam, reloadKey, layoutSlug, mdParam]);
 
   // After a layout is created, renamed, reordered or deleted: refetch, tell
   // the sidebar (its submenu lists them) and go where the change points.
@@ -391,6 +395,7 @@ export default function ReportView({ deptSlug, layoutSlug }: { deptSlug: string;
           />
         )
       )}
+      <MdFilter config={layout?.md_filter} />
       {department.slug === "medico" && categoryId && (
         <ForecastAccuracyCard
           deptSlug={department.slug}

@@ -19,6 +19,7 @@ import Hero from "@/components/command/Hero";
 import KpiStrip from "@/components/command/KpiStrip";
 import SquadStatus from "@/components/command/SquadStatus";
 import DecisionTable from "@/components/command/DecisionTable";
+import EvaluationGrid from "@/components/command/EvaluationGrid";
 import WellnessRoleTabs, { ROLE_LABEL } from "@/components/command/WellnessRoleTabs";
 import type {
   CommandCenter,
@@ -104,6 +105,11 @@ export default function CommandCenterPage() {
           checkoutWellness={data.checkout?.wellness}
           onWellnessRoleChange={setWellnessRole}
         />
+
+        {/* Formativo: every player's last physical test against the
+            category's bands. Renders nothing where there are no bands
+            (Primer Equipo). */}
+        <EvaluationGrid categoryId={categoryId} />
 
         {/* Below: main column + rail (Estado del plantel moved down here). */}
         <div className={styles.grid}>

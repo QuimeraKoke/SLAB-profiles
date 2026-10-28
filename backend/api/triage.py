@@ -361,7 +361,7 @@ def build_triage_payload(player: Player, desde: datetime | None = None,
             "position_label": (
                 player.position.abbreviation if player.position else None
             ),
-            "photo_url": player.photo_url or None,
+            "photo_url": player.photo_src,
         },
         "generated_at": now,
         "alerts": [

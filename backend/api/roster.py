@@ -71,7 +71,7 @@ def build_roster(category) -> dict:
         rows.append({
             "id": str(p.id),
             "initials": _initials(p),
-            "photo": p.photo_url or None,
+            "photo": p.photo_src,
             "name": f"{p.first_name} {p.last_name}".strip(),
             "position": (p.position.name or p.position.abbreviation) if p.position else "—",
             "status": p.status,

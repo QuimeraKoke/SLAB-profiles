@@ -330,7 +330,12 @@ def refresh_token(request):
 
 # Managed role groups, in priority order (a user's "role" is the first of
 # these they belong to). Seeded by `core/management/commands/seed_role_groups`.
-MANAGED_ROLE_GROUPS = ["Administrador", "Editor", "Solo Lectura"]
+# Order matters: `_user_role` reports the first one a user belongs to. The
+# "… Formativo" twins are Editor / Solo Lectura without the Primer Equipo
+# screens of Operativa (Cargar GPS, MD+2) — see `seed_role_groups`.
+MANAGED_ROLE_GROUPS = [
+    "Administrador", "Editor", "Solo Lectura", "Editor Formativo", "Lectura Formativo",
+]
 
 
 def generate_temp_password() -> str:
@@ -344,7 +349,7 @@ def _assignable_roles(user) -> list[str]:
     the "Administrador" (manager) role — a manager can't mint more managers."""
     if user.is_superuser:
         return list(MANAGED_ROLE_GROUPS)
-    return ["Editor", "Solo Lectura"]
+    return [r for r in MANAGED_ROLE_GROUPS if r != "Administrador"]
 
 
 def _user_role(user) -> str:
@@ -851,7 +856,7 @@ def get_player(request, player_id: str):
         ),
         "age": player.age,
         "open_episode_count": open_eps,
-        "photo_url": player.photo_url or None,
+        "photo_url": player.photo_src,
     }
 
 
@@ -1773,6 +1778,7 @@ def bulk_results(
 # and /results/team — see the routing note in STATUS).
 @api.post("/gps-sessions/upload")
 @require_perm("exams.add_examresult")
+@require_perm("core.view_gps_upload")
 def gps_session_upload(
     request,
     file: UploadedFile = File(...),
@@ -2039,6 +2045,7 @@ def _md2_contexto(request, category_id: str, event_id: str | None):
 
 
 @api.get("/md2")
+@require_perm("core.view_md2")
 def md2_view(request, category_id: str, event_id: str | None = None):
     """The MD+2 screen: the match (latest played unless `event_id`), the four
     tests that apply to the category, and per player what was entered for
@@ -2052,6 +2059,7 @@ def md2_view(request, category_id: str, event_id: str | None = None):
 
 
 @api.get("/md2/version")
+@require_perm("core.view_md2")
 def md2_version(request, category_id: str, event_id: str):
     """Has anyone saved this match's MD+2 since? A 16-char fingerprint the
     screen polls every 30 s; the full table is fetched only when it moves."""
@@ -2065,6 +2073,7 @@ def md2_version(request, category_id: str, event_id: str):
 
 @api.post("/md2")
 @require_perm("exams.add_examresult")
+@require_perm("core.view_md2")
 def md2_save(request, payload: Md2In):
     """Save the table: per player and test, the MD+2 result of the match
     (created or updated; empty cells are skipped)."""
@@ -2086,6 +2095,7 @@ def get_player_view(
     department: str,
     date_from: str | None = None,
     date_to: str | None = None,
+    md: str | None = None,
 ):
     """Return the configured DepartmentLayout for (player.category, department).
 
@@ -2095,7 +2105,14 @@ def get_player_view(
     Optional `date_from` / `date_to` (ISO-8601) bound `ExamResult.recorded_at`
     before each widget runs its aggregation. Capped at 730 days; widgets like
     `body_map_heatmap` ignore the bounds by design (see resolver docs).
+
+    `md` ("MD-2,MD"): the "tipo de día" chips, read only by widgets with
+    `display_config.md_filter`. The layout carries `md_filter` — the chips and
+    the days this player has — when any widget opts in.
     """
+    from dashboards import gps_timeline
+
+    md_labels = gps_timeline.parse_md(md)
     membership = get_membership(request.user)
     parsed_from, parsed_to = _parse_date_window(date_from, date_to)
 
@@ -2149,7 +2166,8 @@ def get_player_view(
                     "chart_height": widget.chart_height,
                     "sort_order": widget.sort_order,
                     "display_config": widget.display_config or {},
-                    "data": resolve_widget(widget, player.id, parsed_from, parsed_to),
+                    "data": resolve_widget(widget, player.id, parsed_from, parsed_to,
+                                           md_labels=md_labels or None),
                 }
             )
         sections_payload.append(
@@ -2170,8 +2188,28 @@ def get_player_view(
             "category_id": player.category_id,
             "name": layout.name,
             "sections": sections_payload,
+            "md_filter": _player_md_filter(layout, player, md_labels),
         }
     }
+
+
+def _player_md_filter(layout, player, selected: list[str]) -> dict:
+    """The profile's "tipo de día" chips: on when any widget opts in, with the
+    microcycle days this player's GPS has."""
+    from dashboards.gps_timeline import md_sort_key
+
+    families = {s.template.family_id
+                for sec in layout.sections.all() for w in sec.widgets.all()
+                if (w.display_config or {}).get("md_filter")
+                for s in w.data_sources.all()}
+    if not families:
+        return {"enabled": False, "options": [], "selected": []}
+    options = sorted(
+        {m for m in ExamResult.objects.filter(player=player, template__family_id__in=families)
+         .values_list("result_data__md_label", flat=True).distinct() if m},
+        key=md_sort_key)
+    return {"enabled": True, "options": options,
+            "selected": [m for m in selected if m in options]}
 
 
 @api.get(
@@ -2410,6 +2448,23 @@ def _layout_ref(l) -> dict:
     return {"id": l.id, "name": l.name, "slug": l.slug}
 
 
+def _md_filter_payload(layout, category, selected, position_id, player_ids,
+                       date_from, date_to) -> dict:
+    """The "tipo de día" chips: on when any widget opts in, with the days the
+    period actually has."""
+    from dashboards import gps_timeline
+
+    widgets = [w for s in layout.sections.all() for w in s.widgets.all()
+               if (w.display_config or {}).get("md_filter")]
+    if not widgets:
+        return {"enabled": False, "options": [], "selected": []}
+    options = gps_timeline.md_options(widgets, category, position_id=position_id,
+                                      player_ids=player_ids, date_from=date_from,
+                                      date_to=date_to)
+    return {"enabled": True, "options": options,
+            "selected": [m for m in selected if m in options] if options else selected}
+
+
 @api.get("/reports/{department_slug}", response=TeamReportResponseOut)
 def get_team_report(
     request,
@@ -2423,6 +2478,7 @@ def get_team_report(
     match_ids: str | None = None,
     include_secondary: bool = True,
     layout: str | None = None,
+    md: str | None = None,
 ):
     """Return the active TeamReportLayout for `(department, category)`.
 
@@ -2440,6 +2496,9 @@ def get_team_report(
       - `date_from` / `date_to`: ISO-8601 dates bounding ExamResult
         `recorded_at`. Capped at 730 days at the API layer. `status_counts`
         and `active_records` ignore these by design (current-state widgets).
+      - `md`: comma-separated microcycle days ("MD-2,MD"), the "tipo de día"
+        chips. Only widgets with `display_config.md_filter` read it; the
+        layout exposes the chips (`md_filter`) when any widget opts in.
       - `match_id`: when the layout's `match_selector_config.enabled` is
         true, narrows every ExamResult queryset to results linked to
         this Event. Ignored when the selector isn't enabled. Required
@@ -2633,47 +2692,56 @@ def get_team_report(
             return day_bounds(match_day) if match_day else empty_window()
         return parsed_from, parsed_to
 
-    sections_payload = []
-    for section in layout.sections.all():
-        widgets_payload = []
-        for widget in section.widgets.all():
-            w_from, w_to = _window(widget)
-            data = resolve_team_widget(
-                widget, category,
-                position_id=parsed_position_id,
-                player_ids=parsed_player_ids or None,
-                date_from=w_from,
-                date_to=w_to,
-                event_id=parsed_match_id,
-                event_ids=parsed_match_ids or None,
-                include_secondary=include_secondary,
-                team=team,
-            )
-            if match_day is not None and isinstance(data, dict):
-                # Period charts mark the chosen match on their timeline.
-                data["highlight_iso"] = match_day.isoformat()
-            widgets_payload.append(
+    from dashboards import gps_timeline
+
+    md_labels = gps_timeline.parse_md(md)
+    # One cache for the request: a layout's GPS widgets share their team scope.
+    with gps_timeline.request_cache():
+        sections_payload = []
+        for section in layout.sections.all():
+            widgets_payload = []
+            for widget in section.widgets.all():
+                w_from, w_to = _window(widget)
+                data = resolve_team_widget(
+                    widget, category,
+                    position_id=parsed_position_id,
+                    player_ids=parsed_player_ids or None,
+                    date_from=w_from,
+                    date_to=w_to,
+                    event_id=parsed_match_id,
+                    event_ids=parsed_match_ids or None,
+                    include_secondary=include_secondary,
+                    team=team,
+                    md_labels=md_labels or None,
+                )
+                if match_day is not None and isinstance(data, dict):
+                    # Period charts mark the chosen match on their timeline.
+                    data["highlight_iso"] = match_day.isoformat()
+                widgets_payload.append(
+                    {
+                        "id": widget.id,
+                        "chart_type": widget.chart_type,
+                        "title": widget.title,
+                        "description": widget.description,
+                        "column_span": widget.column_span,
+                        "chart_height": widget.chart_height,
+                        "sort_order": widget.sort_order,
+                        "data": data,
+                    }
+                )
+            sections_payload.append(
                 {
-                    "id": widget.id,
-                    "chart_type": widget.chart_type,
-                    "title": widget.title,
-                    "description": widget.description,
-                    "column_span": widget.column_span,
-                    "chart_height": widget.chart_height,
-                    "sort_order": widget.sort_order,
-                    "data": data,
+                    "id": section.id,
+                    "title": section.title,
+                    "is_collapsible": section.is_collapsible,
+                    "default_collapsed": section.default_collapsed,
+                    "sort_order": section.sort_order,
+                    "widgets": widgets_payload,
                 }
             )
-        sections_payload.append(
-            {
-                "id": section.id,
-                "title": section.title,
-                "is_collapsible": section.is_collapsible,
-                "default_collapsed": section.default_collapsed,
-                "sort_order": section.sort_order,
-                "widgets": widgets_payload,
-            }
-        )
+        md_filter = _md_filter_payload(
+            layout, category, md_labels, parsed_position_id,
+            parsed_player_ids or None, parsed_from, parsed_to)
 
     return {
         "layouts": [_layout_ref(l) for l in hermanos],
@@ -2685,6 +2753,7 @@ def get_team_report(
             "slug": layout.slug,
             "default_period_days": layout.default_period_days,
             "sections": sections_payload,
+            "md_filter": md_filter,
             "match_selector": {
                 "enabled": selector_enabled,
                 "mode": selector_mode,
@@ -4119,6 +4188,22 @@ def command_center(request, category_id: str):
     return build_command_center(category)
 
 
+@api.get("/command-center/evaluations")
+def command_center_evaluations(request, category_id: str):
+    """Centro de mando — every player's last physical test against the
+    category's bands, grouped like the club's sheet (`api.evaluation_grid`).
+    Empty `groups` when the category has no bands nor tests for them."""
+    from api.evaluation_grid import build_evaluation_grid
+
+    membership = get_membership(request.user)
+    category = scope_categories(
+        Category.objects.select_related("club"), membership,
+    ).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    return build_evaluation_grid(category)
+
+
 # ── Alert & Threshold editor (§1.g) — Editor-role gated ──────────────────────
 
 
@@ -4713,6 +4798,38 @@ def download_player_triage_docx(request, player_id: str, date_from: str | None =
     filename = f"resumen-{name}.docx"
     response = HttpResponse(docx_bytes, content_type=_DOCX_CONTENT_TYPE)
     response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api.get("/players/{player_id}/ficha.pdf")
+def download_player_ficha(request, player_id: str, department: str | None = None):
+    """Ficha integral: the player's one-page infographic (A4 landscape) —
+    per department (`department=fisico`) or general (no `department`), with
+    the evolution and band of each test and a synthesis of strengths and
+    priorities. See `dashboards.pdf.ficha`."""
+    from django.http import HttpResponse
+
+    from dashboards.pdf.ficha import has_ficha, render_ficha_pdf
+
+    membership = get_membership(request.user)
+    player = scope_players(
+        Player.objects.select_related("category__club", "position"), membership,
+    ).filter(pk=player_id).first()
+    if player is None:
+        raise HttpError(404, "Player not found")
+    dept_name = ""
+    if department:
+        dept = scope_departments(
+            Department.objects.filter(club_id=player.category.club_id), membership,
+        ).filter(slug=department).first()
+        if dept is None or not has_ficha(department):
+            raise HttpError(404, "Esta área no tiene ficha.")
+        dept_name = dept.name
+    pdf = render_ficha_pdf(player, department, dept_name)
+    name = f"{player.first_name}-{player.last_name}".replace(" ", "_")
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="ficha-{department or "integral"}-{name}.pdf"')
     return response
 
 

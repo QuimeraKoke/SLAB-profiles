@@ -248,6 +248,22 @@ def sync_formativo_sheets(commit: bool = True, alerts: bool = False) -> dict:
                 logger.warning("formativo sync (%s): columnas nuevas %s",
                                clave, desconocidas)
                 salida[clave]["columnas_desconocidas"] = desconocidas
+        if eval_id:
+            # The player register (birth date, foot, photo) lives in the same
+            # document. Photos download only when new or changed.
+            from exams import formativo_jugadores
+
+            try:
+                rep = formativo_jugadores.run(eval_id, club, commit=commit,
+                                              creds_file=creds_file, creds_json=creds_json)
+                salida["jugadores"] = {
+                    "nacimiento": rep.nacimiento, "pie": rep.pie_nuevo + rep.pie_corregido,
+                    "fotos": rep.fotos, "fotos_fallidas": len(rep.fotos_fallidas),
+                }
+            except GoogleSheetsError as exc:
+                logger.warning("formativo sync (jugadores) failed: %s", exc)
+                salida["jugadores"] = {"status": "error", "error": str(exc)}
+                salida["status"] = "partial"
         logger.info("formativo sync: %s", salida)
         return salida
     finally:

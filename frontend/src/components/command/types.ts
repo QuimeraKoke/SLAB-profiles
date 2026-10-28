@@ -158,3 +158,29 @@ export interface CommandCenter {
     adherence: CCCheckinAdherence;
   };
 }
+
+// "Evaluaciones físicas" grid — mirrors `backend/api/evaluation_grid.py`.
+export interface CCEvalColumn {
+  key: string;
+  label: string;
+  unit: string;
+}
+
+export interface CCEvalCell {
+  value: number;
+  /** ISO date of the reading. */
+  date: string;
+  band: string | null;
+  color: string | null;
+}
+
+export interface CCEvaluationGrid {
+  groups: { name: string; columns: CCEvalColumn[] }[];
+  rows: {
+    player_id: string;
+    name: string;
+    position: string;
+    cells: Record<string, CCEvalCell>;
+  }[];
+  legend: { label: string; color: string }[];
+}

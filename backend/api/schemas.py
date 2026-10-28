@@ -676,12 +676,20 @@ class LayoutSectionOut(Schema):
     widgets: list[WidgetPayloadOut]
 
 
+class MdFilterOut(Schema):
+    """The "tipo de día" chips of a layout whose GPS widgets opt in."""
+    enabled: bool = False
+    options: list[str] = []
+    selected: list[str] = []
+
+
 class DepartmentLayoutOut(Schema):
     id: UUID
     department: DepartmentOut
     category_id: UUID
     name: str
     sections: list[LayoutSectionOut]
+    md_filter: MdFilterOut | None = None
 
 
 class LayoutResponseOut(Schema):
@@ -765,6 +773,7 @@ class TeamReportLayoutOut(Schema):
     default_period_days: int | None = None
     sections: list[TeamReportSectionOut] = []
     match_selector: MatchSelectorConfigOut = MatchSelectorConfigOut()
+    md_filter: MdFilterOut = MdFilterOut()
 
 
 class TeamReportResponseOut(Schema):

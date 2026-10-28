@@ -9,14 +9,19 @@
  * de distancia y 280 m de HSR comparten gráfico pero no escala, y forzados a un
  * solo eje el HSR queda aplastado contra el piso, indistinguible de cero.
  *
- * Cada barra es UNA sesión, etiquetada con su día de microciclo (`MD-3`) y
- * agrupada por semana. La semana la calcula el backend para que la pantalla y
- * el PDF agrupen igual sin duplicar la regla.
+ * Cada barra es UNA sesión. El eje la etiqueta en dos renglones —su día de
+ * microciclo (`MD-3`) y la fecha— y la agrupa por el microciclo del club
+ * (MICRO, "Micro 41") con un separador entre uno y otro, como el Power BI del
+ * club. Sin MICRO, agrupa por semana ISO, que calcula el backend para que la
+ * pantalla y el PDF agrupen igual.
+ *
+ * Sirve también al reporte de equipo (`team_dual_axis_bar_line`): mismo
+ * payload, cada punto es la media por jugador de la sesión y trae `n`.
  */
 
 import React, { useMemo } from "react";
 import {
-  Bar, CartesianGrid, ComposedChart, Legend, Line, ResponsiveContainer,
+  Bar, CartesianGrid, ComposedChart, Legend, Line, ReferenceLine, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts";
 
@@ -41,9 +46,16 @@ export default function DualAxisBarLine({ widget }: { widget: DashboardWidget })
     recorded_at: p.recorded_at,
     md_label: p.md_label,
     week: p.week,
+    grupo: grupoDe(p),
+    n: p.n,
     bars: p.bars,
     line: p.line,
   })), [puntos]);
+
+  // Dónde empieza cada microciclo (o semana): un separador y su nombre.
+  const cortes = useMemo(() => filas.flatMap((f, i) =>
+    i === 0 || f.grupo !== filas[i - 1].grupo ? [{ x: i - 0.5, label: f.grupo }] : []),
+  [filas]);
 
   const window = useChartWindow(filas);
 
@@ -53,10 +65,13 @@ export default function DualAxisBarLine({ widget }: { widget: DashboardWidget })
 
   // Cada eje con su propio dominio sobre TODA la historia: es el punto del
   // gráfico, y además mantiene el marco quieto mientras se panea.
+  // Las barras arrancan en 0: una barra que nace en 2.000 hace que 4.000 se
+  // vea como la mitad de 6.000. Ninguno de los dos ejes baja de 0 si los
+  // datos no lo hacen (un "−100 m de HSR" en el eje no significa nada).
   const domBarras = useMemo(
-    () => fullRangeDomain(filas.map((f) => f.bars)), [filas]);
+    () => desdeCero(filas.map((f) => f.bars), true), [filas]);
   const domLinea = useMemo(
-    () => fullRangeDomain(filas.map((f) => f.line)), [filas]);
+    () => desdeCero(filas.map((f) => f.line), false), [filas]);
 
   if (data.empty || filas.length === 0) {
     return (
@@ -98,9 +113,15 @@ export default function DualAxisBarLine({ widget }: { widget: DashboardWidget })
             <XAxis
               dataKey="idx" type="number" domain={window.xDomain}
               ticks={window.ticks}
-              tickFormatter={(v) => filas[v as number]?.label ?? ""}
-              allowDataOverflow height={40}
-              tick={{ fontSize: 10, fill: "#6b7280" }} stroke="#d1d5db" />
+              allowDataOverflow height={44}
+              tick={(props: TickProps) => <DosRenglones {...props} filas={filas} />}
+              stroke="#d1d5db" />
+            {cortes.map((c) => (
+              <ReferenceLine key={c.x} x={c.x} yAxisId="barras" ifOverflow="hidden"
+                stroke="#94a3b8" strokeDasharray="4 3"
+                label={{ value: c.label, position: "insideTopLeft", fontSize: 10,
+                  fontWeight: 700, fill: "#475467" }} />
+            ))}
             <YAxis yAxisId="barras" width={64}
               domain={domBarras ?? ["auto", "auto"]}
               tick={{ fontSize: 11, fill: "#6b7280" }} stroke="#d1d5db"
@@ -130,7 +151,8 @@ export default function DualAxisBarLine({ widget }: { widget: DashboardWidget })
                     )}
                   </div>
                   <div style={{ color: "#6b7280", fontSize: 11 }}>
-                    Semana {f.week}
+                    {f.grupo}
+                    {typeof f.n === "number" && ` · media de ${f.n} jugador${f.n === 1 ? "" : "es"}`}
                   </div>
                   <InjuryTooltipLine light text={lesiones.contextFor(f.recorded_at.slice(0, 10))} />
                   <div style={{ color: COLOR_BARRAS }}>
@@ -164,6 +186,51 @@ const tooltipStyle: React.CSSProperties = {
   fontSize: 12, color: "#344054", display: "flex", flexDirection: "column",
   gap: 2,
 };
+
+type Punto = DualAxisBarLinePayload["points"][number];
+
+function desdeCero(
+  values: ReadonlyArray<number | null | undefined>, barras: boolean,
+): [number, number] | undefined {
+  const dom = fullRangeDomain(values);
+  if (!dom) return dom;
+  const datos = values.filter((v): v is number => typeof v === "number");
+  const sinNegativos = datos.every((v) => v >= 0);
+  if (barras && sinNegativos) return [0, dom[1]];
+  return [sinNegativos ? Math.max(0, dom[0]) : dom[0], dom[1]];
+}
+
+/** El grupo del eje: el microciclo del club, o la semana si no lo hay. */
+function grupoDe(p: Punto): string {
+  if (typeof p.micro === "number") return `Micro ${p.micro}`;
+  const semana = p.week?.split("-W")[1];
+  return semana ? `Semana ${Number(semana)}` : "";
+}
+
+interface TickProps {
+  x?: number | string;
+  y?: number | string;
+  payload?: { value: number };
+}
+
+/** Tick de dos renglones: el día de microciclo y, debajo, la fecha. */
+function DosRenglones({ x, y, payload, filas }: TickProps & {
+  filas: { md_label: string | null; recorded_at: string }[];
+}) {
+  const f = payload ? filas[payload.value] : undefined;
+  if (!f) return null;
+  const [, m, d] = f.recorded_at.slice(0, 10).split("-");
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text dy={11} textAnchor="middle" fontSize={10} fontWeight={700} fill="#344054">
+        {f.md_label ?? "—"}
+      </text>
+      <text dy={24} textAnchor="middle" fontSize={9} fill="#98a2b3">
+        {d}/{m}
+      </text>
+    </g>
+  );
+}
 
 function etiqueta(m: DualAxisBarLinePayload["bars"]): string {
   if (!m) return "";
