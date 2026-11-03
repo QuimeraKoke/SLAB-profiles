@@ -40,6 +40,19 @@ def _hoja(bracket_name: str) -> str | None:
     return f"U{m.group(1)}" if m else None
 
 
+def season_rows(club_id, season: int, bracket) -> Q:
+    """One TEAM-season's rows — sheet U<bracket> that year, or linked to that
+    bracket's match that year — for any template. The building block of
+    `for_category`, public for callers that hold a team (season × bracket)
+    rather than a category: the load-control module plans per team."""
+    hoja = _hoja(bracket.name)
+    q = Q(result_data__origen_hoja__isnull=True, event__bracket=bracket,
+          event__starts_at__year=season)
+    if hoja is not None:
+        q |= Q(result_data__origen_hoja=hoja, recorded_at__year=season)
+    return q & Q(player__category__club_id=club_id)
+
+
 def for_category(category: Category,
                  template_slug: str | tuple[str, ...] = "gps_partido") -> TeamScope | None:
     """None when the category never entered a youth bracket (nothing to scope).
@@ -51,12 +64,9 @@ def for_category(category: Category,
     q = Q()
     own: set[UUID] = {category.id}
     for ts in seasons:
-        hoja = _hoja(ts.bracket.name)
-        if hoja is None:
+        if _hoja(ts.bracket.name) is None:
             continue
-        q |= Q(result_data__origen_hoja=hoja, recorded_at__year=ts.season)
-        q |= Q(result_data__origen_hoja__isnull=True, event__bracket=ts.bracket,
-               event__starts_at__year=ts.season)
+        q |= season_rows(category.club_id, ts.season, ts.bracket)
         own |= set(TeamSeason.objects.filter(season=ts.season, bracket=ts.bracket,
                                              team__club_id=category.club_id)
                    .values_list("team_id", flat=True))

@@ -547,3 +547,39 @@ class NoHardcodedSquadNamesTests(SimpleTestCase):
                     f"{dotted} decide algo con el nombre '{name}'; usá "
                     "Category.is_senior",
                 )
+
+
+class PlayedKickoffTests(SimpleTestCase):
+    """`played_kickoff_wins`: a played match is dated by when it was played."""
+
+    def ev(self, iso):
+        from datetime import datetime
+        from events.models import Event
+        return Event(starts_at=datetime.fromisoformat(iso))
+
+    def kick(self, iso):
+        from datetime import datetime
+        return datetime.fromisoformat(iso)
+
+    def test_un_partido_postergado_toma_la_fecha_en_que_se_jugo(self):
+        from exams.services.comet_sync import played_kickoff_wins
+        e = self.ev("2026-10-12T04:00:00+00:00")           # fecha 12, programado
+        self.assertTrue(played_kickoff_wins(e, self.kick("2026-10-22T15:30:00+00:00")))
+        self.assertEqual(e.starts_at.date().isoformat(), "2026-10-22")
+
+    def test_el_lunes_de_la_fecha_pasa_al_domingo_jugado(self):
+        from exams.services.comet_sync import played_kickoff_wins
+        # Lunes 01:00 en Chile (04:00 UTC) vs. domingo 12:00 en Chile: 13 h, otro día.
+        e = self.ev("2026-10-26T04:00:00+00:00")
+        self.assertTrue(played_kickoff_wins(e, self.kick("2026-10-25T15:00:00+00:00")))
+
+    def test_mismo_dia_local_no_se_toca(self):
+        from exams.services.comet_sync import played_kickoff_wins
+        # 21:30 en Chile = 00:30 UTC del día siguiente: en Chile es el mismo día.
+        e = self.ev("2026-03-04T18:00:00+00:00")
+        self.assertFalse(played_kickoff_wins(e, self.kick("2026-03-05T00:30:00+00:00")))
+
+    def test_poca_diferencia_cruzando_medianoche_no_se_toca(self):
+        from exams.services.comet_sync import played_kickoff_wins
+        e = self.ev("2026-06-19T02:30:00+00:00")  # 22:30 del 18 en Chile
+        self.assertFalse(played_kickoff_wins(e, self.kick("2026-06-19T04:30:00+00:00")))  # 00:30 del 19

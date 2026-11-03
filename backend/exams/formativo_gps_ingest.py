@@ -113,8 +113,25 @@ MARCAS_PARTIDO = ("LOCALIA", "CALIDAD OPONENTE", "RESULTADO")
 # markers (stored as match fields, see `CAMPOS_PARTIDO`).
 NO_METRICAS = frozenset({
     "FECHA", "JUGADOR", "FECHA DE NACIMIENTO", "EDAD", "CATEGORIA", "POSICION",
-    "CODIGO", "MICRO", "OBSERVACION", *MARCAS_PARTIDO,
+    "CODIGO", "MICRO", "TIPO", "OBSERVACION", *MARCAS_PARTIDO,
 })
+
+# Row context kept for the load-control module (PLAN_CONTROL_CARGA.md §8.2):
+# not metrics, but what the plan-vs-real comparison needs from the sheet.
+#
+# * `posicion_hoja` — the club's POSICIÓN on that row (DEFENSA CENTRAL,
+#   EXTREMO…). Targets are per position group, and this is the position the
+#   staff assigned for that session, which the roster's may not be.
+# * `tipo_microciclo` — the club's TIPO (mixta / profundidad / amplitud).
+# * `es_sparring` — the `SPARRING` tab, or a category tab row whose
+#   OBSERVACIÓN says SPARRING. It adds to the player's load; the team average
+#   can leave it out.
+# * `es_compensacion` — OBSERVACIÓN says COMPENSACIÓN: post-match make-up work
+#   for players with few minutes, summed into the match day.
+#
+# The flags are written only when true, so an ordinary row carries neither.
+CLAVES_CONTEXTO = ("posicion_hoja", "tipo_microciclo", "es_sparring", "es_compensacion")
+HOJA_SPARRING = "SPARRING"
 
 def norm(value: object) -> str:
     text = unicodedata.normalize("NFD", str(value or ""))
@@ -154,6 +171,17 @@ class Fila:
     marcas: dict[str, str] = dc_field(default_factory=dict)
     # The club's MICRO: the season's week number (1–48, restarts each year).
     micro: int | None = None
+    # POSICIÓN and TIPO as the club wrote them (see `CLAVES_CONTEXTO`).
+    posicion: str = ""
+    tipo_micro: str = ""
+
+    @property
+    def es_sparring(self) -> bool:
+        return norm(self.hoja) == HOJA_SPARRING or norm(self.observacion) == HOJA_SPARRING
+
+    @property
+    def es_compensacion(self) -> bool:
+        return "COMPENSA" in norm(self.observacion)
 
     @property
     def partido(self) -> dict[str, Any]:
@@ -303,6 +331,10 @@ class Reporte:
     md_sin_marca: int = 0
     con_evento: int = 0
     partido_actualizados: int = 0
+    # Stale copies removed: an old identity of a row the club re-coded.
+    duplicados_obsoletos: int = 0
+    # Existing match rows linked to their match on this run (see `run`).
+    eventos_vinculados: int = 0
     sin_jugador: list[str] = dc_field(default_factory=list)
     sin_plantilla: list[str] = dc_field(default_factory=list)
     fuera_de_rango: list[str] = dc_field(default_factory=list)
@@ -375,6 +407,8 @@ def _parse_sheet(
     i_cod = ix.get("CODIGO")
     i_obs = ix.get("OBSERVACION")
     i_micro = ix.get("MICRO")
+    i_pos = ix.get("POSICION")
+    i_tipo = ix.get("TIPO")
     i_marcas = [ix[m] for m in MARCAS_PARTIDO if m in ix]
 
     faltantes = sorted(ESPERADAS - tomados)
@@ -413,6 +447,8 @@ def _parse_sheet(
             marcas={m: str(get(ix[m])).strip() for m in MARCAS_PARTIDO
                     if m in ix and get(ix[m]) not in (None, "")},
             micro=_micro(get(i_micro)),
+            posicion=str(get(i_pos) or "").strip(),
+            tipo_micro=str(get(i_tipo) or "").strip(),
         ))
     from exams.formativo_sources import fechas_invertidas
 
@@ -487,6 +523,7 @@ class EventMatcher:
     """
 
     def __init__(self, club: Club):
+        from core.localtime import local_date
         from events.models import Event
 
         self.por_bracket: dict[str, list[tuple[date, set[str], Any]]] = defaultdict(list)
@@ -505,7 +542,8 @@ class EventMatcher:
                 continue
             rival = e.opponent_team.name if e.opponent_team else _rival_del_titulo(e.title)
             self.por_bracket[br].append(
-                (timezone.localtime(e.starts_at).date(), _tokens_rival(rival), e))
+                # The match's LOCAL day: a GPS row is the club's calendar day.
+                (local_date(e.starts_at), _tokens_rival(rival), e))
 
     @staticmethod
     def bracket_de_hoja(hoja: str) -> str | None:
@@ -593,7 +631,7 @@ def run(origen: str, club: Club, *, commit: bool = False,
         r.result_data["origen_id"]: r
         for r in ExamResult.objects.filter(result_data__origen=ORIGEN,
                                            result_data__origen_id__in=ids)
-        .select_related("template").only("id", "result_data", "template__slug")}
+        .select_related("template").only("id", "result_data", "template__slug", "event_id")}
     a_refrescar: dict[Any, ExamResult] = {}
     vistos: set[str] = set()
     a_crear: list[ExamResult] = []
@@ -618,7 +656,17 @@ def run(origen: str, club: Club, *, commit: bool = False,
             vistos.add(fila.origen_id)
             rep.ya_existian += 1
             existente = en_base[fila.origen_id]
-            if _refrescar_partido(existente, fila):
+            cambio = _refrescar_partido(existente, fila)
+            # A match row imported before its match had the right date (a
+            # postponed fixture, COMET's round-Monday dates) stayed unlinked:
+            # links were looked up on creation only. Look again while none.
+            if fila.es_partido and existente.event_id is None:
+                evento = eventos.evento(fila.hoja, fila.dia, fila.observacion)
+                if evento is not None:
+                    existente.event = evento
+                    rep.eventos_vinculados += 1
+                    cambio = True
+            if cambio:
                 a_refrescar[existente.pk] = existente
             continue
         if fila.origen_id in vistos:
@@ -657,6 +705,7 @@ def run(origen: str, club: Club, *, commit: bool = False,
             datos["microciclo"] = fila.micro
 
         datos, snapshot = compute_result_data(template, datos, player=player)
+        datos.update(_contexto_para(fila))
         datos["origen"] = ORIGEN
         datos["origen_hoja"] = fila.hoja
         datos["origen_id"] = fila.origen_id
@@ -681,9 +730,14 @@ def run(origen: str, club: Club, *, commit: bool = False,
                 rep.md_sin_marca += 1
         vistos.add(fila.origen_id)
 
+    obsoletas = _copias_obsoletas(filas, ids)
+    rep.duplicados_obsoletos = len(obsoletas)
+    if commit and obsoletas:
+        ExamResult.objects.filter(pk__in=obsoletas).delete()
+
     rep.partido_actualizados = len(a_refrescar)
     if commit and a_refrescar:
-        ExamResult.objects.bulk_update(list(a_refrescar.values()), ["result_data"],
+        ExamResult.objects.bulk_update(list(a_refrescar.values()), ["result_data", "event"],
                                        batch_size=500)
     if commit and a_crear:
         with transaction.atomic():
@@ -691,6 +745,50 @@ def run(origen: str, club: Club, *, commit: bool = False,
             if fire_alerts:
                 _fire_band_alerts(a_crear)
     return rep
+
+
+def _r1(v) -> float | None:
+    n = _num(v)
+    return None if n is None else round(n, 1)
+
+
+def _gemela(nombre_norm: str, dia_iso: str, hoja: str, datos: dict) -> tuple | None:
+    """What makes two rows the same GPS reading: player, day, tab, minutes and
+    distance. None without a distance — nothing to recognise a copy by."""
+    dur, dist = _r1(datos.get("tot_dur")), _r1(datos.get("tot_dist"))
+    return None if dist is None else (nombre_norm, dia_iso, hoja, dur, dist)
+
+
+def _copias_obsoletas(filas: list[Fila], ids: list[str]) -> list:
+    """Rows in SLAB whose identity the sheet no longer produces AND that are an
+    exact copy of a row it does — the old identity of a row the club re-coded.
+
+    A row's identity carries its CÓDIGO and its exam (`origen_id`), so when the
+    club re-codes a row (blank → NO MD, MD AMISTOSO → NO MD) or adds the match
+    markers to a match-day session (session → match), the next sync imports it
+    again under the new identity and the old copy stays: 45 player-days in
+    U20's 2026 data, 16 of them the 22-oct match, each counted twice by every
+    load figure. Only EXACT copies go — same player, day, tab, minutes and
+    distance; a row the club changed (or deleted) for real is left alone, and a
+    double session (different numbers) is two readings."""
+    actuales = {g for f in filas if f.dia
+                if (g := _gemela(norm(f.nombre), f.dia.isoformat(), f.hoja, f.datos))}
+    if not actuales:
+        return []
+    vigentes = set(ids)
+    hojas = {f.hoja for f in filas}
+    out = []
+    for pk, oid, data in (ExamResult.objects
+                          .filter(result_data__origen=ORIGEN, result_data__origen_hoja__in=hojas)
+                          .values_list("pk", "result_data__origen_id", "result_data")):
+        if not oid or oid in vigentes:
+            continue
+        partes = oid.split("|")
+        if len(partes) < 3:
+            continue
+        if _gemela(partes[0], partes[1], partes[2], data or {}) in actuales:
+            out.append(pk)
+    return out
 
 
 def _partido_para(datos: dict, slug: str) -> dict:
@@ -707,9 +805,24 @@ def _md_para(fila: Fila) -> dict | None:
     return {"md_label": label, MD_SOURCE_KEY: MD_SOURCE_CLUB} if dijo else None
 
 
+def _contexto_para(fila: Fila) -> dict:
+    """The row's `CLAVES_CONTEXTO`, only the ones the sheet sets."""
+    datos: dict[str, Any] = {}
+    if fila.posicion:
+        datos["posicion_hoja"] = norm(fila.posicion)
+    if fila.tipo_micro:
+        datos["tipo_microciclo"] = norm(fila.tipo_micro).lower()
+    if fila.es_sparring:
+        datos["es_sparring"] = True
+    if fila.es_compensacion:
+        datos["es_compensacion"] = True
+    return datos
+
+
 def _refrescar_partido(r: ExamResult, fila: Fila) -> bool:
-    """Bring an existing row's match fields, the club's microcycle day and its
-    microcycle number in line with the sheet. Only those keys: a re-sync never rewrites a metric."""
+    """Bring an existing row's match fields, the club's microcycle day, its
+    microcycle number and its load-control context (`CLAVES_CONTEXTO`) in line
+    with the sheet. Only those keys: a re-sync never rewrites a metric."""
     claves = CLAVES_PARTIDO if r.template.slug == SLUG_PARTIDO else CAMPOS_SESION_PARTIDO
     nuevos = _partido_para(fila.partido, r.template.slug)
     md = _md_para(fila)
@@ -718,9 +831,10 @@ def _refrescar_partido(r: ExamResult, fila: Fila) -> bool:
         nuevos |= md
     # The microcycle the club wrote, like the day: kept in step with the sheet
     # (the club fills MICRO in after the fact on some tabs).
-    claves = (*claves, "microciclo")
+    claves = (*claves, "microciclo", *CLAVES_CONTEXTO)
     if fila.micro is not None:
         nuevos["microciclo"] = fila.micro
+    nuevos |= _contexto_para(fila)
     actual = {k: r.result_data.get(k) for k in claves if k in r.result_data}
     if actual == nuevos:
         return False

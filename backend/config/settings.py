@@ -77,6 +77,7 @@ INSTALLED_APPS = [
     "dashboards",
     "events",
     "goals",
+    "load_control",
     "attachments",
     "api",
     "storages",

@@ -233,6 +233,8 @@ def sync_formativo_sheets(commit: bool = True, alerts: bool = False) -> dict:
             salida[clave] = {
                 "creados": rep.creados, "ya_existian": rep.ya_existian,
                 "partido_actualizados": getattr(rep, "partido_actualizados", 0),
+                "duplicados_obsoletos": getattr(rep, "duplicados_obsoletos", 0),
+                "eventos_vinculados": getattr(rep, "eventos_vinculados", 0),
                 "sin_jugador": len(rep.sin_jugador),
                 "fuera_de_rango": len(rep.fuera_de_rango),
             }

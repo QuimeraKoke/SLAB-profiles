@@ -40,6 +40,8 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
+from core.localtime import local_date
+
 from core.models import Player, PlayerCallUp
 from events.models import Event, EventParticipant, MatchData
 from exams.calculations import compute_result_data
@@ -59,6 +61,9 @@ EXTRA_TIME = 120
 # ±16h, same tolerance fixtures_sync uses to adopt an event created by another
 # source (the GPS importer keys events by date, not kickoff).
 EVENT_MATCH_WINDOW = timedelta(hours=16)
+# A played match is re-dated to its real kickoff only when the day changes by
+# at least this much — see `played_kickoff_wins`.
+REDATE_MIN_GAP = timedelta(hours=6)
 
 _SUB_RE = re.compile(r"\bsub\s*\.?\s*(\d{1,2})\b", re.IGNORECASE)
 
@@ -531,6 +536,34 @@ def build_event_metadata(
     return meta
 
 
+def played_kickoff_wins(event, kickoff) -> bool:
+    """Date a PLAYED match by when it was played. Returns True if it moved.
+
+    A fixture is created on its scheduled date; when the match is postponed
+    the played-match pass used to find it by COMET id and refresh only its
+    metadata, so U20/U18 vs Cobreloa (round 12) stayed on 12-oct while it was
+    played — and its fichas recorded — on 22-oct. The calendar, /partidos and
+    the GPS importer (which links by date) all read the wrong day.
+
+    The test is the LOCAL CALENDAR DAY, not a time tolerance: youth fixtures sit
+    on the round's Monday at 01:00, so a Sunday-noon match is 13 h away — inside
+    a ±16 h window, yet a different day for every screen. A kickoff on the same
+    day is left alone, so another source's time (API-Football) never churns —
+    and so is one under `REDATE_MIN_GAP` away: a late match whose two sources
+    disagree by an hour or three only "changes day" by crossing midnight
+    (two sources an hour or three apart around midnight). Days are LOCAL
+    (`core.localtime`): the project runs in UTC, and a 21:30 kickoff here is
+    already tomorrow there."""
+    if event.starts_at is None:
+        return False
+    if local_date(event.starts_at) == local_date(kickoff):
+        return False
+    if abs(event.starts_at - kickoff) < REDATE_MIN_GAP:
+        return False
+    event.starts_at = kickoff
+    return True
+
+
 def _find_event(club, category, kickoff, comet_match_id):
     """Existing Event for this match: by COMET id, else by date (±16h)."""
     by_id = Event.objects.filter(
@@ -559,7 +592,7 @@ def sync_club(integration, *, dry_run: bool = True, since=None) -> dict:
         "matches_seen": 0, "matches_ingested": 0,
         "skipped_unmapped_competition": 0, "skipped_no_event": 0,
         "skipped_not_played": 0, "skipped_existing": 0,
-        "events_updated": 0, "events_created": 0,
+        "events_updated": 0, "events_created": 0, "events_redated": 0,
         "results_created": 0, "players_unresolved": 0,
         "participants_written": 0, "call_ups_created": 0,
         "fixtures_seen": 0, "fixtures_created": 0, "fixtures_updated": 0,
@@ -746,6 +779,10 @@ def _ingest_match(
                     event.location = metadata["venue"]
                 event.save(update_fields=["metadata", "location", "updated_at"])
                 report["events_updated"] += 1
+            # Its date is the day it was played, whatever the fixture said.
+            if played_kickoff_wins(event, kickoff):
+                event.save(update_fields=["starts_at", "updated_at"])
+                report["events_redated"] += 1
 
             if integration.store_raw_match_data:
                 MatchData.objects.update_or_create(

@@ -78,6 +78,9 @@ OPERATIONAL_MODELS: list[tuple[str, str]] = [
     ("dashboards", "layoutsection"),
     ("dashboards", "widget"),
     ("dashboards", "widgetdatasource"),
+    # Control de carga: planning the microcycle (Editor) and seeing it (all).
+    ("load_control", "microcycle"),
+    ("load_control", "microcycleday"),
 ]
 
 

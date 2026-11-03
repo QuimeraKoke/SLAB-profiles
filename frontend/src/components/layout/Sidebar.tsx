@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { HeartPulse,
+import { Gauge,
+  HeartPulse,
   Users,
   User,
   BarChart3,
@@ -90,6 +91,14 @@ const STATIC_NAV: NavGroup[] = [
   // Two days after a match: CK, hydration, CMJ and central fatigue, entered
   // and read as a traffic light on one screen.
   { label: "MD+2", icon: HeartPulse, href: "/md2", permission: "core.view_md2" },
+];
+
+// Planificación: what the staff plans ahead (the microcycle: % of the match
+// reference per day and metric) and checks against the GPS. Its own section,
+// not Operativa — it is planned weekly, not run daily. PLAN_CONTROL_CARGA.md.
+const PLANNING_NAV: NavGroup[] = [
+  { label: "Control de carga", icon: Gauge, href: "/control-carga",
+    permission: "load_control.view_microcycle" },
 ];
 
 // IA-1: "Configuraciones" carried both daily ops (Jugadores) and admin
@@ -284,6 +293,10 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
       items: STATIC_NAV.filter((i) => !i.permission || hasPermission(user, i.permission)),
     },
     {
+      label: "Planificación",
+      items: PLANNING_NAV.filter((i) => !i.permission || hasPermission(user, i.permission)),
+    },
+    {
       label: "Análisis",
       items: [
         ...(reportsGroup ? [reportsGroup] : []),
@@ -302,7 +315,8 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
       label: "Administración",
       items: [datosGroup, settingsGroup],
     },
-  ];
+    // A section none of whose items the user may see is not shown at all.
+  ].filter((section) => section.items.length > 0);
 
   // QW-7: was an inline onClick with preventDefault on a <div>. Now invoked
   // from a real <button>, so no preventDefault is needed.

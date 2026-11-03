@@ -6792,3 +6792,9 @@ def maturation_overview(
             "velocity_confident_days": _mat.CONFIDENT_VELOCITY_DAYS,
         },
     }
+
+
+# ── Control de carga (microcycle planning) — see api/load_control.py ────────
+from api.load_control import router as load_control_router  # noqa: E402
+
+api.add_router("/load-control", load_control_router)

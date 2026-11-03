@@ -63,6 +63,9 @@ class Command(BaseCommand):
         self.stdout.write(f"  datos del club actualizados (rival, localía, MD±n…): "
                           f"{rep.partido_actualizados}")
         self.stdout.write(f"  repetidas en el xlsx: {rep.duplicados_en_archivo}")
+        self.stdout.write(f"  partidos vinculados a filas existentes: {rep.eventos_vinculados}")
+        self.stdout.write(f"  copias obsoletas (re-codificadas) "
+                          f"{'borradas' if opts['commit'] else 'a borrar'}: {rep.duplicados_obsoletos}")
         self.stdout.write(f"  filas sin métricas  : {rep.sin_datos}")
         if rep.sin_fecha:
             self.stdout.write(self.style.WARNING(

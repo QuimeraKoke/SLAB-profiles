@@ -45,14 +45,24 @@ def fila(nombre="CESAR PEREZ GALLEGOS", dia=D, codigo="MD-4", *,
             hr[0], hr[1], obs, localia, calidad, resultado]
 
 
-def escribir(ruta: Path, hojas: dict[str, list[list]]) -> None:
+# The category tabs since mid-2026 carry TIPO (the microcycle type) right after
+# MICRO; the SPARRING tab and older exports do not.
+I_MICRO = CAB.index("MICRO")
+CAB_TIPO = CAB[:I_MICRO + 1] + ["TIPO"] + CAB[I_MICRO + 1:]
+
+
+def con_tipo(row: list, tipo) -> list:
+    return row[:I_MICRO + 1] + [tipo] + row[I_MICRO + 1:]
+
+
+def escribir(ruta: Path, hojas: dict[str, list[list]], cab: list = CAB) -> None:
     import openpyxl
 
     book = openpyxl.Workbook()
     book.remove(book.active)
     for nombre, filas in hojas.items():
         ws = book.create_sheet(nombre)
-        ws.append(CAB)
+        ws.append(cab)
         for f in filas:
             ws.append(f)
     book.save(ruta)
@@ -101,10 +111,10 @@ class FormativoGpsTests(TestCase):
                 config_schema={"fields": campos + extra})
             t.applicable_categories.set([cls.cat])
 
-    def correr(self, hojas, **kw):
+    def correr(self, hojas, cab=CAB, **kw):
         with TemporaryDirectory() as tmp:
             ruta = Path(tmp) / "gps.xlsx"
-            escribir(ruta, hojas)
+            escribir(ruta, hojas, cab)
             return ing.run(str(ruta), self.club, **kw)
 
     # ── el bug que motivó el archivo ────────────────────────────────────
@@ -513,3 +523,130 @@ class FormativoGpsTests(TestCase):
         rep = self.correr({"U15": [fila(dia=None)]}, commit=True)
         self.assertEqual(rep.creados, 0)
         self.assertEqual(rep.sin_fecha, 1)
+
+    # ── contexto para el control de carga (PLAN_CONTROL_CARGA.md §8.2) ──
+    def test_guarda_la_posicion_de_la_fila(self):
+        self.correr({"U15": [fila()]}, commit=True)
+        self.assertEqual(ExamResult.objects.get().result_data["posicion_hoja"], "EXTREMO")
+
+    def test_guarda_el_tipo_de_microciclo(self):
+        self.correr({"U15": [con_tipo(fila(), "Mixta"),
+                             con_tipo(fila(dia=datetime(2026, 3, 12)), "PROFUNDIDAD"),
+                             con_tipo(fila(dia=datetime(2026, 3, 13)), "")]},
+                    cab=CAB_TIPO, commit=True)
+        por_dia = {r.recorded_at.date().day: r.result_data for r in ExamResult.objects.all()}
+        self.assertEqual(por_dia[11]["tipo_microciclo"], "mixta")
+        self.assertEqual(por_dia[12]["tipo_microciclo"], "profundidad")
+        self.assertNotIn("tipo_microciclo", por_dia[13])
+
+    def test_el_tipo_no_es_una_metrica_ni_una_columna_nueva(self):
+        rep = self.correr({"U15": [con_tipo(fila(), "MIXTA")]}, cab=CAB_TIPO)
+        self.assertEqual(rep.columnas_desconocidas.get("U15", []), [])
+        self.assertEqual(rep.columnas_sin_mapear.get("U15", []), [],
+                         "la columna extra no corre el mapeo de las métricas")
+
+    def test_la_hoja_sparring_marca_la_fila(self):
+        self.correr({"SPARRING": [fila()]}, commit=True)
+        self.assertIs(ExamResult.objects.get().result_data["es_sparring"], True)
+
+    def test_la_observacion_sparring_marca_la_fila(self):
+        self.correr({"U15": [fila(obs="SPARRING")]}, commit=True)
+        self.assertIs(ExamResult.objects.get().result_data["es_sparring"], True)
+
+    def test_la_observacion_compensacion_marca_la_fila(self):
+        self.correr({"U15": [fila(codigo="MD", obs="Compensación")]}, commit=True)
+        self.assertIs(ExamResult.objects.get().result_data["es_compensacion"], True)
+
+    def test_una_fila_comun_no_lleva_marcas(self):
+        self.correr({"U15": [fila(obs="ENTRENAMIENTO")]}, commit=True)
+        datos = ExamResult.objects.get().result_data
+        self.assertNotIn("es_sparring", datos)
+        self.assertNotIn("es_compensacion", datos)
+
+    def test_la_sync_pone_el_contexto_a_filas_viejas(self):
+        self.correr({"U15": [fila()]}, commit=True)
+        r = ExamResult.objects.get()
+        for k in ing.CLAVES_CONTEXTO:  # simula una fila importada antes del cambio
+            r.result_data.pop(k, None)
+        r.save(update_fields=["result_data"])
+        rep = self.correr({"U15": [con_tipo(fila(obs="COMPENSACION"), "Amplitud")]},
+                          cab=CAB_TIPO, commit=True)
+        r.refresh_from_db()
+        self.assertEqual(rep.partido_actualizados, 1)
+        self.assertEqual((r.result_data["posicion_hoja"], r.result_data["tipo_microciclo"],
+                          r.result_data["es_compensacion"]), ("EXTREMO", "amplitud", True))
+        self.assertEqual(r.result_data["tot_dist"], 2856.4, "no toca las métricas")
+        again = self.correr({"U15": [con_tipo(fila(obs="COMPENSACION"), "Amplitud")]},
+                            cab=CAB_TIPO)
+        self.assertEqual(again.partido_actualizados, 0, "idempotente")
+
+    def test_la_sync_quita_una_marca_que_el_club_borro(self):
+        self.correr({"U15": [fila(obs="SPARRING")]}, commit=True)
+        self.correr({"U15": [fila(obs="ENTRENAMIENTO")]}, commit=True)
+        self.assertNotIn("es_sparring", ExamResult.objects.get().result_data)
+
+    # ── copias que deja una re-codificación (PLAN_CONTROL_CARGA.md §8.6) ──
+    def test_recodificar_vacio_a_no_md_no_deja_la_copia_vieja(self):
+        self.correr({"U15": [fila(codigo="")]}, commit=True)
+        rep = self.correr({"U15": [fila(codigo="NO MD")]}, commit=True)
+        self.assertEqual((rep.creados, rep.duplicados_obsoletos), (1, 1))
+        self.assertEqual(list(ExamResult.objects.values_list("result_data__origen_codigo", flat=True)),
+                         ["NO MD"])
+
+    def test_una_sesion_que_pasa_a_partido_no_queda_dos_veces(self):
+        self.correr({"U15": [fila(codigo="MD OFICIAL")]}, commit=True)
+        self.assertEqual(ExamResult.objects.get().template.slug, "gps_sesion")
+        rep = self.correr({"U15": [fila(codigo="MD OFICIAL", localia="LOCAL", resultado="GANADO")]},
+                          commit=True)
+        self.assertEqual(rep.duplicados_obsoletos, 1)
+        self.assertEqual(list(ExamResult.objects.values_list("template__slug", flat=True)),
+                         ["gps_partido"])
+
+    def test_amistoso_recodificado_a_no_md(self):
+        self.correr({"U15": [fila(codigo="MD AMISTOSO")]}, commit=True)
+        self.correr({"U15": [fila(codigo="NO MD")]}, commit=True)
+        self.assertEqual(ExamResult.objects.count(), 1)
+
+    def test_una_fila_que_cambio_de_verdad_no_se_borra(self):
+        # Mismo día, otro código Y otra distancia: no es una copia, se deja.
+        self.correr({"U15": [fila(codigo="MD-1")]}, commit=True)
+        cambiada = fila(codigo="MD-2")
+        cambiada[9] = 3100.0  # DT (m)
+        rep = self.correr({"U15": [cambiada]}, commit=True)
+        self.assertEqual((rep.duplicados_obsoletos, ExamResult.objects.count()), (0, 2))
+
+    def test_una_fila_que_el_club_borro_no_se_toca(self):
+        self.correr({"U15": [fila(), fila(dia=datetime(2026, 3, 12))]}, commit=True)
+        rep = self.correr({"U15": [fila()]}, commit=True)
+        self.assertEqual((rep.duplicados_obsoletos, ExamResult.objects.count()), (0, 2))
+
+    def test_otra_hoja_no_se_mira(self):
+        self.correr({"U15": [fila(codigo="")], "U16": [fila(codigo="")]}, commit=True)
+        rep = self.correr({"U15": [fila(codigo="NO MD")], "U16": [fila(codigo="")]},
+                          commit=True, solo_hojas={"U15"})
+        self.assertEqual(rep.duplicados_obsoletos, 1)
+        self.assertEqual(ExamResult.objects.filter(result_data__origen_hoja="U16").count(), 1)
+
+    def test_sin_commit_reporta_pero_no_borra(self):
+        self.correr({"U15": [fila(codigo="")]}, commit=True)
+        self.correr({"U15": [fila(codigo="NO MD")]}, commit=True)
+        # Simula la copia vieja de nuevo y corre en seco.
+        self.correr({"U15": [fila(codigo="")]}, commit=True)
+        antes = ExamResult.objects.count()
+        rep = self.correr({"U15": [fila(codigo="NO MD")]})
+        self.assertEqual((rep.duplicados_obsoletos, ExamResult.objects.count()), (1, antes))
+
+    # ── vínculo tardío (partidos postergados) ────────────────────────────
+    def test_una_fila_sin_partido_se_vincula_cuando_el_partido_aparece(self):
+        # Primera sync: el partido aún está en su fecha programada (10 días antes).
+        ev = self.partido(dias=-10)
+        self.correr({"U15": [fila(codigo="MD OFICIAL", localia="LOCAL", obs="COLO COLO")]}, commit=True)
+        self.assertIsNone(ExamResult.objects.get().event)
+        # COMET lo re-fecha al día jugado; la sync siguiente lo vincula.
+        ev.starts_at = timezone.make_aware(D.replace(hour=15))
+        ev.save(update_fields=["starts_at"])
+        rep = self.correr({"U15": [fila(codigo="MD OFICIAL", localia="LOCAL", obs="COLO COLO")]},
+                          commit=True)
+        self.assertEqual((rep.eventos_vinculados, ExamResult.objects.get().event), (1, ev))
+        again = self.correr({"U15": [fila(codigo="MD OFICIAL", localia="LOCAL", obs="COLO COLO")]})
+        self.assertEqual(again.eventos_vinculados, 0, "un vínculo existente no se toca")
