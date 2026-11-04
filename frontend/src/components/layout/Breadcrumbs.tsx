@@ -30,6 +30,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   editar: "Editar",
   nuevo: "Nuevo",
   uso: "Uso",
+  plataforma: "SLAB Admin",
   "centro-de-mando": "Centro de mando",
   "gps-entrenamiento": "Cargar GPS",
   daily: "Daily",

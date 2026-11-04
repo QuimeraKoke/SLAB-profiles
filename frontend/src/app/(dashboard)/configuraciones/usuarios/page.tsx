@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import Modal from "@/components/ui/Modal/Modal";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
@@ -73,7 +74,7 @@ function scopeSummary(u: AdminUser): string {
   return `${cats} · ${deps}`;
 }
 
-export default function UsersAdminPage() {
+function UsersAdmin() {
   const { membership } = useAuth();
   const { confirm } = useConfirm();
   const { toast } = useToast();
@@ -90,8 +91,18 @@ export default function UsersAdminPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  // Superuser-only club selector. Managers act on their own club implicitly.
-  const [selectedClubId, setSelectedClubId] = useState<string>("");
+  // Superuser-only club selector, in the URL (?club=) so SLAB Admin can link
+  // straight to a club's users. Managers act on their own club implicitly.
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const urlClubId = searchParams.get("club") ?? "";
+  const selectedClubId = urlClubId || meta?.clubs[0]?.id || "";
+  const setSelectedClubId = (id: string) => {
+    const qs = new URLSearchParams(searchParams.toString());
+    qs.set("club", id);
+    router.replace(`${pathname}?${qs}`, { scroll: false });
+  };
   const managedClubId = membership ? membership.club.id : selectedClubId;
   const managedClubName = membership
     ? membership.club.name
@@ -111,8 +122,8 @@ export default function UsersAdminPage() {
   const emailRef = useRef<HTMLInputElement>(null);
   const errorId = "user-form-errors";
 
-  // Load meta once (clubs + assignable roles). Superusers default to the
-  // first club so the list + scope pickers have something to act on.
+  // Load meta once (clubs + assignable roles). Without ?club= a superuser
+  // acts on the first club so the list + scope pickers have something to act on.
   useEffect(() => {
     if (!canView) return;
     let cancelled = false;
@@ -120,9 +131,6 @@ export default function UsersAdminPage() {
       .then((m) => {
         if (cancelled) return;
         setMeta(m);
-        if (!membership && m.clubs[0]) {
-          setSelectedClubId((prev) => prev || m.clubs[0].id);
-        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -652,5 +660,15 @@ export default function UsersAdminPage() {
         )}
       </Modal>
     </div>
+  );
+}
+
+/** `useSearchParams` (?club=) needs a Suspense boundary or the production
+ *  build fails ("Missing Suspense boundary with useSearchParams"). */
+export default function UsersAdminPage() {
+  return (
+    <Suspense fallback={null}>
+      <UsersAdmin />
+    </Suspense>
   );
 }

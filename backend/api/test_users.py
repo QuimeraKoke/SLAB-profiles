@@ -109,16 +109,18 @@ class UsersApiTests(TestCase):
         self.assertNotIn("out@other.cl", emails)  # isolation
 
     def test_manager_creates_scoped_user_and_emails_password(self):
-        res = self._post(
-            "/api/users",
-            self._base_payload(
-                all_categories=False,
-                category_ids=[str(self.cat_a.id)],
-                all_departments=False,
-                department_ids=[str(self.dept.id)],
-            ),
-            self.manager,
-        )
+        # The email leaves once the user is committed (a worker must find it).
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self._post(
+                "/api/users",
+                self._base_payload(
+                    all_categories=False,
+                    category_ids=[str(self.cat_a.id)],
+                    all_departments=False,
+                    department_ids=[str(self.dept.id)],
+                ),
+                self.manager,
+            )
         self.assertEqual(res.status_code, 200, res.content)
         body = res.json()
         temp = body["temp_password"]

@@ -216,6 +216,11 @@
   color: #fca5a5;
 }
 
+.logoutButton.neutralButton:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: #e2e8f0;
+}
+
 .logoutButton:hover .icon {
   opacity: 1;
 }

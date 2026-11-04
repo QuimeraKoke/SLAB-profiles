@@ -290,6 +290,10 @@ FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL", default="http://localhost:3000",
 )
 
+# "Olvidé mi contraseña" links (core.account) stop working after an hour —
+# and after one use, since the token hashes the current password.
+PASSWORD_RESET_TIMEOUT = 60 * 60
+
 # --- API-Football v3 integration ---
 # Native API endpoint (NOT the RapidAPI gateway) — auth via the
 # `x-apisports-key` header. Leave the key empty in environments that

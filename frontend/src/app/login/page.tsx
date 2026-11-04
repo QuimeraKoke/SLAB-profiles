@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { ApiError, useAuth } from "@/context/AuthContext";
 import styles from "./page.module.css";
 
@@ -110,6 +111,10 @@ export default function LoginPage() {
               {error}
             </div>
           )}
+
+          <Link href="/recuperar" className={styles.forgotLink}>
+            ¿Olvidaste tu contraseña?
+          </Link>
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <label className={styles.checkboxGroup}>

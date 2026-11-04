@@ -11,7 +11,17 @@ interface AuthContextType {
   membership: Membership | null;
   login: (email: string, password: string) => Promise<void>;
   logout: () => void;
+  /** Adopt a session the API just issued (e.g. after a reset link). */
+  startSession: (res: LoginResponse) => void;
+  /** Replace the current user after a change the API reported back. */
+  setMe: (me: MeResponse) => void;
 }
+
+// Reachable without a session: the login screen and the "Olvidé mi
+// contraseña" flow (request a link, then follow it).
+const PUBLIC_PATHS = ["/login", "/recuperar", "/restablecer"];
+// Where a user with a temporary password is held until they replace it.
+export const CHANGE_PASSWORD_PATH = "/cambiar-contrasena";
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -52,8 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Route guard.
   useEffect(() => {
     if (loading) return;
-    if (!user && pathname !== "/login") {
+    if (!user && !PUBLIC_PATHS.includes(pathname)) {
       router.push("/login");
+    } else if (user?.must_change_password && pathname !== CHANGE_PASSWORD_PATH) {
+      router.push(CHANGE_PASSWORD_PATH);
     } else if (user && pathname === "/login") {
       // Land authenticated users on the Centro de mando — the daily
       // command-center view; the navbar category picker drives its data.
@@ -61,18 +73,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, loading, pathname, router]);
 
+  const startSession = useCallback(
+    (res: LoginResponse) => {
+      setToken(res.access_token, res.expires_at);
+      setUser(res.user);
+      setMembership(res.membership);
+      router.push(res.user.must_change_password ? CHANGE_PASSWORD_PATH : "/centro-de-mando");
+    },
+    [router],
+  );
+
+  const setMe = useCallback((me: MeResponse) => {
+    setUser(me.user);
+    setMembership(me.membership);
+  }, []);
+
   const login = useCallback(
     async (email: string, password: string) => {
       const res = await api<LoginResponse>("/auth/login", {
         method: "POST",
         body: JSON.stringify({ email, password }),
       });
-      setToken(res.access_token, res.expires_at);
-      setUser(res.user);
-      setMembership(res.membership);
-      router.push("/centro-de-mando");
+      startSession(res);
     },
-    [router],
+    [startSession],
   );
 
   const logout = useCallback(() => {
@@ -99,7 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, membership, login, logout }}>
+    <AuthContext.Provider value={{ user, membership, login, logout, startSession, setMe }}>
       {children}
     </AuthContext.Provider>
   );

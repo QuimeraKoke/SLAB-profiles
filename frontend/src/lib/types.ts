@@ -12,6 +12,9 @@ export interface ApiUser {
    *  Superusers receive a single `"*"` sentinel — the frontend's
    *  `hasPermission` helper treats it as "match anything". */
   permissions: string[];
+  /** True while the password is a temporary one (welcome email or a
+   *  manager's reset): the app shows only the change screen until then. */
+  must_change_password?: boolean;
 }
 
 export interface Membership {
@@ -2061,4 +2064,75 @@ export interface ResumenNarrative {
 /** `GET /players/{id}/resumen-narrative` — cached LLM (~20s on a miss). */
 export interface ResumenNarrativeResponse {
   narrative: ResumenNarrative | null;
+}
+
+// ---- SLAB Admin (superusers only) -------------------------------------------
+
+export interface PlatformClubRow {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  created_at: string;
+  categories: number;
+  departments: number;
+  players: number;
+  users: number;
+}
+
+export interface PlatformExam {
+  id: string;
+  name: string;
+  slug: string;
+  categories: number;
+  results: number;
+}
+
+export interface PlatformDepartment {
+  id: string;
+  name: string;
+  slug: string;
+  categories: number;
+  exams: PlatformExam[];
+}
+
+export interface PlatformCategory {
+  id: string;
+  name: string;
+  label: string;
+  cohort_year: number | null;
+  is_senior: boolean;
+  players: number;
+  departments: string[];
+}
+
+export interface PlatformCatalogEntry {
+  slug: string;
+  name: string;
+  exams: string[];
+}
+
+export interface PlatformClub {
+  id: string;
+  name: string;
+  logo_url: string | null;
+  created_at: string;
+  users: number;
+  positions: number;
+  departments: PlatformDepartment[];
+  categories: PlatformCategory[];
+  available_departments: PlatformCatalogEntry[];
+  missing: string[];
+}
+
+export interface PlatformCategoryIn {
+  name: string;
+  cohort_year?: number | null;
+  is_senior?: boolean;
+  like_id?: string | null;
+}
+
+export interface PlatformClubCreated {
+  club: PlatformClub;
+  admin_email: string | null;
+  admin_temp_password: string | null;
 }

@@ -1,0 +1,146 @@
+/* The login screen's card, for the password screens around it (recover,
+ * reset, forced change) — same look, a still background instead of video. */
+.container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 1rem;
+  background: radial-gradient(circle at 30% 20%, #1e2a44 0%, #0b1525 70%);
+}
+
+.box {
+  width: 100%;
+  max-width: 460px;
+  background: rgba(255, 255, 255, 0.96);
+  border-radius: 12px;
+  padding: 2.5rem 2rem;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.37);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  color: #111;
+}
+
+.brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+  text-align: center;
+}
+
+.lead {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #374151;
+  margin: 0;
+  text-align: center;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #222;
+}
+
+.input {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #111;
+  font: inherit;
+  font-size: 1rem;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #6d28d9;
+  box-shadow: 0 0 0 2px rgba(109, 40, 217, 0.25);
+}
+
+.input[aria-invalid="true"] {
+  border-color: #dc2626;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
+.error {
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.875rem;
+}
+
+.success {
+  color: #065f46;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 6px;
+  padding: 0.8rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.submit {
+  margin-left: auto;
+  background: #6d28d9;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.6rem 1.4rem;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.submit:hover {
+  background: #5b21b6;
+}
+
+.submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.link {
+  font-size: 0.875rem;
+  color: #4c1d95;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}

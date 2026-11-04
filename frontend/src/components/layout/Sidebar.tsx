@@ -15,6 +15,7 @@ import { Gauge,
   Database,
   ChevronDown,
   ChevronRight,
+  KeyRound,
   LogOut,
   Settings,
   Ruler,
@@ -27,6 +28,9 @@ import { Gauge,
 import { api } from "@/lib/api";
 import { useCategoryContext } from "@/context/CategoryContext";
 import { useAuth } from "@/context/AuthContext";
+import ChangePasswordForm from "@/components/auth/ChangePasswordForm";
+import Modal from "@/components/ui/Modal/Modal";
+import { useToast } from "@/components/ui/Toast/Toast";
 import { hasPermission } from "@/lib/permissions";
 import { useAssistant } from "@/context/AssistantContext";
 import { useFocusTrap } from "@/hooks/useFocusTrap";
@@ -123,7 +127,9 @@ interface SidebarProps {
 
 export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   const pathname = usePathname();
-  const { membership, user, logout } = useAuth();
+  const { membership, user, logout, setMe } = useAuth();
+  const { toast } = useToast();
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const { setOpen: setAssistantOpen } = useAssistant();
   // NAV-06: focus-trap the drawer while open (mobile only — `open` is always
   // false on desktop, so the trap stays inert there). On open it moves focus
@@ -140,7 +146,9 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
       pathname.startsWith("/exportar") || pathname.startsWith("/uso")
       || pathname.startsWith("/subir-datos")
     ) return ["Datos"];
-    if (pathname.startsWith("/configuraciones")) return ["Administración"];
+    if (pathname.startsWith("/configuraciones") || pathname.startsWith("/plataforma")) {
+      return ["Administración"];
+    }
     return [];
   });
   const { categoryId } = useCategoryContext();
@@ -236,6 +244,8 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
       ...(hasPermission(user, "auth.view_user")
         ? [{ label: "Usuarios", href: "/configuraciones/usuarios" }]
         : []),
+      // Clubs, their categories and departments — platform owners only.
+      ...(user?.is_superuser ? [{ label: "SLAB Admin", href: "/plataforma" }] : []),
     ],
   };
 
@@ -481,6 +491,17 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
       <div className={styles.bottomSection}>
         <button
           type="button"
+          className={`${styles.logoutButton} ${styles.neutralButton}`}
+          onClick={() => {
+            onClose?.();
+            setPasswordOpen(true);
+          }}
+        >
+          <KeyRound size={18} className={styles.icon} />
+          <span>Cambiar contraseña</span>
+        </button>
+        <button
+          type="button"
           className={styles.logoutButton}
           onClick={() => {
             // Close the drawer (mobile) then log out — AuthContext.logout
@@ -494,6 +515,19 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
           <span>Cerrar sesión</span>
         </button>
       </div>
+
+      <Modal open={passwordOpen} title="Cambiar contraseña" onClose={() => setPasswordOpen(false)}>
+        {passwordOpen && (
+          <ChangePasswordForm
+            onCancel={() => setPasswordOpen(false)}
+            onDone={(me) => {
+              setMe(me);
+              setPasswordOpen(false);
+              toast.success("Contraseña actualizada.");
+            }}
+          />
+        )}
+      </Modal>
     </aside>
   );
 }

@@ -24,6 +24,9 @@ class UserOut(Schema):
     # frontend uses this to hide buttons / sections / pages without
     # round-tripping for each check.
     permissions: list[str] = []
+    # True while the password is one someone else chose (welcome email,
+    # manager reset): the app shows only the change screen until it's replaced.
+    must_change_password: bool = False
 
 
 class MembershipOut(Schema):
@@ -34,6 +37,25 @@ class MembershipOut(Schema):
     categories: list["CategoryOut"]
     all_departments: bool
     departments: list["DepartmentOut"]
+
+
+class ForgotPasswordIn(Schema):
+    email: str
+
+
+class ResetPasswordIn(Schema):
+    uid: str
+    token: str
+    password: str
+
+
+class ChangePasswordIn(Schema):
+    current_password: str
+    new_password: str
+
+
+class OkOut(Schema):
+    ok: bool
 
 
 class MeOut(Schema):
@@ -1133,3 +1155,99 @@ class PositionComparisonOut(Schema):
     position: str | None = None
     players: list[ComparisonPlayerOut]
     mean: list[ComparisonMeanPointOut]
+
+
+# --- SLAB Admin (superusers only) -------------------------------------------
+
+
+class PlatformCategoryIn(Schema):
+    name: str
+    cohort_year: int | None = None
+    is_senior: bool = False
+    # Copy departments + exams from this sibling; empty = all of the club's.
+    like_id: UUID | None = None
+
+
+class PlatformAdminIn(Schema):
+    first_name: str
+    last_name: str
+    email: str
+
+
+class PlatformClubIn(Schema):
+    name: str
+    categories: list[PlatformCategoryIn] = []
+    # Optional first Administrador of the club (all categories + departments).
+    admin: PlatformAdminIn | None = None
+
+
+class PlatformClubPatchIn(Schema):
+    name: str
+
+
+class PlatformDepartmentIn(Schema):
+    slug: str
+
+
+class PlatformClubRowOut(Schema):
+    id: UUID
+    name: str
+    logo_url: str | None = None
+    created_at: datetime
+    categories: int
+    departments: int
+    players: int
+    users: int
+
+
+class PlatformExamOut(Schema):
+    id: UUID
+    name: str
+    slug: str
+    categories: int
+    results: int
+
+
+class PlatformDepartmentOut(Schema):
+    id: UUID
+    name: str
+    slug: str
+    categories: int
+    exams: list[PlatformExamOut]
+
+
+class PlatformCategoryOut(Schema):
+    id: UUID
+    name: str
+    label: str
+    cohort_year: int | None = None
+    is_senior: bool
+    players: int
+    departments: list[str]
+
+
+class PlatformCatalogOut(Schema):
+    slug: str
+    name: str
+    exams: list[str]
+
+
+class PlatformClubOut(Schema):
+    id: UUID
+    name: str
+    logo_url: str | None = None
+    created_at: datetime
+    users: int
+    positions: int
+    departments: list[PlatformDepartmentOut]
+    categories: list[PlatformCategoryOut]
+    # Catalog departments the club doesn't have yet.
+    available_departments: list[PlatformCatalogOut]
+    # Base-template pieces still missing (empty = template fully applied).
+    missing: list[str]
+
+
+class PlatformClubCreatedOut(Schema):
+    club: PlatformClubOut
+    admin_email: str | None = None
+    admin_temp_password: str | None = None

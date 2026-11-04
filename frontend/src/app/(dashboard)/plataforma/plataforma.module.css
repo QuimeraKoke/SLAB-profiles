@@ -1,0 +1,607 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px 32px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 16px;
+}
+
+.eyebrow {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.title {
+  margin: 4px 0 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  color: #6b7280;
+  font-size: 0.85rem;
+  max-width: 720px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+/* IA principle #5: admin surfaces show which club they're acting on. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #eef2ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fieldFull {
+  grid-column: 1 / -1;
+}
+
+.label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.field input,
+.field select {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: #ffffff;
+  font-family: inherit;
+  min-width: 180px;
+}
+
+.field input:focus,
+.field select:focus {
+  outline: 2px solid #6366f1;
+  outline-offset: -1px;
+  border-color: transparent;
+}
+
+.field input[aria-invalid="true"] {
+  border-color: #ef4444;
+  outline-color: #ef4444;
+}
+
+.count {
+  margin-left: auto;
+  color: #6b7280;
+  font-size: 0.85rem;
+}
+
+.error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.88rem;
+}
+
+.muted {
+  color: #6b7280;
+  font-size: 0.9rem;
+  padding: 16px 0;
+}
+
+.empty {
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 0.9rem;
+}
+
+.tableWrapper {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.table th {
+  text-align: left;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #6b7280;
+  font-weight: 600;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f3f4f6;
+  color: #111827;
+  vertical-align: middle;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.rowInactive td {
+  color: #9ca3af;
+}
+
+.nameCell {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.emailCell {
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.roleBadge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #ede9fe;
+  color: #5b21b6;
+  border: 1px solid #ddd6fe;
+  white-space: nowrap;
+}
+
+.scopeCell {
+  font-size: 0.8rem;
+  color: #4b5563;
+  max-width: 260px;
+}
+
+.statusPill {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid;
+  cursor: pointer;
+  transition: filter 100ms ease;
+}
+
+.statusPill:hover {
+  filter: brightness(0.95);
+}
+
+.statusActive {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.statusInactive {
+  background: #f3f4f6;
+  color: #6b7280;
+  border-color: #d1d5db;
+}
+
+.rowActions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.iconBtn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.iconBtn:hover {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+}
+
+.iconBtn + .iconBtn {
+  margin-left: 4px;
+}
+
+/* ---------- form (inside modal) ---------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.checkboxField {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+/* Scope multiselect — a bordered box of checkboxes per category/department. */
+.scopeGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.checkboxList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f9fafb;
+}
+
+.checkboxRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: #374151;
+  cursor: pointer;
+}
+
+.hint {
+  font-size: 0.78rem;
+  color: #9ca3af;
+}
+
+.formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.primaryBtn {
+  background: #6d28d9;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: #5b21b6;
+}
+
+.primaryBtn:disabled {
+  background: #a78bfa;
+  cursor: not-allowed;
+}
+
+.cancelBtn {
+  background: transparent;
+  color: #6b7280;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.cancelBtn:hover:not(:disabled) {
+  background: #f9fafb;
+}
+
+/* El Sub de la temporada en curso, al lado de la serie. Aclaración, no segundo
+   nombre: más chico y gris para que no compita con "Serie 2014". */
+.labelHint {
+  font-size: 0.78em;
+  color: #98a2b3;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- SLAB Admin ---------- */
+
+.clubCell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.clubLink {
+  color: #111827;
+  text-decoration: none;
+}
+
+.clubLink:hover {
+  color: #5b21b6;
+  text-decoration: underline;
+}
+
+.logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  object-fit: contain;
+  background: #f3f4f6;
+  flex-shrink: 0;
+}
+
+.logoLarge {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  object-fit: contain;
+  background: #f3f4f6;
+  flex-shrink: 0;
+}
+
+.logoFallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #6d28d9;
+  font-weight: 700;
+}
+
+.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.secondaryBtn {
+  background: #fff;
+  color: #5b21b6;
+  border: 1px solid #c4b5fd;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+
+.secondaryBtn:hover:not(:disabled) {
+  background: #f5f3ff;
+}
+
+.secondaryBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.ok {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.86rem;
+}
+
+.warn {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.86rem;
+}
+
+.dept {
+  border-top: 1px solid #f3f4f6;
+  padding-top: 10px;
+}
+
+.dept:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.deptName {
+  font-weight: 600;
+  color: #111827;
+  font-size: 0.92rem;
+}
+
+.examList {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.84rem;
+  color: #374151;
+}
+
+.examList li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.examMeta {
+  color: #9ca3af;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  background: #ede9fe;
+  color: #5b21b6;
+  vertical-align: 1px;
+}
+
+.catRow {
+  display: grid;
+  grid-template-columns: 1fr 120px auto auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.catRow .field input {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.addRow {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  align-items: end;
+  border-top: 1px solid #f3f4f6;
+  padding-top: 12px;
+}
+
+.addRow .field select {
+  min-width: 0;
+}
+
+.inlineCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: #374151;
+  white-space: nowrap;
+  padding-bottom: 9px;
+}
+
+.linkBtn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: #5b21b6;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .container {
+    padding: 16px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+
+  .catRow {
+    grid-template-columns: 1fr 90px;
+  }
+}

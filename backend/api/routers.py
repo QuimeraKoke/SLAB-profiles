@@ -12,6 +12,7 @@ from ninja import File, Form, NinjaAPI, Query, Schema
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
+from core import account
 from core.models import (
     Category,
     Club,
@@ -27,6 +28,7 @@ from dashboards.models import DepartmentLayout, TeamReportLayout, Widget
 from dashboards.team_aggregation import resolve_team_widget
 from events.models import Event
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import Q
 
 from exams.bulk_ingest import IngestError, blank_workbook, run_ingest
@@ -48,6 +50,10 @@ from .scoping import (
     scope_templates,
 )
 from .schemas import (
+    ChangePasswordIn,
+    ForgotPasswordIn,
+    OkOut,
+    ResetPasswordIn,
     AdminUserCreateIn,
     AdminUserCreateOut,
     AdminUserOut,
@@ -108,6 +114,14 @@ from .schemas import (
     TriageOut,
     UserOut,
     UsersMetaOut,
+    ClubOut,
+    PlatformCategoryIn,
+    PlatformClubCreatedOut,
+    PlatformClubIn,
+    PlatformClubOut,
+    PlatformClubPatchIn,
+    PlatformClubRowOut,
+    PlatformDepartmentIn,
 )
 
 User = get_user_model()
@@ -251,6 +265,7 @@ def _serialize_user(user):
         "is_staff": user.is_staff,
         "is_superuser": user.is_superuser,
         "permissions": permissions,
+        "must_change_password": account.must_change_password(user),
     }
 
 
@@ -296,6 +311,77 @@ def me(request):
         "user": _serialize_user(request.user),
         "membership": _serialize_membership(membership),
     }
+
+
+def _session(user) -> dict:
+    token, expires_at = issue_token(user)
+    return {
+        "access_token": token,
+        "expires_at": expires_at,
+        "user": _serialize_user(user),
+        "membership": _serialize_membership(get_membership(user)),
+    }
+
+
+# "Olvidé mi contraseña" — per client IP, on top of core.account's per-account
+# cooldown, so the form can't be used to mail-bomb a list of addresses.
+FORGOT_PASSWORD_PER_IP_HOUR = 10
+
+
+def _client_ip(request) -> str:
+    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
+    return forwarded.split(",")[0].strip() or request.META.get("REMOTE_ADDR", "")
+
+
+@api.post("/auth/password/forgot", response=OkOut, auth=None)
+def forgot_password(request, payload: ForgotPasswordIn):
+    """Email a reset link. Answers the same whether or not the email has an
+    account, so the form can't be used to find out who's registered."""
+    from django.core.cache import cache
+
+    key = f"forgot-password:{_client_ip(request)}"
+    cache.add(key, 0, timeout=60 * 60)
+    if cache.incr(key) > FORGOT_PASSWORD_PER_IP_HOUR:
+        raise HttpError(429, "Demasiados intentos. Probá de nuevo en un rato.")
+
+    user = User.objects.filter(email__iexact=payload.email.strip(), is_active=True).first()
+    if user is not None and account.may_send_reset(user):
+        try:
+            from core.tasks import send_password_reset_email
+            send_password_reset_email.delay(user.id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("reset email dispatch failed for user %s: %s", user.id, exc)
+    return {"ok": True}
+
+
+@api.post("/auth/password/reset", response=LoginOut, auth=None)
+def reset_password_with_link(request, payload: ResetPasswordIn):
+    """Set a new password from an emailed link and sign the user in."""
+    user = account.user_for_reset(payload.uid, payload.token)
+    if user is None:
+        raise HttpError(400, "El enlace no es válido o ya expiró. Pedí uno nuevo.")
+    try:
+        account.set_own_password(user, payload.password)
+    except DjangoValidationError as exc:
+        raise HttpError(400, " ".join(exc.messages))
+    return _session(user)
+
+
+@api.post("/auth/password/change", response=MeOut)
+def change_password(request, payload: ChangePasswordIn):
+    """The signed-in user replaces their password — by choice, or because
+    the current one is temporary."""
+    user = request.user
+    if not user.check_password(payload.current_password):
+        raise HttpError(400, "La contraseña actual no es correcta.")
+    if payload.current_password == payload.new_password:
+        raise HttpError(400, "La nueva contraseña tiene que ser distinta de la actual.")
+    try:
+        account.set_own_password(user, payload.new_password)
+    except DjangoValidationError as exc:
+        raise HttpError(400, " ".join(exc.messages))
+    return {"user": _serialize_user(user),
+            "membership": _serialize_membership(get_membership(user))}
 
 
 @api.post("/auth/refresh", response=LoginOut)
@@ -526,26 +612,45 @@ def create_user(request, payload: AdminUserCreateIn):
         payload.all_departments, payload.department_ids,
     )
 
-    email = payload.email.strip().lower()
+    user, password = _create_staff_user(
+        club=club, email=payload.email, first_name=payload.first_name,
+        last_name=payload.last_name, role=payload.role, is_active=payload.is_active,
+        all_cats=all_cats, categories=categories,
+        all_deps=all_deps, departments=departments,
+    )
+    result = _serialize_admin_user(user)
+    result["temp_password"] = password
+    return result
+
+
+def _create_staff_user(*, club, email, first_name, last_name, role, is_active=True,
+                       all_cats, categories, all_deps, departments):
+    """The staff account + membership + role, and the welcome email once the
+    transaction commits. Shared by Usuarios and SLAB Admin's "Nuevo club"."""
+    email = email.strip().lower()
     if not email or "@" not in email:
         raise HttpError(400, "Ingresá un email válido.")
-    if not payload.first_name.strip() or not payload.last_name.strip():
+    if not first_name.strip() or not last_name.strip():
         raise HttpError(400, "Nombre y apellido son requeridos.")
     if User.objects.filter(email__iexact=email).exists() or \
             User.objects.filter(username__iexact=email).exists():
         raise HttpError(400, "Ya existe un usuario con ese email.")
+    if not Group.objects.filter(name=role).exists():
+        # Without the group the account would log in with no permissions.
+        raise HttpError(400, f"El rol {role} no existe todavía (corré seed_role_groups).")
 
     password = generate_temp_password()
     user = User.objects.create(
         username=email,
         email=email,
-        first_name=payload.first_name.strip(),
-        last_name=payload.last_name.strip(),
-        is_active=payload.is_active,
+        first_name=first_name.strip(),
+        last_name=last_name.strip(),
+        is_active=is_active,
         is_staff=False,
     )
     user.set_password(password)
     user.save(update_fields=["password"])
+    account.mark_temporary(user)
 
     membership_row = StaffMembership.objects.create(
         user=user, club=club,
@@ -556,12 +661,9 @@ def create_user(request, payload: AdminUserCreateIn):
     if not all_deps:
         membership_row.departments.set(departments)
 
-    _apply_role(user, payload.role)
-    _dispatch_welcome_email(user.id, password, "welcome")
-
-    result = _serialize_admin_user(user)
-    result["temp_password"] = password
-    return result
+    _apply_role(user, role)
+    transaction.on_commit(lambda: _dispatch_welcome_email(user.id, password, "welcome"))
+    return user, password
 
 
 @api.patch("/users/{user_id}", response=AdminUserOut)
@@ -634,6 +736,7 @@ def reset_user_password(request, user_id: int):
     password = generate_temp_password()
     target.set_password(password)
     target.save(update_fields=["password"])
+    account.mark_temporary(target)
     _dispatch_welcome_email(target.id, password, "reset")
     return {"temp_password": password}
 
@@ -6792,6 +6895,206 @@ def maturation_overview(
             "velocity_confident_days": _mat.CONFIDENT_VELOCITY_DAYS,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# SLAB Admin — superusers stand up clubs and grow them (`core.club_setup`).
+#
+# Gated on `is_superuser` itself, not on a permission: no group may ever hold
+# "create a club", so there is nothing to grant. Users inside a club are still
+# managed in Administración → Usuarios (?club=<id>); the only account made
+# here is a new club's first Administrador.
+# ---------------------------------------------------------------------------
+
+
+def _require_superuser(request) -> None:
+    if not request.user.is_superuser:
+        raise HttpError(403, "Solo administradores de la plataforma.")
+
+
+def _platform_club(club_id) -> Club:
+    club = Club.objects.filter(id=club_id).first()
+    if club is None:
+        raise HttpError(404, "Club no encontrado.")
+    return club
+
+
+def _platform_club_payload(club: Club) -> dict:
+    from django.db.models import Count
+
+    from core import club_setup
+
+    departments = []
+    for d in (club.departments.annotate(n_cat=Count("categories", distinct=True))
+              .order_by("name")):
+        exams = (ExamTemplate.objects.filter(department=d, is_active_version=True)
+                 .annotate(n_cat=Count("applicable_categories", distinct=True),
+                           n_res=Count("results", distinct=True))
+                 .order_by("name"))
+        departments.append({
+            "id": d.id, "name": d.name, "slug": d.slug, "categories": d.n_cat,
+            "exams": [{"id": t.id, "name": t.name, "slug": t.slug,
+                       "categories": t.n_cat, "results": t.n_res} for t in exams],
+        })
+    categories = []
+    for c in (club.categories.annotate(n=Count("players", distinct=True))
+              .prefetch_related("departments").order_by("-is_senior", "cohort_year", "name")):
+        categories.append({
+            "id": c.id, "name": c.name, "label": c.season_label_parts()[0],
+            "cohort_year": c.cohort_year, "is_senior": c.is_senior, "players": c.n,
+            "departments": sorted(d.name for d in c.departments.all()),
+        })
+    have = {d["slug"] for d in departments}
+    return {
+        "id": club.id, "name": club.name, "logo_url": ClubOut.resolve_logo_url(club),
+        "created_at": club.created_at,
+        "users": StaffMembership.objects.filter(club=club).count(),
+        "positions": Position.objects.filter(club=club).count(),
+        "departments": departments,
+        "categories": categories,
+        "available_departments": [
+            {"slug": s.slug, "name": s.name, "exams": [e.name for e in s.exams]}
+            for s in club_setup.CATALOG.values() if s.slug not in have
+        ],
+        "missing": club_setup.missing_from_base(club),
+    }
+
+
+def _setup_call(fn, *args, **kwargs):
+    from core.club_setup import SetupError
+
+    try:
+        return fn(*args, **kwargs)
+    except SetupError as exc:
+        raise HttpError(400, str(exc)) from exc
+
+
+@api.get("/platform/clubs", response=list[PlatformClubRowOut])
+def platform_clubs(request):
+    from django.db.models import Count
+
+    _require_superuser(request)
+    rows = (Club.objects
+            .annotate(n_cat=Count("categories", distinct=True),
+                      n_dep=Count("departments", distinct=True),
+                      n_pla=Count("categories__players", distinct=True),
+                      n_usr=Count("memberships", distinct=True))
+            .order_by("name"))
+    return [{"id": c.id, "name": c.name, "logo_url": ClubOut.resolve_logo_url(c),
+             "created_at": c.created_at, "categories": c.n_cat, "departments": c.n_dep,
+             "players": c.n_pla, "users": c.n_usr} for c in rows]
+
+
+@api.post("/platform/clubs", response=PlatformClubCreatedOut)
+def platform_create_club(request, payload: PlatformClubIn):
+    """A new club from the Base template, its categories and — optionally —
+    its first Administrador, all or nothing."""
+    from core import club_setup
+
+    _require_superuser(request)
+    with transaction.atomic():
+        club, _ = _setup_call(
+            club_setup.create_club, payload.name,
+            [{"name": c.name, "cohort_year": c.cohort_year, "is_senior": c.is_senior}
+             for c in payload.categories])
+        admin_email = password = None
+        if payload.admin is not None:
+            user, password = _create_staff_user(
+                club=club, email=payload.admin.email,
+                first_name=payload.admin.first_name, last_name=payload.admin.last_name,
+                role="Administrador", all_cats=True, categories=[],
+                all_deps=True, departments=[])
+            admin_email = user.email
+    return {"club": _platform_club_payload(club), "admin_email": admin_email,
+            "admin_temp_password": password}
+
+
+@api.get("/platform/clubs/{club_id}", response=PlatformClubOut)
+def platform_club(request, club_id: UUID):
+    _require_superuser(request)
+    return _platform_club_payload(_platform_club(club_id))
+
+
+@api.patch("/platform/clubs/{club_id}", response=PlatformClubOut)
+def platform_rename_club(request, club_id: UUID, payload: PlatformClubPatchIn):
+    from core import club_setup
+
+    _require_superuser(request)
+    club = _platform_club(club_id)
+    name = payload.name.strip()
+    if not name:
+        raise HttpError(400, "Ingresá el nombre del club.")
+    if club_setup.name_taken(name, exclude=club):
+        raise HttpError(400, f"Ya existe un club llamado {name}.")
+    club.name = name
+    club.save(update_fields=["name"])
+    return _platform_club_payload(club)
+
+
+@api.post("/platform/clubs/{club_id}/logo", response=PlatformClubOut)
+def platform_club_logo(request, club_id: UUID, file: UploadedFile = File(...)):
+    _require_superuser(request)
+    club = _platform_club(club_id)
+    if not (file.content_type or "").startswith("image/"):
+        raise HttpError(400, "El logo debe ser una imagen (PNG, JPG o SVG).")
+    old = club.logo.name if club.logo else None
+    club.logo.save(file.name, file, save=True)
+    if old and old != club.logo.name:
+        club.logo.storage.delete(old)
+    return _platform_club_payload(club)
+
+
+@api.post("/platform/clubs/{club_id}/apply-template", response=PlatformClubOut)
+def platform_apply_template(request, club_id: UUID):
+    """Creates whatever of the Base template the club is missing; touches
+    nothing it already has."""
+    from core import club_setup
+
+    _require_superuser(request)
+    club = _platform_club(club_id)
+    _setup_call(club_setup.apply_base_template, club)
+    return _platform_club_payload(club)
+
+
+@api.post("/platform/clubs/{club_id}/categories", response=PlatformClubOut)
+def platform_add_category(request, club_id: UUID, payload: PlatformCategoryIn):
+    from core import club_setup
+
+    _require_superuser(request)
+    club = _platform_club(club_id)
+    like = None
+    if payload.like_id:
+        like = Category.objects.filter(id=payload.like_id, club=club).first()
+        if like is None:
+            raise HttpError(400, "La categoría modelo no es de este club.")
+    _setup_call(club_setup.add_category, club, name=payload.name,
+                cohort_year=payload.cohort_year, is_senior=payload.is_senior, like=like)
+    return _platform_club_payload(club)
+
+
+@api.delete("/platform/clubs/{club_id}/categories/{category_id}", response=PlatformClubOut)
+def platform_delete_category(request, club_id: UUID, category_id: UUID):
+    """Only an EMPTY category: players are PROTECTed, and so is their history."""
+    _require_superuser(request)
+    club = _platform_club(club_id)
+    cat = Category.objects.filter(id=category_id, club=club).first()
+    if cat is None:
+        raise HttpError(404, "Categoría no encontrada.")
+    if cat.players.exists():
+        raise HttpError(400, "La categoría tiene jugadores; muévelos antes de eliminarla.")
+    cat.delete()
+    return _platform_club_payload(club)
+
+
+@api.post("/platform/clubs/{club_id}/departments", response=PlatformClubOut)
+def platform_add_department(request, club_id: UUID, payload: PlatformDepartmentIn):
+    from core import club_setup
+
+    _require_superuser(request)
+    club = _platform_club(club_id)
+    with transaction.atomic():
+        _setup_call(club_setup.add_department, club, payload.slug)
+    return _platform_club_payload(club)
 
 
 # ── Control de carga (microcycle planning) — see api/load_control.py ────────

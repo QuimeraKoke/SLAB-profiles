@@ -152,6 +152,14 @@
   transform: scale(0.97);
 }
 
+.forgotLink {
+  align-self: flex-start;
+  margin-top: -0.5rem;
+  font-size: 0.875rem;
+  color: #222;
+  text-decoration: underline;
+}
+
 /* Adjust text color scheme for dark mode consistency */
 @media (prefers-color-scheme: dark) {
   .loginBox {
@@ -161,7 +169,8 @@
 
   .logoText,
   .label,
-  .checkboxGroup {
+  .checkboxGroup,
+  .forgotLink {
     color: #fff;
   }
 

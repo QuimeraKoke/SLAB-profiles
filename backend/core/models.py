@@ -527,6 +527,28 @@ class StaffMembership(models.Model):
         return f"{self.user} @ {self.club}"
 
 
+class AccountSecurity(models.Model):
+    """Password state of a login, kept off the User row (which is Django's).
+
+    `must_change_password` is set whenever someone else chose the password —
+    the welcome email's temporary one, or a manager's reset — and cleared when
+    the user picks their own; until then the app only shows the change screen.
+    `reset_sent_at` throttles "Olvidé mi contraseña" emails per account.
+    Users without a row (everyone created before this existed) owe nothing.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="account_security",
+    )
+    must_change_password = models.BooleanField(default=False)
+    reset_sent_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"{self.user} (cambiar contraseña: {self.must_change_password})"
+
+
 class Player(models.Model):
     SEX_MALE = "M"
     SEX_FEMALE = "F"
