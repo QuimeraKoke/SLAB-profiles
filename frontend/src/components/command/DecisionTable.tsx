@@ -6,6 +6,7 @@ import { ListChecks } from "lucide-react";
 
 import type { CCDecision } from "./types";
 import styles from "./DecisionTable.module.css";
+import { PlayerAvatar } from "@/components/loadControl/PlayerPhotos";
 
 const PRIORITY_TONE: Record<CCDecision["priority"], string> = {
   alta: styles.prioAlta,
@@ -41,7 +42,7 @@ export default function DecisionTable({ decisions }: { decisions: CCDecision[] }
               <tr key={d.player_id}>
                 <td>
                   <Link href={`/perfil/${d.player_id}`} className={styles.player}>
-                    <span className={styles.avatar}>{d.initials}</span>
+                    <PlayerAvatar id={d.player_id} name={d.player} />
                     <span className={styles.playerName}>{d.player}</span>
                   </Link>
                 </td>

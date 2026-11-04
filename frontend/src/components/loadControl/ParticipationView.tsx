@@ -17,6 +17,7 @@ import { api, ApiError } from "@/lib/api";
 import { fmt, type ParticipationPayload, shortDate } from "@/lib/loadControl";
 
 import styles from "./loadControl.module.css";
+import { PlayerName } from "@/components/loadControl/PlayerPhotos";
 
 const LIMIT = 15;
 
@@ -93,7 +94,7 @@ export default function ParticipationView({ microcycleId, scope, onScope }: Prop
               {rows.map((r) => (
                 <tr key={r.player_id}>
                   <th scope="row">
-                    <Link href={`/perfil/${r.player_id}`}>{r.name}</Link>
+                    <Link href={`/perfil/${r.player_id}`}><PlayerName id={r.player_id} name={r.name} /></Link>
                     {r.status !== "available" && (
                       <> <span className={`${styles.statusPill} ${styles[`status_${r.status}`]}`}>{r.status_label}</span></>
                     )}

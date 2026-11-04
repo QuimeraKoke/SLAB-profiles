@@ -18,6 +18,7 @@ import {
 } from "@/lib/loadControl";
 
 import styles from "./loadControl.module.css";
+import { PlayerName } from "@/components/loadControl/PlayerPhotos";
 
 interface Props {
   microcycleId: string;
@@ -185,7 +186,7 @@ export default function EvaluationView({ microcycleId, day, sparring, matches, o
           {players.map((p) => (
             <div key={p.player_id} className={styles.playerRow}>
               <span className={styles.playerName}>
-                <strong>{p.name}</strong>
+                <PlayerName id={p.player_id} name={p.name}><strong>{p.name}</strong></PlayerName>
                 <span className={styles.muted}>
                   {p.group} · {fmt(p.minutes)} min
                   {isAcc ? ` · ${p.days} de ${p.days_planned} días` : ""}

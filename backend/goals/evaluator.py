@@ -812,8 +812,16 @@ def evaluate_threshold_rules_for_result(result: ExamResult) -> list[Alert]:
         .filter(models.Q(category_id=None) | models.Q(category_id=result.player.category_id))
         .select_related("template", "category")
     )
+    # A category's own BAND thresholds replace the club-wide rule on the same
+    # field: a Sub 13 measured with the adult scale AND his own got two
+    # contradictory verdicts on one reading ("Elevado" and "Bueno").
+    own_bands = {r.field_key for r in rules
+                 if r.kind == AlertRuleKind.BAND and r.category_id
+                 and isinstance((r.config or {}).get("ranges"), list) and r.config["ranges"]}
     fired: list[Alert] = []
     for rule in rules:
+        if rule.kind == AlertRuleKind.BAND and rule.category_id is None and rule.field_key in own_bands:
+            continue
         if not _result_in_scope(result, rule):
             continue
         value = _value_for_rule(result, rule)

@@ -251,6 +251,25 @@ def fatigue_view(request, microcycle_id: str, match_date: date | None = None,
         raise HttpError(400, str(exc))
 
 
+@router.get("/photos")
+def photos_view(request, category_id: str):
+    """Photo (or initials) of every player of the category, call-ups included,
+    keyed by id: one request feeds every name the Centro de mando shows."""
+    from api.scoping import players_in_category
+
+    _require(request, PERM_VIEW)
+    membership = get_membership(request.user)
+    category = (scope_categories(Category.objects.select_related("club"), membership)
+                .filter(pk=category_id).first())
+    if category is None:
+        raise HttpError(404, "Categoría no encontrada.")
+    out = {}
+    for p in players_in_category(category).only("id", "first_name", "last_name", "photo", "photo_url"):
+        initials = "".join(x[:1] for x in (p.first_name, p.last_name) if x).upper()
+        out[str(p.id)] = {"photo": p.photo_src, "initials": initials}
+    return {"players": out}
+
+
 @router.get("/composition")
 def composition_view(request, category_id: str, player_id: str | None = None):
     """Composición corporal of the selected category: last anthropometry of

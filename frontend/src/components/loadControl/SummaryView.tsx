@@ -13,6 +13,7 @@ import { api, ApiError } from "@/lib/api";
 import { type Band, type SummaryPayload, shortDate, signedPct } from "@/lib/loadControl";
 
 import styles from "./loadControl.module.css";
+import { PlayerName } from "@/components/loadControl/PlayerPhotos";
 
 const KIND_LABEL = { estado: "Estado", fatiga: "Fatiga", carga: "Carga", checkin: "Check-in" } as const;
 const LIMIT = 10;
@@ -90,7 +91,7 @@ export default function SummaryView({ microcycleId, onTab }: Props) {
               <div key={r.player_id} className={styles.flagRow}>
                 <span className={styles.playerName}>
                   <button type="button" className={styles.linkButton} onClick={() => onTab("jugador", { jugador: r.player_id })}>
-                    <strong>{r.name}</strong>
+                    <PlayerName id={r.player_id} name={r.name}><strong>{r.name}</strong></PlayerName>
                   </button>
                 </span>
                 <span style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>

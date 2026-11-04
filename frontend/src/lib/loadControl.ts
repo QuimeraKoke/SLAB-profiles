@@ -234,7 +234,17 @@ export interface FatiguePayload {
 }
 
 // ── Composición corporal — backend `load_control/composition.py` ───────────────
-export interface CompMetric { key: string; label: string; unit: string; decimals: number; direction: "up" | "down" | "neutral" }
+export interface CompBand { label: string; color: string; min?: number | null; max?: number | null }
+export interface CompMetric {
+  key: string; label: string; unit: string; decimals: number; direction: "up" | "down" | "neutral";
+  /** The category's reference bands (the same ones that fire alerts); empty = none. */
+  bands: CompBand[];
+}
+/** First band containing the value, bounds inclusive — as `exams.bands.band_for_value`. */
+export function bandOf(value: unknown, bands: CompBand[] | undefined): CompBand | null {
+  if (typeof value !== "number" || !bands) return null;
+  return bands.find((b) => (b.min == null || value >= b.min) && (b.max == null || value <= b.max)) ?? null;
+}
 export type CompMeasurement = { date: string; talla: number | null } & Record<string, number | null | string>;
 export interface CompositionPayload {
   metrics: CompMetric[]; squad_keys: string[];

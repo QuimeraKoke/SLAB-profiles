@@ -25,6 +25,7 @@ import { api } from "@/lib/api";
 import { deltaTone, deltaToneTitle } from "@/lib/deltaTone";
 import type { CCEvalCell, CCEvalColumn, CCEvalScore, CCEvaluationGrid } from "./types";
 import styles from "./EvaluationGrid.module.css";
+import { PlayerName } from "@/components/loadControl/PlayerPhotos";
 
 /** A reading older than this is shown faded: still the last one, but stale. */
 const DIAS_VIGENTE = 180;
@@ -189,7 +190,7 @@ export default function EvaluationGrid({ categoryId }: { categoryId: string }) {
               <tr key={r.player_id}>
                 <th scope="row" className={styles.sticky}>
                   <Link href={`/perfil/${r.player_id}?tab=fisico`} className={styles.player}>
-                    {r.name}
+                    <PlayerName id={r.player_id} name={r.name} />
                   </Link>
                   {r.position && <span className={styles.position}>{r.position}</span>}
                 </th>

@@ -15,6 +15,7 @@ import { api, ApiError } from "@/lib/api";
 import { type AvailabilityPayload, shortDate } from "@/lib/loadControl";
 
 import styles from "./loadControl.module.css";
+import { PlayerName } from "@/components/loadControl/PlayerPhotos";
 
 const HISTORY_LIMIT = 8;
 
@@ -69,7 +70,7 @@ export default function AvailabilityView({ microcycleId }: { microcycleId: strin
             return (
               <div key={r.player_id} className={styles.outRow}>
                 <span className={styles.playerName}>
-                  <Link href={`/perfil/${r.player_id}?tab=lesiones`}><strong>{r.name}</strong></Link>
+                  <Link href={`/perfil/${r.player_id}?tab=lesiones`}><PlayerName id={r.player_id} name={r.name}><strong>{r.name}</strong></PlayerName></Link>
                   <span className={styles.muted}>{r.position}</span>
                 </span>
                 <span>{e ? e.title : <span className={styles.muted}>Sin episodio abierto registrado</span>}</span>
@@ -99,7 +100,7 @@ export default function AvailabilityView({ microcycleId }: { microcycleId: strin
                 <tbody>
                   {history.map((h) => (
                     <tr key={h.episode_id}>
-                      <th scope="row"><Link href={`/perfil/${h.player_id}?tab=lesiones`}>{h.name}</Link></th>
+                      <th scope="row"><Link href={`/perfil/${h.player_id}?tab=lesiones`}><PlayerName id={h.player_id} name={h.name} /></Link></th>
                       <td style={{ textAlign: "left" }}>{h.title}</td>
                       <td style={{ textAlign: "left" }}>{h.severity ?? "—"}</td>
                       <td className={styles.num}>{shortDate(h.started)}</td>

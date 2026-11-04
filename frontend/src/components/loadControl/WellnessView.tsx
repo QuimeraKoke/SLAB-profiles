@@ -23,6 +23,7 @@ import {
 } from "@/lib/loadControl";
 
 import styles from "./loadControl.module.css";
+import { PlayerName } from "@/components/loadControl/PlayerPhotos";
 
 // Validated categorical slots 1–5 for the items, 7 and 6 for the totals
 // (dataviz reference palette, light mode).
@@ -172,7 +173,7 @@ export default function WellnessView({ microcycleId, day, playerId, onFilters, h
           : visible("flagged", flagged).map((f) => (
             <div key={f.player_id} className={styles.flagRow}>
               <span className={styles.playerName}>
-                <strong>{f.name}</strong>
+                <PlayerName id={f.player_id} name={f.name}><strong>{f.name}</strong></PlayerName>
                 <span className={styles.muted}>Total bienestar {f.total_bienestar == null ? "—" : `${fmt(f.total_bienestar)}/25`}</span>
               </span>
               <span className={styles.chips5}>{f.lows.map((l) => chip(l.key, l.value))}</span>
@@ -268,7 +269,7 @@ export default function WellnessView({ microcycleId, day, playerId, onFilters, h
             {visible("rows", rows).map((r) => (
               <div key={r.player_id} className={styles.flagRow}>
                 <span className={styles.playerName}>
-                  <strong>{r.name}</strong>
+                  <PlayerName id={r.player_id} name={r.name}><strong>{r.name}</strong></PlayerName>
                   <span className={styles.muted}>
                     {r.total_bienestar == null ? "sin check-in" : `Bienestar ${fmt(r.total_bienestar)}/25`}
                     {" · "}{r.ua == null ? "sin check-out" : `${fmt(r.duracion_min)} min · RPE ${fmt(r.rpe)} · UA ${fmt(r.ua)}`}

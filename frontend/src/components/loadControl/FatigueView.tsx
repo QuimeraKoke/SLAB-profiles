@@ -21,6 +21,7 @@ import { api, ApiError } from "@/lib/api";
 import { type Band, type FatigueMatch, type FatiguePayload, type FatigueRow, shortDate, signedPct } from "@/lib/loadControl";
 
 import styles from "./loadControl.module.css";
+import { PlayerName } from "@/components/loadControl/PlayerPhotos";
 
 const BAND_FILL: Record<Band, string> = { ok: "#16a34a", leve: "#d97706", grave: "#dc2626" };
 const INK = "#475467";
@@ -192,7 +193,7 @@ export default function FatigueView({ microcycleId, matchDate, playerId, onFilte
                 return (
                   <tr key={r.player_id}>
                     <th scope="row">
-                      <button type="button" className={styles.linkButton} onClick={() => onFilters({ player: r.player_id })}>{r.name}</button>
+                      <button type="button" className={styles.linkButton} onClick={() => onFilters({ player: r.player_id })}><PlayerName id={r.player_id} name={r.name} /></button>
                     </th>
                     <td className={styles.num}>{rsi(r.basal)}</td>
                     <td className={`${styles.num} ${styles.groupStart}`}>{r.minutes == null ? "—" : `${r.minutes}'`}</td>
@@ -233,7 +234,7 @@ export default function FatigueView({ microcycleId, matchDate, playerId, onFilte
       {data.trend && (
         <section className={styles.card} aria-labelledby="fa-trend">
           <div className={styles.cardHead}>
-            <h2 id="fa-trend" className={styles.h2}>Temporada de {data.trend.name}</h2>
+            <h2 id="fa-trend" className={styles.h2}><PlayerName id={data.trend.player_id} name={data.trend.name} size={30}>Temporada de {data.trend.name}</PlayerName></h2>
             <button type="button" className={styles.secondary} onClick={() => onFilters({ player: null })}>Cerrar</button>
           </div>
           <div className={styles.chartBox} role="img" aria-label={`RSI PRE, POST y basal de ${data.trend.name} a lo largo de la temporada.`}>

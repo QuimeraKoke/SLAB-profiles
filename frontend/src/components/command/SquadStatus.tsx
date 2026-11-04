@@ -6,6 +6,7 @@ import { Users, ArrowRight } from "lucide-react";
 
 import type { CCSquad } from "./types";
 import styles from "./SquadStatus.module.css";
+import { PlayerAvatar } from "@/components/loadControl/PlayerPhotos";
 
 const STATUS_DOT: Record<string, string> = {
   available: styles.dotOk,
@@ -64,7 +65,7 @@ export default function SquadStatus({ squad }: { squad: CCSquad }) {
       <div className={styles.players}>
         {squad.players.map((p) => (
           <Link key={p.id} href={`/perfil/${p.id}`} className={styles.player}>
-            <span className={styles.avatar}>{p.initials}</span>
+            <PlayerAvatar id={p.id} name={p.name} size={28} />
             <span className={styles.playerName}>{p.name}</span>
             <span className={styles.playerStatus}>
               <span className={`${styles.dot} ${STATUS_DOT[p.status] ?? styles.dotMuted}`} />

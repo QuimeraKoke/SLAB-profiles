@@ -63,6 +63,19 @@ def _delta(last: dict, prev: dict | None) -> dict:
                   else None) for key, *_ in METRICS}
 
 
+def _bands(template, field_key: str, category: Category) -> list[dict]:
+    """The category's own reference bands (its BAND alert rule, e.g. the PF's
+    table per Sub) or else the field's — the same ones that fire alerts."""
+    if template is None:
+        return []
+    from dashboards import category_bands
+
+    fallback = next((f.get("reference_ranges") for f in (template.config_schema or {}).get("fields", [])
+                     if isinstance(f, dict) and f.get("key") == field_key), None)
+    with category_bands.scope(category.id):
+        return [b for b in category_bands.for_field(template, field_key, fallback) if isinstance(b, dict)]
+
+
 def composition(category: Category, *, player_id: str | None = None) -> dict:
     from api.scoping import players_in_category
     from load_control.wellness import _name
@@ -71,8 +84,9 @@ def composition(category: Category, *, player_id: str | None = None) -> dict:
                    .select_related("position").order_by("last_name", "first_name"))
     template = (ExamTemplate.objects.filter(department__club_id=category.club_id, slug=SLUG)
                 .order_by("-is_active_version").first())
-    metrics = [{"key": k, "label": label, "unit": unit, "decimals": dec, "direction": direction}
-               for k, _, label, unit, dec, direction in METRICS]
+    metrics = [{"key": k, "label": label, "unit": unit, "decimals": dec, "direction": direction,
+                "bands": _bands(template, field, category)}
+               for k, field, label, unit, dec, direction in METRICS]
     empty = {"metrics": metrics, "squad_keys": SQUAD_KEYS, "rows": [], "mean": {}, "player": None}
     if template is None or not players:
         return empty

@@ -336,6 +336,17 @@ class LoadControlApiTests(TestCase):
         self.assertEqual((body["mean"]["peso"], len(body["player"]["measurements"])), (71.0, 2))
         self.assertEqual(c.get("/api/load-control/composition", {"category_id": "00000000-0000-0000-0000-000000000000"}).status_code, 404)
 
+    def test_fotos_de_la_categoria(self):
+        self.player.photo_url = "https://cdn.example/ana.png"
+        self.player.save(update_fields=["photo_url"])
+        c = self.client_for("Lectura Formativo")
+        out = c.get("/api/load-control/photos", {"category_id": str(self.cat.id)})
+        self.assertEqual(out.status_code, 200)
+        self.assertEqual(out.json()["players"][str(self.player.id)],
+                         {"photo": "https://cdn.example/ana.png", "initials": "AS"})
+        self.assertEqual(c.get("/api/load-control/photos",
+                               {"category_id": "00000000-0000-0000-0000-000000000000"}).status_code, 404)
+
     # ── jugador ─────────────────────────────────────────────────────────
     def test_ficha_del_jugador_junta_todas_las_pestanas(self):
         r = self.create().json()

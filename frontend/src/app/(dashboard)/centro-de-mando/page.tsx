@@ -34,6 +34,7 @@ import type {
   WellnessRoleId,
 } from "@/components/command/types";
 import styles from "./page.module.css";
+import { PlayerName, PlayerPhotosProvider } from "@/components/loadControl/PlayerPhotos";
 
 export default function CommandCenterPage() {
   const { categoryId, categories, loading: catLoading } = useCategoryContext();
@@ -130,6 +131,7 @@ export default function CommandCenterPage() {
   if (!data) return <div className={styles.muted}>Cargando centro de mando…</div>;
 
   return (
+    <PlayerPhotosProvider categoryId={categoryId}>
     <div className={styles.page}>
       <header className={styles.header}>
         <div>
@@ -196,6 +198,7 @@ export default function CommandCenterPage() {
         </div>
       </div>}
     </div>
+    </PlayerPhotosProvider>
   );
 }
 
@@ -308,7 +311,7 @@ function AdhSection({
           <div className={styles.adhList}>
             {players.map((p) => (
               <a key={p.player_id} href={`/perfil/${p.player_id}`} className={styles.adhRow}>
-                <span className={styles.adhName}>{p.name}</span>
+                <span className={styles.adhName}><PlayerName id={p.player_id} name={p.name} size={22} /></span>
                 {p.position && <span className={styles.adhPos}>{p.position}</span>}
                 {p.injured && <span className={styles.adhChip}>lesionado</span>}
               </a>
