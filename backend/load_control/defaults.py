@@ -28,6 +28,11 @@ DEFAULTS: dict = {
     "band_ok_pct": 8,
     "band_mild_pct": 12,
     "symmetric": True,
+    # Resumen "para compensar / pasados" — the club's artifact rules: short =
+    # at least `short_min_metrics` metrics under −`band_ok_pct` %; over = any
+    # metric above +`over_pct` % for the week so far.
+    "short_min_metrics": 3,
+    "over_pct": 20,
     # Match reference: mean per position group of players with more than
     # `ref_min_minutes` of GPS, in official matches of the last N days.
     "ref_window_days": 28,
@@ -44,11 +49,29 @@ DEFAULTS: dict = {
     # club's codes (2026 season): next fits 84–88%, nearest 72–78% — neither is
     # what the staff always do, so it is the PF's call, not ours.
     "md_label_rule": "nearest",
+    # Check-in: an item at or below this (1–5, 5 = best) is "bienestar bajo".
+    # 2 = the club's own dashboard (1–2 red, 3 amber, 4–5 green).
+    "wellness_low": 2,
+    # Minutos y asistencia: a team session is a day with team GPS for at least
+    # this many players. Attendance under `attendance_low_pct` gets the red
+    # light — None (off) until the PF says what the club uses.
+    "session_min_players": 5,
+    "attendance_low_pct": None,
     # Sparring adds to the player's load; the team average may leave it out.
     "include_sparring": True,
     # Jump fatigue (slice 3+): best attempt, RSI drop thresholds in %.
     "attempt_value": "best",
     "rsi_alert": {"ok_from": 0, "grave_at": -5},
+    # Basal = mean of the player's last N PRE jumps (the MD+2 screen uses 5).
+    "jump_baseline_n": 5,
+    # The club's R-CMJ RSI levels (rebote / contacto), same for U15–U20.
+    "rsi_levels": [
+        {"label": "Deficiente", "max": 1.2},
+        {"label": "< Media", "max": 1.4},
+        {"label": "Media", "max": 1.8},
+        {"label": "> Media", "max": 2.1},
+        {"label": "Bueno", "max": None},
+    ],
     # The club's TIPO values (seen in the GPS sheet, 2026-11-03).
     "microcycle_kinds": ["mixta", "amplitud", "profundidad", "adaptacion", "competencia"],
     # Position groups. A row is placed by the POSICIÓN the club wrote on it

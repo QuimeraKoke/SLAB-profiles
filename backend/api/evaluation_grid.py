@@ -79,6 +79,7 @@ def build_evaluation_grid(category: Category) -> dict[str, Any]:
     # The latest reading of each field per player — per FIELD, not per result:
     # a session where the player skipped the CMJ still dated his last test.
     latest: dict[tuple[str, str], dict] = {}
+    previous: dict[tuple[str, str], dict] = {}
     ids = [p.id for p in players]
     by_template: dict[str, list[str]] = {}
     for _, cols in GRUPOS:
@@ -95,8 +96,15 @@ def build_evaluation_grid(category: Category) -> dict[str, Any]:
         for pid, when, data in rows:
             for key in keys:
                 v = _num((data or {}).get(key))
-                if v is not None and (str(pid), key) not in latest:
-                    latest[(str(pid), key)] = {"value": v, "date": when.date().isoformat()}
+                if v is None:
+                    continue
+                k, day = (str(pid), key), when.date().isoformat()
+                if k not in latest:
+                    latest[k] = {"value": v, "date": day}
+                elif k not in previous and day != latest[k]["date"]:
+                    # "vs su anterior" (question 8): the reading of the
+                    # evaluation before — another day, not a retry that day.
+                    previous[k] = {"value": v, "date": day}
 
     groups = []
     for name, cols in GRUPOS:
@@ -129,7 +137,16 @@ def build_evaluation_grid(category: Category) -> dict[str, Any]:
                 if hit is None:
                     continue
                 band = band_for_value(hit["value"], c["bands"])
+                prev = previous.get((str(p.id), c["key"]))
+                prev_band = band_for_value(prev["value"], c["bands"]) if prev else None
                 cells[c["key"]] = hit | {
+                    "prev": prev and prev | {
+                        "band": (prev_band or {}).get("label"),
+                        "level": band_rank(prev_band, c["bands"]) if prev_band else None,
+                    },
+                    "delta": round(hit["value"] - prev["value"], 3) if prev else None,
+                    "delta_pct": (round((hit["value"] - prev["value"]) / prev["value"] * 100, 1)
+                                  if prev and prev["value"] else None),
                     "band": (band or {}).get("label"),
                     "color": (band or {}).get("color"),
                     # 1 = Muy deficiente … 7 = Elite: tests in s, cm and kg

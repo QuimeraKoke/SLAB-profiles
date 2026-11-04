@@ -123,6 +123,13 @@ class FuenteXlsx:
             return []
         return [list(r) for r in self._abrir()[real].iter_rows(values_only=True)]
 
+    def precargar(self) -> None:
+        """Nothing to do: an .xlsx is read whole."""
+
+    def titulo(self) -> str:
+        import os
+        return os.path.splitext(os.path.basename(self.path))[0]
+
     def cerrar(self):
         if self._book is not None:
             self._book.close()
@@ -163,6 +170,16 @@ class FuenteSheets:
         if self._hojas is None:
             self._hojas = self._documento().worksheets()
         return self._hojas
+
+    def precargar(self) -> None:
+        """Read every tab in one request (`Documento.values_batch`) so the
+        following `filas()` calls cost nothing. For documents with dozens of
+        tabs; the date-column conversion is NOT applied to these grids (the
+        jump sheets have no date column)."""
+        self._cache.update(self._documento().values_batch(self.hojas()))
+
+    def titulo(self) -> str:
+        return self._documento().titulo()
 
     def filas(self, hoja: str) -> list[list[Any]]:
         from integrations.google_sheets import serial_to_date

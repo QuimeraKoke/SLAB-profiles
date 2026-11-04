@@ -181,6 +181,10 @@ export interface CCEvalCell {
   band: string | null;
   color: string | null;
   level: number | null;
+  /** The previous evaluation (another day) — "vs su anterior". */
+  prev: { value: number; date: string; band: string | null; level: number | null } | null;
+  delta: number | null;
+  delta_pct: number | null;
 }
 
 export interface CCEvaluationGrid {

@@ -147,7 +147,7 @@ class LoadControlApiTests(TestCase):
         self.create()
         r = self.create()
         self.assertEqual(r.status_code, 400)
-        self.assertIn("M41", r.json()["detail"])
+        self.assertIn("semana 41", r.json()["detail"])
 
     def test_un_tipo_desconocido_se_rechaza(self):
         self.assertEqual(self.create(kind="intensiva").status_code, 400)
@@ -271,3 +271,120 @@ class LoadControlApiTests(TestCase):
         out = self.put(r["id"], body).json()
         domingo = next(d for d in out["days"] if d["date"] == "2026-11-01")
         self.assertIsNone(domingo["event_id"])
+
+    # ── check-in / out ──────────────────────────────────────────────────
+    def test_lectura_ve_el_check_in_out(self):
+        r = self.create().json()
+        c = self.client_for("Lectura Formativo")
+        out = c.get(f"/api/load-control/microcycles/{r['id']}/wellness", {"day": "2026-10-27"})
+        self.assertEqual(out.status_code, 200)
+        body = out.json()
+        self.assertEqual(len(body["series"]), 7)
+        self.assertEqual([i["key"] for i in body["items"]][:2], ["calidad_sueno", "nivel_fatiga"])
+        self.assertIn("missing", body)
+
+    # ── kinesia y lesiones ──────────────────────────────────────────────
+    def test_lectura_ve_la_disponibilidad(self):
+        r = self.create().json()
+        c = self.client_for("Lectura Formativo")
+        out = c.get(f"/api/load-control/microcycles/{r['id']}/availability")
+        self.assertEqual(out.status_code, 200)
+        self.assertEqual([x["label"] for x in out.json()["counts"]],
+                         ["Lesionado", "Recuperación", "Return to Train", "Disponible"])
+
+    # ── minutos y asistencia ────────────────────────────────────────────
+    def test_lectura_ve_minutos_y_asistencia(self):
+        r = self.create().json()
+        c = self.client_for("Lectura Formativo")
+        for scope in ("microcycle", "season"):
+            out = c.get(f"/api/load-control/microcycles/{r['id']}/participation", {"scope": scope})
+            self.assertEqual(out.status_code, 200, scope)
+        self.assertEqual(c.get(f"/api/load-control/microcycles/{r['id']}/participation",
+                               {"scope": "anual"}).status_code, 400)
+
+    # ── fatiga post-partido ─────────────────────────────────────────────
+    def test_lectura_ve_la_fatiga_del_partido(self):
+        r = self.create().json()
+        salto = ExamTemplate.objects.create(department=self.dept, name="Salto", slug="control_salto",
+                                            config_schema={"fields": []})
+        ExamResult.objects.create(template=salto, player=self.player, recorded_at=aware(date(2026, 10, 31)),
+                                  result_data={"rsi_pre_best": 1.5, "rsi_post_best": 1.35, "equipo_hoja": "U20",
+                                               "rsi_metodo": "rebote / contacto", "hoja": "M41"})
+        c = self.client_for("Lectura Formativo")
+        url = f"/api/load-control/microcycles/{r['id']}/fatigue"
+        out = c.get(url, {"player_id": str(self.player.id)})
+        self.assertEqual(out.status_code, 200)
+        body = out.json()
+        self.assertEqual((body["match"]["date"], body["rows"][0]["golpe_pct"]), ("2026-10-31", -10.0))
+        self.assertEqual(body["trend"]["name"], body["rows"][0]["name"])
+        self.assertEqual(c.get(url, {"match_date": "2026-10-28"}).status_code, 400)
+
+    # ── composición corporal ────────────────────────────────────────────
+    def test_composicion_ultima_vs_anterior_y_promedio(self):
+        penta = ExamTemplate.objects.create(department=self.dept, name="Pentacompartimental",
+                                            slug="pentacompartimental", config_schema={"fields": []})
+        for d, peso, mmp in ((date(2026, 3, 1), 70.0, 50.0), (date(2026, 6, 1), 71.0, 51.5)):
+            ExamResult.objects.create(template=penta, player=self.player, recorded_at=aware(d, 12),
+                                      result_data={"peso": peso, "masa_muscular_pct": mmp, "suma_pliegues": 40})
+        c = self.client_for("Lectura Formativo")
+        out = c.get("/api/load-control/composition", {"category_id": str(self.cat.id), "player_id": str(self.player.id)})
+        self.assertEqual(out.status_code, 200)
+        body = out.json()
+        row = body["rows"][0]
+        self.assertEqual((row["last"]["date"], row["prev_date"], row["delta"]["mmp"], row["delta"]["pl"]),
+                         ("2026-06-01", "2026-03-01", 1.5, 0.0))
+        self.assertEqual((body["mean"]["peso"], len(body["player"]["measurements"])), (71.0, 2))
+        self.assertEqual(c.get("/api/load-control/composition", {"category_id": "00000000-0000-0000-0000-000000000000"}).status_code, 404)
+
+    # ── jugador ─────────────────────────────────────────────────────────
+    def test_ficha_del_jugador_junta_todas_las_pestanas(self):
+        r = self.create().json()
+        c = self.client_for("Lectura Formativo")
+        roster = c.get(f"/api/load-control/microcycles/{r['id']}/players").json()
+        self.assertIn(str(self.player.id), [x["player_id"] for x in roster])
+        out = c.get(f"/api/load-control/microcycles/{r['id']}/players/{self.player.id}")
+        self.assertEqual(out.status_code, 200)
+        body = out.json()
+        self.assertEqual(set(body), {"player", "load", "wellness", "fatigue", "minutes", "status",
+                                     "evaluations", "composition"})
+        self.assertEqual(len(body["load"]["days"]), 7)
+        self.assertEqual(c.get(f"/api/load-control/microcycles/{r['id']}/players/"
+                               "00000000-0000-0000-0000-000000000000").status_code, 400)
+
+    # ── resumen ─────────────────────────────────────────────────────────
+    def test_resumen_frase_tarjetas_y_para_revisar(self):
+        r = self.create().json()
+        c = self.client_for("Lectura Formativo")
+        out = c.get(f"/api/load-control/microcycles/{r['id']}/summary")
+        self.assertEqual(out.status_code, 200)
+        body = out.json()
+        self.assertTrue(body["sentence"].endswith("."))
+        self.assertEqual(set(body["cards"]), {"load", "fatigue", "wellness", "availability", "participation"})
+        self.assertIsInstance(body["review"], list)
+
+    # ── navegación por día (Centro de mando) ────────────────────────────
+    def test_cualquier_dia_abre_su_semana_aunque_no_este_planificada(self):
+        c = self.client_for("Lectura Formativo")
+        nav = c.get("/api/load-control/day", {"category_id": str(self.cat.id), "day": "2026-10-28"})
+        self.assertEqual(nav.status_code, 200)
+        body = nav.json()
+        self.assertEqual((body["start_date"], body["end_date"], body["planned"], body["microcycle_id"]),
+                         ("2026-10-26", "2026-11-01", False, None))
+        key = body["week_key"]
+        for path in ("summary", "wellness", "availability", "participation", "fatigue", "players"):
+            self.assertEqual(c.get(f"/api/load-control/microcycles/{key}/{path}").status_code, 200, path)
+        detail = c.get(f"/api/load-control/microcycles/{key}").json()
+        self.assertEqual(len(detail["days"]), 7)
+        ev = c.get(f"/api/load-control/microcycles/{key}/evaluation").json()
+        self.assertFalse(ev["provenance"]["planned"], "sin plan no hay objetivo")
+        self.assertTrue(all(cell["target"] is None for p in ev["players"] for cell in p["cells"].values()))
+
+    def test_un_dia_de_una_semana_planificada_usa_su_plan(self):
+        r = self.create().json()
+        c = self.client_for("Lectura Formativo")
+        body = c.get("/api/load-control/day", {"category_id": str(self.cat.id), "day": r["start_date"]}).json()
+        self.assertEqual((body["planned"], body["microcycle_id"]), (True, r["id"]))
+
+    def test_la_semana_va_de_lunes_a_domingo(self):
+        self.assertEqual(self.create(start_date="2026-10-27", end_date="2026-11-02").status_code, 400)
+        self.assertEqual(self.create(end_date="2026-10-30").status_code, 400)

@@ -46,7 +46,7 @@ export default function NewMicrocycleModal({ open, categoryId, season, teamLabel
         setS(d); setNumber(String(d.number)); setKind(d.kind); setDays(d.days);
         setCopyFrom(d.copy_from?.id ?? ""); setError(null);
       })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "No se pudo preparar el microciclo."));
+      .catch((e) => setError(e instanceof ApiError ? e.message : "No se pudo preparar la semana."));
   };
 
   useEffect(() => {
@@ -59,7 +59,7 @@ export default function NewMicrocycleModal({ open, categoryId, season, teamLabel
         setS(d); setNumber(String(d.number)); setKind(d.kind); setDays(d.days);
         setCopyFrom(d.copy_from?.id ?? ""); setError(null);
       })
-      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudo preparar el microciclo."); });
+      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudo preparar la semana."); });
     return () => { cancelled = true; };
   }, [open, categoryId, season]);
 
@@ -69,7 +69,7 @@ export default function NewMicrocycleModal({ open, categoryId, season, teamLabel
     e.preventDefault();
     if (!s) return;
     if (numberInvalid) {
-      setError("El número de microciclo debe ser un entero mayor que 0.");
+      setError("El número de semana debe ser un entero mayor que 0.");
       numberRef.current?.focus();
       return;
     }
@@ -85,7 +85,7 @@ export default function NewMicrocycleModal({ open, categoryId, season, teamLabel
       });
       onCreated(mc);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo crear el microciclo.");
+      setError(err instanceof ApiError ? err.message : "No se pudo crear la semana.");
       errorRef.current?.focus();
     } finally {
       setSaving(false);
@@ -93,19 +93,19 @@ export default function NewMicrocycleModal({ open, categoryId, season, teamLabel
   };
 
   return (
-    <Modal open={open} title={`Nuevo microciclo · ${teamLabel}`} onClose={onClose}>
+    <Modal open={open} title={`Nueva semana · ${teamLabel}`} onClose={onClose}>
       {!s && !error && <p className={styles.muted}>Preparando…</p>}
       {error && <div ref={errorRef} tabIndex={-1} id="lc-new-error" role="alert" className={styles.error}>{error}</div>}
       {s && (
         <form className={styles.form} onSubmit={create} noValidate>
           <div className={styles.formRow}>
             <label className={styles.label}>
-              Semana desde
+              Semana (lunes)
               <input type="date" className={styles.textInput} value={s.start_date}
                 onChange={(e) => e.target.value && load(e.target.value)} />
             </label>
             <label className={styles.label}>
-              N° (MICRO)
+              N° de semana
               <input ref={numberRef} className={styles.textInput} inputMode="numeric" value={number}
                 aria-invalid={numberInvalid || undefined}
                 aria-describedby={numberInvalid && error ? "lc-new-error" : undefined}
@@ -122,7 +122,7 @@ export default function NewMicrocycleModal({ open, categoryId, season, teamLabel
               Copiar % de
               <select className={styles.select} value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)}>
                 <option value="">No copiar</option>
-                {microcycles.map((m) => <option key={m.id} value={m.id}>M{m.number} · {shortDate(m.start_date)}</option>)}
+                {microcycles.map((m) => <option key={m.id} value={m.id}>Semana {m.number} · {shortDate(m.start_date)}</option>)}
               </select>
             </label>
           </div>
@@ -143,7 +143,7 @@ export default function NewMicrocycleModal({ open, categoryId, season, teamLabel
           </div>
           <div className={styles.formActions}>
             <button type="button" className={styles.secondary} onClick={onClose}>Cancelar</button>
-            <button type="submit" className={styles.primary} disabled={saving}>{saving ? "Creando…" : "Crear microciclo"}</button>
+            <button type="submit" className={styles.primary} disabled={saving}>{saving ? "Creando…" : "Crear semana"}</button>
           </div>
         </form>
       )}

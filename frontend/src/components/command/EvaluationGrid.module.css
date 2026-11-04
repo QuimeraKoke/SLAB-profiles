@@ -300,3 +300,7 @@
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
+.delta { display: block; font-size: 0.68rem; font-weight: 600; color: #667085; white-space: nowrap; margin-top: 1px; }
+.delta_good { color: #067647; }
+.delta_bad { color: #b42318; }
+.levelChange { font-weight: 500; }

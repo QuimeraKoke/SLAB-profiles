@@ -22,6 +22,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowDown, ArrowUp, ArrowUpDown, Gauge } from "lucide-react";
 
 import { api } from "@/lib/api";
+import { deltaTone, deltaToneTitle } from "@/lib/deltaTone";
 import type { CCEvalCell, CCEvalColumn, CCEvalScore, CCEvaluationGrid } from "./types";
 import styles from "./EvaluationGrid.module.css";
 
@@ -200,7 +201,7 @@ export default function EvaluationGrid({ categoryId }: { categoryId: string }) {
                     <Score score={r.overall} band={legendFor(r.overall)} strong />
                   </>
                 ) : data.groups.map((g) => g.columns.map((c, i) => (
-                  <Cell key={c.key} cell={r.cells[c.key]} now={now} first={i === 0} unit={c.unit} />
+                  <Cell key={c.key} cell={r.cells[c.key]} now={now} first={i === 0} unit={c.unit} direction={c.direction} />
                 )))}
               </tr>
             ))}
@@ -281,11 +282,12 @@ function Score({ score, band, strong }: {
   );
 }
 
-function Cell({ cell, now, first, unit }: {
+function Cell({ cell, now, first, unit, direction }: {
   cell: CCEvalCell | undefined;
   now: number;
   first: boolean;
   unit: string;
+  direction: string;
 }) {
   const cls = `${styles.cell} ${first ? styles.groupStart : ""}`;
   if (!cell) {
@@ -293,7 +295,10 @@ function Cell({ cell, now, first, unit }: {
   }
   const dias = (now - new Date(cell.date).getTime()) / 86_400_000;
   const vieja = dias > DIAS_VIGENTE;
-  const titulo = `${cell.band ?? "Sin banda"} · ${fmtFecha(cell.date)}`;
+  const prev = cell.prev;
+  const tone = deltaTone(cell.delta, direction);
+  const titulo = `${cell.band ?? "Sin banda"} · ${fmtFecha(cell.date)}`
+    + (prev ? ` · anterior ${fmt(prev.value)} (${prev.band ?? "sin banda"}, ${fmtFecha(prev.date)})` : " · sin evaluación anterior");
   return (
     <td className={cls} title={titulo}>
       <span className={`${styles.value} ${vieja ? styles.stale : ""}`}>
@@ -302,6 +307,15 @@ function Cell({ cell, now, first, unit }: {
         {fmt(cell.value)}
         <span className={styles.srOnly}>{` ${unit}, ${titulo}`}</span>
       </span>
+      {prev && cell.delta !== null && (
+        <span className={`${styles.delta} ${styles[`delta_${tone}`] ?? ""}`} title={deltaToneTitle(tone)}>
+          {cell.delta > 0 ? "▲" : cell.delta < 0 ? "▼" : "="}
+          {cell.delta_pct !== null && cell.delta !== 0 ? ` ${Math.abs(cell.delta_pct).toLocaleString("es-CL")}%` : ""}
+          {prev.level !== null && cell.level !== null && prev.level !== cell.level && (
+            <span className={styles.levelChange}>{cell.level > prev.level ? " sube de banda" : " baja de banda"}</span>
+          )}
+        </span>
+      )}
     </td>
   );
 }

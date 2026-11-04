@@ -48,7 +48,7 @@ export default function EvaluationView({ microcycleId, day, sparring, matches, o
     let cancelled = false;
     api<McDetail>(`/load-control/microcycles/${microcycleId}`)
       .then((d) => { if (!cancelled) setDetail(d); })
-      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudo cargar el microciclo."); });
+      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudo cargar la semana."); });
     return () => { cancelled = true; };
   }, [microcycleId]);
 
@@ -105,8 +105,8 @@ export default function EvaluationView({ microcycleId, day, sparring, matches, o
   const players = showAll ? data.players : data.players.slice(0, 12);
   const pv = data.provenance;
   const whenText = isAcc
-    ? `acumulado de M${pv.microcycle} (${data.days.length} día${data.days.length === 1 ? "" : "s"}${matches ? ", con partido" : ", sin partido"})`
-    : `M${pv.microcycle} · ${shortDate(data.day!)} (${data.days[0]?.md_label || "—"})`;
+    ? `acumulado de la semana ${pv.microcycle} (${data.days.length} día${data.days.length === 1 ? "" : "s"}${matches ? ", con partido" : ", sin partido"})`
+    : `semana ${pv.microcycle} · ${shortDate(data.day!)} (${data.days[0]?.md_label || "—"})`;
 
   return (
     <>
@@ -123,7 +123,7 @@ export default function EvaluationView({ microcycleId, day, sparring, matches, o
             {detail.days.filter((d) => d.kind !== "rest").map((d) => (
               <option key={d.date} value={d.date}>{d.weekday} {shortDate(d.date)} · {d.md_label || "—"}</option>
             ))}
-            <option value={ACC}>Acumulado del microciclo</option>
+            <option value={ACC}>Acumulado de la semana</option>
           </select>
         </label>
         <button type="button" className={styles.secondary} disabled={!nextDay}
@@ -216,7 +216,7 @@ export default function EvaluationView({ microcycleId, day, sparring, matches, o
         Datos usados: {whenText} · {pv.players} jugadores con GPS
         {pv.include_sparring ? `, sparring sumado (${pv.players_with_sparring} jugadores)` : ", sin sparring"}
         {pv.duplicates_dropped ? ` · ${pv.duplicates_dropped} filas duplicadas de la planilla contadas una vez` : ""}
-        {" · "}objetivo = referencia de partido {pv.reference_frozen ? "fija (microciclo publicado)" : "(vista previa: el microciclo no está publicado)"}
+        {" · "}objetivo = referencia de partido {pv.reference_frozen ? "fija (semana publicada)" : "(vista previa: la semana no está publicada)"}
         {pv.reference_window ? ` del ${shortDate(pv.reference_window.start)} al ${shortDate(pv.reference_window.end)}` : ""} × % del plan
         {pv.fallback_groups.length ? ` · ${pv.fallback_groups.join(", ")} usa el promedio del equipo` : ""}
         {isAcc ? " · cada jugador se compara sólo en los días con GPS" : ""}.

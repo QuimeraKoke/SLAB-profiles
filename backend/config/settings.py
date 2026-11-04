@@ -237,6 +237,9 @@ WELLNESS_CATEGORY = env("WELLNESS_CATEGORY", default="Primer Equipo")
 # sync no-ops, so the schedule is safe to ship before the club shares a
 # document.
 FORMATIVO_GPS_SHEET_ID = env("FORMATIVO_GPS_SHEET_ID", default="")
+# The club's jump-control sheets (one Google Sheet per team, U11…U20),
+# comma-separated ids. Read by `import_formativo_saltos`.
+FORMATIVO_SALTOS_SHEET_IDS = [x.strip() for x in env("FORMATIVO_SALTOS_SHEET_IDS", default="").split(",") if x.strip()]
 FORMATIVO_EVAL_SHEET_ID = env("FORMATIVO_EVAL_SHEET_ID", default="")
 FORMATIVO_CLUB = env("FORMATIVO_CLUB", default="Universidad de Chile")
 

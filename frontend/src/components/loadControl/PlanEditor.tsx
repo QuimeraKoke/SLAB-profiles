@@ -77,7 +77,7 @@ export default function PlanEditor({ microcycleId, canEdit, onChanged }: Props) 
     let cancelled = false;
     api<McDetail>(`/load-control/microcycles/${microcycleId}`)
       .then((d) => { if (!cancelled) { show(d); setError(null); } })
-      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudo cargar el microciclo."); });
+      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudo cargar la semana."); });
     return () => { cancelled = true; };
   }, [microcycleId, show]);
 
@@ -97,7 +97,7 @@ export default function PlanEditor({ microcycleId, canEdit, onChanged }: Props) 
     [detail, draft]);
 
   if (error) return <div className={styles.error} role="alert">{error}</div>;
-  if (!detail || !draft) return <p className={styles.muted}>Cargando microciclo…</p>;
+  if (!detail || !draft) return <p className={styles.muted}>Cargando semana…</p>;
 
   const ref = detail.reference;
   const changed = detail.changed_vs_copy;
@@ -142,7 +142,7 @@ export default function PlanEditor({ microcycleId, canEdit, onChanged }: Props) 
         method: "PUT", body: JSON.stringify(body),
       });
       show(out);
-      toast.success(`M${out.number} guardado.`);
+      toast.success(`Semana ${out.number} guardada.`);
       onChanged();
     } catch (e) {
       setSaveError(e instanceof ApiError ? e.message : "No se pudo guardar el plan.");
@@ -154,7 +154,7 @@ export default function PlanEditor({ microcycleId, canEdit, onChanged }: Props) 
 
   const open = async () => {
     const ok = await confirm({
-      title: `¿Publicar M${detail.number}?`,
+      title: `¿Publicar la semana ${detail.number}?`,
       message: "Al publicar, la referencia de partido queda fija con los datos de hoy: los partidos que se jueguen después no la cambian. Los % se pueden seguir editando. No se puede volver a borrador.",
       confirmLabel: "Publicar",
     });
@@ -162,10 +162,10 @@ export default function PlanEditor({ microcycleId, canEdit, onChanged }: Props) 
     try {
       const out = await api<McDetail>(`/load-control/microcycles/${detail.id}/open`, { method: "POST" });
       show(out);
-      toast.success(`M${out.number} publicado: la referencia quedó fija.`);
+      toast.success(`Semana ${out.number} publicada: la referencia quedó fija.`);
       onChanged();
     } catch (e) {
-      toast.error(e instanceof ApiError ? e.message : "No se pudo publicar el microciclo.");
+      toast.error(e instanceof ApiError ? e.message : "No se pudo publicar la semana.");
     }
   };
 
@@ -176,7 +176,7 @@ export default function PlanEditor({ microcycleId, canEdit, onChanged }: Props) 
       <section className={styles.card} aria-labelledby="lc-dias">
         <div className={styles.cardHead}>
           <h2 id="lc-dias" className={styles.h2}>
-            Días de M{detail.number} · {shortDate(detail.start_date)} – {shortDate(detail.end_date)}
+            Semana {detail.number} · {shortDate(detail.start_date)} – {shortDate(detail.end_date)}
           </h2>
           <span className={`${styles.badge} ${styles[`badge_${detail.status}`]}`}>{STATUS_LABEL[detail.status]}</span>
         </div>
@@ -213,7 +213,7 @@ export default function PlanEditor({ microcycleId, canEdit, onChanged }: Props) 
           })}
         </div>
         <label className={styles.label} style={{ maxWidth: 220 }}>
-          Tipo de microciclo
+          Tipo de semana
           <select className={styles.select} value={draft.kind} disabled={!editable}
             onChange={(e) => setDraft({ ...draft, kind: e.target.value })}>
             <option value="">Sin tipo</option>
@@ -226,7 +226,7 @@ export default function PlanEditor({ microcycleId, canEdit, onChanged }: Props) 
         <div className={styles.cardHead}>
           <h2 id="lc-ref" className={styles.h2}>Referencia de partido (100%)</h2>
           <span className={styles.muted}>
-            {ref.preview ? "Vista previa: queda fija al publicar el microciclo"
+            {ref.preview ? "Vista previa: queda fija al publicar la semana"
               : `Fija desde el ${detail.frozen_at ? shortDate(detail.frozen_at.slice(0, 10)) : ""}`}
           </span>
         </div>
@@ -270,7 +270,7 @@ export default function PlanEditor({ microcycleId, canEdit, onChanged }: Props) 
           <h2 id="lc-plan" className={styles.h2}>% de la referencia por día y métrica</h2>
           {detail.copied_from && (
             <span className={styles.muted}>
-              Copiado de M{detail.copied_from.number}
+              Copiado de la semana {detail.copied_from.number}
               {Object.keys(changed).length > 0 && ` · las celdas con borde violeta cambiaron`}
             </span>
           )}

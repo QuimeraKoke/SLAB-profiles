@@ -99,6 +99,23 @@ class Documento:
         except Exception as exc:
             raise GoogleSheetsError(f"No se pudieron listar las hojas: {exc}")
 
+    def values_batch(self, worksheets: list[str]) -> dict[str, list[list[Any]]]:
+        """Several worksheets' raw grids in ONE request (unformatted).
+
+        A document with a tab per microcycle (the club's jump sheets: ~48 tabs
+        each, eight documents) read tab by tab is ~400 requests against a quota
+        of 60/minute shared with the production syncs; batched it is one per
+        document."""
+        if not worksheets:
+            return {}
+        try:
+            ranges = ["'" + w.replace("'", "''") + "'" for w in worksheets]
+            res = self._sheet.values_batch_get(
+                ranges, params={"valueRenderOption": "UNFORMATTED_VALUE"})
+            return {w: vr.get("values", []) for w, vr in zip(worksheets, res.get("valueRanges", []))}
+        except Exception as exc:
+            raise GoogleSheetsError(f"No se pudieron leer las hojas: {exc}")
+
     def values(self, worksheet: str) -> list[list[Any]]:
         """Raw grid, unformatted. See `fetch_values` for why unformatted."""
         try:

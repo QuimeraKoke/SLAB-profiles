@@ -21,6 +21,11 @@ import SquadStatus from "@/components/command/SquadStatus";
 import DecisionTable from "@/components/command/DecisionTable";
 import EvaluationGrid from "@/components/command/EvaluationGrid";
 import WellnessRoleTabs, { ROLE_LABEL } from "@/components/command/WellnessRoleTabs";
+import FormativoPanels, {
+  DayNavBar, FORMATIVO_QUESTION, FORMATIVO_TABS, isWeekly,
+} from "@/components/loadControl/FormativoPanels";
+import ProfileTabs, { panelIdFor } from "@/components/perfil/ProfileTabs/ProfileTabs";
+import type { DayNav } from "@/lib/loadControl";
 import type {
   CommandCenter,
   CCDataQualityRow,
@@ -55,6 +60,48 @@ export default function CommandCenterPage() {
     },
     [params, pathname, router],
   );
+
+  // Formativo (a category that competes in a bracket): the club's panels as
+  // tabs, read day by day. `/load-control/day` 404s elsewhere (Primer Equipo),
+  // and the page stays as it was.
+  const [today] = useState(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  });
+  const dayParam = params.get("dia") ?? today;
+  const [nav, setNav] = useState<DayNav | null>(null);
+  const tabs = useMemo(() => (nav ? [{ id: "general", label: "Centro de mando" }, ...FORMATIVO_TABS] : []), [nav]);
+  const tab = tabs.some((t) => t.id === params.get("tab")) ? params.get("tab")! : "general";
+  const setUrl = useMemo(
+    () => (changes: Record<string, string | null>) => {
+      const next = new URLSearchParams(params.toString());
+      for (const [k, v] of Object.entries(changes)) {
+        if (v) next.set(k, v); else next.delete(k);
+      }
+      const qs = next.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [params, pathname, router],
+  );
+  // Carga GPS lives in Control de carga (the plan): link there, same week/day.
+  const goTab = (t: string, extra?: Record<string, string | null>) => {
+    if (t === "carga") {
+      const sp = new URLSearchParams({ tab: "carga" });
+      if (nav?.microcycle_id) { sp.set("mc", nav.microcycle_id); sp.set("dia", nav.day); }
+      router.push(`/control-carga?${sp}`);
+      return;
+    }
+    setUrl({ tab: t, ...(extra ?? {}) });
+  };
+
+  useEffect(() => {
+    if (!categoryId) return;
+    let cancelled = false;
+    api<DayNav>(`/load-control/day?category_id=${categoryId}&day=${dayParam}`)
+      .then((n) => { if (!cancelled) setNav(n); })
+      .catch(() => { if (!cancelled) setNav(null); });
+    return () => { cancelled = true; };
+  }, [categoryId, dayParam]);
 
   useEffect(() => {
     if (!categoryId) return;
@@ -95,7 +142,20 @@ export default function CommandCenterPage() {
         </span>
       </header>
 
-      <div className={styles.stack}>
+      {nav && (
+        <ProfileTabs tabs={tabs} activeTab={tab} onTabChange={(t) => setUrl({ tab: t === "general" ? null : t })} />
+      )}
+      {nav && tab !== "general" && categoryId && (
+        <div role="tabpanel" id={panelIdFor(tab)} aria-labelledby={`tab-${tab}`} className={styles.stack}>
+          <p className={styles.sub}>
+            {FORMATIVO_QUESTION[tab]} <span className={styles.muted}>· {nav.team.label} {nav.team.season} · {nav.team.categories.join(" + ")}</span>
+          </p>
+          {isWeekly(tab) && <DayNavBar nav={nav} today={today} onDay={(d) => setUrl({ dia: d === today ? null : d })} />}
+          <FormativoPanels tab={tab} nav={nav} categoryId={categoryId} params={params} setUrl={setUrl} goTab={goTab} />
+        </div>
+      )}
+
+      {(!nav || tab === "general") && <div className={styles.stack}>
         {/* Full-width hero + KPI strip across the whole canvas. */}
         <Hero context={data.context} />
         <KpiStrip
@@ -107,9 +167,9 @@ export default function CommandCenterPage() {
         />
 
         {/* Formativo: every player's last physical test against the
-            category's bands. Renders nothing where there are no bands
-            (Primer Equipo). */}
-        <EvaluationGrid categoryId={categoryId} />
+            category's bands — in its own tab when the formativo panels are
+            on. Renders nothing where there are no bands (Primer Equipo). */}
+        {!nav && <EvaluationGrid categoryId={categoryId} />}
 
         {/* Below: main column + rail (Estado del plantel moved down here). */}
         <div className={styles.grid}>
@@ -134,7 +194,7 @@ export default function CommandCenterPage() {
             <RecentActivity items={data.recent} />
           </aside>
         </div>
-      </div>
+      </div>}
     </div>
   );
 }

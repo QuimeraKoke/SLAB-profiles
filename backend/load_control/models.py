@@ -162,10 +162,35 @@ class MicrocycleDay(models.Model):
     def clean(self):
         mc = self.microcycle
         if mc and not (mc.start_date <= self.date <= mc.end_date):
-            raise ValidationError({"date": "El día está fuera del microciclo."})
+            raise ValidationError({"date": "El día está fuera de la semana."})
         if self.kind != self.KIND_TRAINING and self.targets_pct:
             raise ValidationError(
                 {"targets_pct": "Sólo un día de entrenamiento lleva % (el partido vale 100%)."})
         for key, value in (self.targets_pct or {}).items():
             if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0 <= value <= 200:
                 raise ValidationError({"targets_pct": f"{key}: % inválido ({value!r})."})
+
+
+class JumpTabMatch(models.Model):
+    """Which match a tab of the club's jump sheets belongs to.
+
+    The tabs carry no date (PLAN_CONTROL_CARGA.md, «Fuente de saltos»). The
+    importer proposes one by aligning tabs to matches in order ("un microciclo
+    = el período entre dos partidos"); the club reviews that table and its
+    answer is stored here, ALL rows — accepted ones too — so a later alignment
+    never moves a date the staff already looked at. `match_date` empty = the
+    tab is not a match (the staff wrote "NO")."""
+
+    club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="+")
+    team = models.CharField(max_length=8, help_text="The sheet's team label: U20, U18…")
+    season = models.PositiveIntegerField()
+    tab = models.CharField(max_length=64)
+    match_date = models.DateField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["club", "team", "season", "tab"],
+                                               name="uniq_jump_tab_match")]
+
+    def __str__(self) -> str:
+        return f"{self.team} {self.season} · {self.tab} → {self.match_date or 'no es partido'}"

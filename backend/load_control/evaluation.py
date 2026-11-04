@@ -28,6 +28,7 @@ from django.utils import timezone
 
 from dashboards.team_scope import season_rows
 from exams.models import ExamResult
+from load_control.week import days_of
 from load_control.defaults import GroupResolver
 from load_control.models import LoadControlConfig, Microcycle, MicrocycleDay
 from load_control.reference import compute_reference, day_targets
@@ -120,9 +121,9 @@ def evaluate(mc: Microcycle, *, day: date | None = None, include_sparring: bool 
     include_sparring = cfg["include_sparring"] if include_sparring is None else include_sparring
     metrics = [m["key"] for m in cfg["metrics"]]
     resolver = GroupResolver(cfg)
-    days = {d.date: d for d in mc.days.all()}
+    days = {d.date: d for d in days_of(mc)}
     if day is not None and day not in days:
-        raise ValueError("El día no pertenece al microciclo.")
+        raise ValueError("El día no pertenece a la semana.")
 
     def counted(d: MicrocycleDay) -> bool:
         if d.kind == MicrocycleDay.KIND_REST:
@@ -136,7 +137,10 @@ def evaluate(mc: Microcycle, *, day: date | None = None, include_sparring: bool 
     # A draft is evaluated against the reference it WOULD freeze.
     holder = mc if mc.is_frozen else Microcycle(ref_snapshot=compute_reference(
         club=mc.club, bracket=mc.bracket, anchor=mc.start_date, cfg=cfg))
-    targets = {d: day_targets(holder, days[d]) for d in window}
+    # An unplanned week (`load_control.week`) has no targets: the plan is what
+    # sets them. Its load is shown as real only.
+    planned = getattr(mc, "_week_days", None) is None
+    targets = {d: (day_targets(holder, days[d]) if planned else {}) for d in window}
 
     players: dict = {}
     for (pid, d), row in data.items():
@@ -213,7 +217,7 @@ def evaluate(mc: Microcycle, *, day: date | None = None, include_sparring: bool 
             "players": len(out_players),
             "players_with_sparring": sum(1 for x in out_players if x["sparring"]),
             "duplicates_dropped": dropped,
-            "reference_frozen": mc.is_frozen,
+            "reference_frozen": mc.is_frozen, "planned": planned,
             "reference_window": (holder.ref_snapshot or {}).get("window"),
             "fallback_groups": sorted(c for c, g in ((holder.ref_snapshot or {}).get("groups") or {}).items()
                                       if g.get("fallback")),

@@ -17,7 +17,7 @@ def open_microcycle(microcycle: Microcycle, *, now=None) -> Microcycle:
     targets of this one, so the evaluation of a closed week stays the one the
     staff saw (PLAN_CONTROL_CARGA.md §4.0, "congelamiento")."""
     if microcycle.status != Microcycle.STATUS_DRAFT:
-        raise ValidationError("Sólo un microciclo en borrador se puede publicar.")
+        raise ValidationError("Sólo una semana en borrador se puede publicar.")
     cfg = LoadControlConfig.resolved(microcycle.club, microcycle.bracket)
     microcycle.ref_snapshot = compute_reference(
         club=microcycle.club, bracket=microcycle.bracket,

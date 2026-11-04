@@ -80,6 +80,16 @@ class EvaluationGridTests(TestCase):
         self.assertEqual(ana["groups"]["Neuromuscular"], {"value": 3.0, "n": 1})
         self.assertEqual(beto["overall"], {"value": 1.0, "n": 1})
 
+    def test_compara_con_su_evaluacion_anterior_de_otro_dia(self):
+        def r(d, h, v):
+            ExamResult.objects.create(template=self.neuro, player=self.b, result_data={"cmj_best": v},
+                                      recorded_at=timezone.make_aware(datetime(2026, 10, d, h)))
+        r(10, 10, 47.0)
+        r(10, 11, 46.0)                           # otro intento el mismo día: no es "la anterior"
+        cell = next(x for x in build_evaluation_grid(self.cat)["rows"] if x["name"] == "Beto B")["cells"]["cmj_best"]
+        self.assertEqual((cell["value"], cell["prev"]["value"], cell["prev"]["date"]), (46.0, 33.5, "2026-09-05"))
+        self.assertEqual((cell["delta"], cell["delta_pct"], cell["prev"]["band"]), (12.5, 37.3, "Muy Deficiente"))
+
     def test_sin_bandas_no_hay_tabla(self):
         self.assertEqual(build_evaluation_grid(self.primer),
                          {"groups": [], "rows": [], "legend": []})

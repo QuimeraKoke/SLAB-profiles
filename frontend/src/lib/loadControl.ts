@@ -130,6 +130,8 @@ export interface Evaluation {
     microcycle: number; include_sparring: boolean; include_matches: boolean; players: number;
     players_with_sparring: number; duplicates_dropped: number; reference_frozen: boolean;
     reference_window: { start: string; end: string } | null; fallback_groups: string[];
+    /** False for a calendar week with no plan: no targets. */
+    planned?: boolean;
   };
 }
 
@@ -143,3 +145,149 @@ export function signedPct(p: number | null): string {
 
 /** "bajo" / "sobre" — the direction in words, since colour never carries it alone. */
 export const direction = (p: number | null) => (p == null ? "" : p < 0 ? "bajo" : p > 0 ? "sobre" : "");
+
+// ── Check-in / out (Bienestar tab) — backend `load_control/wellness.py` ────────
+export interface WellnessItem { key: string; label: string }
+export interface WellnessDay {
+  date: string; checkin_n: number; checkout_n: number; players: number;
+  [item: string]: number | string | null;
+}
+export interface WellnessRow {
+  player_id: string; name: string; checkin: boolean; checkout: boolean;
+  scores: Record<string, number | null>; total_bienestar: number | null;
+  duracion_min: number | null; rpe: number | null; ua: number | null; peso: number | null;
+  /** Body zones from `dolor_muscular` / `molestia_post`. */
+  pain: string[];
+  /** Illness from `sintomas` (fiebre, resfriado…) — not pain. */
+  symptoms: string[];
+}
+export interface WellnessFlag extends WellnessRow { lows: { key: string; value: number }[]; severity: number }
+export interface WellnessPayload {
+  items: WellnessItem[]; low: number; series: WellnessDay[]; players: number; day: string | null;
+  rows?: WellnessRow[]; flagged?: WellnessFlag[]; missing?: { player_id: string; name: string }[];
+  answered?: { checkin: number; checkout: number };
+}
+
+/** 1–5 wellness score → band, as the club's dashboard colours it. */
+export function scoreBand(v: number | null, low: number): "ok" | "leve" | "grave" | null {
+  if (v == null) return null;
+  return v <= low ? "grave" : v < 4 ? "leve" : "ok";
+}
+
+// ── Kinesia y lesiones — backend `load_control/availability.py` ────────────────
+export type PlayerStatus = "injured" | "recovery" | "reintegration" | "available";
+export interface AvailabilityRow {
+  player_id: string; name: string; position: string; status: PlayerStatus; status_label: string;
+  episode: {
+    id: string; title: string; stage_label: string; severity: string | null; body_part: string | null;
+    diagnosed_at: string; days_out: number; available_at: string | null;
+    expected_return: string | null; days_to_return: number | null;
+  } | null;
+}
+export interface InjuryHistoryRow {
+  episode_id: string; player_id: string; name: string; title: string; body_part: string | null;
+  severity: string | null; started: string; returned: string | null; days_out: number | null;
+}
+export interface AvailabilityPayload {
+  date: string; players: number;
+  counts: { status: PlayerStatus; label: string; n: number }[];
+  unavailable: AvailabilityRow[];
+  history: InjuryHistoryRow[];
+}
+
+// ── Minutos y asistencia — backend `load_control/participation.py` ─────────────
+export interface ParticipationMatch { date: string; event_id: string | null; source: "comet" | "gps"; opponent: string | null }
+export interface ParticipationRow {
+  player_id: string; name: string; status: PlayerStatus; status_label: string;
+  matches: ({ minutes: number; starter: boolean | null } | null)[];
+  minutes: number; minutes_pct: number | null; called_up: number; starts: number;
+  sessions_attended: number; attendance_pct: number | null; attendance_low: boolean;
+  /** Sessions counted by training GPS, and those counted only by a check-in/out. */
+  sessions_gps: number; sessions_form_only: number;
+}
+export interface ParticipationPayload {
+  scope: "microcycle" | "season"; start: string; end: string; match_minutes: number;
+  matches: ParticipationMatch[]; sessions: number; session_min_players: number;
+  attendance_low_pct: number | null; rows: ParticipationRow[];
+}
+
+// ── Fatiga post-partido — backend `load_control/fatigue.py` ────────────────────
+export interface FatigueRow {
+  player_id: string; name: string; method: string; minutes: number | null;
+  pre: number | null; post: number | null; next_pre: number | null;
+  golpe_pct: number | null; golpe_band: Band | null;
+  llega_pct: number | null; llega_band: Band | null; llega_state: "measured" | "pending" | "missing";
+  pre_level: string | null; next_pre_level: string | null;
+  basal: number | null; basal_n: number; pre_vs_basal: number | null;
+  season_drift_pct: number | null; season_drift_band: Band | null;
+  recent: { date: string; pre: number | null; post: number | null; golpe_band: Band | null }[];
+}
+export interface FatigueMatch { date: string; rival: string | null; source: string | null; tab: string | null; event_id: string | null }
+export interface FatiguePayload {
+  match: FatigueMatch | null; prev_match: FatigueMatch | null; next_match: FatigueMatch | null;
+  rows: FatigueRow[];
+  summary: { players: number; golpe_n: number; llega_n: number;
+    counts: { golpe: Record<Band, number>; llega: Record<Band, number> } };
+  trend: { player_id: string; name: string; method: string;
+    points: { date: string; pre: number | null; post: number | null; basal: number | null; rival: string | null }[] } | null;
+  params: { baseline_n: number; attempt_value: string; rsi_alert: { ok_from: number; grave_at: number } };
+}
+
+// ── Composición corporal — backend `load_control/composition.py` ───────────────
+export interface CompMetric { key: string; label: string; unit: string; decimals: number; direction: "up" | "down" | "neutral" }
+export type CompMeasurement = { date: string; talla: number | null } & Record<string, number | null | string>;
+export interface CompositionPayload {
+  metrics: CompMetric[]; squad_keys: string[];
+  rows: { player_id: string; name: string; position: string; last: CompMeasurement; prev_date: string | null;
+    delta: Record<string, number | null>; measurements: number }[];
+  mean: Record<string, number | null>;
+  player: { player_id: string; name: string; last: CompMeasurement; prev: CompMeasurement | null; first: CompMeasurement;
+    delta: Record<string, number | null>; delta_first: Record<string, number | null>; measurements: CompMeasurement[] } | null;
+}
+
+// ── Jugador — backend `load_control/player_card.py` ────────────────────────────
+export interface PlayerCard {
+  player: { player_id: string; name: string; position: string; category: string; age: number | null;
+    photo_url: string | null; status: PlayerStatus };
+  load: { metrics: Metric[]; accumulated: EvalPlayer | null;
+    days: { date: string; md_label: string; kind: DayKind; row: EvalPlayer | null }[] };
+  wellness: { items: WellnessItem[]; low: number | null; days: { date: string; row: WellnessRow | null }[] };
+  fatigue: { match: FatigueMatch | null; next_match: FatigueMatch | null; row: FatigueRow | null;
+    trend: FatiguePayload["trend"]; params: FatiguePayload["params"] };
+  minutes: {
+    week: Partial<ParticipationRow> & { sessions: number; matches: ParticipationMatch[] };
+    season: Partial<ParticipationRow> & { sessions: number; match_count: number };
+  };
+  status: { status: PlayerStatus; card: AvailabilityRow | null; history: InjuryHistoryRow[] };
+  evaluations: {
+    groups: { name: string; columns: { key: string; label: string; unit: string; direction: "up" | "down" | "neutral" }[] }[];
+    row: { cells: Record<string, { value: number; date: string; band: string | null; color: string | null;
+      prev: { value: number; date: string; band: string | null } | null; delta: number | null; delta_pct: number | null }> } | null;
+  };
+  composition: { metrics: CompMetric[]; mean: Record<string, number | null>; player: CompositionPayload["player"] } | null;
+}
+
+// ── Resumen — backend `load_control/summary.py` ────────────────────────────────
+export interface SummaryPayload {
+  ref_day: string; sentence: string;
+  cards: {
+    load: { metrics: (EvalCell & { key: string; label: string; counts: Record<Band, number>; n: number })[];
+      worst: (EvalCell & { label: string }) | null; days: number; short: number; over: number;
+      rules: { short_min_metrics: number; below_pct: number; over_pct: number } };
+    fatigue: { state: "fatiga" | "recuperacion"; match: FatigueMatch | null; next_match: FatigueMatch | null;
+      counts: Record<Band, number>; measured: number };
+    wellness: { day: string | null; answered: { checkin: number; checkout: number } | null; missing: number;
+      pain: number; flagged: number };
+    availability: { counts: { status: PlayerStatus; label: string; n: number }[]; players: number; available: number };
+    participation: { sessions: number; matches: number };
+  };
+  review: { player_id: string; name: string; score: number;
+    flags: { kind: "estado" | "fatiga" | "carga" | "checkin"; text: string; level: Band }[] }[];
+}
+
+// ── Day navigator of the squad panels — `GET /load-control/day` ────────────────
+export interface DayNav {
+  team: { label: string; season: number; categories: string[] };
+  week_key: string; day: string; start_date: string; end_date: string; number: number; kind: string;
+  planned: boolean; microcycle_id: string | null; md_label: string; day_kind: DayKind | "";
+}

@@ -27,7 +27,6 @@ from load_control.reference import compute_reference, day_targets
 
 GPS_SLUGS = ("gps_sesion", "gps_partido")
 WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
-MAX_DAYS = 14
 
 
 @dataclass(frozen=True)
@@ -108,10 +107,14 @@ def suggest(team: Team, start: date | None = None) -> dict:
 
 
 def _validate_span(start: date, end: date):
-    if end < start:
-        raise ValidationError("La fecha de término es anterior a la de inicio.")
-    if (end - start).days + 1 > MAX_DAYS:
-        raise ValidationError(f"Un microciclo no puede durar más de {MAX_DAYS} días.")
+    """The planner is WEEKLY (decided 2026-11-03): Monday to Sunday, numbered
+    by the GPS's MICRO, which the club counts by calendar week. A week holds
+    0, 1 or 2 matches; "microcycle" in the club's other sheets (the jump
+    tabs) means match-to-match, which is why the planner does not use it."""
+    if start.weekday() != 0:
+        raise ValidationError("La semana debe empezar un lunes.")
+    if end != start + timedelta(days=6):
+        raise ValidationError("La semana va de lunes a domingo (7 días).")
 
 
 @transaction.atomic
@@ -121,13 +124,13 @@ def create(team: Team, *, start: date, end: date, number: int, kind: str = "",
     _validate_span(start, end)
     cfg = LoadControlConfig.resolved(team.club, team.bracket)
     if kind and kind not in cfg["microcycle_kinds"]:
-        raise ValidationError(f"Tipo de microciclo desconocido: {kind}.")
+        raise ValidationError(f"Tipo de semana desconocido: {kind}.")
     if copy_from is not None and (copy_from.club_id != team.club.id
                                   or copy_from.bracket_id != team.bracket.id):
-        raise ValidationError("Sólo se puede copiar un microciclo del mismo equipo.")
+        raise ValidationError("Sólo se puede copiar una semana del mismo equipo.")
     if Microcycle.objects.filter(club=team.club, season=team.season,
                                  bracket=team.bracket, number=number).exists():
-        raise ValidationError(f"{team.label} ya tiene un M{number} en {team.season}.")
+        raise ValidationError(f"{team.label} ya tiene la semana {number} en {team.season}.")
     mc = Microcycle.objects.create(club=team.club, season=team.season, bracket=team.bracket,
                                    number=number, kind=kind, start_date=start, end_date=end,
                                    copied_from=copy_from, created_by=user)
@@ -159,7 +162,7 @@ def _write_days(mc: Microcycle, days: list[dict]):
     expected = set(_dates(mc.start_date, mc.end_date))
     given = [d["date"] for d in days]
     if len(given) != len(set(given)) or set(given) != expected:
-        raise ValidationError("El plan debe traer exactamente un registro por cada día del microciclo.")
+        raise ValidationError("El plan debe traer exactamente un registro por cada día de la semana.")
     cfg = LoadControlConfig.resolved(mc.club, mc.bracket)
     metric_keys = {m["key"] for m in cfg["metrics"]}
     existing = {d.date: d for d in mc.days.all()}
@@ -201,11 +204,11 @@ def link_matches(mc: Microcycle) -> int:
 def update(mc: Microcycle, *, days: list[dict] | None = None, kind: str | None = None,
            notes: str | None = None) -> Microcycle:
     if mc.status == Microcycle.STATUS_CLOSED:
-        raise ValidationError("Un microciclo cerrado no se edita.")
+        raise ValidationError("Una semana cerrada no se edita.")
     if kind is not None:
         cfg = LoadControlConfig.resolved(mc.club, mc.bracket)
         if kind and kind not in cfg["microcycle_kinds"]:
-            raise ValidationError(f"Tipo de microciclo desconocido: {kind}.")
+            raise ValidationError(f"Tipo de semana desconocido: {kind}.")
         mc.kind = kind
     if notes is not None:
         mc.notes = notes
@@ -243,7 +246,11 @@ def serialize_summary(mc: Microcycle) -> dict:
 def serialize(mc: Microcycle) -> dict:
     team = team_of(mc)
     cfg = LoadControlConfig.resolved(mc.club, mc.bracket)
-    days = list(mc.days.select_related("event").all())
+    from load_control.week import days_of
+
+    # An unplanned week (`load_control.week`) has its days in memory only.
+    days = (list(days_of(mc)) if getattr(mc, "_week_days", None) is not None
+            else list(mc.days.select_related("event").all()))
     links = match_links(mc.club, mc.season, mc.bracket,
                         {d.date: d.kind for d in days if d.is_match})
     preview = not mc.is_frozen

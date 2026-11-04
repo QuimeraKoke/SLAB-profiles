@@ -14,6 +14,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import EvaluationView from "@/components/loadControl/EvaluationView";
 import NewMicrocycleModal from "@/components/loadControl/NewMicrocycleModal";
 import PlanEditor from "@/components/loadControl/PlanEditor";
+import { FORMATIVO_TAB_IDS } from "@/components/loadControl/FormativoPanels";
 import ProfileTabs, { panelIdFor } from "@/components/perfil/ProfileTabs/ProfileTabs";
 import { useToast } from "@/components/ui/Toast/Toast";
 import { useCategoryContext } from "@/context/CategoryContext";
@@ -37,6 +38,11 @@ export default function ControlCargaPage() {
   const pathname = usePathname();
   const params = useSearchParams();
   const tab = TABS.some((t) => t.id === params.get("tab")) ? params.get("tab")! : TABS[0].id;
+  // The squad panels moved to the Centro de mando (2026-11-04): old links follow.
+  const moved = FORMATIVO_TAB_IDS.has(params.get("tab") ?? "");
+  useEffect(() => {
+    if (moved) router.replace(`/centro-de-mando?${params.toString()}`);
+  }, [moved, params, router]);
   const mcParam = params.get("mc") ?? "";
   // Carga GPS filters, in the URL like the tab (refresh-safe, shareable).
   const dayParam = params.get("dia");
@@ -77,7 +83,7 @@ export default function ControlCargaPage() {
         <div>
           <h1 className={styles.title}>Control de carga</h1>
           <p className={styles.subtitle}>
-            {tab === "carga" ? "¿Cumplieron lo planificado? Real vs objetivo por jugador, contra el plan del microciclo."
+            {tab === "carga" ? "¿Cumplieron lo planificado? Real vs objetivo por jugador, contra el plan de la semana."
               : "¿Cuánto debe hacer cada posición cada día? Se define como % de la carga de partido."}
           </p>
         </div>
@@ -85,12 +91,12 @@ export default function ControlCargaPage() {
           <div className={styles.controls}>
             {team.microcycles.length > 0 && (
               <label className={styles.label}>
-                Microciclo
+                Semana
                 <select className={styles.select} value={selected?.id ?? ""}
                   onChange={(e) => setUrl({ mc: e.target.value, dia: null })}>
                   {team.microcycles.map((m) => (
                     <option key={m.id} value={m.id}>
-                      M{m.number} · {shortDate(m.start_date)} · {kindLabel(m.kind)} · {STATUS_LABEL[m.status]}
+                      Semana {m.number} · {shortDate(m.start_date)} · {kindLabel(m.kind)} · {STATUS_LABEL[m.status]}
                     </option>
                   ))}
                 </select>
@@ -98,7 +104,7 @@ export default function ControlCargaPage() {
             )}
             {canAdd && (
               <button type="button" className={styles.primary} onClick={() => setCreating(true)}>
-                Nuevo microciclo
+                Nueva semana
               </button>
             )}
           </div>
@@ -124,15 +130,15 @@ export default function ControlCargaPage() {
                   ...(f.sparring !== undefined ? { sparring: f.sparring === null ? null : f.sparring ? "1" : "0" } : {}),
                   ...(f.matches !== undefined ? { partidos: f.matches ? null : "0" } : {}),
                 })} />
-            : <div className={styles.empty}>Planifica un microciclo para ver la carga contra su objetivo.</div>
+            : <div className={styles.empty}>Planifica una semana para ver la carga contra su objetivo.</div>
         )}
         {team && tab === "planificacion" && (
           selected
             ? <PlanEditor key={selected.id} microcycleId={selected.id} canEdit={canEdit}
                 onChanged={() => setReload((n) => n + 1)} />
             : <div className={styles.empty}>
-                {team.label} todavía no tiene microciclos planificados.
-                {canAdd ? " Crea el primero con “Nuevo microciclo”." : ""}
+                {team.label} todavía no tiene semanas planificadas.
+                {canAdd ? " Crea la primera con “Nueva semana”." : ""}
               </div>
         )}
       </div>
@@ -143,7 +149,7 @@ export default function ControlCargaPage() {
           onClose={() => setCreating(false)}
           onCreated={(mc) => {
             setCreating(false);
-            toast.success(`M${mc.number} creado.`);
+            toast.success(`Semana ${mc.number} creada.`);
             setReload((n) => n + 1);
             setUrl({ mc: mc.id });
           }} />

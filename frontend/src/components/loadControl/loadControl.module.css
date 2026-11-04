@@ -120,3 +120,44 @@
 .toggle input { width: 18px; height: 18px; }
 .matchLink { font-size: 0.78rem; font-weight: 600; color: #3730a3; text-decoration: underline; text-underline-offset: 2px; }
 span.matchLink { text-decoration: none; }
+.chartBox { width: 100%; height: 280px; }
+.chartBoxSmall { width: 100%; height: 170px; }
+.chartGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; }
+.chips5 { display: flex; gap: 4px; flex-wrap: wrap; }
+.scoreChip { display: inline-flex; flex-direction: column; align-items: center; min-width: 52px; padding: 4px 6px;
+  border-radius: 6px; font-size: 0.72rem; font-variant-numeric: tabular-nums; }
+.scoreChip strong { font-size: 0.9rem; }
+.flagRow { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 0; border-top: 1px solid #f2f4f7; }
+.painText { font-size: 0.85rem; color: #7f1d1d; }
+.status_injured { background: #fee2e2; color: #7f1d1d; }
+.status_recovery { background: #fef3c7; color: #78350f; }
+.status_reintegration { background: #e0e7ff; color: #3730a3; }
+.status_available { background: #dcfce7; color: #14532d; }
+.statusPill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
+.countGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.outRow { display: grid; grid-template-columns: minmax(170px, 1.2fr) minmax(200px, 2fr) minmax(150px, 1fr) minmax(170px, 1fr);
+  gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid #f2f4f7; font-size: 0.88rem; }
+@media (max-width: 760px) { .outRow { grid-template-columns: 1fr; gap: 4px; } }
+.overdue { color: #9a3412; font-weight: 600; }
+.symptomText { font-size: 0.85rem; color: #3730a3; }
+.barCell { display: flex; flex-direction: column; gap: 3px; min-width: 140px; }
+.barTrack { height: 8px; border-radius: 4px; background: #eef2f6; overflow: hidden; }
+.barFill { height: 100%; border-radius: 4px; background: #2a78d6; }
+.barFillLow { background: #dc2626; }
+.segmented { display: inline-flex; border: 1px solid #c7d2fe; border-radius: 8px; overflow: hidden; }
+.segmented button { height: 40px; padding: 0 14px; border: 0; background: #ffffff; color: #3730a3; font: inherit;
+  font-size: 0.85rem; font-weight: 600; cursor: pointer; }
+.segmented button[aria-pressed="true"] { background: #4f46e5; color: #ffffff; }
+.linkButton { background: none; border: 0; padding: 0; font: inherit; color: #3730a3; text-decoration: underline;
+  text-underline-offset: 2px; cursor: pointer; text-align: left; min-height: 28px; }
+.groupHead { text-align: center; border-bottom: 2px solid #d0d5dd; }
+.gridTable th, .gridTable td { border: 1px solid #eaecf0; }
+.gridTable tbody tr:hover { background: #f9fafb; }
+.gridTable .groupStart { border-left: 2px solid #98a2b3; }
+.gridTable th, .gridTable td { text-align: center; vertical-align: middle; }
+.gridTable tbody th[scope="row"] { text-align: left; }
+.gridTable td svg { margin: 0 auto; }
+.delta { font-size: 0.75rem; font-weight: 600; color: #667085; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.tone_good { color: #067647; }
+.tone_bad { color: #b42318; }

@@ -588,3 +588,176 @@ Permisos nuevos `core.view_load_control` y `core.change_load_plan` en
 - Verificar si COMET guarda la hora juvenil como local-como-UTC (la HORA en
   /partidos podría estar 3 h corrida; el DÍA no).
 - Pantalla `/control-carga` aún no revisada en navegador por nosotros.
+
+### 9.5 Estado del deploy (2026-11-03, commit `4bedb6b`)
+
+- ✅ Backup: `~/slab-backups/prod_antes_control_carga_20261103T191721.dump`.
+- ✅ Push a `main` (fast-forward desde la rama `control-de-carga`); Railway
+  desplegó backend, frontend, Celery y Celery beat (SUCCESS).
+- ✅ Migraciones `load_control.0001–0004` aplicadas en prod. Permisos: Editor
+  y Editor Formativo planifican; Solo Lectura y Lectura Formativo ven. **En
+  prod no existe el grupo "Administrador"** (la migración lo salta).
+- ✅ Sync GPS formativo con el código nuevo (19:20 y 19:25): 18.229 filas con
+  contexto, **60 copias obsoletas borradas**, **79 partidos re-vinculados**
+  (31 + 48). La de las 19:25 dio 429 en la hoja JUGADORES (cuota) — se
+  reintenta sola.
+- ✅ Smoke: `/control-carga` 200, `/api/load-control/team` 401 sin sesión.
+- ✅ `fix_postponed_match_dates --commit` en prod (corrido por Jorge):
+  **16 partidos juveniles** re-fechados (ago–oct, ninguno del Primer Equipo);
+  re-chequeo en seco = 0. Las filas GPS de esos partidos se re-vinculan solas
+  en las siguientes syncs (:25).
+- Lección: al pasar credenciales a `docker compose exec`, usar `-e VAR="$VAR"`
+  con comillas; una variable `$E` sin comillas no llegó al contenedor y esas
+  lecturas cayeron en la base LOCAL (sólo lecturas, nada escrito).
+
+## 10. Etapa 2–4 — paneles de las 9 preguntas (en curso)
+
+Orden acordado (2026-11-03): Check-in/out → Kinesia y lesiones → Minutos y
+asistencia → Fatiga post-partido (import saltos) → Evaluaciones → Composición
+→ Jugador → Resumen. Todos como pestañas de `/control-carga`, dentro del
+microciclo seleccionado (mismo `?dia=`).
+
+- ✅ **#4 Check-in / out** (local, sin commit): `load_control/wellness.py` +
+  `GET /load-control/microcycles/{id}/wellness?day=&player_id=` +
+  `WellnessView`. Plantel de la semana = jugadores del equipo que entrenaron
+  (GPS) o respondieron en el microciclo (SUB-20 lista 63 activos; ~26
+  entrenan). Día en hora de Chile; última respuesta del día. "Bienestar
+  bajo" = ítem ≤ `wellness_low` (2, como el dashboard del club). Gráfico de
+  check-in como el del club (un eje 0–25); el de check-out en **dos gráficos
+  alineados** (minutos / RPE) en vez de doble eje.
+
+  Ajustes tras revisión: "Entrenaron y no respondieron" sólo lista a quienes
+  tienen GPS ese día (sin GPS ni respuesta = no estaba); listas largas con
+  "Ver más".
+- ✅ **#5 Kinesia y lesiones** (local, sin commit): `load_control/availability.py`
+  (reutiliza `_open_episodes` / `_lesionado` del Daily) +
+  `GET /load-control/microcycles/{id}/availability` + `AvailabilityView`:
+  conteo por estado, "No disponibles" (estado con color + nombre, desde cuándo,
+  días fuera, retorno estimado / vencido / sin fecha, link a la pestaña
+  Lesiones de la ficha) e historial de la temporada plegado. Dato real U20:
+  4 lesionados + 1 Return to Train; **ningún lesionado tiene fecha estimada de
+  retorno cargada** → se ve "Sin fecha estimada" (pedir al cuerpo médico).
+  Ajuste: `sintomas` (fiebre, resfriado…) se muestra como "Síntoma", separado
+  de "Molestia" (zona de `dolor_muscular` / `molestia_post`).
+- ✅ **#6 Minutos y entrenamientos** (antes "asistencia": se confunde con el pase de gol — renombrado 2026-11-03) (local, sin commit): `load_control/participation.py`
+  + `GET /load-control/microcycles/{id}/participation?scope=microcycle|season`
+  + `ParticipationView`. Partidos del EQUIPO; minutos de la ficha COMET y, si
+  el partido no tiene ficha, de la duración del GPS (tope 90; lo que usa el
+  dashboard del club). **Entrenamientos** (regla del club 2026-11-03: "cualquier
+  cosa que no sea partido oficial o amistoso es entrenamiento") = sesiones del
+  equipo (días con GPS de entrenamiento de ≥ 5 jugadores, sin días de partido)
+  en que el jugador tiene GPS de entrenamiento de CUALQUIER fuente (su pestaña,
+  SPARRING, Primer Equipo/Catapult) **o** respondió check-in/out. Con sólo GPS
+  Claudio Gutiérrez daba 35 %; con cualquier señal, 96 % (58 GPS + 74 sólo
+  formulario). **Semáforo de asistencia
+  apagado** (`attendance_low_pct = None`): con GPS la asistencia típica de U20
+  es ~60–70 % → cualquier corte inventado pintaría a todos en rojo. Preguntar
+  al PF el umbral (y si todos usan GPS en cada sesión).
+- ✅ **Planificador = SEMANAL** (decidido 2026-11-03): textos "Semana N" (no
+  "microciclo"), siempre lunes a domingo (validado al crear), número = MICRO
+  del GPS (semana calendario). "Microciclo" en la planilla de saltos significa
+  otra cosa (entre partidos), por eso el planificador no usa la palabra.
+- ✅ **#3 Fatiga — carga de datos** (local, sin commit):
+  `exams/formativo_saltos_ingest.py` + `import_formativo_saltos` (lectura en
+  lote: 1 request por documento; `Documento.values_batch`,
+  `FuenteSheets.precargar`), plantilla `control_salto` (1 ficha por jugador ×
+  partido, PRE/POST × 2 intentos, RSI por intento, mejor/promedio, Δ%).
+  **Fecha de cada pestaña**: título con fecha > tabla revisada por el club
+  (`load_control.JumpTabMatch`, comando `import_jump_tab_dates`) > alineación
+  automática "un microciclo = período entre partidos" (variantes oficiales /
+  +amistosos, ±último partido; gana la que respeta las siglas CLOA/UE y mejor
+  calza jugadores). Nombres: apellido PATERNO primero; empates por "jugó ese
+  partido" y luego por actividad en el equipo. Local: **3.457 fichas** (U20
+  540 · U18 918 · U16 720 · U15 724 · U14 274 · U13 281); sin resolver: U20 8,
+  U18 82 (RAMIREZ/GONZALEZ solos), U16 22, U15 50.
+  Tabla para el club: `Saltos_pestaña_a_partido_PROPUESTA.xlsx` (155 filas,
+  4 confirmadas por sigla). Settings nuevo: `FORMATIVO_SALTOS_SHEET_IDS`.
+- ✅ **#3 Fatiga post-partido — pestaña** (local, sin commit; rediseñada
+  2026-11-03 tras revisión: "lo que quiere saber el entrenador es qué tan duro
+  le pegó el último partido y cómo llega al que viene").
+  `load_control/fatigue.py` + `GET /load-control/microcycles/{id}/fatigue?match_date=&player_id=`
+  + `FatigueView` (URL `?partido=&jugador=`). Tres saltos por jugador:
+  PRE (MD-1) → POST (MD+1) → PRE del partido siguiente. **Dos estados**:
+  *Fatiga* (aún no se mide el MD-1 siguiente: golpe = POST vs PRE) y
+  *Recuperación de la fatiga* (ya existe: recuperación = MD-1 siguiente vs
+  PRE). Ambos con el semáforo del club (`rsi_alert`). Por defecto, el último
+  partido medido hasta el fin de la semana; ‹ › para recorrer partidos. Fila:
+  minutos (COMET o GPS), PRE/POST/MD-1 siguiente, curva de 3 puntos, y "a
+  considerar" (llegó bajo vs su basal = últimos 5 PRE; basal de temporada en
+  baja). Primero el que llega peor, luego el golpe más fuerte. Sólo la planilla
+  del propio equipo. Dato real U20: 25-oct vs U. Española → 10 golpes fuertes,
+  9 no recuperados al 31-oct (caídas de −20 a −30 % en el MD-1: revisar con el
+  PF si la fecha "propuesta" de M41 es correcta).
+- ✅ **#8 Evaluaciones** (local, sin commit): se reutiliza la grilla del Centro
+  de mando (`api/evaluation_grid.py` + `EvaluationGrid`: último test vs bandas
+  del club, 7 niveles, resumen por cualidad, promedio de la categoría = "vs
+  grupo"). Agregado "vs su anterior": cada celda trae `prev` (evaluación de
+  OTRO día; los reintentos del mismo día no cuentan), `delta`, `delta_pct`, y
+  muestra ▲/▼ % con color por `direction_of_good` (`lib/deltaTone`: en
+  tiempos, bajar es mejorar) + "sube/baja de banda". Pestaña "Evaluaciones" en
+  `/control-carga` con la categoría del selector global (no es semanal: se
+  oculta el selector de semana). Se ve también en el Centro de mando. U20:
+  385 de 465 celdas tienen evaluación anterior.
+- ✅ **#9 Composición corporal** (local, sin commit): la alerta de §4 ya no
+  aplica — `pentacompartimental` hoy aplica a SUB-20 y Series 2008–2014
+  (SUB-20: 313 mediciones, 42 jugadores con datos). `load_control/composition.py`
+  + `GET /load-control/composition?category_id=&player_id=` + `CompositionView`
+  (pestaña "Composición corporal"; categoría del selector global, no semanal;
+  URL `?jugador=&metrica=&orden=`). Spec = la pestaña "Antropometría" del
+  artifact del club: tabla del plantel (última medición, Peso / MM % / MA % /
+  Σ6 con Δ vs anterior, ordenable, fila de promedio del plantel) y, por
+  jugador, las 7 métricas (peso, MM kg/%, MA kg/%, Σ6, IMO) último vs anterior
+  vs primera vs promedio, una métrica en el tiempo (con línea del promedio) y
+  todas las mediciones. Dirección favorable = la del artifact (más músculo,
+  menos grasa; peso gris), no la de la plantilla (las masas en kg no la traen).
+- ✅ **#7 Jugador** (local, sin commit): `load_control/player_card.py` +
+  `GET /load-control/microcycles/{id}/players` (selector) y
+  `/players/{player_id}` + `PlayerView` (pestaña "Jugador", `?jugador=`).
+  Un jugador en la semana elegida, con TODAS las secciones y cada una con link
+  a su pestaña: cabecera (foto, posición, categoría, edad, estado; minutos y
+  entrenamientos semana / temporada), Carga GPS por día real vs objetivo +
+  semana, check-in/out por día (ítems con color, UA, molestias vs síntomas),
+  fatiga (basal, golpe, recuperación, basal de temporada + curva), kinesia,
+  evaluaciones (último vs anterior) y composición. Sin cálculos propios: cada
+  sección es el servicio de su pestaña filtrado al jugador (los números
+  calzan). `wellness(player_id=…)` sin día devuelve ahora `answers` por día
+  (una consulta para la semana). ~2,5 s por ficha local (7 × evaluate por día
+  + temporada de minutos): cachear si molesta.
+- ✅ **#1 Resumen** (local, sin commit; pestaña por defecto): `load_control/summary.py`
+  + `GET /load-control/microcycles/{id}/summary` + `SummaryView`. Determinístico
+  (sin LLM): frase de conclusión, 4 tarjetas semáforo que abren su pestaña
+  (Carga de la semana · Golpe/Recuperación del último partido · Check-in del
+  último día con respuestas · Disponibles) + chips por métrica, y **"Para
+  revisar"**: por jugador, todas las alertas de las pestañas (estado, fatiga en
+  rojo, molestia/síntoma/bienestar bajo, carga), salud primero; el nombre abre
+  su ficha. "Para compensar" = ≥ `short_min_metrics` (3) métricas bajo
+  −`band_ok_pct` (8 %); "pasado" = alguna sobre +`over_pct` (20 %) — reglas
+  del artifact del club, configurables. Zonas de molestia separadas por coma y
+  sin repetir. U20 Semana 42 (semana demo con objetivos copiados): 18 para
+  compensar, 7 pasados, 3 golpes fuertes, 5 con molestias, 5 no disponibles.
+- **Las 9 preguntas tienen pestaña** (2026-11-04). Pendiente: revisión del PF
+  (curva "Tendencia" de fatiga, textos de Sugerencia, reglas del Resumen),
+  tabla de pestañas de saltos revisada, y commit + deploy cuando se pida
+  (prod: migración load_control 0005, `FORMATIVO_SALTOS_SHEET_IDS`,
+  `import_formativo_saltos`).
+- ✅ **Reorganización (2026-11-04, pedido del usuario)**: Control de carga queda
+  sólo con **Carga GPS** y **Planificación** (lo del plan). Las otras 8 pestañas
+  (Resumen, Fatiga, Check-in/out, Kinesia, Minutos, Jugador, Evaluaciones,
+  Composición) pasan al **Centro de mando**, sólo para categorías formativas
+  (las que compiten en un tramo; `/load-control/day` da 404 en Primer Equipo y
+  la página queda igual). Pestaña "Centro de mando" = la vista de siempre (sin
+  la grilla de evaluaciones, que ahora tiene su pestaña). Links viejos
+  `/control-carga?tab=fatiga…` redirigen. `components/loadControl/FormativoPanels.tsx`.
+- ✅ **Navegación sólo por día**: "‹ Día anterior / Día siguiente ›" (+ "Hoy"),
+  `?dia=`, cruza semanas solo. La semana = lunes–domingo que contiene el día,
+  **planificada o no**: `load_control/week.py` (`week_for` arma en memoria las
+  semanas sin plan con días, partidos y etiquetas MD del planificador;
+  `days_of(mc)` para leer los días de ambas). La API acepta como id de semana
+  la clave `<YYYY-MM-DD>_<category_id>`. Sin plan no hay objetivo: la carga va
+  sólo "real" y el Resumen dice "Semana sin planificar (sin objetivo de carga)".
+- ✅ **Minutos y entrenamientos · "Ejecutado vs planificado del día"**
+  (`DayLoadChart`, pedido 2026-11-04): barras horizontales por jugador del día
+  de la barra de navegación, Δ% real vs objetivo de la métrica elegida
+  (`?carga_metrica=`), ordenadas de +x % a −x %; naranjo = sobre, azul = bajo,
+  gris = en objetivo (±`band_ok_pct`), valor en cada barra. Datos =
+  `evaluate(day=…)` (lo mismo que Carga GPS). Sin plan → mensaje, sin barras.

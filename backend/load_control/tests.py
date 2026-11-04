@@ -463,3 +463,359 @@ class PostponedMatchTests(Base):
         from load_control.matches import match_links
         links = match_links(self.club, 2026, self.sub20, {date(2026, 10, 22): "official"})
         self.assertEqual(links[date(2026, 10, 22)]["event_id"], str(self.event.id))
+
+
+class WellnessTests(Base):
+    """`load_control.wellness`: check-in / out read the way the club asked."""
+
+    MON = date(2026, 10, 26)
+
+    def setUp(self):
+        from load_control.wellness import wellness
+        self.wellness = wellness
+        self.cin = ExamTemplate.objects.create(department=self.dept, name="Check-in",
+                                               slug="checkin_formativo", config_schema={"fields": []})
+        self.cout = ExamTemplate.objects.create(department=self.dept, name="Check-out",
+                                                slug="checkout_formativo", config_schema={"fields": []})
+        self.mc = Microcycle.objects.create(club=self.club, season=2026, bracket=self.sub20, number=43,
+                                            start_date=self.MON, end_date=self.MON + timedelta(days=1))
+        for i in range(2):
+            MicrocycleDay.objects.create(microcycle=self.mc, date=self.MON + timedelta(days=i))
+
+    def checkin(self, player, when, s=5, f=5, e=5, a=5, d=5, **extra):
+        return ExamResult(template=self.cin, player=player, recorded_at=when,
+                          result_data={"calidad_sueno": s, "nivel_fatiga": f, "nivel_estres": e,
+                                       "estado_animo": a, "dano_muscular": d, **extra})
+
+    def at(self, d, hour_utc):
+        return timezone.make_aware(datetime.combine(d, datetime.min.time()).replace(hour=hour_utc))
+
+    def test_el_dia_es_el_de_chile(self):
+        # 02:00 UTC del martes = 23:00 del lunes en Santiago.
+        ExamResult.objects.bulk_create([self.checkin(self.players[0], self.at(self.MON + timedelta(days=1), 2))])
+        series = self.wellness(self.mc)["series"]
+        self.assertEqual([r["checkin_n"] for r in series], [1, 0])
+
+    def test_promedios_y_totales_del_grupo(self):
+        ExamResult.objects.bulk_create([
+            self.checkin(self.players[0], self.at(self.MON, 11), s=4, f=3, e=5, a=5, d=3),   # 20 / 6
+            self.checkin(self.players[1], self.at(self.MON, 11), s=2, f=5, e=5, a=5, d=5)])  # 22 / 10
+        r = self.wellness(self.mc)["series"][0]
+        self.assertEqual((r["calidad_sueno"], r["total_bienestar"], r["total_muscular"]), (3.0, 21.0, 8.0))
+
+    def test_cuenta_la_ultima_respuesta_del_dia(self):
+        p = self.players[0]
+        ExamResult.objects.bulk_create([self.checkin(p, self.at(self.MON, 11), s=1),
+                                        self.checkin(p, self.at(self.MON, 12), s=5)])
+        self.assertEqual(self.wellness(self.mc)["series"][0]["calidad_sueno"], 5.0)
+
+    def test_bienestar_bajo_y_dolor_primero(self):
+        p = self.players
+        ExamResult.objects.bulk_create([
+            self.checkin(p[0], self.at(self.MON, 11), s=2, f=2),                       # 2 ítems bajos
+            self.checkin(p[1], self.at(self.MON, 11), dolor_muscular="Isquiotibial der"),
+            self.checkin(p[2], self.at(self.MON, 11), sintomas="No"),                  # "No" no es dolor
+        ])
+        out = self.wellness(self.mc, day=self.MON)
+        self.assertEqual([f["name"] for f in out["flagged"]], ["J1 Test", "J0 Test"])
+        self.assertEqual([x["key"] for x in out["flagged"][1]["lows"]], ["calidad_sueno", "nivel_fatiga"])
+        self.assertEqual(out["missing"], [], "J3 no entrenó ni respondió: no es del plantel de la semana")
+        self.assertEqual(out["answered"], {"checkin": 3, "checkout": 0})
+
+    def test_check_out_ua_es_minutos_por_rpe(self):
+        ExamResult.objects.bulk_create([ExamResult(template=self.cout, player=self.players[0],
+                                                   recorded_at=self.at(self.MON, 22),
+                                                   result_data={"duracion_min": 60, "rpe": 7,
+                                                                "molestia_post": "Gemelo izq"})])
+        out = self.wellness(self.mc, day=self.MON)
+        self.assertEqual((out["series"][0]["ua"], out["rows"][0]["ua"]), (420.0, 420.0))
+        self.assertEqual(out["flagged"][0]["pain_out"], ["Gemelo izq"])
+
+    def test_un_jugador(self):
+        ExamResult.objects.bulk_create([self.checkin(self.players[0], self.at(self.MON, 11), s=1),
+                                        self.checkin(self.players[1], self.at(self.MON, 11), s=5)])
+        r = self.wellness(self.mc, player_id=self.players[0].id)["series"][0]
+        self.assertEqual((r["calidad_sueno"], r["players"]), (1.0, 1))
+        with self.assertRaises(ValueError):
+            self.wellness(self.mc, player_id="00000000-0000-0000-0000-000000000000")
+
+    def test_sin_responder_es_del_plantel_que_entreno(self):
+        gps = ExamResult(template=self.tpl, player=self.players[3], recorded_at=aware(self.MON),
+                         result_data={"origen_hoja": "U20", "tot_dist": 5000})
+        ExamResult.objects.bulk_create([gps, self.checkin(self.players[0], self.at(self.MON, 11))])
+        out = self.wellness(self.mc, day=self.MON)
+        self.assertEqual((out["players"], [m["name"] for m in out["missing"]]), (2, ["J3 Test"]))
+        # El martes J3 no tuvo GPS ni respondió: no estaba, no se lista.
+        martes = self.wellness(self.mc, day=self.MON + timedelta(days=1))
+        self.assertEqual(martes["missing"], [])
+
+    def test_el_dolor_repetido_en_ambos_formularios_se_muestra_una_vez(self):
+        ExamResult.objects.bulk_create([
+            self.checkin(self.players[0], self.at(self.MON, 11), dolor_muscular="Rodilla Der."),
+            ExamResult(template=self.cout, player=self.players[0], recorded_at=self.at(self.MON, 22),
+                       result_data={"molestia_post": "Rodilla Der."})])
+        self.assertEqual(self.wellness(self.mc, day=self.MON)["flagged"][0]["pain"], ["Rodilla Der."])
+
+    def test_un_sintoma_no_es_una_molestia(self):
+        ExamResult.objects.bulk_create([
+            self.checkin(self.players[0], self.at(self.MON, 11), sintomas="Fiebre"),
+            self.checkin(self.players[1], self.at(self.MON, 11), dolor_muscular="Tobillo")])
+        f = {x["name"]: x for x in self.wellness(self.mc, day=self.MON)["flagged"]}
+        self.assertEqual((f["J0 Test"]["pain"], f["J0 Test"]["symptoms"]), ([], ["Fiebre"]))
+        self.assertEqual(f["J1 Test"]["pain"], ["Tobillo"])
+        self.assertEqual(list(f), ["J1 Test", "J0 Test"], "la molestia va antes que el síntoma")
+
+
+class AvailabilityTests(Base):
+    """`load_control.availability`: who is out, since when, until when."""
+
+    MON = date(2026, 10, 26)
+
+    def setUp(self):
+        from exams.models import Episode
+        from load_control.availability import availability
+        self.availability, self.Episode = availability, Episode
+        self.les = ExamTemplate.objects.create(department=self.dept, name="Lesiones", slug="lesiones",
+                                               config_schema={"fields": []})
+        self.mc = Microcycle.objects.create(club=self.club, season=2026, bracket=self.sub20, number=43,
+                                            start_date=self.MON, end_date=self.MON + timedelta(days=6))
+        for i in range(7):
+            MicrocycleDay.objects.create(microcycle=self.mc, date=self.MON + timedelta(days=i))
+
+    def injure(self, player, status, started, expected=None, closed_at=None, title="Isquiotibial"):
+        player.status = status
+        player.save(update_fields=["status"])
+        e = self.Episode.objects.create(player=player, template=self.les, title=title,
+                                        started_at=aware(started),
+                                        status="closed" if closed_at else "open",
+                                        ended_at=aware(closed_at) if closed_at else None)
+        # bulk_create: no signals — the lifecycle would re-derive the episode and
+        # the player's status from the result, and this test sets them itself.
+        ExamResult.objects.bulk_create([ExamResult(
+            template=self.les, player=player, episode=e, recorded_at=aware(started),
+            result_data={"expected_return_date": expected.isoformat() if expected else None,
+                         "body_part": "Muslo"})])
+        return e
+
+    def test_no_disponibles_desde_cuando_y_cuanto_falta(self):
+        p = self.players
+        self.injure(p[0], "injured", date(2026, 10, 1), expected=date(2026, 11, 10))
+        self.injure(p[1], "reintegration", date(2026, 10, 20), expected=date(2026, 10, 28))
+        out = self.availability(self.mc, day=self.MON)
+        self.assertEqual({c["label"]: c["n"] for c in out["counts"]}["Disponible"], 2)
+        first, second = out["unavailable"]
+        self.assertEqual((first["name"], first["episode"]["days_out"], first["episode"]["days_to_return"]),
+                         ("J0 Test", 25, 15))
+        self.assertEqual((second["status_label"], second["episode"]["days_to_return"]), ("Return to Train", 2))
+
+    def test_historial_de_la_temporada(self):
+        self.injure(self.players[2], "available", date(2026, 9, 1), closed_at=date(2026, 9, 15))
+        self.injure(self.players[3], "available", date(2025, 6, 1), closed_at=date(2025, 6, 10))  # otra temporada
+        out = self.availability(self.mc, day=self.MON)
+        self.assertEqual([(h["name"], h["days_out"]) for h in out["history"]], [("J2 Test", 14)])
+
+
+class ParticipationTests(Base):
+    """`load_control.participation`: minutes (COMET, else GPS) and attendance."""
+
+    MON = date(2026, 10, 26)
+
+    def setUp(self):
+        from load_control.participation import _rival, participation
+        self.participation, self._rival = participation, _rival
+        self.ficha = ExamTemplate.objects.create(department=self.dept, name="Ficha", slug="ficha_partido",
+                                                 config_schema={"fields": []})
+        self.sesion = ExamTemplate.objects.create(department=self.dept, name="GPS sesión", slug="gps_sesion",
+                                                  config_schema={"fields": []})
+        self.mc = Microcycle.objects.create(club=self.club, season=2026, bracket=self.sub20, number=43,
+                                            start_date=self.MON, end_date=self.MON + timedelta(days=6))
+        for i in range(7):
+            MicrocycleDay.objects.create(microcycle=self.mc, date=self.MON + timedelta(days=i))
+
+    def gps(self, player, d, tpl=None, hoja="U20", **data):
+        return ExamResult(template=tpl or self.sesion, player=player, recorded_at=aware(d),
+                          result_data={"origen_hoja": hoja, "tot_dist": 4000, **data})
+
+    def test_minutos_de_la_ficha_comet(self):
+        sab = self.MON + timedelta(days=5)
+        ev = Event.objects.create(club=self.club, department=self.dept, event_type=Event.TYPE_MATCH,
+                                  title="UNIVERSIDAD DE CHILE vs COBRELOA", starts_at=aware(sab, 18),
+                                  bracket=self.sub20)
+        ExamResult.objects.bulk_create([
+            ExamResult(template=self.ficha, player=self.players[0], event=ev, recorded_at=aware(sab, 18),
+                       result_data={"minutos": 90, "titular": True}),
+            ExamResult(template=self.ficha, player=self.players[1], event=ev, recorded_at=aware(sab, 18),
+                       result_data={"minutos": 27, "titular": False})])
+        out = self.participation(self.mc)
+        self.assertEqual(out["matches"][0]["source"], "comet")
+        self.assertEqual(out["matches"][0]["opponent"], "COBRELOA")
+        by = {r["name"]: r for r in out["rows"]}
+        self.assertEqual((by["J0 Test"]["minutes"], by["J0 Test"]["minutes_pct"], by["J0 Test"]["starts"]), (90, 100, 1))
+        self.assertEqual(by["J1 Test"]["minutes_pct"], 30)
+
+    def test_sin_ficha_los_minutos_salen_del_gps(self):
+        sab = self.MON + timedelta(days=5)
+        ExamResult.objects.bulk_create([self.gps(self.players[0], sab, tpl=self.tpl, tot_dur=97,
+                                                 opponent="COLO COLO")])
+        out = self.participation(self.mc)
+        self.assertEqual((out["matches"][0]["source"], out["matches"][0]["opponent"]), ("gps", "COLO COLO"))
+        self.assertEqual(out["rows"][0]["minutes"], 90, "tope de 90")
+
+    def test_asistencia_sobre_las_sesiones_del_equipo(self):
+        j4 = Player.objects.create(category=self.cat, first_name="J4", last_name="Test")
+        j5 = Player.objects.create(category=self.cat, first_name="J5", last_name="Test")
+        lun, mar = self.MON, self.MON + timedelta(days=1)
+        rows = [self.gps(p, lun) for p in (*self.players, j4, j5)]        # 6 jugadores: sesión
+        rows += [self.gps(p, mar) for p in (*self.players, j5)]           # 5 jugadores: sesión
+        rows.append(self.gps(self.players[0], self.MON + timedelta(days=2)))  # 1 jugador: no es sesión
+        ExamResult.objects.bulk_create(rows)
+        out = self.participation(self.mc)
+        by = {r["name"]: r for r in out["rows"]}
+        self.assertEqual(out["sessions"], 2)
+        self.assertEqual((by["J1 Test"]["attendance_pct"], by["J4 Test"]["attendance_pct"]), (100, 50))
+        self.assertFalse(any(r["attendance_low"] for r in out["rows"]), "sin umbral del club, sin semáforo")
+        with self.settings():
+            cfg = LoadControlConfig.objects.create(club=self.club, settings={"attendance_low_pct": 80})
+            self.assertTrue({r["name"]: r for r in self.participation(self.mc)["rows"]}["J4 Test"]["attendance_low"])
+            cfg.delete()
+
+    def test_el_rival_es_el_otro_lado_del_titulo(self):
+        self.assertEqual(self._rival("COLO COLO vs UNIVERSIDAD DE CHILE", "Universidad de Chile"), "COLO COLO")
+
+    def test_entrenamiento_por_cualquier_senal(self):
+        j4 = Player.objects.create(category=self.cat, first_name="J4", last_name="Test")
+        j5 = Player.objects.create(category=self.cat, first_name="J5", last_name="Test")
+        cin = ExamTemplate.objects.create(department=self.dept, name="Check-in", slug="checkin_formativo",
+                                          config_schema={"fields": []})
+        lun, mar, mie = self.MON, self.MON + timedelta(days=1), self.MON + timedelta(days=2)
+        # 5 jugadores con GPS del equipo los tres días (sin J0): tres sesiones.
+        rows = [self.gps(p, d) for d in (lun, mar, mie) for p in (*self.players[1:], j4, j5)]
+        rows += [self.gps(self.players[0], lun, hoja=None, origen="catapult"),           # GPS de otra fuente
+                 ExamResult(template=cin, player=self.players[0], recorded_at=aware(mar, 11),
+                            result_data={"calidad_sueno": 5}),                            # sólo formulario
+                 self.gps(self.players[0], mie, origen_codigo="MD AMISTOSO")]             # amistoso: no
+        ExamResult.objects.bulk_create(rows)
+        by = {r["name"]: r for r in self.participation(self.mc)["rows"]}
+        j0 = by["J0 Test"]
+        self.assertEqual((j0["sessions_attended"], j0["sessions_gps"], j0["sessions_form_only"]), (2, 1, 1))
+
+    def test_un_dia_de_partido_no_es_sesion(self):
+        sab = self.MON + timedelta(days=5)
+        ExamResult.objects.bulk_create([self.gps(p, sab, origen_codigo="MD OFICIAL") for p in self.players])
+        self.assertEqual(self.participation(self.mc)["sessions"], 0)
+
+
+class FatigueTests(Base):
+    """`load_control.fatigue`: match fatigue, basal and accumulated fatigue."""
+
+    def setUp(self):
+        from load_control.fatigue import fatigue
+        self.fatigue = fatigue
+        self.salto = ExamTemplate.objects.create(department=self.dept, name="Salto", slug="control_salto",
+                                                 config_schema={"fields": []})
+        self.mc = Microcycle.objects.create(club=self.club, season=2026, bracket=self.sub20, number=43,
+                                            start_date=date(2026, 10, 26), end_date=date(2026, 11, 1))
+        for i in range(7):
+            MicrocycleDay.objects.create(microcycle=self.mc, date=self.mc.start_date + timedelta(days=i))
+
+    def jump(self, player, d, pre, post, method="rebote / contacto", team="U20"):
+        return ExamResult(template=self.salto, player=player, recorded_at=aware(d),
+                          result_data={"rsi_pre_best": pre, "rsi_post_best": post, "rsi_metodo": method,
+                                       "equipo_hoja": team, "fecha_fuente": "propuesta", "hoja": "M41",
+                                       "rival": "COLO COLO"})
+
+    def season(self, player, pres, start=date(2026, 3, 7), method="rebote / contacto"):
+        return [self.jump(player, start + timedelta(days=7 * i), v, v, method) for i, v in enumerate(pres)]
+
+    def test_tres_saltos_golpe_y_como_llega_al_proximo(self):
+        p = self.players[0]
+        ExamResult.objects.bulk_create([
+            self.jump(p, date(2026, 10, 31), 1.6, 1.44),                   # golpe −10 %
+            self.jump(p, date(2026, 11, 7), 1.56, 1.5),                    # próximo PRE −2,5 % vs PRE
+        ])
+        out = self.fatigue(self.mc)
+        r = out["rows"][0]
+        self.assertEqual((out["match"]["date"], out["next_match"]["date"]), ("2026-10-31", "2026-11-07"))
+        self.assertEqual((r["pre"], r["post"], r["next_pre"]), (1.6, 1.44, 1.56))
+        self.assertEqual((r["golpe_pct"], r["golpe_band"]), (-10.0, "grave"))
+        self.assertEqual((r["llega_pct"], r["llega_band"], r["llega_state"]), (-2.5, "leve", "measured"))
+
+    def test_la_curva_trae_sus_ultimos_partidos_hasta_este(self):
+        p = self.players[0]
+        ExamResult.objects.bulk_create(self.season(p, [1.5] * 6) + [self.jump(p, date(2026, 10, 31), 1.6, 1.44),
+                                                                    self.jump(p, date(2026, 11, 7), 1.6, 1.6)])
+        recent = self.fatigue(self.mc)["rows"][0]["recent"]
+        self.assertEqual(len(recent), 4)
+        self.assertEqual((recent[-1]["date"], recent[-1]["golpe_band"]), ("2026-10-31", "grave"))
+
+    def test_sin_proximo_partido_medido_queda_pendiente(self):
+        ExamResult.objects.bulk_create([self.jump(self.players[0], date(2026, 10, 31), 1.6, 1.5)])
+        r = self.fatigue(self.mc)["rows"][0]
+        self.assertEqual((r["next_pre"], r["llega_state"]), (None, "pending"))
+
+    def test_no_salto_el_proximo_es_faltante_no_pendiente(self):
+        ExamResult.objects.bulk_create([self.jump(self.players[0], date(2026, 10, 31), 1.6, 1.5),
+                                        self.jump(self.players[1], date(2026, 10, 31), 1.6, 1.5),
+                                        self.jump(self.players[1], date(2026, 11, 7), 1.6, 1.5)])
+        rows = {r["name"]: r for r in self.fatigue(self.mc)["rows"]}
+        self.assertEqual(rows["J0 Test"]["llega_state"], "missing")
+
+    def test_el_basal_da_contexto_y_usa_solo_el_mismo_metodo(self):
+        p = self.players[0]
+        rows = self.season(p, [0.5, 0.5, 0.5], method="RSI mod")           # CMJ: otra escala
+        rows += self.season(p, [1.6, 1.8], start=date(2026, 6, 6))
+        rows.append(self.jump(p, date(2026, 10, 31), 1.53, 1.5))
+        ExamResult.objects.bulk_create(rows)
+        r = self.fatigue(self.mc)["rows"][0]
+        self.assertEqual((r["basal"], r["basal_n"], r["pre_vs_basal"]), (1.7, 2, -10.0))
+
+    def test_deriva_de_temporada_compara_basal_actual_con_el_de_inicio(self):
+        p = self.players[0]
+        ExamResult.objects.bulk_create(self.season(p, [2.0] * 5 + [1.8] * 5)
+                                       + [self.jump(p, date(2026, 10, 31), 1.8, 1.8)])
+        r = self.fatigue(self.mc)["rows"][0]
+        self.assertEqual((r["season_drift_pct"], r["season_drift_band"]), (-10.0, "grave"))
+
+    def test_los_partidos_son_los_de_la_planilla_del_equipo(self):
+        ExamResult.objects.bulk_create([self.jump(self.players[0], date(2026, 10, 28), 1.5, 1.5, team="U18"),
+                                        self.jump(self.players[1], date(2026, 10, 31), 1.5, 1.4)])
+        out = self.fatigue(self.mc)
+        self.assertEqual(out["match"]["date"], "2026-10-31")
+        self.assertEqual([r["name"] for r in out["rows"]], ["J1 Test"])
+
+    def test_primero_el_que_llega_peor_al_proximo(self):
+        d, nxt = date(2026, 10, 31), date(2026, 11, 7)
+        ExamResult.objects.bulk_create([
+            self.jump(self.players[0], d, 1.5, 1.2), self.jump(self.players[0], nxt, 1.55, 1.5),  # golpe duro, recuperado
+            self.jump(self.players[1], d, 1.5, 1.45), self.jump(self.players[1], nxt, 1.3, 1.3),  # llega mal
+            self.jump(self.players[2], d, 1.5, 1.5),                                               # sin próximo
+        ])
+        self.assertEqual([r["name"] for r in self.fatigue(self.mc)["rows"]], ["J1 Test", "J2 Test", "J0 Test"])
+
+
+class SummaryTests(Base):
+    """`load_control.summary`: the club's short/over rules and who to review first."""
+
+    def test_compensar_exige_tres_metricas_y_salud_va_primero(self):
+        from unittest import mock
+
+        from load_control import summary as sm
+        cells = lambda pcts: {k: {"pct": v, "band": None, "target": 1, "real": 1} for k, v in pcts.items()}
+        ev = {"metrics": [{"key": k, "label": k.upper(), "short": k.upper()} for k in ("a", "b", "c", "d")],
+              "summary": {}, "days": [],
+              "players": [
+                  {"player_id": "1", "name": "Dos bajo", "days": 5, "days_planned": 5, "cells": cells({"a": -20, "b": -20, "c": 0, "d": 0})},
+                  {"player_id": "2", "name": "Tres bajo", "days": 5, "days_planned": 5, "cells": cells({"a": -9, "b": -9, "c": -9, "d": 0})},
+                  {"player_id": "3", "name": "Pasado", "days": 5, "days_planned": 5, "cells": cells({"a": 21, "b": 0, "c": 0, "d": 0})},
+              ]}
+        fa = {"next_match": None, "match": None, "rows": [], "summary": {"counts": {"golpe": {"ok": 0, "leve": 0, "grave": 0}}, "golpe_n": 0}}
+        av = {"counts": [], "players": 3, "unavailable": [{"player_id": "3", "name": "Pasado", "status_label": "Lesionado", "episode": None}]}
+        mc = Microcycle.objects.create(club=self.club, season=2026, bracket=self.sub20, number=43,
+                                       start_date=date(2026, 10, 26), end_date=date(2026, 11, 1))
+        with mock.patch.object(sm, "evaluate", return_value=ev), mock.patch.object(sm, "fatigue", return_value=fa), \
+                mock.patch.object(sm, "availability", return_value=av), \
+                mock.patch.object(sm, "participation", return_value={"sessions": 0, "matches": []}):
+            out = sm.summary(mc)
+        self.assertEqual((out["cards"]["load"]["short"], out["cards"]["load"]["over"]), (1, 1))
+        self.assertEqual([r["name"] for r in out["review"]], ["Pasado", "Tres bajo"],
+                         "el no disponible primero; 'Dos bajo' no llega a 3 métricas")
