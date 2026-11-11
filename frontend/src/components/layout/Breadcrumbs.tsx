@@ -40,6 +40,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   crecimiento: "Crecimiento",
   exportar: "Exportar datos",
   "exportar-reportes": "Exportar reportes",
+  fuentes: "Fuentes",
 };
 
 function isDynamicSegment(s: string): boolean {

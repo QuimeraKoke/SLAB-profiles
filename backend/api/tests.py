@@ -574,3 +574,21 @@ class InformePlantelHelpersTests(SimpleTestCase):
         self.assertEqual(_fmt(251, -1), "4:11")                 # 1.000 m en m:ss
         self.assertEqual(birth_quartile(date(2006, 7, 16)), "Q3")
         self.assertEqual(_cat_short("SUB-20"), "S20")
+
+
+class DataSourcesCatalogueTests(SimpleTestCase):
+    """Datos › Fuentes: the catalogue reads the same settings the syncs use."""
+
+    def test_documentos_salen_de_la_configuracion(self):
+        from django.test import override_settings
+
+        from exams.data_sources import _catalogue
+
+        with override_settings(FORMATIVO_WELLNESS_SHEET_IDS=["a", "b"], FORMATIVO_GPS_SHEET_ID="",
+                               PESO_DIARIO_SHEET_ID="p"):
+            cat = {s["key"]: s for s in _catalogue()}
+        self.assertEqual(cat["wellness_formativo"]["docs"], ["a", "b"])
+        self.assertEqual(cat["gps_formativo"]["docs"], [], "sin id configurado: sin documento")
+        self.assertEqual(cat["peso_diario"]["exams"], ["peso_talla"])
+        for s in cat.values():
+            self.assertTrue(s["schedule"] and s["name"])

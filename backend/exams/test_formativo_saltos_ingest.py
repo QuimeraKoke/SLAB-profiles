@@ -174,3 +174,24 @@ class RunTests(TestCase):
             rep = ing.run(path, self.club, season=2026, commit=True)
         self.assertEqual((rep.creados, rep.sin_cambios), (0, 1))
         self.assertEqual(ExamResult.objects.filter(template__slug="control_salto").count(), 1)
+
+    def test_el_sync_automatico_no_mueve_una_fecha_propuesta(self):
+        """The hourly sync must not silently re-date a team's history when the
+        calendar alignment shifts; the manual command still re-aligns."""
+        from unittest import mock
+
+        tab = "M41"
+        with TemporaryDirectory() as tmp:
+            path = self.write(tmp, {tab: [RCMJ_HEAD, RCMJ_SUB, rcmj_row("KORN")]})
+            with mock.patch.object(ing, "date_in_title", return_value=None), \
+                    mock.patch.object(ing, "align_between_matches", return_value={tab: date(2026, 10, 25)}):
+                ing.run(path, self.club, season=2026, commit=True)
+            with mock.patch.object(ing, "date_in_title", return_value=None), \
+                    mock.patch.object(ing, "align_between_matches", return_value={tab: date(2026, 10, 31)}):
+                ing.run(path, self.club, season=2026, commit=True, keep_proposed_dates=True)
+                row = ExamResult.objects.get(template__slug="control_salto")
+                self.assertEqual((row.result_data["fecha_partido"], row.recorded_at.date()),
+                                 ("2026-10-25", date(2026, 10, 25)), "automático: se queda donde estaba")
+                ing.run(path, self.club, season=2026, commit=True)
+                row.refresh_from_db()
+                self.assertEqual(row.result_data["fecha_partido"], "2026-10-31", "a mano: re-alinea")

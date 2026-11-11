@@ -111,7 +111,14 @@ app.conf.beat_schedule = {
         "task": "exams.tasks.sync_kine_formativo",
         "schedule": crontab(minute=10),
     },
-    "peso-diario-15min": {
+    # Planillas de control de salto del formativo (una por equipo, PRE/POST
+    # de cada partido). Cada hora en :55, el minuto libre que queda. Ocho
+    # lecturas por hora: el cupo de Sheets (60/min) sobra.
+    "saltos-formativo-hourly": {
+        "task": "exams.tasks.sync_formativo_saltos",
+        "schedule": crontab(minute=55),
+    },
+        "peso-diario-15min": {
         "task": "exams.tasks.sync_peso_diario",
         "schedule": crontab(minute="5,20,35,50"),
     },

@@ -173,6 +173,42 @@ def sync_kine_formativo(commit: bool = True) -> dict:
     return out
 
 
+@shared_task(name="exams.tasks.sync_formativo_saltos")
+def sync_formativo_saltos(commit: bool = True) -> dict:
+    """The club's jump-control sheets (one per team) → `control_salto`, the
+    current season. Idempotent: rows already imported are updated or left as
+    they are (`exams.formativo_saltos_ingest`). One document failing does not
+    stop the others."""
+    from django.utils import timezone
+
+    from core.models import Club
+    from exams import formativo_saltos_ingest as ing
+    from integrations.google_sheets import GoogleSheetsError
+
+    creds_file, creds_json = _formativo_creds()
+    ids = settings.FORMATIVO_SALTOS_SHEET_IDS
+    if not ids or not (creds_file or creds_json):
+        return {"status": "skipped", "reason": "not configured"}
+    club = Club.objects.filter(name=settings.FORMATIVO_CLUB).first()
+    if club is None:
+        return {"status": "skipped", "reason": "club not found"}
+    season = timezone.localdate().year
+    docs, errors = [], []
+    for sid in ids:
+        try:
+            rep = ing.run(sid, club, season=season, commit=commit, creds_file=creds_file, creds_json=creds_json,
+                          keep_proposed_dates=True)
+        except (GoogleSheetsError, ValueError) as exc:
+            logger.warning("saltos formativo %s failed: %s", sid, exc)
+            errors.append({"sheet": sid, "error": str(exc)})
+            continue
+        docs.append({"documento": rep.documento, "creados": rep.creados, "actualizados": rep.actualizados,
+                     "sin_jugador": len(rep.sin_jugador)})
+    out = {"status": "ok" if not errors else "partial", "season": season, "docs": docs, "errors": errors}
+    logger.info("saltos formativo sync: %s", out)
+    return out
+
+
 @shared_task(name="exams.tasks.sync_formativo_sheets")
 def sync_formativo_sheets(commit: bool = True, alerts: bool = False) -> dict:
     """Pull both Formativo sheets into their exams.

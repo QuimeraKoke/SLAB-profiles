@@ -4948,6 +4948,20 @@ def _ficha_areas(category, membership) -> list[dict]:
         {"slug": d.slug, "name": SPECS[d.slug][0], "dept": d.name} for d in depts if has_ficha(d.slug)]
 
 
+@api.get("/data-sources")
+def data_sources_view(request, category_id: str):
+    """Datos › Fuentes: every Drive document / API that feeds SLAB, which exams
+    it writes, how many results and the newest one, for the category's club.
+    See `exams.data_sources`."""
+    from exams.data_sources import data_sources
+
+    membership = get_membership(request.user)
+    category = scope_categories(Category.objects.select_related("club"), membership).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    return data_sources(category.club)
+
+
 @api.get("/export/fichas/options")
 def ficha_export_options(request, category_id: str):
     """Datos › Exportar reportes › Infografía: which fichas (General or an

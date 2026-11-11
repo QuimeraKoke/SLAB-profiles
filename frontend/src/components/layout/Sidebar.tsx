@@ -143,7 +143,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
   const [expandedItems, setExpandedItems] = useState<string[]>(() => {
     if (pathname.startsWith("/reportes")) return ["Dashboard"];
     if (
-      pathname.startsWith("/exportar") || pathname.startsWith("/uso")
+      pathname.startsWith("/exportar") || pathname.startsWith("/uso") || pathname.startsWith("/fuentes")
       || pathname.startsWith("/subir-datos")
     ) return ["Datos"];
     if (pathname.startsWith("/configuraciones") || pathname.startsWith("/plataforma")) {
@@ -226,6 +226,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
         : []),
       { label: "Exportar datos", href: "/exportar" },
       { label: "Exportar reportes", href: "/exportar-reportes" },
+      { label: "Fuentes", href: "/fuentes" },
       ...(user?.is_superuser ? [{ label: "Uso", href: "/uso" }] : []),
     ],
   };

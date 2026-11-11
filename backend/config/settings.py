@@ -239,7 +239,23 @@ WELLNESS_CATEGORY = env("WELLNESS_CATEGORY", default="Primer Equipo")
 FORMATIVO_GPS_SHEET_ID = env("FORMATIVO_GPS_SHEET_ID", default="")
 # The club's jump-control sheets (one Google Sheet per team, U11…U20),
 # comma-separated ids. Read by `import_formativo_saltos`.
-FORMATIVO_SALTOS_SHEET_IDS = [x.strip() for x in env("FORMATIVO_SALTOS_SHEET_IDS", default="").split(",") if x.strip()]
+# Default ids (U20, U18, U16, U15, U14, U13, U12, U11) for the same reason as
+# the weigh-in and kine sheets below: not secrets, and a sync that needs an env
+# var on three services to stop being a silent no-op stays unsynced. Synced
+# hourly by `exams.tasks.sync_formativo_saltos`. Blank the variable to disable.
+FORMATIVO_SALTOS_SHEET_IDS = [x.strip() for x in env(
+    "FORMATIVO_SALTOS_SHEET_IDS",
+    default=",".join([
+        "1x9s8E6CsWm2sbrghRoaBxMXBjD7hrlVxO5gGkMSB3Ac",   # U20
+        "1fybKplQoy4hdz2tNR-rs2g6mGWYV-9A3wYWiSZu6yZQ",   # U18
+        "1Tv2BV-4rQv52_kBaaEDYxx3K1pcZNhrAQG8vgEEckNA",   # U16
+        "1QTePnSz0706u_DLtwhhJc9ar_jbst57TaAUA-j6F-w4",   # U15
+        "1MQiUfQJiI8c7pZ9zHKG-9LdsNnTOM8zQg0x3yXtybhI",   # U14
+        "1KZTuy_Hvp69DrGyO00N5U8FXEUApAfSxg4T3wdu4YXQ",   # U13
+        "14QMhp_M0K4DFIs99-bYsHVUqJD2ok69lRc2e9zX1zj8",   # U12
+        "1-Hea7xmxioqQV4_6qSmVhUsog6go4alXzzYguJCdbvc",   # U11
+    ]),
+).split(",") if x.strip()]
 FORMATIVO_EVAL_SHEET_ID = env("FORMATIVO_EVAL_SHEET_ID", default="")
 FORMATIVO_CLUB = env("FORMATIVO_CLUB", default="Universidad de Chile")
 

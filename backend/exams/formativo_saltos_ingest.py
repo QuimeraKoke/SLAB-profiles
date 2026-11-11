@@ -357,8 +357,18 @@ def ensure_template(club):
         config_schema={"fields": fields})
 
 
+DATE_KEYS = ("fecha_partido", "fecha_fuente", "rival")
+
+
 def run(origen: str, club, *, season: int | None = None, commit: bool = False,
-        creds_file: str = "", creds_json: str = "") -> Reporte:
+        creds_file: str = "", creds_json: str = "", keep_proposed_dates: bool = False) -> Reporte:
+    """`keep_proposed_dates` (the hourly sync): a row already imported keeps
+    the match it was put on while that date is only a PROPOSAL (aligned from
+    the calendar, not in the tab's title nor confirmed by the club) — the
+    alignment shifts as fixtures and match sheets arrive, and an unattended
+    sync must not silently move a team's jump history. Its measured values
+    still update; a date that becomes confirmed still moves it. The manual
+    command keeps the old behaviour: re-align everything."""
     from core.models import Bracket, Player, TeamSeason
     from dashboards.team_scope import season_rows
     from exams.formativo_sources import abrir
@@ -431,14 +441,22 @@ def run(origen: str, club, *, season: int | None = None, commit: bool = False,
             })
             old = existing.get(data["origen_id"])
             event_id = link.get("event_id")
+            row_day = day
+            if (keep_proposed_dates and old is not None and source == "propuesta"
+                    and (old.result_data or {}).get("fecha_partido")):
+                # Stay where it was: same match, same date, same event.
+                for k in DATE_KEYS:
+                    data[k] = (old.result_data or {}).get(k)
+                event_id = old.event_id
+                row_day = timezone.localtime(old.recorded_at).date()
             if old is None:
                 to_create.append(ExamResult(
                     template=tpl, player=p, event_id=event_id,
-                    recorded_at=timezone.make_aware(datetime.combine(day, datetime.min.time())),
+                    recorded_at=timezone.make_aware(datetime.combine(row_day, datetime.min.time())),
                     result_data=data))
             elif old.result_data != data or old.player_id != p.id or str(old.event_id or "") != str(event_id or ""):
                 old.result_data, old.player, old.event_id = data, p, event_id
-                old.recorded_at = timezone.make_aware(datetime.combine(day, datetime.min.time()))
+                old.recorded_at = timezone.make_aware(datetime.combine(row_day, datetime.min.time()))
                 to_update.append(old)
             else:
                 rep.sin_cambios += 1
