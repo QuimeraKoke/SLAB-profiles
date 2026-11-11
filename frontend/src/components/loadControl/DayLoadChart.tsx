@@ -21,7 +21,6 @@ import { Bar, BarChart, CartesianGrid, Cell, LabelList, ReferenceLine, Responsiv
 import { api, ApiError } from "@/lib/api";
 import { type Evaluation, shortDate, signedPct } from "@/lib/loadControl";
 
-import { usePlayerPhoto } from "./PlayerPhotos";
 import styles from "./loadControl.module.css";
 
 const OVER = "#eb6834";
@@ -29,23 +28,11 @@ const UNDER = "#2a78d6";
 const IN_BAND = "#98a2b3";
 const INK = "#475467";
 
-const AV = 18;
-
-/** Y-axis label: the player's photo (if any) left of his name. */
-function PhotoTick({ x = 0, y = 0, payload, names }: { x?: number; y?: number; payload?: { value: string }; names: Record<string, string> }) {
-  const id = payload?.value ?? "";
-  const photo = usePlayerPhoto(id);
-  const clip = `av-${id}`;
+/** Y-axis label: the player's name (no photo: the staff asked to keep this chart clean). */
+function NameTick({ x = 0, y = 0, payload, names }: { x?: number; y?: number; payload?: { value: string }; names: Record<string, string> }) {
   return (
     <g transform={`translate(${x},${y})`}>
-      <text x={photo ? -AV - 6 : 0} dy={4} textAnchor="end" fontSize={12} fill={INK}>{names[id] ?? ""}</text>
-      {photo && (
-        <>
-          <clipPath id={clip}><circle cx={-AV / 2 - 2} cy={0} r={AV / 2} /></clipPath>
-          <image href={photo} x={-AV - 2} y={-AV / 2} width={AV} height={AV} clipPath={`url(#${clip})`}
-            preserveAspectRatio="xMidYMid slice" />
-        </>
-      )}
+      <text x={0} dy={4} textAnchor="end" fontSize={12} fill={INK}>{names[payload?.value ?? ""] ?? ""}</text>
     </g>
   );
 }
@@ -146,8 +133,8 @@ export default function DayLoadChart({ microcycleId, day, view, onView, metric, 
               <CartesianGrid horizontal={false} stroke="#eaecf0" />
               <XAxis type="number" tick={{ fontSize: 11, fill: INK }} tickFormatter={(v) => `${v}%`}
                 domain={[-lim, lim]} ticks={[-lim, -lim / 2, 0, lim / 2, lim]} allowDataOverflow={false} />
-              <YAxis type="category" dataKey="id" width={174} interval={0}
-                tick={<PhotoTick names={Object.fromEntries(bars.map((b) => [b.id, b.name]))} />} />
+              <YAxis type="category" dataKey="id" width={150} interval={0}
+                tick={<NameTick names={Object.fromEntries(bars.map((b) => [b.id, b.name]))} />} />
               <ReferenceLine x={0} stroke="#475467" />
               <ReferenceLine x={ok} stroke="#d0d5dd" strokeDasharray="3 3" />
               <ReferenceLine x={-ok} stroke="#d0d5dd" strokeDasharray="3 3" />

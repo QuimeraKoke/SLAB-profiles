@@ -150,7 +150,7 @@ export default function WellnessView({
         <ul className={styles.pendingList}>
           {list.map((w) => (
             <li key={w.player_id}>
-              <PlayerName id={w.player_id} name={w.name} size={24}>
+              <PlayerName id={w.player_id} name={w.name} size={36}>
                 <span>{w.name}{w.position && <span className={styles.posTag}> {w.position}</span>}</span>
               </PlayerName>
               {w.trained && <span className={styles.trainedTag}>entrenó</span>}
@@ -254,7 +254,7 @@ export default function WellnessView({
               <ul className={styles.answerList}>
                 {rows.map((r) => (
                   <li key={r.player_id} className={styles.answerRow}>
-                    <PlayerName id={r.player_id} name={r.name} size={36}>
+                    <PlayerName id={r.player_id} name={r.name} size={52}>
                       <span className={styles.answerBody}>
                         <span>
                           <strong>{r.name}</strong>

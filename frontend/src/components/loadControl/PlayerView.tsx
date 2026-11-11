@@ -93,7 +93,7 @@ export default function PlayerView({ microcycleId, playerId, onPlayer, onTab }: 
         <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
           {p.photo_url
             // eslint-disable-next-line @next/next/no-img-element
-            ? <img src={p.photo_url} alt="" width={72} height={72} style={{ borderRadius: 12, objectFit: "cover" }} />
+            ? <img src={p.photo_url} alt="" width={96} height={96} style={{ borderRadius: 16, objectFit: "cover", objectPosition: "center top" }} />
             : <div aria-hidden="true" style={{ width: 72, height: 72, borderRadius: 12, background: "#f2f4f7" }} />}
           <div style={{ flex: 1, minWidth: 200 }}>
             <h2 className={styles.h2} style={{ margin: 0 }}>{p.name}</h2>

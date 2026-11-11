@@ -77,6 +77,14 @@
   background: #eef0fb;
   flex-shrink: 0;
 }
+/* Daily: bigger rounded squares; portraits anchored at the top so the face
+   is never what gets cropped. */
+.avatarLarge {
+  width: 56px; height: 56px;
+  border-radius: 12px;
+  object-position: center top;
+  font-size: 16px;
+}
 .pmeta { display: flex; flex-direction: column; text-align: left; }
 .pname { font-size: 14px; font-weight: 700; color: #101828; display: inline-flex; align-items: center; gap: 6px; }
 .ppos { font-size: 12px; color: #98a2b3; }

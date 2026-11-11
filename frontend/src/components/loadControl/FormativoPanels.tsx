@@ -122,6 +122,9 @@ export default function FormativoPanels({ tab, nav, categoryId, params, setUrl, 
       return (
         <FatigueView key={week} microcycleId={week}
           matchDate={params.get("partido")} playerId={params.get("jugador")}
+          mode={params.get("fatiga_vista") === "microciclo" ? "micro" : "match"}
+          onMode={(md) => setUrl({ fatiga_vista: md === "micro" ? "microciclo" : null, partido: null })}
+          day={nav.day}
           onFilters={(f) => setUrl({
             ...(f.match !== undefined ? { partido: f.match } : {}),
             ...(f.player !== undefined ? { jugador: f.player } : {}),

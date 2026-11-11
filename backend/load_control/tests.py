@@ -758,8 +758,30 @@ class FatigueTests(Base):
         ExamResult.objects.bulk_create(self.season(p, [1.5] * 6) + [self.jump(p, date(2026, 10, 31), 1.6, 1.44),
                                                                     self.jump(p, date(2026, 11, 7), 1.6, 1.6)])
         recent = self.fatigue(self.mc)["rows"][0]["recent"]
-        self.assertEqual(len(recent), 4)
+        self.assertEqual(len(recent), 6)
         self.assertEqual((recent[-1]["date"], recent[-1]["golpe_band"]), ("2026-10-31", "grave"))
+
+    def test_fatiga_del_microciclo_md1_siguiente_vs_md_mas_1(self):
+        p = self.players[0]
+        ExamResult.objects.bulk_create([
+            self.jump(p, date(2026, 10, 31), 1.6, 1.4),                    # POST (MD+1) 1,40
+            self.jump(p, date(2026, 11, 7), 1.33, 1.3),                    # MD-1 siguiente 1,33: −5 %
+        ])
+        r = self.fatigue(self.mc)["rows"][0]
+        self.assertEqual((r["micro_pct"], r["micro_band"], r["micro_state"]), (-5.0, "grave", "measured"))
+
+    def test_el_dia_elige_el_microciclo_entre_dos_partidos(self):
+        p = self.players[0]
+        ExamResult.objects.bulk_create([self.jump(p, date(2026, 10, 24), 1.5, 1.5),
+                                        self.jump(p, date(2026, 10, 31), 1.6, 1.4),
+                                        self.jump(p, date(2026, 11, 7), 1.5, 1.5)])
+        # Martes 3-nov: microciclo 31-oct → 7-nov. El día del partido cierra el suyo.
+        self.assertEqual(self.fatigue(self.mc, day=date(2026, 11, 3))["match"]["date"], "2026-10-31")
+        self.assertEqual(self.fatigue(self.mc, day=date(2026, 11, 7))["match"]["date"], "2026-10-31")
+        self.assertEqual(self.fatigue(self.mc, day=date(2026, 11, 8))["match"]["date"], "2026-11-07")
+        # Sin partido siguiente medido: pendiente.
+        r = self.fatigue(self.mc, day=date(2026, 11, 8))["rows"][0]
+        self.assertEqual((r["micro_pct"], r["micro_state"]), (None, "pending"))
 
     def test_sin_proximo_partido_medido_queda_pendiente(self):
         ExamResult.objects.bulk_create([self.jump(self.players[0], date(2026, 10, 31), 1.6, 1.5)])

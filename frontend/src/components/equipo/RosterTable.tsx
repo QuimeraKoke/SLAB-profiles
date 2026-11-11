@@ -70,9 +70,11 @@ function alignClass(a: Column["align"]): string {
 }
 
 export default function RosterTable({
-  rows, canEdit, canDeactivate, onEdit, onDeactivate,
+  rows, canEdit, canDeactivate, onEdit, onDeactivate, largePhotos = false,
 }: {
   rows: RosterRow[];
+  /** Bigger rounded-square photos (the Daily, read on a projector). */
+  largePhotos?: boolean;
   canEdit: boolean;
   canDeactivate: boolean;
   onEdit: (row: RosterRow) => void;
@@ -142,7 +144,7 @@ export default function RosterTable({
             <tr key={r.id}>
               <td className={styles.left}>
                 <Link href={`/perfil/${r.id}`} className={styles.player}>
-                  <Avatar photo={r.photo} initials={r.initials} />
+                  <Avatar photo={r.photo} initials={r.initials} large={largePhotos} />
                   <span className={styles.pmeta}>
                     <span className={styles.pname}>
                       {r.name}
@@ -209,7 +211,7 @@ export default function RosterTable({
 
 // ─── cells ──────────────────────────────────────────────────────────────
 
-function Avatar({ photo, initials }: { photo: string | null; initials: string }) {
+function Avatar({ photo, initials, large = false }: { photo: string | null; initials: string; large?: boolean }) {
   const [failed, setFailed] = React.useState(false);
   if (photo && !failed) {
     return (
@@ -217,13 +219,13 @@ function Avatar({ photo, initials }: { photo: string | null; initials: string })
       <img
         src={photo}
         alt=""
-        className={styles.avatarImg}
+        className={`${styles.avatarImg} ${large ? styles.avatarLarge : ""}`}
         loading="lazy"
         onError={() => setFailed(true)}
       />
     );
   }
-  return <span className={styles.avatar}>{initials}</span>;
+  return <span className={`${styles.avatar} ${large ? styles.avatarLarge : ""}`}>{initials}</span>;
 }
 
 function Gauge({ value }: { value: number | null }) {

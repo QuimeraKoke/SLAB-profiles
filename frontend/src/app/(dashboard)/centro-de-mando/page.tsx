@@ -311,7 +311,7 @@ function AdhSection({
           <div className={styles.adhList}>
             {players.map((p) => (
               <a key={p.player_id} href={`/perfil/${p.player_id}`} className={styles.adhRow}>
-                <span className={styles.adhName}><PlayerName id={p.player_id} name={p.name} size={22} /></span>
+                <span className={styles.adhName}><PlayerName id={p.player_id} name={p.name} size={32} /></span>
                 {p.position && <span className={styles.adhPos}>{p.position}</span>}
                 {p.injured && <span className={styles.adhChip}>lesionado</span>}
               </a>

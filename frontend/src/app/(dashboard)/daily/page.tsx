@@ -441,6 +441,7 @@ export default function DailyPage() {
               <p className={styles.emptySection}>Cargando plantel…</p>
             ) : (
               <RosterTable
+                largePhotos
                 rows={disponibles}
                 canEdit={false}
                 canDeactivate={false}

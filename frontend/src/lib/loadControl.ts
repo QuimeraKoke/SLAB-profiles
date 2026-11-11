@@ -233,6 +233,8 @@ export interface FatigueRow {
   pre: number | null; post: number | null; next_pre: number | null;
   golpe_pct: number | null; golpe_band: Band | null;
   llega_pct: number | null; llega_band: Band | null; llega_state: "measured" | "pending" | "missing";
+  /** Microcycle fatigue: next match's MD-1 (PRE) vs this match's MD+1 (POST). */
+  micro_pct: number | null; micro_band: Band | null; micro_state: "measured" | "pending" | "missing" | "no_post";
   pre_level: string | null; next_pre_level: string | null;
   basal: number | null; basal_n: number; pre_vs_basal: number | null;
   season_drift_pct: number | null; season_drift_band: Band | null;
@@ -242,8 +244,8 @@ export interface FatigueMatch { date: string; rival: string | null; source: stri
 export interface FatiguePayload {
   match: FatigueMatch | null; prev_match: FatigueMatch | null; next_match: FatigueMatch | null;
   rows: FatigueRow[];
-  summary: { players: number; golpe_n: number; llega_n: number;
-    counts: { golpe: Record<Band, number>; llega: Record<Band, number> } };
+  summary: { players: number; golpe_n: number; llega_n: number; micro_n: number;
+    counts: { golpe: Record<Band, number>; llega: Record<Band, number>; micro: Record<Band, number> } };
   trend: { player_id: string; name: string; method: string;
     points: { date: string; pre: number | null; post: number | null; basal: number | null; rival: string | null }[] } | null;
   params: { baseline_n: number; attempt_value: string; rsi_alert: { ok_from: number; grave_at: number } };

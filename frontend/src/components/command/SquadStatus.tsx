@@ -65,7 +65,7 @@ export default function SquadStatus({ squad }: { squad: CCSquad }) {
       <div className={styles.players}>
         {squad.players.map((p) => (
           <Link key={p.id} href={`/perfil/${p.id}`} className={styles.player}>
-            <PlayerAvatar id={p.id} name={p.name} size={28} />
+            <PlayerAvatar id={p.id} name={p.name} size={40} />
             <span className={styles.playerName}>{p.name}</span>
             <span className={styles.playerStatus}>
               <span className={`${styles.dot} ${STATUS_DOT[p.status] ?? styles.dotMuted}`} />

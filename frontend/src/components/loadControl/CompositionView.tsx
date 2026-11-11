@@ -138,7 +138,7 @@ export default function CompositionView({ categoryId, playerId, metric, sort, on
           <button type="button" className={styles.secondary} onClick={() => onFilters({ player: null, metric: null })}>
             ‹ Todo el plantel
           </button>
-          <PlayerName id={p.player_id} name={p.name} size={36}><strong>{p.name}</strong></PlayerName>
+          <PlayerName id={p.player_id} name={p.name} size={52}><strong>{p.name}</strong></PlayerName>
           <span className={styles.muted}>
             {p.measurements.length} mediciones · última {longDate(p.last.date)}
             {p.last.talla != null && ` · ${num(p.last.talla, 1)} cm`}

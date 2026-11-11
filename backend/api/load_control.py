@@ -238,7 +238,7 @@ def participation_view(request, microcycle_id: str, scope: str = "microcycle"):
 
 @router.get("/microcycles/{microcycle_id}/fatigue")
 def fatigue_view(request, microcycle_id: str, match_date: date | None = None,
-                 player_id: str | None = None):
+                 day: date | None = None, player_id: str | None = None):
     """Fatiga post-partido: PRE/POST of a match of the week, each player's
     basal and the squad's accumulated fatigue. See `load_control.fatigue`."""
     from load_control.fatigue import fatigue
@@ -246,7 +246,7 @@ def fatigue_view(request, microcycle_id: str, match_date: date | None = None,
     _require(request, PERM_VIEW)
     mc = _microcycle(request, microcycle_id)
     try:
-        return fatigue(mc, match_date=match_date, player_id=player_id)
+        return fatigue(mc, match_date=match_date, day=day, player_id=player_id)
     except ValueError as exc:
         raise HttpError(400, str(exc))
 

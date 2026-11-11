@@ -11,6 +11,9 @@ measured match: PRE the day before, POST the day after —
 * golpe  = POST vs PRE of the match.
 * llega  = next match's PRE vs this match's PRE — back to where he was
            before the match, or not.
+* micro  = next match's PRE (MD-1) vs this match's POST (MD+1): the
+           microcycle between the two matches — did the week's training let
+           him climb out of the post-match low, or did fatigue pile up?
 Both use the club's own traffic light (`rsi_alert`: ≥ 0 green, 0…−5 % amber,
 ≤ −5 % red) — the one their sheets paint.
 
@@ -36,7 +39,7 @@ from load_control.wellness import _name, team_players
 
 SLUG = "control_salto"
 MATCH_MINUTES = 90
-RECENT_MATCHES = 4
+RECENT_MATCHES = 6
 
 
 def _num(v) -> float | None:
@@ -123,7 +126,13 @@ def _match_info(history: dict, d: date | None, own) -> dict | None:
             "event_id": m["event_id"]} if m else None
 
 
-def fatigue(mc: Microcycle, *, match_date: date | None = None, player_id=None) -> dict:
+def fatigue(mc: Microcycle, *, match_date: date | None = None, day: date | None = None,
+            player_id=None) -> dict:
+    """`match_date` picks the match (Recuperación del partido). `day` picks
+    the microcycle that day belongs to (Fatiga del microciclo): from the last
+    measured match BEFORE it — whose MD+1 opens the microcycle — to the next
+    one, whose MD-1 closes it. A match day itself closes the microcycle that
+    ends with it."""
     cfg = LoadControlConfig.resolved(mc.club, mc.bracket)
     n = int(cfg["jump_baseline_n"])
     key = "mean" if cfg["attempt_value"] == "mean" else "best"
@@ -140,7 +149,11 @@ def fatigue(mc: Microcycle, *, match_date: date | None = None, player_id=None) -
     # Default: the week's last measured match, else the last one before it —
     # "el último partido" as seen from this week.
     upto = [d for d in season_matches if d <= mc.end_date]
-    target = match_date or (upto[-1] if upto else None)
+    if match_date is None and day is not None:
+        before = [d for d in season_matches if d < day]
+        target = before[-1] if before else None
+    else:
+        target = match_date or (upto[-1] if upto else None)
     i = season_matches.index(target) if target else -1
     prev_m = season_matches[i - 1] if i > 0 else None
     next_m = season_matches[i + 1] if target and i + 1 < len(season_matches) else None
@@ -159,6 +172,7 @@ def fatigue(mc: Microcycle, *, match_date: date | None = None, player_id=None) -
             current, _ = _basal(ms, date.max, m["method"], n)
             golpe = _pct(m["post"], m["pre"])
             llega = _pct(next_pre, m["pre"])
+            micro = _pct(next_pre, m["post"])
             drift = _pct(current, start) if start_n >= n and current is not None else None
             rows.append({
                 "player_id": str(pid), "name": _name(players[pid]), "method": m["method"],
@@ -170,6 +184,11 @@ def fatigue(mc: Microcycle, *, match_date: date | None = None, player_id=None) -
                 # or he did not jump it (or jumped another test).
                 "llega_state": ("measured" if next_pre is not None else "pending" if next_m is None
                                 else "missing"),
+                "micro_pct": micro, "micro_band": delta_band(micro, cfg),
+                # Why there is no microcycle reading: no MD+1 (POST), the next
+                # match is not measured yet, or he did not jump its MD-1.
+                "micro_state": ("measured" if micro is not None else "no_post" if m["post"] is None
+                                else "pending" if next_m is None else "missing"),
                 "pre_level": level_band(m["pre"], m["method"], cfg),
                 "next_pre_level": level_band(next_pre, m["method"], cfg),
                 "basal": basal, "basal_n": basal_n,
@@ -187,7 +206,7 @@ def fatigue(mc: Microcycle, *, match_date: date | None = None, player_id=None) -
         rows.sort(key=lambda r: (rank[r["llega_band"]], rank[r["golpe_band"]],
                                  r["golpe_pct"] if r["golpe_pct"] is not None else 99, r["name"]))
 
-    counts = {k: {"ok": 0, "leve": 0, "grave": 0} for k in ("golpe", "llega")}
+    counts = {k: {"ok": 0, "leve": 0, "grave": 0} for k in ("golpe", "llega", "micro")}
     for r in rows:
         for k in counts:
             if r[f"{k}_band"]:
@@ -210,7 +229,8 @@ def fatigue(mc: Microcycle, *, match_date: date | None = None, player_id=None) -
         "rows": rows,
         "summary": {"players": len(rows), "counts": counts,
                     "golpe_n": sum(1 for r in rows if r["golpe_pct"] is not None),
-                    "llega_n": sum(1 for r in rows if r["llega_pct"] is not None)},
+                    "llega_n": sum(1 for r in rows if r["llega_pct"] is not None),
+                    "micro_n": sum(1 for r in rows if r["micro_pct"] is not None)},
         "trend": trend,
         "params": {"baseline_n": n, "attempt_value": key, "rsi_alert": cfg["rsi_alert"]},
     }

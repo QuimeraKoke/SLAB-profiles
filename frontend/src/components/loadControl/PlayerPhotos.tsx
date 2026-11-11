@@ -35,16 +35,18 @@ export function usePlayerPhoto(id: string): string | null {
 const initialsOf = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
-export function PlayerAvatar({ id, name, size = 26 }: { id: string; name: string; size?: number }) {
+/** Rounded square, not a circle: a circle crops a portrait's head (the staff
+ *  asked for bigger, uncut photos). Anchored at the top so the face stays in. */
+export function PlayerAvatar({ id, name, size = 40 }: { id: string; name: string; size?: number }) {
   const p = useContext(Ctx)[id];
   const [failed, setFailed] = useState<string | null>(null);
   const base: React.CSSProperties = {
-    width: size, height: size, borderRadius: "50%", flexShrink: 0, background: "#eef0fb",
+    width: size, height: size, borderRadius: Math.round(size * 0.22), flexShrink: 0, background: "#eef0fb",
   };
   if (p?.photo && failed !== p.photo) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
-      <img src={p.photo} alt="" loading="lazy" style={{ ...base, objectFit: "cover" }}
+      <img src={p.photo} alt="" loading="lazy" style={{ ...base, objectFit: "cover", objectPosition: "center top" }}
         onError={() => setFailed(p.photo)} />
     );
   }
