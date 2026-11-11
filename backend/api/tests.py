@@ -85,6 +85,31 @@ class ExportWorkbookTests(SimpleTestCase):
         self.assertEqual([c.value for c in ws[1]], ["Jugador", "Fecha", "CK (U/L)"])
         self.assertEqual(ws.cell(row=2, column=3).value, 720)
 
+    def test_bodymap_and_odd_values_do_not_break_export(self):
+        import io as _io
+
+        from openpyxl import load_workbook
+
+        from api.export import _humanize, workbook_bytes
+
+        bodymap = {
+            "zones": ["right_thigh", "left_calf"],
+            "pins": [{"x": 0.3, "y": 0.6, "view": "front", "zone": "right_thigh"}],
+        }
+        self.assertEqual(
+            _humanize(bodymap, {"type": "bodymap"}), "Muslo der., Pantorrilla izq.",
+        )
+        self.assertEqual(
+            _humanize({"pins": [{"zone": "left_foot"}]}, {"type": "bodymap"}), "Pie izq.",
+        )
+        wb = load_workbook(_io.BytesIO(workbook_bytes([
+            {"name": "X", "headers": ["a", "b", "c"],
+             "rows": [[{"k": 1}, [{"k": 2}], "bad\x01char"]]},
+        ])))
+        ws = wb["X"]
+        self.assertEqual(ws.cell(row=2, column=1).value, '{"k": 1}')
+        self.assertEqual(ws.cell(row=2, column=3).value, "badchar")
+
     def test_empty_yields_one_sheet(self):
         import io as _io
 

@@ -43,9 +43,9 @@ def workbook_bytes(sheets: list[dict]) -> bytes:
         wb.create_sheet(_sheet_title("Sin datos", used))
     for s in sheets:
         ws = wb.create_sheet(_sheet_title(s.get("name", "Hoja"), used))
-        ws.append(list(s.get("headers") or []))
+        ws.append([_cell(h) for h in s.get("headers") or []])
         for row in s.get("rows") or []:
-            ws.append(list(row))
+            ws.append([_cell(v) for v in row])
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -57,17 +57,59 @@ def _header(field: dict) -> str:
     return f"{label} ({unit})" if unit else label
 
 
+def _zone_label(zone: Any, field: dict) -> str:
+    from dashboards.pdf.charts.body_map_heatmap import _REGION_LABEL_ES
+
+    labels = field.get("option_labels") or {}
+    return str(labels.get(zone) or _REGION_LABEL_ES.get(zone) or zone)
+
+
 def _humanize(value: Any, field: dict) -> Any:
     """Categorical → its display label; everything else as-is; None → ""."""
     if value is None:
         return ""
     if field.get("type") == "categorical" and isinstance(value, str):
         return (field.get("option_labels") or {}).get(value, value)
+    if isinstance(value, dict):
+        # Mapa corporal ({"zones": [...], "pins": [...]}): the zones, by name.
+        # Pins are screen coordinates — meaningless in a spreadsheet.
+        if "zones" in value or "pins" in value:
+            zones = list(value.get("zones") or [])
+            if not zones:
+                zones = list(dict.fromkeys(
+                    p.get("zone") for p in value.get("pins") or []
+                    if isinstance(p, dict) and p.get("zone")
+                ))
+            return ", ".join(_zone_label(z, field) for z in zones)
+        return _cell(value)
     if isinstance(value, list):
         # A multiple-choice list ("Creatina, Omega 3"): one cell, its labels.
         labels = field.get("option_labels") or {}
-        return ", ".join(str(labels.get(v, v)) for v in value)
+        return ", ".join(
+            str(labels.get(v, v)) if isinstance(v, (str, int, float)) else str(_cell(v))
+            for v in value
+        )
     return value
+
+
+def _cell(value: Any) -> Any:
+    """Last line of defence before openpyxl: anything it can't store (dicts,
+    lists, …) becomes JSON text, and control characters that make it raise
+    IllegalCharacterError are stripped. One odd value must never sink the
+    whole export."""
+    import datetime as _dt
+    import decimal as _dec
+    import json
+
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+
+    if value is None or isinstance(
+        value, (bool, int, float, _dec.Decimal, _dt.date, _dt.datetime, _dt.time)
+    ):
+        return value
+    if not isinstance(value, str):
+        value = json.dumps(value, ensure_ascii=False, default=str)
+    return ILLEGAL_CHARACTERS_RE.sub("", value)
 
 
 def build_export(*, category, membership, template_ids=None, player_ids=None,
