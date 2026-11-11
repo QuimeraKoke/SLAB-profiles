@@ -6,6 +6,7 @@ django-cors-headers==4.6.0
 PyJWT==2.10.1
 openpyxl==3.1.5
 celery==5.4.0
+kombu==5.6.2  # 5.7 requires redis-py>=6.1 — crashed Celery on 2026-11-11
 django-celery-beat==2.7.0
 redis==5.2.0
 django-storages[s3]==1.14.4
