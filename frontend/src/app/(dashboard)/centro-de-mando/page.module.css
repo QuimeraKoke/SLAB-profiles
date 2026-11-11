@@ -1,4 +1,6 @@
 .page {
+  /* Explícito: globals.css pinta el body casi blanco (--text-color). */
+  color: #101828;
   padding: 16px 28px 56px;
   max-width: 1640px;
   margin: 0 auto;
@@ -20,7 +22,7 @@
 
 .sub {
   font-size: 13px;
-  color: #667085;
+  color: #475467;
   margin: 2px 0 0;
 }
 
@@ -171,7 +173,7 @@
 
 .muted {
   font-size: 13px;
-  color: #98a2b3;
+  color: #667085;
   padding: 4px 0;
 }
 

@@ -153,7 +153,7 @@ export interface WellnessDay {
   [item: string]: number | string | null;
 }
 export interface WellnessRow {
-  player_id: string; name: string; checkin: boolean; checkout: boolean;
+  player_id: string; name: string; position?: string; checkin: boolean; checkout: boolean;
   scores: Record<string, number | null>; total_bienestar: number | null;
   duracion_min: number | null; rpe: number | null; ua: number | null; peso: number | null;
   /** Body zones from `dolor_muscular` / `molestia_post`. */
@@ -161,10 +161,13 @@ export interface WellnessRow {
   /** Illness from `sintomas` (fiebre, resfriado…) — not pain. */
   symptoms: string[];
 }
+export interface WellnessPending { player_id: string; name: string; position: string; trained: boolean }
 export interface WellnessFlag extends WellnessRow { lows: { key: string; value: number }[]; severity: number }
 export interface WellnessPayload {
   items: WellnessItem[]; low: number; series: WellnessDay[]; players: number; day: string | null;
   rows?: WellnessRow[]; flagged?: WellnessFlag[]; missing?: { player_id: string; name: string }[];
+  /** This week's squad without the form that day; `trained` = GPS that day. */
+  no_checkin?: WellnessPending[]; no_checkout?: WellnessPending[];
   answered?: { checkin: number; checkout: number };
 }
 

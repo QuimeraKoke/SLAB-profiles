@@ -4,7 +4,7 @@
 .header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
 .title { margin: 0; font-size: 1.5rem; font-weight: 700; color: #101828; }
 .subtitle { margin: 4px 0 0; color: #475467; font-size: 0.92rem; }
-.controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+.controls { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; color: #101828; }
 .label { display: flex; flex-direction: column; gap: 4px; font-size: 0.7rem; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.04em; color: #667085; }
 .select, .textInput { height: 40px; min-width: 160px; max-width: 100%; border: 1px solid #d0d5dd; border-radius: 8px;
@@ -161,3 +161,32 @@ span.matchLink { text-decoration: none; }
 .delta { font-size: 0.75rem; font-weight: 600; color: #667085; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .tone_good { color: #067647; }
 .tone_bad { color: #b42318; }
+
+/* Check-in / out › Por jugador and Sin responder */
+.answerList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.answerRow { padding: 10px 0; border-top: 1px solid #eaecf0; }
+.answerRow:first-child { border-top: 0; }
+.answerBody { display: flex; flex-direction: column; gap: 4px; font-size: 0.88rem; color: #101828; }
+.posTag { font-size: 0.78rem; font-weight: 500; color: #475467; }
+.inlineChip { display: inline-flex; align-items: baseline; gap: 4px; padding: 2px 8px; border-radius: 6px;
+  font-size: 0.76rem; }
+.h3 { margin: 0 0 6px; font-size: 0.85rem; font-weight: 700; color: #101828; }
+.pendingGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.pendingList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px;
+  font-size: 0.88rem; color: #101828; }
+.pendingList li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.trainedTag { padding: 1px 8px; border-radius: 999px; background: #fef3c7; color: #78350f; font-size: 0.74rem;
+  font-weight: 600; }
+
+/* Check-in / out › Bienestar bajo: a grid with a header row (stacks on phones). */
+.flagTable { display: flex; flex-direction: column; }
+.flagGrid { display: grid; grid-template-columns: minmax(200px, 1.4fr) 110px minmax(170px, 1.4fr) minmax(170px, 1.4fr) minmax(130px, 1fr);
+  gap: 12px; align-items: center; padding: 10px 0; border-top: 1px solid #eaecf0; font-size: 0.88rem; color: #101828; }
+.flagHead { border-top: 0; padding: 4px 0 8px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.04em; color: #667085; }
+.flagNum { font-variant-numeric: tabular-nums; font-weight: 600; }
+@media (max-width: 760px) {
+  .flagGrid { grid-template-columns: 1fr; gap: 4px; }
+  .flagHead { display: none; }
+  .flagGrid > [data-label]::before { content: attr(data-label) ": "; font-size: 0.75rem; color: #667085; font-weight: 500; }
+}

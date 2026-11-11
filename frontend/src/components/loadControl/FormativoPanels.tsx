@@ -138,16 +138,21 @@ export default function FormativoPanels({ tab, nav, categoryId, params, setUrl, 
       );
     case "lesiones":
       return <AvailabilityView key={week} microcycleId={week} />;
-    case "minutos":
+    case "minutos": {
+      const cargaVista = params.get("carga_vista");
       return (
         <>
-        <DayLoadChart key={`${week}-${nav.day}`} microcycleId={week} day={nav.day}
+        <DayLoadChart key={cargaVista === "semana" ? `${week}-semana` : `${week}-${nav.day}`}
+          microcycleId={week} day={nav.day}
+          view={cargaVista === "semana" ? "week" : "day"}
+          onView={(v) => setUrl({ carga_vista: v === "week" ? "semana" : null })}
           metric={params.get("carga_metrica")} onMetric={(k) => setUrl({ carga_metrica: k })} />
         <ParticipationView key={week} microcycleId={week}
           scope={params.get("periodo") === "temporada" ? "season" : "microcycle"}
           onScope={(sc) => setUrl({ periodo: sc === "season" ? "temporada" : null })} />
         </>
       );
+    }
     case "jugador":
       return (
         <PlayerView key={week} microcycleId={week} playerId={params.get("jugador")}

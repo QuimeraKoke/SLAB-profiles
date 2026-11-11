@@ -108,26 +108,51 @@ export default function WellnessView({ microcycleId, day, playerId, onFilters, h
   const chartData = data.series.map((r) => ({ ...r, tick: tick(r.date) }));
   const selected = data.series.find((r) => r.date === effectiveDay);
 
-  const LIMIT = { flagged: 8, rows: 8, missing: 10 } as const;
+  const LIMIT = { flagged: 8 } as const;
   const visible = <T,>(key: keyof typeof LIMIT, list: T[]) => (open[key] ? list : list.slice(0, LIMIT[key]));
   const moreButton = (key: keyof typeof LIMIT, total: number, what: string) => (total > LIMIT[key] ? (
     <button type="button" className={styles.secondary} aria-expanded={!!open[key]}
       onClick={() => setOpen((o) => ({ ...o, [key]: !o[key] }))}>
-      {open[key] ? "Ver menos" : `Ver ${total - LIMIT[key]} ${what} más`}
+      {open[key] ? "Ver menos" : `Ver ${total - LIMIT[key]} ${total - LIMIT[key] === 1 ? what.replace(/es$|s$/, "") : what} más`}
     </button>
   ) : null);
   const flagged = data.flagged ?? [];
   const rows = data.rows ?? [];
-  const missing = data.missing ?? [];
+  const noIn = data.no_checkin ?? [];
+  const noOut = data.no_checkout ?? [];
 
-  const chip = (k: string, v: number | null) => {
+  // "Sueño 4" — one compact chip per item, coloured by the club's bands.
+  const inlineChip = (k: string, v: number | null) => {
     const b = scoreBand(v, data.low);
     return (
-      <span key={k} className={`${styles.scoreChip} ${styles[`band_${b ?? "none"}`]}`}>
-        {itemLabel(k)}<strong>{v == null ? "—" : fmt(v)}</strong>
+      <span key={k} className={`${styles.inlineChip} ${styles[`band_${b ?? "none"}`]}`}>
+        {itemLabel(k)} <strong>{v == null ? "—" : fmt(v)}</strong>
       </span>
     );
   };
+  const outLine = (r: (typeof rows)[number]) => [
+    r.checkout
+      ? [r.duracion_min != null && `${fmt(r.duracion_min)} min`, r.rpe != null && `esfuerzo ${fmt(r.rpe)}`,
+        r.ua != null && `UA ${fmt(r.ua)}`].filter(Boolean).join(" · ") || "check-out sin datos"
+      : "sin check-out",
+    r.peso != null ? `${fmt(r.peso)} kg` : null,
+  ].filter(Boolean).join(" · ");
+  const pendingList = (list: typeof noIn, what: string) => (
+    list.length === 0
+      ? <p className={styles.muted}>Todos respondieron el {what}.</p>
+      : (
+        <ul className={styles.pendingList}>
+          {list.map((w) => (
+            <li key={w.player_id}>
+              <PlayerName id={w.player_id} name={w.name} size={24}>
+                <span>{w.name}{w.position && <span className={styles.posTag}> {w.position}</span>}</span>
+              </PlayerName>
+              {w.trained && <span className={styles.trainedTag}>entrenó</span>}
+            </li>
+          ))}
+        </ul>
+      )
+  );
 
   return (
     <>
@@ -170,19 +195,98 @@ export default function WellnessView({ microcycleId, day, playerId, onFilters, h
         </div>
         {flagged.length === 0
           ? <p className={styles.muted}>Nadie reportó bienestar bajo (≤ {data.low}), molestias ni síntomas.</p>
-          : visible("flagged", flagged).map((f) => (
-            <div key={f.player_id} className={styles.flagRow}>
-              <span className={styles.playerName}>
-                <PlayerName id={f.player_id} name={f.name}><strong>{f.name}</strong></PlayerName>
-                <span className={styles.muted}>Total bienestar {f.total_bienestar == null ? "—" : `${fmt(f.total_bienestar)}/25`}</span>
-              </span>
-              <span className={styles.chips5}>{f.lows.map((l) => chip(l.key, l.value))}</span>
-              {f.pain.length > 0 && <span className={styles.painText}>Molestia: {f.pain.join(" · ")}</span>}
-              {f.symptoms.length > 0 && <span className={styles.symptomText}>Síntoma: {f.symptoms.join(" · ")}</span>}
+          : (
+            <div role="table" aria-label="Bienestar bajo, molestias y síntomas" className={styles.flagTable}>
+              <div role="row" className={`${styles.flagGrid} ${styles.flagHead}`}>
+                <span role="columnheader">Jugador</span>
+                <span role="columnheader">Bienestar (/25)</span>
+                <span role="columnheader">Ítems bajos (≤ {data.low})</span>
+                <span role="columnheader">Molestia</span>
+                <span role="columnheader">Síntoma</span>
+              </div>
+              {visible("flagged", flagged).map((f) => (
+                <div key={f.player_id} role="row" className={styles.flagGrid}>
+                  <span role="cell">
+                    <PlayerName id={f.player_id} name={f.name}>
+                      <span><strong>{f.name}</strong>{f.position && <span className={styles.posTag}> {f.position}</span>}</span>
+                    </PlayerName>
+                  </span>
+                  <span role="cell" className={styles.flagNum} data-label="Bienestar">
+                    {f.total_bienestar == null ? "—" : fmt(f.total_bienestar)}
+                  </span>
+                  <span role="cell" className={styles.chips5} data-label="Ítems bajos">
+                    {f.lows.length ? f.lows.map((l) => inlineChip(l.key, l.value)) : <span className={styles.muted}>—</span>}
+                  </span>
+                  <span role="cell" className={f.pain.length ? styles.painText : styles.muted} data-label="Molestia">
+                    {f.pain.length ? f.pain.join(" · ") : "—"}
+                  </span>
+                  <span role="cell" className={f.symptoms.length ? styles.symptomText : styles.muted} data-label="Síntoma">
+                    {f.symptoms.length ? f.symptoms.join(" · ") : "—"}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         {moreButton("flagged", flagged.length, "jugadores")}
       </section>
+
+      {!playerId && (
+        <section className={styles.card} aria-labelledby="wl-rows">
+          <div className={styles.cardHead}>
+            <h2 id="wl-rows" className={styles.h2}>Por jugador · {effectiveDay ? dayLabel(effectiveDay) : ""}</h2>
+            <span className={styles.muted}>{rows.length} jugador{rows.length === 1 ? "" : "es"} · 1–2 rojo · 3 amarillo · 4–5 verde</span>
+          </div>
+          {rows.length === 0
+            ? <p className={styles.muted}>Nadie respondió el check-in ni el check-out este día.</p>
+            : (
+              <ul className={styles.answerList}>
+                {rows.map((r) => (
+                  <li key={r.player_id} className={styles.answerRow}>
+                    <PlayerName id={r.player_id} name={r.name} size={36}>
+                      <span className={styles.answerBody}>
+                        <span>
+                          <strong>{r.name}</strong>
+                          {r.position && <span className={styles.posTag}> {r.position}</span>}
+                        </span>
+                        <span className={styles.chips5}>
+                          {r.checkin
+                            ? data.items.map((it) => inlineChip(it.key, r.scores[it.key]))
+                            : <span className={styles.muted}>sin check-in</span>}
+                        </span>
+                        <span className={styles.muted}>{outLine(r)}</span>
+                        {(r.pain.length > 0 || r.symptoms.length > 0) && (
+                          <span className={styles.painText}>
+                            <span aria-hidden="true">⚠ </span>
+                            {[...r.pain, ...r.symptoms].join(", ")}
+                          </span>
+                        )}
+                      </span>
+                    </PlayerName>
+                  </li>
+                ))}
+              </ul>
+            )}
+        </section>
+      )}
+
+      {!playerId && (
+        <section className={styles.card} aria-labelledby="wl-pending">
+          <div className={styles.cardHead}>
+            <h2 id="wl-pending" className={styles.h2}>Sin responder · {effectiveDay ? dayLabel(effectiveDay) : ""}</h2>
+            <span className={styles.muted}>Plantel de la semana · primero los que entrenaron ese día</span>
+          </div>
+          <div className={styles.pendingGrid}>
+            <div>
+              <h3 className={styles.h3}>Check-in ({noIn.length})</h3>
+              {pendingList(noIn, "check-in")}
+            </div>
+            <div>
+              <h3 className={styles.h3}>Check-out ({noOut.length})</h3>
+              {pendingList(noOut, "check-out")}
+            </div>
+          </div>
+        </section>
+      )}
 
       <section className={styles.card} aria-labelledby="wl-in">
         <div className={styles.cardHead}>
@@ -259,42 +363,12 @@ export default function WellnessView({ microcycleId, day, playerId, onFilters, h
         )}
       </section>
 
-      {!playerId && (
-        <section className={styles.card} aria-labelledby="wl-rows">
-          <div className={styles.cardHead}>
-            <h2 id="wl-rows" className={styles.h2}>Respuestas del día ({rows.length})</h2>
-            <span className={styles.muted}>1–2 rojo · 3 amarillo · 4–5 verde</span>
-          </div>
-          <div className={styles.players}>
-            {visible("rows", rows).map((r) => (
-              <div key={r.player_id} className={styles.flagRow}>
-                <span className={styles.playerName}>
-                  <PlayerName id={r.player_id} name={r.name}><strong>{r.name}</strong></PlayerName>
-                  <span className={styles.muted}>
-                    {r.total_bienestar == null ? "sin check-in" : `Bienestar ${fmt(r.total_bienestar)}/25`}
-                    {" · "}{r.ua == null ? "sin check-out" : `${fmt(r.duracion_min)} min · RPE ${fmt(r.rpe)} · UA ${fmt(r.ua)}`}
-                  </span>
-                </span>
-                {r.checkin && <span className={styles.chips5}>{data.items.map((it) => chip(it.key, r.scores[it.key]))}</span>}
-              </div>
-            ))}
-          </div>
-          {moreButton("rows", rows.length, "respuestas")}
-          {missing.length > 0 && (
-            <p className={styles.muted}>
-              Entrenaron y no respondieron ({missing.length}): {visible("missing", missing).map((m) => m.name).join(", ")}
-              {!open.missing && missing.length > LIMIT.missing ? "…" : ""}
-            </p>
-          )}
-          {moreButton("missing", missing.length, "nombres")}
-        </section>
-      )}
-
       <p className={styles.provenance}>
         Datos usados: formularios de check-in y check-out del plantel de la semana {detail.number} ({data.players} jugadores que
         entrenaron o respondieron esa semana). Día en hora de Chile; si alguien respondió dos veces el mismo día, cuenta la
         última. Bienestar bajo = un ítem ≤ {data.low}. Molestia = la zona que anotó en el check-in o el check-out;
-        síntoma = lo que anotó en “Síntomas” (fiebre, resfriado…). “No respondieron” sólo lista a quienes tienen GPS ese día.
+        síntoma = lo que anotó en “Síntomas” (fiebre, resfriado…). “Sin responder” lista al plantel de la semana sin el
+        formulario ese día; “entrenó” = tiene GPS ese día.
       </p>
     </>
   );

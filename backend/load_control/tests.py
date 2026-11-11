@@ -549,6 +549,19 @@ class WellnessTests(Base):
         martes = self.wellness(self.mc, day=self.MON + timedelta(days=1))
         self.assertEqual(martes["missing"], [])
 
+    def test_sin_check_in_y_sin_check_out_del_dia(self):
+        gps = ExamResult(template=self.tpl, player=self.players[3], recorded_at=aware(self.MON),
+                         result_data={"origen_hoja": "U20", "tot_dist": 5000})
+        ExamResult.objects.bulk_create([gps, self.checkin(self.players[0], self.at(self.MON, 11))])
+        out = self.wellness(self.mc, day=self.MON)
+        # J3 entrenó sin responder nada; J0 hizo el check-in pero no el check-out.
+        self.assertEqual([(w["name"], w["trained"]) for w in out["no_checkin"]], [("J3 Test", True)])
+        self.assertEqual([(w["name"], w["trained"]) for w in out["no_checkout"]],
+                         [("J3 Test", True), ("J0 Test", False)], "primero los que entrenaron")
+        # El martes nadie respondió: todo el plantel de la semana debe ambos formularios.
+        martes = self.wellness(self.mc, day=self.MON + timedelta(days=1))
+        self.assertEqual({w["name"] for w in martes["no_checkin"]}, {"J0 Test", "J3 Test"})
+
     def test_el_dolor_repetido_en_ambos_formularios_se_muestra_una_vez(self):
         ExamResult.objects.bulk_create([
             self.checkin(self.players[0], self.at(self.MON, 11), dolor_muscular="Rodilla Der."),

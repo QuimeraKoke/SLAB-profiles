@@ -95,6 +95,11 @@ def _latest_by_player_day(slug: str, player_ids, start: date, end: date) -> dict
     return out
 
 
+def _position(p: Player) -> str:
+    pos = getattr(p, "position", None)
+    return (pos.abbreviation or pos.name or "") if pos else ""
+
+
 def _answer_row(pid, p, i: dict | None, o: dict | None) -> dict:
     """One player's check-in + check-out of a day, as the screen shows it."""
     i, o = i or {}, o or {}
@@ -102,7 +107,8 @@ def _answer_row(pid, p, i: dict | None, o: dict | None) -> dict:
     total = (sum(scores.values()) if all(v is not None for v in scores.values()) else None)
     dur, rpe = _num(o.get("duracion_min")), _num(o.get("rpe"))
     row = {
-        "player_id": str(pid), "name": _name(p), "checkin": bool(i), "checkout": bool(o),
+        "player_id": str(pid), "name": _name(p), "position": _position(p),
+        "checkin": bool(i), "checkout": bool(o),
         "scores": scores, "total_bienestar": total,
         "duracion_min": dur, "rpe": rpe, "ua": dur * rpe if dur is not None and rpe is not None else None,
         "peso": _num(i.get("peso")),
@@ -176,9 +182,18 @@ def wellness(mc: Microcycle, *, day: date | None = None, player_id=None) -> dict
     # another team): listing him would only bury the ones to chase.
     trained = set(_gps_rows(team_of(mc), day, day).values_list("player_id", flat=True))
     rows, flagged, missing = [], [], []
+    # Who still owes a form today, from this week's squad: each list says who
+    # trained (GPS that day) so the staff chases those first.
+    no_checkin, no_checkout = [], []
     for pid, p in sorted(players.items(), key=lambda kv: _name(kv[1])):
         i = ins.get((pid, day))
         o = outs.get((pid, day))
+        who = {"player_id": str(pid), "name": _name(p), "position": _position(p),
+               "trained": pid in trained}
+        if i is None:
+            no_checkin.append(who)
+        if o is None:
+            no_checkout.append(who)
         if i is None and o is None:
             if pid in trained:
                 missing.append({"player_id": str(pid), "name": _name(p)})
@@ -192,7 +207,11 @@ def wellness(mc: Microcycle, *, day: date | None = None, player_id=None) -> dict
             severity = 3 * bool(row["pain"]) + 2 * bool(row["symptoms"]) + len(lows)
             flagged.append({**row, "lows": lows, "severity": severity})
     flagged.sort(key=lambda r: (-r["severity"], r["total_bienestar"] or 99, r["name"]))
+    trained_first = lambda w: (not w["trained"], w["name"])  # noqa: E731
+    no_checkin.sort(key=trained_first)
+    no_checkout.sort(key=trained_first)
     out.update(rows=rows, flagged=flagged, missing=missing,
+               no_checkin=no_checkin, no_checkout=no_checkout,
                answered={"checkin": sum(r["checkin"] for r in rows),
                          "checkout": sum(r["checkout"] for r in rows)})
     return out
