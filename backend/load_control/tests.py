@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
 from core.management.commands.backfill_cohorts import BRACKETS
@@ -832,3 +832,35 @@ class SummaryTests(Base):
         self.assertEqual((out["cards"]["load"]["short"], out["cards"]["load"]["over"]), (1, 1))
         self.assertEqual([r["name"] for r in out["review"]], ["Pasado", "Tres bajo"],
                          "el no disponible primero; 'Dos bajo' no llega a 3 métricas")
+
+
+class PainZonesTests(SimpleTestCase):
+    """`load_control.pain_zones`: the forms' body-zone list, its typos and the free text."""
+
+    def test_la_lista_del_formulario_con_sus_typos(self):
+        from load_control.pain_zones import parse
+        self.assertEqual(parse("Isquiotibiales Der,, Isquiotibiales Izq,"),
+                         ([("isquiotibiales", "der"), ("isquiotibiales", "izq")], []))
+        self.assertEqual(parse("Gemelos / Sóleo Izq."), ([("gemelos", "izq")], []))
+        self.assertEqual(parse("Psoas Izq,"), ([("psoas", "izq")], []))
+
+    def test_texto_libre(self):
+        from load_control.pain_zones import parse
+        self.assertEqual(parse("Tobillo derecho"), ([("tobillo", "der")], []))
+        self.assertEqual(parse("Dolor de rodilla"), ([("rodilla", None)], []), "sin lado: se cuenta, no se dibuja")
+        self.assertEqual(parse("Columna Lumbar, Vomitos"), ([("columna_lumbar", None)], ["Vomitos"]))
+        self.assertEqual(parse("Cadera lado derecho"), ([], ["Cadera lado derecho"]), "lo que no se ubica no se pierde")
+        self.assertEqual(parse("Ninguno"), ([], []))
+
+    def test_mapa_cuenta_una_vez_por_dia_y_jugador(self):
+        from datetime import date as _d
+        from load_control.pain_zones import body_map
+        m = body_map([
+            ("p1", "Uno", _d(2026, 11, 2), ["Rodilla Der.", "Rodilla Der."]),   # check-in y check-out
+            ("p1", "Uno", _d(2026, 11, 3), ["Rodilla Der."]),
+            ("p2", "Dos", _d(2026, 11, 3), ["Rodilla Der., Uña"]),
+        ])
+        z = m["zones"][0]
+        self.assertEqual((z["label"], z["marks"], z["players"]), ("Rodilla Der.", 3, 2))
+        self.assertEqual([(w["name"], w["days"]) for w in z["who"]], [("Uno", 2), ("Dos", 1)])
+        self.assertEqual([o["text"] for o in m["others"]], ["Uña"])

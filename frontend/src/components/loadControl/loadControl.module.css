@@ -190,3 +190,14 @@ span.matchLink { text-decoration: none; }
   .flagHead { display: none; }
   .flagGrid > [data-label]::before { content: attr(data-label) ": "; font-size: 0.75rem; color: #667085; font-weight: 500; }
 }
+
+/* Check-in / out › ¿Dónde les duele? */
+.painGrid { display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 20px; align-items: start; }
+.painFigures { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.painFigures > p, .painLegend { grid-column: 1 / -1; }
+.painFigure { margin: 0; text-align: center; }
+.painFigure svg { width: 100%; height: auto; max-height: 420px; }
+.painLegend { display: flex; align-items: center; gap: 4px; font-size: 0.75rem; color: #475467; }
+.painLegend > span:first-child { margin-right: 4px; }
+.painSwatch { display: inline-block; width: 16px; height: 10px; border-radius: 2px; }
+@media (max-width: 900px) { .painGrid { grid-template-columns: 1fr; } }

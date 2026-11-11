@@ -20,6 +20,7 @@ from datetime import date, timedelta
 from core.localtime import local_date
 from core.models import Player
 from exams.models import ExamResult
+from load_control import pain_zones
 from load_control.week import days_of
 from load_control.models import LoadControlConfig, Microcycle
 from load_control.planning import _gps_rows, team_of
@@ -114,11 +115,23 @@ def _answer_row(pid, p, i: dict | None, o: dict | None) -> dict:
         "peso": _num(i.get("peso")),
         "pain_in": _pain(i, PAIN_IN), "pain_out": _pain(o, PAIN_OUT),
     }
-    # One list for the screen: what he wrote, once (the same zone often goes
-    # in both forms).
-    row["pain"] = list(dict.fromkeys(row["pain_in"] + row["pain_out"]))
+    # One list for the screen: the zones by name ("Isquiotibiales Der.", typos
+    # of the form's list fixed), once even if both forms name it, then what
+    # could not be placed, as written. See `load_control.pain_zones`.
+    row["pain"] = pain_zones.labels(row["pain_in"] + row["pain_out"])
     row["symptoms"] = _pain(i, SYMPTOMS)
     return row
+
+
+def _pain_days(players: dict, ins: dict, outs: dict, days) -> list:
+    """[(player_id, name, date, [pain texts of both forms])] for `days`."""
+    out = []
+    for d in days:
+        for pid, p in players.items():
+            texts = _pain(ins.get((pid, d)) or {}, PAIN_IN) + _pain(outs.get((pid, d)) or {}, PAIN_OUT)
+            if texts:
+                out.append((pid, _name(p), d, texts))
+    return out
 
 
 def wellness(mc: Microcycle, *, day: date | None = None, player_id=None) -> dict:
@@ -210,6 +223,10 @@ def wellness(mc: Microcycle, *, day: date | None = None, player_id=None) -> dict
     trained_first = lambda w: (not w["trained"], w["name"])  # noqa: E731
     no_checkin.sort(key=trained_first)
     no_checkout.sort(key=trained_first)
+    out["pain_map"] = {
+        "day": pain_zones.body_map(_pain_days(players, ins, outs, [day])),
+        "week": pain_zones.body_map(_pain_days(players, ins, outs, days)),
+    }
     out.update(rows=rows, flagged=flagged, missing=missing,
                no_checkin=no_checkin, no_checkout=no_checkout,
                answered={"checkin": sum(r["checkin"] for r in rows),

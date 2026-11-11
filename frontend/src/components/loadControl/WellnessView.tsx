@@ -24,6 +24,7 @@ import {
 
 import styles from "./loadControl.module.css";
 import { PlayerName } from "@/components/loadControl/PlayerPhotos";
+import PainMap from "@/components/loadControl/PainMap";
 
 // Validated categorical slots 1–5 for the items, 7 and 6 for the totals
 // (dataviz reference palette, light mode).
@@ -39,9 +40,14 @@ interface Props {
   onFilters: (f: { day?: string | null; player?: string | null }) => void;
   /** The page navigates the days (Centro de mando): hide this view's own. */
   hideDayNav?: boolean;
+  /** Pain map period, from the URL (`?molestias=semana`). */
+  painScope?: "day" | "week";
+  onPainScope?: (s: "day" | "week") => void;
 }
 
-export default function WellnessView({ microcycleId, day, playerId, onFilters, hideDayNav = false }: Props) {
+export default function WellnessView({
+  microcycleId, day, playerId, onFilters, hideDayNav = false, painScope = "day", onPainScope,
+}: Props) {
   const [detail, setDetail] = useState<McDetail | null>(null);
   const [data, setData] = useState<WellnessPayload | null>(null);
   const [roster, setRoster] = useState<{ player_id: string; name: string }[]>([]);
@@ -229,6 +235,12 @@ export default function WellnessView({ microcycleId, day, playerId, onFilters, h
           )}
         {moreButton("flagged", flagged.length, "jugadores")}
       </section>
+
+      {!playerId && data.pain_map && (
+        <PainMap data={data.pain_map} scope={painScope} onScope={(s) => onPainScope?.(s)}
+          dayLabel={effectiveDay ? dayLabel(effectiveDay) : ""}
+          weekLabel={`Semana ${detail.number} (${shortDate(detail.start_date)} – ${shortDate(detail.end_date)})`} />
+      )}
 
       {!playerId && (
         <section className={styles.card} aria-labelledby="wl-rows">

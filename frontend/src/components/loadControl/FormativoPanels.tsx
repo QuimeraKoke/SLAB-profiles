@@ -131,6 +131,8 @@ export default function FormativoPanels({ tab, nav, categoryId, params, setUrl, 
       return (
         <WellnessView key={week} microcycleId={week}
           day={nav.day} playerId={params.get("jugador")} hideDayNav
+          painScope={params.get("molestias") === "semana" ? "week" : "day"}
+          onPainScope={(sc) => setUrl({ molestias: sc === "week" ? "semana" : null })}
           onFilters={(f) => setUrl({
             ...(f.day !== undefined ? { dia: f.day } : {}),
             ...(f.player !== undefined ? { jugador: f.player } : {}),

@@ -161,6 +161,18 @@ export interface WellnessRow {
   /** Illness from `sintomas` (fiebre, resfriado…) — not pain. */
   symptoms: string[];
 }
+/** One body zone in the squad's pain map (`load_control/pain_zones.py`). */
+export interface PainCell {
+  zone: string; side: "izq" | "der" | null; label: string;
+  /** player-days that marked it · distinct players */
+  marks: number; players: number;
+  who: { player_id: string; name: string; days: number }[];
+}
+export interface PainMapData {
+  zones: PainCell[];
+  /** Answers that name no zone of the list, as written. */
+  others: { player_id: string; name: string; date: string; text: string }[];
+}
 export interface WellnessPending { player_id: string; name: string; position: string; trained: boolean }
 export interface WellnessFlag extends WellnessRow { lows: { key: string; value: number }[]; severity: number }
 export interface WellnessPayload {
@@ -168,6 +180,7 @@ export interface WellnessPayload {
   rows?: WellnessRow[]; flagged?: WellnessFlag[]; missing?: { player_id: string; name: string }[];
   /** This week's squad without the form that day; `trained` = GPS that day. */
   no_checkin?: WellnessPending[]; no_checkout?: WellnessPending[];
+  pain_map?: { day: PainMapData; week: PainMapData };
   answered?: { checkin: number; checkout: number };
 }
 
