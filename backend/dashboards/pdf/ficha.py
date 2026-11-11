@@ -833,11 +833,33 @@ def _season(c, s: dict, x, y, w, h):
 
 def render_ficha_pdf(player: Player, department_slug: str | None = None,
                      department_name: str = "") -> bytes:
-    title, sections = SPECS.get(department_slug or "", GENERAL)
-    data = _Data(player)
+    title, _ = SPECS.get(department_slug or "", GENERAL)
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pagesize=landscape(A4))
     c.setTitle(f"{title} — {player.first_name} {player.last_name}")
+    draw_ficha_page(c, player, department_slug, department_name)
+    c.save()
+    return buf.getvalue()
+
+
+def render_fichas_pdf(players, department_slug: str | None = None, department_name: str = "",
+                      title: str = "") -> bytes:
+    """Several players' fichas in ONE document, a page each, in the given
+    order (Datos › Exportar reportes › Infografía)."""
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=landscape(A4))
+    c.setTitle(title or SPECS.get(department_slug or "", GENERAL)[0])
+    for player in players:
+        draw_ficha_page(c, player, department_slug, department_name)
+    c.save()
+    return buf.getvalue()
+
+
+def draw_ficha_page(c, player: Player, department_slug: str | None = None,
+                    department_name: str = "") -> None:
+    """Draw one player's ficha on the canvas and close the page."""
+    title, sections = SPECS.get(department_slug or "", GENERAL)
+    data = _Data(player)
     _header(c, player, data, f"{title} · {department_name or 'todas las áreas'}")
     _footer(c, player, department_name or "Ficha integral")
 
@@ -914,5 +936,3 @@ def render_ficha_pdf(player: Player, department_slug: str | None = None,
                bh - 7 * mm)
 
     c.showPage()
-    c.save()
-    return buf.getvalue()

@@ -225,6 +225,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
         ? [{ label: "Subir datos", href: "/subir-datos" }]
         : []),
       { label: "Exportar datos", href: "/exportar" },
+      { label: "Exportar reportes", href: "/exportar-reportes" },
       ...(user?.is_superuser ? [{ label: "Uso", href: "/uso" }] : []),
     ],
   };

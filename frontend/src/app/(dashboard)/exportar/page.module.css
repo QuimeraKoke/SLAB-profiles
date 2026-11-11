@@ -197,3 +197,29 @@
     flex-wrap: wrap;
   }
 }
+
+/* Exportar reportes › Informe de plantel: one row per area, with its period. */
+.sectionTable { display: flex; flex-direction: column; }
+.sectionRow { display: grid; grid-template-columns: minmax(260px, 1fr) 150px 150px 170px; gap: 12px;
+  align-items: center; padding: 6px 0; border-top: 1px solid #f2f4f7; }
+.sectionHead { border-top: 0; padding-top: 0; font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: #98a2b3; }
+.dateInput { border: 1px solid #e8eaf0; border-radius: 8px; padding: 5px 8px; font-size: 13px; color: #101828;
+  background: #fff; font-family: inherit; }
+.dateInput:disabled { background: #f9fafb; color: #98a2b3; }
+.dateInput[aria-invalid="true"] { border-color: #b42318; }
+@media (max-width: 760px) {
+  .sectionRow { grid-template-columns: 1fr 1fr; }
+  .sectionRow > :first-child { grid-column: 1 / -1; }
+  .sectionHead { display: none; }
+}
+.viewRow { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px;
+  padding: 2px 0 6px 26px; }
+.viewLabel { font-size: 12px; font-weight: 600; color: #475467; }
+.segmented { display: inline-flex; border: 1px solid #c7d2fe; border-radius: 8px; overflow: hidden; }
+.segmented button { height: 30px; padding: 0 12px; border: 0; background: #fff; color: #3730a3; font: inherit;
+  font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.segmented button[aria-pressed="true"] { background: #4f46e5; color: #fff; }
+.statChips { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+.statChip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid #e4e7ec;
+  border-radius: 999px; font-size: 12.5px; color: #344054; cursor: pointer; background: #fff; }

@@ -1,6 +1,6 @@
 import logging
 import secrets
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
@@ -4933,6 +4933,144 @@ def download_player_ficha(request, player_id: str, department: str | None = None
     response = HttpResponse(pdf, content_type="application/pdf")
     response["Content-Disposition"] = (
         f'attachment; filename="ficha-{department or "integral"}-{name}.pdf"')
+    return response
+
+
+MAX_FICHAS_PER_EXPORT = 60
+
+
+def _ficha_areas(category, membership) -> list[dict]:
+    """General + the category's areas that have a ficha and the user sees."""
+    from dashboards.pdf.ficha import SPECS, has_ficha
+
+    depts = scope_departments(category.departments.all(), membership).order_by("name")
+    return [{"slug": None, "name": "Ficha integral (todas las áreas)", "dept": ""}] + [
+        {"slug": d.slug, "name": SPECS[d.slug][0], "dept": d.name} for d in depts if has_ficha(d.slug)]
+
+
+@api.get("/export/fichas/options")
+def ficha_export_options(request, category_id: str):
+    """Datos › Exportar reportes › Infografía: which fichas (General or an
+    area) this user can export for the category."""
+    membership = get_membership(request.user)
+    category = scope_categories(Category.objects.all(), membership).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    return {"areas": _ficha_areas(category, membership), "max_players": MAX_FICHAS_PER_EXPORT}
+
+
+@api.get("/export/fichas.pdf")
+def download_fichas_pdf(request, category_id: str, player_ids: str = "", department: str | None = None):
+    """Several players' fichas (the infographic) in ONE PDF, a page each, in
+    the order of `player_ids` (empty = the whole category). Same scoping as the
+    single ficha: only players and areas the user can see."""
+    from django.http import HttpResponse
+
+    from api.scoping import players_in_category
+    from dashboards.pdf.ficha import render_fichas_pdf
+
+    membership = get_membership(request.user)
+    category = scope_categories(Category.objects.select_related("club"), membership).filter(pk=category_id).first()
+    if category is None:
+        raise HttpError(404, "Category not found")
+    areas = {a["slug"]: a["dept"] for a in _ficha_areas(category, membership)}
+    if (department or None) not in areas:
+        raise HttpError(404, "Esta área no tiene ficha.")
+    roster = scope_players(players_in_category(category).select_related("category__club", "position"), membership)
+    ids = [x for x in player_ids.split(",") if x.strip()]
+    if ids:
+        by_id = {str(p.pk): p for p in roster.filter(pk__in=ids)}
+        players = [by_id[i] for i in ids if i in by_id]
+    else:
+        players = list(roster.order_by("last_name", "first_name"))
+    if not players:
+        raise HttpError(400, "Elegí al menos un jugador.")
+    if len(players) > MAX_FICHAS_PER_EXPORT:
+        raise HttpError(400, f"Máximo {MAX_FICHAS_PER_EXPORT} fichas por archivo.")
+    dept_name = "" if not department else areas[department]
+    pdf = render_fichas_pdf(players, department or None, dept_name,
+                            title=f"Fichas {dept_name or 'integrales'} — {category.name}")
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="fichas-{department or "integral"}-{category.name}.pdf"'.replace(" ", "_"))
+    return response
+
+
+@api.get("/export/informe-plantel/options")
+def informe_plantel_options(request, category_id: str):
+    """Datos › Exportar reportes › Informe de plantel: the sections it has."""
+    from dashboards.pdf.informe_plantel import SECTIONS
+
+    membership = get_membership(request.user)
+    if not scope_categories(Category.objects.all(), membership).filter(pk=category_id).exists():
+        raise HttpError(404, "Category not found")
+    return {"sections": [{"key": k, "label": v} for k, v in SECTIONS.items()],
+            "max_players": MAX_FICHAS_PER_EXPORT}
+
+
+class DateRangeIn(Schema):
+    date_from: date | None = None
+    date_to: date | None = None
+    # How the area is shown inside its period: "detalle" (as is), "semana",
+    # "mes", "semestre"; and which statistics per period (mean/max/min/sum).
+    granularity: str = "detalle"
+    stats: list[str] = []
+
+
+class InformePlantelIn(Schema):
+    category_id: str
+    player_ids: list[str] = []
+    sections: list[str] = []
+    partidos: int = 5
+    # {section: {date_from, date_to}} — each area of the report its own period.
+    ranges: dict[str, DateRangeIn] = {}
+    # {player_id: text} — the "Comentario médico" typed in the export screen.
+    comments: dict[str, str] = {}
+
+
+@api.post("/export/informe-plantel.pdf")
+def download_informe_plantel(request, payload: InformePlantelIn):
+    """The long per-player report (A4, the club's "Informe club" layout): the
+    chosen `sections` for each player in `player_ids` (empty = the category),
+    in that order, each section inside its own `ranges` period, with each
+    player's medical comment. POST: the comments can be long.
+    See `dashboards.pdf.informe_plantel`."""
+    from django.http import HttpResponse
+
+    from api.scoping import players_in_category
+    from dashboards.pdf.informe_plantel import SECTIONS, render_informe_plantel
+
+    membership = get_membership(request.user)
+    category = (scope_categories(Category.objects.select_related("club"), membership)
+                .filter(pk=payload.category_id).first())
+    if category is None:
+        raise HttpError(404, "Category not found")
+    for key, r in payload.ranges.items():
+        if r.date_from and r.date_to and r.date_from > r.date_to:
+            raise HttpError(400, f"{SECTIONS.get(key, key)}: la fecha Desde es posterior a Hasta.")
+    chosen = [x for x in payload.sections if x in SECTIONS] or list(SECTIONS)
+    roster = scope_players(players_in_category(category).select_related("category__club", "position"), membership)
+    ids = [x for x in payload.player_ids if x and x.strip()]
+    if ids:
+        by_id = {str(p.pk): p for p in roster.filter(pk__in=ids)}
+        players = [by_id[i] for i in ids if i in by_id]
+    else:
+        players = list(roster.order_by("last_name", "first_name"))
+    if not players:
+        raise HttpError(400, "Elegí al menos un jugador.")
+    if len(players) > MAX_FICHAS_PER_EXPORT:
+        raise HttpError(400, f"Máximo {MAX_FICHAS_PER_EXPORT} jugadores por archivo.")
+    comments = {k: v[:4000] for k, v in payload.comments.items() if isinstance(v, str)}
+    author = (request.user.get_full_name() or request.user.email or "").strip()
+    pdf = render_informe_plantel(players, category, sections=chosen,
+                                 n_matches=max(1, min(payload.partidos, 10)),
+                                 ranges={k: (r.date_from, r.date_to) for k, r in payload.ranges.items()},
+                                 comments=comments, author=author,
+                                 views={k: {"granularity": r.granularity, "stats": r.stats}
+                                        for k, r in payload.ranges.items()})
+    response = HttpResponse(pdf, content_type="application/pdf")
+    response["Content-Disposition"] = (
+        f'attachment; filename="informe-plantel-{category.name}.pdf"'.replace(" ", "_"))
     return response
 
 

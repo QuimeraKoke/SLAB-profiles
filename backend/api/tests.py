@@ -538,3 +538,39 @@ class DepartmentsWithTeamLayoutTests(TestCase):
         (fis,) = self.view(r, str(self.club.id), with_team_layout_for=str(self.cat.id))
         self.assertEqual([l["name"] for l in fis["team_layouts"]], ["Default", "Lesiones"])
         self.assertEqual(fis["team_layouts"][1]["slug"], "lesiones")
+
+
+class FichasPdfTests(SimpleTestCase):
+    """Datos › Exportar reportes › Infografía: several fichas, one PDF."""
+
+    def test_una_pagina_por_jugador_en_el_orden_dado(self):
+        from unittest import mock
+
+        from dashboards.pdf import ficha
+
+        drawn = []
+
+        def fake_page(c, player, slug=None, name=""):
+            drawn.append((player, slug))
+            c.drawString(10, 10, player)
+            c.showPage()
+
+        with mock.patch.object(ficha, "draw_ficha_page", side_effect=fake_page):
+            pdf = ficha.render_fichas_pdf(["B", "A", "C"], "fisico", "Físico")
+        self.assertEqual(drawn, [("B", "fisico"), ("A", "fisico"), ("C", "fisico")])
+        self.assertEqual(pdf.count(b"/Type /Page\n"), 3)
+
+
+class InformePlantelHelpersTests(SimpleTestCase):
+    """Datos › Exportar reportes › Informe de plantel: the club's formats."""
+
+    def test_formatos(self):
+        from datetime import date
+
+        from dashboards.pdf.informe_plantel import _cat_short, _fmt, _int, birth_quartile
+
+        self.assertEqual(_int(11472.4), "11.472")
+        self.assertEqual(_fmt(158.3, 1), "158,3")
+        self.assertEqual(_fmt(251, -1), "4:11")                 # 1.000 m en m:ss
+        self.assertEqual(birth_quartile(date(2006, 7, 16)), "Q3")
+        self.assertEqual(_cat_short("SUB-20"), "S20")
