@@ -14,8 +14,8 @@ interface Props {
 
 const SUGGESTIONS = [
   "¿Qué debería mirar de este jugador hoy?",
-  "Mostrame la evolución de sus métricas con alerta.",
-  "Compará sus últimas tomas físicas en un gráfico.",
+  "Muéstrame la evolución de sus métricas con alerta.",
+  "Compara sus últimas tomas físicas en un gráfico.",
 ];
 
 /**

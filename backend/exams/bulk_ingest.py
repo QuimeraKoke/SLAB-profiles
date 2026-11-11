@@ -52,7 +52,7 @@ def _validate_anthropometry_masses(result_data: dict) -> str | None:
 
 # Validadores que una plantilla puede pedir con
 # `input_config["bulk_ingest"]["validate"]`. Un dict explícito y no un import
-# dinámico: lo que puede correr acá tiene que poder leerse de una sola mirada.
+# dinámico: lo que puede correr aquí tiene que poder leerse de una sola mirada.
 POST_VALIDATORS = {
     "anthropometry_masses": _validate_anthropometry_masses,
 }
@@ -331,7 +331,7 @@ def mapping_from_schema(
 def blank_workbook(template) -> bytes:
     """El .xlsx vacío que este parser espera, generado desde el mapping.
 
-    Vive acá, al lado de `parse_xlsx`/`match_rows`, para que el archivo que se
+    Vive aquí, al lado de `parse_xlsx`/`match_rows`, para que el archivo que se
     descarga y el que se lee no puedan divergir: si alguien cambia una columna
     del `column_mapping`, la plantilla descargable cambia con ella.
 

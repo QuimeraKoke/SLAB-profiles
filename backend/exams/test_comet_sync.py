@@ -544,7 +544,7 @@ class NoHardcodedSquadNamesTests(SimpleTestCase):
             for name in ("Primer Equipo", "Selección Nacional", "Selección Chilena"):
                 self.assertNotIn(
                     name, code,
-                    f"{dotted} decide algo con el nombre '{name}'; usá "
+                    f"{dotted} decide algo con el nombre '{name}'; usa "
                     "Category.is_senior",
                 )
 

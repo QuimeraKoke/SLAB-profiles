@@ -20,8 +20,8 @@ export default function TeamReportDashboard({ sections, editMode = false, onChan
   if (sections.length === 0) {
     return (
       <div className={styles.empty}>
-        Este reporte no tiene secciones todavía. Agregá tu primer gráfico con
-        “Agregar gráfico”, o configuralo desde administración.
+        Este reporte no tiene secciones todavía. Agrega tu primer gráfico con
+        “Agregar gráfico”, o configúralo desde administración.
       </div>
     );
   }

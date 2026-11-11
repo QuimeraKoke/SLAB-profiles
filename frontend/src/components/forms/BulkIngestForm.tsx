@@ -278,7 +278,7 @@ export default function BulkIngestForm({
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      setError("No se pudo generar la plantilla. Intentá nuevamente.");
+      setError("No se pudo generar la plantilla. Intenta nuevamente.");
     } finally {
       setDownloading(false);
     }

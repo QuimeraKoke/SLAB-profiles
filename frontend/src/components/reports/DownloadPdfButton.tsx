@@ -64,7 +64,7 @@ export default function DownloadPdfButton({
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Word download failed:", err);
-      setError("No se pudo generar el documento. Intentá nuevamente.");
+      setError("No se pudo generar el documento. Intenta nuevamente.");
     } finally {
       setBusy(false);
     }

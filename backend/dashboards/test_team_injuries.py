@@ -89,7 +89,7 @@ class TeamInjuryWidgetTests(TestCase):
         expo = self.resolver(self.widget("team_injury_breakdown", dimension="exposicion"))
         self.assertEqual({i["label"]: i["value"] for i in expo["items"]},
                          {"Partido": 2, "Entrenamiento": 1},
-                         "el 'Partido' del club y el oficial confirmado son lo mismo acá")
+                         "el 'Partido' del club y el oficial confirmado son lo mismo aquí")
 
     def test_listado_abiertas_y_del_periodo(self):
         self.lesion(self.a, (2025, 12, 1))                         # abierta desde antes

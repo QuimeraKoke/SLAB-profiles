@@ -61,7 +61,7 @@ export default function TeamReportSection({ section, editMode = false, onChanged
   async function remove(id: string, title: string) {
     const ok = await confirm({
       title: "Quitar gráfico",
-      message: `¿Quitar "${title}" del panel? Podés volver a agregarlo después.`,
+      message: `¿Quitar "${title}" del panel? Puedes volver a agregarlo después.`,
       confirmLabel: "Quitar",
       variant: "danger",
     });

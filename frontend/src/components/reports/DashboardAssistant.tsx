@@ -28,8 +28,8 @@ interface Props {
 
 const SUGGESTIONS = [
   "¿Cómo está la distribución del plantel en la métrica clave de esta área?",
-  "Compará a los jugadores por su último registro y mostrame un gráfico.",
-  "¿Quiénes están fuera de rango? Visualizalo.",
+  "Compara a los jugadores por su último registro y muéstrame un gráfico.",
+  "¿Quiénes están fuera de rango? Visualízalo.",
 ];
 
 /**
@@ -52,7 +52,7 @@ export default function DashboardAssistant({
       label="Preguntar a S-LAB AI"
       scope={departmentName}
       disabled={!categoryId}
-      placeholder={categoryId ? "Escribí tu pregunta…" : "Seleccioná una categoría"}
+      placeholder={categoryId ? "Escribe tu pregunta…" : "Selecciona una categoría"}
       suggestions={SUGGESTIONS}
       promoteLabel="Promover al panel"
       sendMessage={(messages) =>

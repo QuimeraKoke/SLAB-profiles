@@ -168,7 +168,7 @@ export default function LesionesComparadas({
         </div>
 
         {visibles.length === 0 ? (
-          <p className={styles.vacio}>Elegí al menos un indicador en Configurar.</p>
+          <p className={styles.vacio}>Elige al menos un indicador en Configurar.</p>
         ) : (
           <div className={styles.tableWrap}>
             <table className={styles.table}>

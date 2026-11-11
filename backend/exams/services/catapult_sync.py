@@ -371,7 +371,7 @@ def _plan_category(integ: CatapultIntegration, *, dry_run: bool = True, now=None
             continue
         if is_match and event is None:
             # gps_partido requires an Event FK; we can't write it without one.
-            pa.note = ("clasificado partido pero sin fixture en SLAB — creá el "
+            pa.note = ("clasificado partido pero sin fixture en SLAB — crea el "
                        "partido (Event) ese día para poder ingerir gps_partido")
 
         stats = _fetch_stats(client, a["id"], plan.errors)

@@ -6,7 +6,7 @@ plausibles de a uno pero mienten en conjunto. Los percentiles no significan
 nada, el radar sale como ruido, y dos corridas dan números distintos, así que
 una captura de pantalla de ayer no se puede reproducir hoy.
 
-Acá los valores salen de **remuestrear la distribución empírica real** del club
+Aquí los valores salen de **remuestrear la distribución empírica real** del club
 de origen. Tres propiedades, y las tres importan:
 
 **1 · La distribución se conserva por construcción.** El valor de un jugador es

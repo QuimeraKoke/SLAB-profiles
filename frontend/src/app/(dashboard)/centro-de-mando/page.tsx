@@ -22,8 +22,9 @@ import DecisionTable from "@/components/command/DecisionTable";
 import EvaluationGrid from "@/components/command/EvaluationGrid";
 import WellnessRoleTabs, { ROLE_LABEL } from "@/components/command/WellnessRoleTabs";
 import FormativoPanels, {
-  DayNavBar, FORMATIVO_QUESTION, FORMATIVO_TABS, isWeekly,
+  FORMATIVO_QUESTION, FORMATIVO_TABS, PERIOD_TABS, STRIP_TABS,
 } from "@/components/loadControl/FormativoPanels";
+import PeriodBar, { isCalendarWeek } from "@/components/loadControl/PeriodBar";
 import ProfileTabs, { panelIdFor } from "@/components/perfil/ProfileTabs/ProfileTabs";
 import type { DayNav } from "@/lib/loadControl";
 import type {
@@ -69,10 +70,16 @@ export default function CommandCenterPage() {
     const t = new Date();
     return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
   });
-  const dayParam = params.get("dia") ?? today;
+  // ONE time control: the period (the Mon–Sun week of `?dia`, or any
+  // `?desde=&hasta=`) and the day chosen inside it (`?dia`, default today —
+  // or the last day of a past period).
+  const dayParam = params.get("dia");
   const [nav, setNav] = useState<DayNav | null>(null);
   const tabs = useMemo(() => (nav ? [{ id: "general", label: "Centro de mando" }, ...FORMATIVO_TABS] : []), [nav]);
   const tab = tabs.some((t) => t.id === params.get("tab")) ? params.get("tab")! : "general";
+  const desde = params.get("desde");
+  const hasta = params.get("hasta");
+  const range = desde && hasta ? { start: desde, end: hasta } : null;
   const setUrl = useMemo(
     () => (changes: Record<string, string | null>) => {
       const next = new URLSearchParams(params.toString());
@@ -84,6 +91,26 @@ export default function CommandCenterPage() {
     },
     [params, pathname, router],
   );
+  // Bookmarks from before the single time control: the panels' own toggles
+  // (`molestias`, `carga_vista`, `periodo=temporada`) are gone.
+  useEffect(() => {
+    const old = ["molestias", "carga_vista", "periodo"].filter((k) => params.has(k));
+    if (!old.length) return;
+    const changes: Record<string, string | null> = Object.fromEntries(old.map((k) => [k, null]));
+    if (params.get("periodo") === "temporada" && !range) {
+      changes.desde = `${today.slice(0, 4)}-01-01`;
+      changes.hasta = today;
+    }
+    setUrl(changes);
+  }, [params]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onPeriod = (a: string, b: string, d: string) => {
+    const dia = d === today ? null : d;
+    // A Mon–Sun week is "the week" (planned or not), not a period.
+    if (isCalendarWeek(a, b)) setUrl({ desde: null, hasta: null, dia });
+    else setUrl({ desde: a, hasta: b, dia });
+  };
+
   // Carga GPS lives in Control de carga (the plan): link there, same week/day.
   const goTab = (t: string, extra?: Record<string, string | null>) => {
     if (t === "carga") {
@@ -98,11 +125,13 @@ export default function CommandCenterPage() {
   useEffect(() => {
     if (!categoryId) return;
     let cancelled = false;
-    api<DayNav>(`/load-control/day?category_id=${categoryId}&day=${dayParam}`)
+    const period = range ? `&start=${range.start}&end=${range.end}` : "";
+    const day = dayParam ?? (range ? "" : today);
+    api<DayNav>(`/load-control/day?category_id=${categoryId}${day ? `&day=${day}` : ""}${period}`)
       .then((n) => { if (!cancelled) setNav(n); })
       .catch(() => { if (!cancelled) setNav(null); });
     return () => { cancelled = true; };
-  }, [categoryId, dayParam]);
+  }, [categoryId, dayParam, range?.start, range?.end]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!categoryId) return;
@@ -126,7 +155,7 @@ export default function CommandCenterPage() {
     categories.find((c) => c.id === categoryId)?.name ?? data?.category ?? "";
 
   if (catLoading) return <div className={styles.muted}>Cargando…</div>;
-  if (!categoryId) return <div className={styles.muted}>Seleccioná una categoría.</div>;
+  if (!categoryId) return <div className={styles.muted}>Selecciona una categoría.</div>;
   if (error) return <div className={styles.error} role="alert">{error}</div>;
   if (!data) return <div className={styles.muted}>Cargando centro de mando…</div>;
 
@@ -152,7 +181,10 @@ export default function CommandCenterPage() {
           <p className={styles.sub}>
             {FORMATIVO_QUESTION[tab]} <span className={styles.muted}>· {nav.team.label} {nav.team.season} · {nav.team.categories.join(" + ")}</span>
           </p>
-          {isWeekly(tab) && <DayNavBar nav={nav} today={today} onDay={(d) => setUrl({ dia: d === today ? null : d })} />}
+          {PERIOD_TABS.has(tab) && (
+            <PeriodBar nav={nav} categoryId={categoryId} today={today} strip={STRIP_TABS.has(tab)}
+              onPeriod={onPeriod} onDay={(d) => setUrl({ dia: d === today ? null : d })} />
+          )}
           <FormativoPanels tab={tab} nav={nav} categoryId={categoryId} params={params} setUrl={setUrl} goTab={goTab} />
         </div>
       )}

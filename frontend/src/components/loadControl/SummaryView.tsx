@@ -14,6 +14,8 @@ import { type Band, type SummaryPayload, shortDate, signedPct } from "@/lib/load
 
 import styles from "./loadControl.module.css";
 import { PlayerName } from "@/components/loadControl/PlayerPhotos";
+import { usePeriod } from "@/lib/periodWording";
+import ScopeBadge from "./ScopeBadge";
 
 const KIND_LABEL = { estado: "Estado", fatiga: "Fatiga", carga: "Carga", checkin: "Check-in" } as const;
 const LIMIT = 10;
@@ -24,6 +26,7 @@ interface Props {
 }
 
 export default function SummaryView({ microcycleId, onTab }: Props) {
+  const per = usePeriod();
   const [data, setData] = useState<SummaryPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -58,9 +61,10 @@ export default function SummaryView({ microcycleId, onTab }: Props) {
   return (
     <>
       <section className={styles.card} aria-labelledby="su-sentence">
+        <div style={{ marginBottom: 6 }}><ScopeBadge kind="period" /></div>
         <h2 id="su-sentence" className={styles.h2} style={{ fontSize: "1.05rem", lineHeight: 1.45 }}>{data.sentence}</h2>
         <div className={styles.summaryGrid}>
-          {card("carga", load.worst?.band, `Carga de la semana (${load.days} días)`,
+          {card("carga", load.worst?.band, `Carga ${per.of} (${load.days} días)`,
             load.worst ? `${load.worst.label} ${signedPct(load.worst.pct)}` : "Sin GPS",
             <>{load.short} para compensar · {load.over} pasados</>)}
           {card("fatiga", worstOf(fa.counts),
@@ -83,9 +87,9 @@ export default function SummaryView({ microcycleId, onTab }: Props) {
       <section className={styles.card} aria-labelledby="su-review">
         <div className={styles.cardHead}>
           <h2 id="su-review" className={styles.h2}>Para revisar</h2>
-          <span className={styles.muted}>{data.review.length} jugadores · primero lo de salud</span>
+          <span className={styles.cardMeta}><ScopeBadge kind="period" /><span className={styles.muted}>{data.review.length} jugadores · primero lo de salud</span></span>
         </div>
-        {data.review.length === 0 ? <p className={styles.muted}>Nadie para revisar esta semana.</p> : (
+        {data.review.length === 0 ? <p className={styles.muted}>Nadie para revisar {per.this}.</p> : (
           <div className={styles.players}>
             {review.map((r) => (
               <div key={r.player_id} className={styles.flagRow}>
@@ -115,11 +119,11 @@ export default function SummaryView({ microcycleId, onTab }: Props) {
       <details className={styles.card}>
         <summary className={styles.h2}>Cómo se calcula</summary>
         <ul className={styles.provenance}>
-          <li>Carga: la semana hasta hoy ({load.days} días con plan) contra el objetivo de cada posición; semáforo ±8 % / ±12 %.
+          <li>Carga: {per.the} hasta hoy ({load.days} días con plan) contra el objetivo de cada posición; semáforo ±8 % / ±12 %.
             “Para compensar” = {load.rules.short_min_metrics} o más métricas bajo −{load.rules.below_pct} %; “pasado” = alguna sobre
             +{load.rules.over_pct} % (reglas del artifact del club).</li>
           <li>Fatiga: el último partido con saltos; rojo = −5 % o menos (golpe = POST vs PRE; recuperación = MD-1 siguiente vs PRE).</li>
-          <li>Check-in: el último día de la semana con respuestas; molestias = zona marcada en el check-in o check-out.</li>
+          <li>Check-in: el último día {per.of} con respuestas; molestias = zona marcada en el check-in o check-out.</li>
           <li>Disponibles: estado actual de cada jugador (Kinesia y lesiones).</li>
           <li>Sin IA: la frase y la lista salen de estas mismas reglas. Toca una tarjeta para abrir su pestaña, o un nombre para su ficha.</li>
         </ul>

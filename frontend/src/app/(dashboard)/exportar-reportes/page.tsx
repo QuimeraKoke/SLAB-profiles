@@ -46,7 +46,7 @@ function ExportarReportes() {
     <div className={styles.page}>
       <header className={styles.header}>
         <h1 className={styles.h1}><FileStack size={20} aria-hidden="true" /> Exportar reportes</h1>
-        <p className={styles.sub}>Elegí el tipo de reporte y los jugadores: se descargan todos juntos en un archivo.</p>
+        <p className={styles.sub}>Elige el tipo de reporte y los jugadores: se descargan todos juntos en un archivo.</p>
       </header>
       <ProfileTabs tabs={TABS} activeTab={tab} onTabChange={setTab} />
       <div role="tabpanel" id={panelIdFor(tab)} aria-labelledby={`tab-${tab}`} style={{ marginTop: 16 }}>
@@ -120,7 +120,7 @@ function FichasExport() {
 
   async function download() {
     if (!categoryId || busy) return;
-    if (ordered.length === 0) { setError("Elegí al menos un jugador."); return; }
+    if (ordered.length === 0) { setError("Elige al menos un jugador."); return; }
     if (ordered.length > maxPlayers) { setError(`Máximo ${maxPlayers} fichas por archivo.`); return; }
     setBusy(true);
     setError(null);
@@ -143,14 +143,14 @@ function FichasExport() {
       URL.revokeObjectURL(url);
       toast.success(`${ordered.length} ficha${ordered.length === 1 ? "" : "s"} descargada${ordered.length === 1 ? "" : "s"} en un PDF.`);
     } catch {
-      setError("No se pudo generar el archivo. Intentá nuevamente.");
+      setError("No se pudo generar el archivo. Intenta nuevamente.");
     } finally {
       setBusy(false);
     }
   }
 
   if (catLoading) return <div className={styles.muted}>Cargando…</div>;
-  if (!categoryId) return <div className={styles.muted}>Seleccioná una categoría.</div>;
+  if (!categoryId) return <div className={styles.muted}>Selecciona una categoría.</div>;
   const areaName = areas.find((a) => a.slug === area)?.name ?? "";
 
   return (
@@ -208,7 +208,7 @@ function FichasExport() {
         <button type="button" className={styles.downloadBtn} onClick={download} disabled={busy || sel.size === 0}>
           <Download size={16} aria-hidden="true" />
           {busy ? `Generando ${ordered.length} fichas…`
-            : sel.size === 0 ? "Elegí jugadores"
+            : sel.size === 0 ? "Elige jugadores"
             : `Descargar ${ordered.length} ficha${ordered.length === 1 ? "" : "s"} (PDF)`}
         </button>
         {areaName && sel.size > 0 && !busy && <span className={styles.hint}>{areaName} · un solo PDF</span>}
@@ -416,8 +416,8 @@ function InformeExport() {
 
   async function download() {
     if (!categoryId || busy) return;
-    if (ordered.length === 0) { setError("Elegí al menos un jugador."); return; }
-    if (chosen.size === 0) { setError("Elegí al menos una sección."); return; }
+    if (ordered.length === 0) { setError("Elige al menos un jugador."); return; }
+    if (chosen.size === 0) { setError("Elige al menos una sección."); return; }
     if (ordered.length > maxPlayers) { setError(`Máximo ${maxPlayers} jugadores por archivo.`); return; }
     const bad = sections.find((x) => chosen.has(x.key) && badRange(x.key));
     if (bad) { setError(`${bad.label}: la fecha Desde es posterior a Hasta.`); return; }
@@ -439,14 +439,14 @@ function InformeExport() {
       toast.success(`Informe de ${ordered.length} jugador${ordered.length === 1 ? "" : "es"} descargado.`);
     } catch (e) {
       const msg = e instanceof Error && !e.message.startsWith("HTTP") ? e.message : "";
-      setError(msg || "No se pudo generar el informe. Intentá nuevamente.");
+      setError(msg || "No se pudo generar el informe. Intenta nuevamente.");
     } finally {
       setBusy(false);
     }
   }
 
   if (catLoading) return <div className={styles.muted}>Cargando…</div>;
-  if (!categoryId) return <div className={styles.muted}>Seleccioná una categoría.</div>;
+  if (!categoryId) return <div className={styles.muted}>Selecciona una categoría.</div>;
 
   return (
     <>
@@ -565,7 +565,7 @@ function InformeExport() {
           disabled={busy || sel.size === 0 || chosen.size === 0}>
           <Download size={16} aria-hidden="true" />
           {busy ? `Generando informe de ${ordered.length}…`
-            : sel.size === 0 ? "Elegí jugadores"
+            : sel.size === 0 ? "Elige jugadores"
             : `Descargar informe de ${ordered.length} jugador${ordered.length === 1 ? "" : "es"} (PDF)`}
         </button>
         {error && <span className={styles.error} role="alert">{error}</span>}

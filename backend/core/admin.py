@@ -104,7 +104,7 @@ class CategoryAdmin(admin.ModelAdmin):
         ("Identidad del equipo", {
             "fields": ("is_senior", "cohort_year"),
             "description": (
-                "<b>Primer equipo</b>: marcá exactamente uno por club. Es el que recibe las competencias sin límite de edad (Primera, Copa Chile). El código lo lee de acá y no del nombre, así que renombrar la categoría ya no cambia a dónde van esos partidos.<br><b>Cohorte</b>: año de nacimiento del grupo, para equipos que son un grupo de edad. Es la identidad durable — los de 2013 son los de 2013 en todas las temporadas, y la categoría en que compiten se deriva del año. Dejalo vacío para planteles multi-cohorte como el primer equipo o la reserva."
+                "<b>Primer equipo</b>: marca exactamente uno por club. Es el que recibe las competencias sin límite de edad (Primera, Copa Chile). El código lo lee de aquí y no del nombre, así que renombrar la categoría ya no cambia a dónde van esos partidos.<br><b>Cohorte</b>: año de nacimiento del grupo, para equipos que son un grupo de edad. Es la identidad durable — los de 2013 son los de 2013 en todas las temporadas, y la categoría en que compiten se deriva del año. Déjalo vacío para planteles multi-cohorte como el primer equipo o la reserva."
             ),
         }),
         ("Integración externa", {

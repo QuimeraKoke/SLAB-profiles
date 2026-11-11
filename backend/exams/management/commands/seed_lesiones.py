@@ -185,7 +185,7 @@ LESIONES_SCHEMA: dict = {
             "type": "date", "group": "Pronóstico",
             "help_text": (
                 "Pronóstico de disponibilidad al momento del diagnóstico. "
-                "Complétalo solo cuando estimás (o cambiás) la fecha; el "
+                "Complétalo solo cuando estimas (o cambias) la fecha; el "
                 "retorno REAL se registra en 'Disponible para ser citado' del "
                 "episodio, y la diferencia alimenta el KPI de precisión de "
                 "pronóstico."

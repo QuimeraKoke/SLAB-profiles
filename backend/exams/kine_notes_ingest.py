@@ -182,10 +182,15 @@ def _matcher(club: Club):
                for p in Player.objects.filter(category__club=club).exclude(national_id="")
                if p.national_id}
     por_nombre = build_matcher(club)
+    from exams import sheet_aliases
+
+    alias = sheet_aliases.load(club)
 
     def match(f: Fila) -> tuple[Player | None, str]:
         if f.rut and (p := por_rut.get(_rut(f.rut))):
             return p, "rut"
+        if (p := alias.get(sheet_aliases.key(f.nombre))) is not None:
+            return p, "vinculo"
         p = por_nombre(f.nombre, None)
         if p is None or p.date_of_birth is None:
             return None, ""

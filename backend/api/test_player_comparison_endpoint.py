@@ -184,7 +184,7 @@ class RutasGolosasTests(TestCase):
         )
         self.assertEqual(
             golosas, [],
-            "Usá {uuid:player_id}: con el converter por defecto estas rutas "
+            "Usa {uuid:player_id}: con el converter por defecto estas rutas "
             "se comen /players/comparison y cualquier otra ruta literal.",
         )
 

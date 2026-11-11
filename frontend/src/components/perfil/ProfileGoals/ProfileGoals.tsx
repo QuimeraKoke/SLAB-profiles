@@ -280,7 +280,7 @@ function GoalTypeChooser({
           <span className={styles.chooserTitle}>Objetivo libre</span>
           <span className={styles.chooserDesc}>
             Solo un texto y una fecha (p. ej. “Completar el reintegro”). Lo
-            cerrás vos manualmente.
+            cierras tú manualmente.
           </span>
         </button>
       </div>
@@ -365,7 +365,7 @@ function GoalForm({ player, mode, onCreated, onCancel }: FormProps) {
     let payload: GoalCreateIn;
     if (mode === "free") {
       if (!title.trim()) {
-        setError("Ingresá un título para el objetivo.");
+        setError("Ingresa un título para el objetivo.");
         return;
       }
       payload = {

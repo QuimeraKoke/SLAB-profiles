@@ -155,7 +155,7 @@ def apply_base_template(club: Club) -> Applied:
 def create_club(name: str, categories: list[dict]) -> tuple[Club, Applied]:
     name = name.strip()
     if not name:
-        raise SetupError("Ingresá el nombre del club.")
+        raise SetupError("Ingresa el nombre del club.")
     if name_taken(name):
         raise SetupError(f"Ya existe un club llamado {name}.")
     with transaction.atomic():
@@ -172,7 +172,7 @@ def _new_category(club: Club, *, name: str, cohort_year: int | None = None,
                   is_senior: bool = False) -> Category:
     name = (name or "").strip()
     if not name:
-        raise SetupError("Ingresá el nombre de la categoría.")
+        raise SetupError("Ingresa el nombre de la categoría.")
     if club.categories.filter(name__iexact=name).exists():
         raise SetupError(f"Ya existe la categoría {name} en {club.name}.")
     if is_senior:

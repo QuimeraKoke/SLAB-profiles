@@ -172,7 +172,13 @@ def _build_matcher(category):
             idx.append({"p": p, "fi": t[0][:1], "last": t[-1], "first": t[0],
                         "full": " ".join(t)})
 
+    from exams import sheet_aliases
+
+    alias = sheet_aliases.load(category.club)
+
     def match(name: str):
+        if (p := alias.get(sheet_aliases.key(name))) is not None:
+            return p
         t = _norm(name).split()
         if not t:
             return None

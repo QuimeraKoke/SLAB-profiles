@@ -78,7 +78,7 @@ export default function PlayerEditModal({
       return;
     }
     if (!form.category_id) {
-      setError("Elegí una categoría.");
+      setError("Elige una categoría.");
       return;
     }
     setSubmitting(true);

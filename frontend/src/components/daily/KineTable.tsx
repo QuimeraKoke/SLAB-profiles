@@ -177,7 +177,7 @@ export default function KineTable({ date, injured, entries, players }: Props) {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={FIELDS.length + 2} className={styles.empty}>
-                  Sin jugadores lesionados. {canEdit ? "Podés agregar uno abajo." : ""}
+                  Sin jugadores lesionados. {canEdit ? "Puedes agregar uno abajo." : ""}
                 </td>
               </tr>
             )}

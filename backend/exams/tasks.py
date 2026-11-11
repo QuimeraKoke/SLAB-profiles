@@ -81,6 +81,14 @@ def sync_wellness_responses(mode: str = "today", since_days: int = 3) -> dict:
             rows, template=template, category=category,
             mode=mode, since_days=since_days,
         )
+        if mode == "reconcile":
+            from exams import sync_issues as si
+
+            col = si.IssueCollector(category.club, "wellness_pe", sheet_id=sheet_id)
+            si.from_name_counts(col, "Formulario wellness Primer Equipo", not_found=report.get("unmatched"),
+                                sheet=settings.WELLNESS_SHEET_WORKSHEET)
+            col.complete()
+            col.save()
         logger.info("wellness sync (%s): %s", mode, report)
         return {"status": "ok", "mode": mode, **report}
     finally:
@@ -105,6 +113,19 @@ def sync_wellness_responses(mode: str = "today", since_days: int = 3) -> dict:
 # esas correcciones.
 _LOCK_FORMATIVO = "lock:sync_formativo_sheets"
 _LOCK_FORMATIVO_TTL = 3600  # una corrida completa toma minutos, no segundos
+
+
+ISSUE_SOURCE = {"evaluaciones": "eval_formativo", "gps": "gps_formativo"}
+ISSUE_DOC = {"evaluaciones": "Planilla de Evaluaciones Formativo", "gps": "Planilla GPS Formativo"}
+
+
+def _unreachable(club, source: str, sid: str, exc, commit: bool) -> None:
+    """A single-document source that could not be read (Datos › Fuentes › Problemas)."""
+    from exams import sync_issues as si
+
+    col = si.IssueCollector(club, source, commit=commit)
+    col.unreachable(sid, exc)
+    col.save()  # nothing was read, so nothing is closed
 
 
 def _formativo_creds() -> tuple[str, str]:
@@ -136,7 +157,14 @@ def sync_peso_diario(commit: bool = True) -> dict:
         rep = ing.run(club, filas, dias, commit=commit)
     except (GoogleSheetsError, ValueError) as exc:
         logger.warning("peso diario sync failed: %s", exc)
+        _unreachable(club, "peso_diario", settings.PESO_DIARIO_SHEET_ID, exc, commit)
         return {"status": "error", "error": str(exc)}
+    from exams import sync_issues as si
+
+    col = si.IssueCollector(club, "peso_diario", commit=commit, sheet_id=settings.PESO_DIARIO_SHEET_ID)
+    si.from_peso(col, rep, "Peso diario Primer Equipo")
+    col.complete()
+    col.save()
     out = {"status": "ok", "creados": rep.creados, "actualizados": rep.actualizados,
            "sin_jugador": len(rep.sin_jugador), "ambiguos": len(rep.ambiguos)}
     logger.info("peso diario sync: %s", out)
@@ -161,7 +189,14 @@ def sync_kine_formativo(commit: bool = True) -> dict:
                       creds_file=creds_file, creds_json=creds_json)
     except (GoogleSheetsError, ValueError) as exc:
         logger.warning("kine formativo sync failed: %s", exc)
+        _unreachable(club, "kine_formativo", settings.KINE_FORMATIVO_SHEET_ID, exc, commit)
         return {"status": "error", "error": str(exc)}
+    from exams import sync_issues as si
+
+    col = si.IssueCollector(club, "kine_formativo", commit=commit, sheet_id=settings.KINE_FORMATIVO_SHEET_ID)
+    si.from_kine(col, rep, "Registro de Kinesiología Formativo")
+    col.complete()
+    col.save()
     out = {"status": "ok", "creadas": rep.creadas, "actualizadas": rep.actualizadas,
            "borradas": rep.borradas,
            "sin_cambio": rep.sin_cambio, "sin_jugador": len(rep.sin_jugador),
@@ -192,8 +227,11 @@ def sync_formativo_saltos(commit: bool = True) -> dict:
     club = Club.objects.filter(name=settings.FORMATIVO_CLUB).first()
     if club is None:
         return {"status": "skipped", "reason": "club not found"}
+    from exams import sync_issues as si
+
     season = timezone.localdate().year
     docs, errors = [], []
+    col = si.IssueCollector(club, "saltos_formativo", commit=commit)
     for sid in ids:
         try:
             rep = ing.run(sid, club, season=season, commit=commit, creds_file=creds_file, creds_json=creds_json,
@@ -201,9 +239,13 @@ def sync_formativo_saltos(commit: bool = True) -> dict:
         except (GoogleSheetsError, ValueError) as exc:
             logger.warning("saltos formativo %s failed: %s", sid, exc)
             errors.append({"sheet": sid, "error": str(exc)})
+            col.unreachable(sid, exc)
             continue
+        col.read(rep.documento, sid)
+        si.from_saltos(col, rep, sid)
         docs.append({"documento": rep.documento, "creados": rep.creados, "actualizados": rep.actualizados,
                      "sin_jugador": len(rep.sin_jugador)})
+    col.save()
     out = {"status": "ok" if not errors else "partial", "season": season, "docs": docs, "errors": errors}
     logger.info("saltos formativo sync: %s", out)
     return out
@@ -247,6 +289,8 @@ def sync_formativo_sheets(commit: bool = True, alerts: bool = False) -> dict:
     except Exception:  # pragma: no cover — cache backend unavailable
         lock = None
 
+    from exams import sync_issues as si
+
     salida: dict = {"status": "ok"}
     try:
         for clave, sheet_id, modulo in (
@@ -265,7 +309,12 @@ def sync_formativo_sheets(commit: bool = True, alerts: bool = False) -> dict:
                 logger.warning("formativo sync (%s) failed: %s", clave, exc)
                 salida[clave] = {"status": "error", "error": str(exc)}
                 salida["status"] = "partial"
+                _unreachable(club, ISSUE_SOURCE[clave], sheet_id, exc, commit)
                 continue
+            col = si.IssueCollector(club, ISSUE_SOURCE[clave], commit=commit, sheet_id=sheet_id)
+            si.from_sheet_rows(col, rep, ISSUE_DOC[clave])
+            col.complete()
+            col.save()
             salida[clave] = {
                 "creados": rep.creados, "ya_existian": rep.ya_existian,
                 "partido_actualizados": getattr(rep, "partido_actualizados", 0),
@@ -368,8 +417,11 @@ def sync_wellness_formativo(commit: bool = True, dias: int | None = 7,
     except Exception:  # pragma: no cover — cache backend unavailable
         lock = None
 
+    from exams import sync_issues as si
+
     creds = {"creds_file": creds_file, "creds_json": creds_json}
     desde = ingest.ventana(dias)
+    col = si.IssueCollector(club, "wellness_formativo", commit=commit and dias is not None)
     salida: dict = {"status": "ok", "documentos": len(ids), "creados": 0,
                     "repetidos": 0, "sin_jugador": 0, "ambiguos": 0,
                     "alertas": 0, "fallidos": []}
@@ -387,12 +439,14 @@ def sync_wellness_formativo(commit: bool = True, dias: int | None = 7,
                                        sid[:16], exc)
                         salida["fallidos"].append(f"{sid[:16]}: {exc}")
                         salida["status"] = "partial"
+                        col.unreachable(sid, exc)
                     else:
                         # Un 429 es la cuota por MINUTO: esperar 3 s vuelve a
                         # chocar contra la misma pared.
                         time.sleep(ingest.espera_reintento(exc, intento))
             if doc is None:
                 continue
+            leidas = 0
             for rol in ("checkin", "checkout"):
                 try:
                     rep = ingest.ingerir(doc, titulo=titulo, club=club, rol=rol,
@@ -404,6 +458,10 @@ def sync_wellness_formativo(commit: bool = True, dias: int | None = 7,
                     salida["fallidos"].append(f"{titulo}/{rol}: {exc}")
                     salida["status"] = "partial"
                     continue
+                leidas += 1
+                si.from_name_counts(col, titulo, not_found=rep.no_encontrados, ambiguous=rep.ambiguos,
+                                    sheet=rep.hoja, sid=sid)
+                si.from_new_columns(col, titulo, rep.columnas_sin_mapear, sheet=rep.hoja, sid=sid)
                 salida["creados"] += rep.creados
                 salida["repetidos"] += rep.repetidos
                 salida["sin_jugador"] += sum(rep.no_encontrados.values())
@@ -417,6 +475,9 @@ def sync_wellness_formativo(commit: bool = True, dias: int | None = 7,
                     salida.setdefault("columnas_nuevas", []).append(
                         {"documento": titulo, "hoja": rol,
                          "columnas": rep.columnas_sin_mapear})
+            if leidas == 2:
+                col.read(titulo, sid)
+        col.save()
         logger.info("wellness formativo: %s", salida)
         return salida
     finally:

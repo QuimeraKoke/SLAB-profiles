@@ -5,7 +5,7 @@
  *
  * `ComparisonTable` no sirve para esto — está transpuesto (filas = métricas,
  * columnas = últimas tomas). Eso funciona para seguir la evolución de pocos
- * campos; acá lo que importa es recorrer el registro de actividad, y cada fila
+ * campos; aquí lo que importa es recorrer el registro de actividad, y cada fila
  * es un entrenamiento.
  *
  * Más reciente arriba: una bitácora se lee desde lo último hacia atrás.

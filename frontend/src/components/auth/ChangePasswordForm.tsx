@@ -40,7 +40,7 @@ export default function ChangePasswordForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!current) return fail("current", `Ingresá tu ${currentLabel.toLowerCase()}.`);
+    if (!current) return fail("current", `Ingresa tu ${currentLabel.toLowerCase()}.`);
     if (next.length < 8) return fail("next", "La nueva contraseña debe tener al menos 8 caracteres.");
     if (next !== confirm) return fail("next", "Las dos contraseñas nuevas no coinciden.");
     setBad(null);
@@ -91,7 +91,7 @@ export default function ChangePasswordForm({
         <span className={styles.hint}>{PASSWORD_HINT}</span>
       </label>
       <label className={styles.field}>
-        <span className={styles.label}>Repetí la nueva contraseña</span>
+        <span className={styles.label}>Repite la nueva contraseña</span>
         <input
           type="password"
           className={styles.input}

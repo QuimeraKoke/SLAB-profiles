@@ -28,7 +28,7 @@ def availability(mc: Microcycle, *, day: date | None = None) -> dict:
     the microcycle's last day if it is over), plus the season's history."""
     days = [d.date for d in days_of(mc)]
     if day is not None and day not in days:
-        raise ValueError("El día no pertenece a la semana.")
+        raise ValueError("El día no pertenece al período seleccionado.")
     target = day or min(timezone.localdate(), mc.end_date)
     players = team_players(mc)
 

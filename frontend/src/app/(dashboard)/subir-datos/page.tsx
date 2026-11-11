@@ -24,7 +24,7 @@ const MODE_LABEL: Record<Mode, string> = {
 /** Modos que ESTA pantalla sabe dibujar, en el orden en que se ofrecen.
  *
  *  La lista existe para que un modo declarado en la plantilla pero sin
- *  componente acá no se ofrezca (pasaría con `quick_list`, que está declarado en
+ *  componente aquí no se ofrezca (pasaría con `quick_list`, que está declarado en
  *  el modelo y nunca se implementó). Y para que agregar uno sea UN lugar: antes
  *  el filtro decía `["team_table", "bulk_ingest"]` a mano, así que `multi` no
  *  aparecía en esta pantalla aunque la plantilla lo declarara.
@@ -111,7 +111,7 @@ export default function SubirDatosPage() {
   }
 
   if (catLoading) return <div className={styles.muted}>Cargando…</div>;
-  if (!categoryId) return <div className={styles.muted}>Seleccioná una categoría.</div>;
+  if (!categoryId) return <div className={styles.muted}>Selecciona una categoría.</div>;
 
   // ── Capture view ──────────────────────────────────────────────────────────
   if (selected && mode) {
@@ -160,7 +160,7 @@ export default function SubirDatosPage() {
           />
         )}
         {mode === "multi" && (
-          /* Sin `initialPlayerId`: acá no se entró desde un perfil, así que el
+          /* Sin `initialPlayerId`: aquí no se entró desde un perfil, así que el
            * primer bloque arranca con el jugador vacío. */
           <MultiRecordForm
             template={selected}
@@ -178,7 +178,7 @@ export default function SubirDatosPage() {
                 value={singlePlayerId}
                 onChange={(e) => setSinglePlayerId(e.target.value)}
               >
-                <option value="">— elegí un jugador —</option>
+                <option value="">— elige un jugador —</option>
                 {players.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
@@ -197,7 +197,7 @@ export default function SubirDatosPage() {
                 onCancel={reset}
               />
             ) : (
-              <p className={styles.muted}>Elegí un jugador para cargar los datos.</p>
+              <p className={styles.muted}>Elige un jugador para cargar los datos.</p>
             )}
           </div>
         )}

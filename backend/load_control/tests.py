@@ -856,6 +856,38 @@ class SummaryTests(Base):
                          "el no disponible primero; 'Dos bajo' no llega a 3 métricas")
 
 
+class PeriodTests(Base):
+    """Centro de mando › "Período": any start and end date, not just a week."""
+
+    def team(self):
+        from load_control import planning
+
+        return planning.team_for(self.cat, 2026)
+
+    def test_un_periodo_junta_los_dias_de_varias_semanas(self):
+        from load_control.week import days_of, range_for
+
+        mc = range_for(self.team(), date(2026, 10, 20), date(2026, 11, 11))
+        days = [d.date for d in days_of(mc)]
+        self.assertEqual((days[0], days[-1], len(days)), (date(2026, 10, 20), date(2026, 11, 11), 23))
+        self.assertEqual((mc.start_date, mc.end_date), (date(2026, 10, 20), date(2026, 11, 11)))
+
+    def test_fechas_al_reves_se_ordenan_y_hay_un_maximo(self):
+        from load_control.week import MAX_RANGE_DAYS, range_for
+
+        mc = range_for(self.team(), date(2026, 11, 2), date(2026, 10, 30))
+        self.assertEqual(mc.start_date, date(2026, 10, 30))
+        with self.assertRaises(ValueError):
+            range_for(self.team(), date(2026, 1, 1), date(2026, 1, 1) + timedelta(days=MAX_RANGE_DAYS))
+
+    def test_el_resumen_habla_del_periodo(self):
+        from load_control.summary import summary
+        from load_control.week import range_for
+
+        out = summary(range_for(self.team(), date(2026, 10, 20), date(2026, 11, 11)))
+        self.assertNotIn("semana", out["sentence"].lower())
+
+
 class PainZonesTests(SimpleTestCase):
     """`load_control.pain_zones`: the forms' body-zone list, its typos and the free text."""
 

@@ -6,7 +6,7 @@ Este archivo existe por un bug de configuración que se repitió dos veces:
 tanto la subida como la descarga de la plantilla devolvían 400.
 
 El primer test es el que importa: recorre TODAS las plantillas activas, así que
-la próxima que habilite el modo sin mapping falla acá y no en la cara del club.
+la próxima que habilite el modo sin mapping falla aquí y no en la cara del club.
 """
 from __future__ import annotations
 

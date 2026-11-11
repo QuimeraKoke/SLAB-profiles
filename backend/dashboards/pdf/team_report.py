@@ -183,7 +183,7 @@ def render_team_pdf(
             "flowables": [
                 Paragraph(
                     "No hay un TeamReportLayout activo para esta "
-                    f"categoría en {department.name}. Configurá uno desde "
+                    f"categoría en {department.name}. Configura uno desde "
                     "el panel de administración para que aparezcan widgets.",
                     body_styles["body_muted"],
                 ),

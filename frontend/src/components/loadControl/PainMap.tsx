@@ -18,6 +18,8 @@ import { type PainCell, type PainMapData } from "@/lib/loadControl";
 import { PAIN_OUTLINE, PAIN_VIEWBOX, PAIN_VIEWS, painZoneId } from "@/lib/painZones";
 
 import styles from "./loadControl.module.css";
+import { usePeriod } from "@/lib/periodWording";
+import ScopeBadge from "./ScopeBadge";
 
 // dataviz reference palette, sequential blue (steps 150 → 600).
 const RAMP = ["#b7d3f6", "#86b6ef", "#5598e7", "#2a78d6", "#1c5cab", "#184f95"];
@@ -48,13 +50,12 @@ function centre(path: string): [number, number] {
 
 interface Props {
   data: { day: PainMapData; week: PainMapData };
+  /** "day": the strip's day. "week": every day of the period, with how many days each one marked it. */
   scope: "day" | "week";
-  onScope: (s: "day" | "week") => void;
-  dayLabel: string;
-  weekLabel: string;
 }
 
-export default function PainMap({ data, scope, onScope, dayLabel, weekLabel }: Props) {
+export default function PainMap({ data, scope }: Props) {
+  const per = usePeriod();
   const map = scope === "week" ? data.week : data.day;
   const [active, setActive] = useState<string | null>(null);
 
@@ -73,22 +74,18 @@ export default function PainMap({ data, scope, onScope, dayLabel, weekLabel }: P
   const who = (c: PainCell) => c.who.map((w) => (scope === "week" && w.days > 1 ? `${w.name} (${w.days} días)` : w.name)).join(", ");
 
   return (
-    <section className={styles.card} aria-labelledby="pm-title">
+    <section className={styles.card} aria-labelledby={`pm-title-${scope}`}>
       <div className={styles.cardHead}>
-        <h2 id="pm-title" className={styles.h2}>¿Dónde les duele? · {scope === "week" ? weekLabel : dayLabel}</h2>
-        <span className={styles.muted}>
-          {total} jugador{total === 1 ? "" : "es"} con molestias · check-in y check-out
+        <h2 id={`pm-title-${scope}`} className={styles.h2}>{scope === "week" ? "Molestias acumuladas" : "¿Dónde les duele?"}</h2>
+        <span className={styles.cardMeta}>
+          <ScopeBadge kind={scope === "week" ? "period" : "day"} />
+          <span className={styles.muted}>{total} jugador{total === 1 ? "" : "es"} con molestias · check-in y check-out</span>
         </span>
       </div>
-      <div className={styles.controls}>
-        <div role="group" aria-label="Período del mapa" className={styles.segmented}>
-          <button type="button" aria-pressed={scope === "day"} onClick={() => onScope("day")}>Día</button>
-          <button type="button" aria-pressed={scope === "week"} onClick={() => onScope("week")}>Semana</button>
-        </div>
-      </div>
+      {scope === "week" && <p className={styles.muted} style={{ margin: "0 0 8px" }}>Cada zona marcada en algún día {per.of}, y cuántos días la marcó cada uno.</p>}
 
       {map.zones.length === 0 && map.others.length === 0 ? (
-        <p className={styles.muted}>Nadie marcó molestias {scope === "week" ? "esta semana" : "este día"}.</p>
+        <p className={styles.muted}>Nadie marcó molestias {scope === "week" ? per.in : "este día"}.</p>
       ) : (
         <div className={styles.painGrid}>
           <div className={styles.painFigures}>
@@ -135,7 +132,7 @@ export default function PainMap({ data, scope, onScope, dayLabel, weekLabel }: P
               {max > 0 ? max : ""}
             </div>
             <p className={styles.muted} aria-live="polite">
-              {activeCell ? `${activeCell.label}: ${who(activeCell)}` : "Pasá el mouse por una zona para ver quiénes."}
+              {activeCell ? `${activeCell.label}: ${who(activeCell)}` : "Pasa el mouse por una zona para ver quiénes."}
             </p>
           </div>
 

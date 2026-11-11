@@ -57,7 +57,7 @@ class Command(BaseCommand):
         ids = opts["sheet_ids"] or settings.FORMATIVO_WELLNESS_SHEET_IDS
         if not ids:
             raise CommandError(
-                "No hay documentos: definí FORMATIVO_WELLNESS_SHEET_IDS o pasá "
+                "No hay documentos: define FORMATIVO_WELLNESS_SHEET_IDS o pasa "
                 "--sheet-id.")
         creds = dict(creds_file=settings.GOOGLE_SHEETS_CREDENTIALS_FILE,
                      creds_json=settings.GOOGLE_SHEETS_CREDENTIALS_JSON)
@@ -173,4 +173,4 @@ class Command(BaseCommand):
                 self.stdout.write(f"      · {quien}: {err}")
         if not commit:
             self.stdout.write(self.style.WARNING(
-                "\n  ENSAYO — volvé a correr con --commit para escribir."))
+                "\n  ENSAYO — vuelve a correr con --commit para escribir."))

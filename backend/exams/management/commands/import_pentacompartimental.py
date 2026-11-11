@@ -85,7 +85,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(
                 f"\n⚠ {rep['skipped_implausible']} fila(s) con talla/peso fuera "
                 "de rango humano — el archivo tiene las COLUMNAS CORRIDAS. "
-                "Revisá que no haya una columna extra antes de 'peso'."
+                "Revisa que no haya una columna extra antes de 'peso'."
             ))
             for row in rep.get("implausible_rows", [])[:10]:
                 self.stdout.write(self.style.ERROR(
@@ -107,7 +107,7 @@ class Command(BaseCommand):
 
         if rep["dry_run"]:
             self.stdout.write(self.style.WARNING(
-                "\nDRY-RUN — nada escrito. Pasá --commit para importar."
+                "\nDRY-RUN — nada escrito. Pasa --commit para importar."
             ))
             return
         self.stdout.write(self.style.SUCCESS(

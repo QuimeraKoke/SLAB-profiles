@@ -136,4 +136,4 @@ class Command(BaseCommand):
             f"visibles"))
         if not opts["commit"]:
             self.stdout.write(self.style.WARNING(
-                "\n  ENSAYO — volvé a correr con --commit."))
+                "\n  ENSAYO — vuelve a correr con --commit."))

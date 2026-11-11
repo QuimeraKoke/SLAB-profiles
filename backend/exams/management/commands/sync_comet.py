@@ -52,7 +52,7 @@ class Command(BaseCommand):
             raise CommandError(
                 "No hay integraciones COMET"
                 + (f" para club~{opts['club']!r}" if opts["club"] else "")
-                + ". Creá una en Django admin → «Integración COMET»."
+                + ". Crea una en Django admin → «Integración COMET»."
             )
 
         since = (
@@ -69,7 +69,7 @@ class Command(BaseCommand):
 
         if dry_run:
             self.stdout.write(self.style.WARNING(
-                "\nDRY-RUN — volvé a correr con --commit para escribir."
+                "\nDRY-RUN — vuelve a correr con --commit para escribir."
             ))
 
     def _render(self, rep: dict, *, verbose: bool):
@@ -113,7 +113,7 @@ class Command(BaseCommand):
             for c in (rep["unmapped_competitions"] if verbose else rep["unmapped_competitions"][:6]):
                 self.stdout.write(f"      · {c}")
             self.stdout.write(
-                "    → asignalas en Django admin → «Competencias COMET»"
+                "    → asígnalas en Django admin → «Competencias COMET»"
             )
         if rep["players_unresolved"]:
             self.stdout.write(self.style.WARNING(
@@ -122,7 +122,7 @@ class Command(BaseCommand):
             for p in (rep["unresolved_players"] if verbose else rep["unresolved_players"][:8]):
                 self.stdout.write(f"      · {p}")
             self.stdout.write(
-                "    → vinculalos en Django admin → «Vínculos jugador COMET» "
+                "    → vincúlalos en Django admin → «Vínculos jugador COMET» "
                 "(el personId es estable, se hace una sola vez)"
             )
         for e in rep.get("errors") or []:

@@ -11,7 +11,7 @@ todos los laterales incluidos.
 ("Optional grouping shown above the name"); lo que había escrito ahí era
 `General` / `Específica`, que no agrupa nada.
 
-Mantener esto acá y no dentro de un comando es deliberado: lo leen el
+Mantener esto aquí y no dentro de un comando es deliberado: lo leen el
 normalizador (`normalize_positions`), el importador del plantel formativo y
 —cuando exista— la comparación entre divisiones. Si cada uno tuviera su copia,
 volveríamos al problema original con más pasos.

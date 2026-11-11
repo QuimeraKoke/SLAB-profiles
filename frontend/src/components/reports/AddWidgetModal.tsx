@@ -123,7 +123,7 @@ export default function AddWidgetModal({
 
   async function submit() {
     if (!templateSlug || fields.length === 0) {
-      setError("Elegí un examen y al menos una métrica.");
+      setError("Elige un examen y al menos una métrica.");
       return;
     }
     if (isPlayer && !isEdit && !playerId) {
@@ -200,7 +200,7 @@ export default function AddWidgetModal({
             value={templateSlug}
             onChange={(e) => { setTemplateSlug(e.target.value); setFields([]); }}
           >
-            <option value="">— elegí —</option>
+            <option value="">— elige —</option>
             {(opts?.templates ?? []).map((t) => (
               <option key={t.slug} value={t.slug}>{t.department} · {t.name}</option>
             ))}
@@ -226,7 +226,7 @@ export default function AddWidgetModal({
               <p className={styles.hint}>Este examen no tiene métricas numéricas.</p>
             )
           ) : (
-            <p className={styles.hint}>Elegí un examen primero.</p>
+            <p className={styles.hint}>Elige un examen primero.</p>
           )}
         </div>
 
@@ -235,7 +235,7 @@ export default function AddWidgetModal({
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="Automático si lo dejás vacío"
+            placeholder="Automático si lo dejas vacío"
           />
         </label>
       </div>

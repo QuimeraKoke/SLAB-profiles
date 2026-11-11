@@ -18,13 +18,12 @@ import { fmt, type ParticipationPayload, shortDate } from "@/lib/loadControl";
 
 import styles from "./loadControl.module.css";
 import { PlayerName } from "@/components/loadControl/PlayerPhotos";
+import ScopeBadge from "./ScopeBadge";
 
 const LIMIT = 15;
 
 interface Props {
   microcycleId: string;
-  scope: "microcycle" | "season";
-  onScope: (s: "microcycle" | "season") => void;
 }
 
 function Bar({ pct, low }: { pct: number | null; low?: boolean }) {
@@ -36,18 +35,18 @@ function Bar({ pct, low }: { pct: number | null; low?: boolean }) {
   );
 }
 
-export default function ParticipationView({ microcycleId, scope, onScope }: Props) {
+export default function ParticipationView({ microcycleId }: Props) {
   const [data, setData] = useState<ParticipationPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    api<ParticipationPayload>(`/load-control/microcycles/${microcycleId}/participation?scope=${scope}`)
+    api<ParticipationPayload>(`/load-control/microcycles/${microcycleId}/participation?scope=microcycle`)
       .then((d) => { if (!cancelled) { setData(d); setError(null); } })
       .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudo cargar minutos y entrenamientos."); });
     return () => { cancelled = true; };
-  }, [microcycleId, scope]);
+  }, [microcycleId]);
 
   if (error) return <div className={styles.error} role="alert">{error}</div>;
   if (!data) return <p className={styles.muted}>Cargando…</p>;
@@ -59,22 +58,16 @@ export default function ParticipationView({ microcycleId, scope, onScope }: Prop
 
   return (
     <>
-      <div className={styles.controls}>
-        <div role="group" aria-label="Período" className={styles.segmented}>
-          <button type="button" aria-pressed={scope === "microcycle"} onClick={() => onScope("microcycle")}>Esta semana</button>
-          <button type="button" aria-pressed={scope === "season"} onClick={() => onScope("season")}>Temporada</button>
-        </div>
-        <span className={styles.muted}>
-          {shortDate(data.start)} – {shortDate(data.end)} · {data.matches.length} partido{data.matches.length === 1 ? "" : "s"}
-          {" · "}{data.sessions} sesiones del equipo
-        </span>
-      </div>
-
       <section className={styles.card} aria-labelledby="pa-t">
         <div className={styles.cardHead}>
           <h2 id="pa-t" className={styles.h2}>Minutos y entrenamientos por jugador ({data.rows.length})</h2>
-          <span className={styles.muted}>Ordenados por minutos jugados</span>
+          <span className={styles.cardMeta}><ScopeBadge kind="period" /></span>
         </div>
+        <p className={styles.muted} style={{ margin: "0 0 8px" }}>
+          {data.matches.length} partido{data.matches.length === 1 ? "" : "s"} · {data.sessions} sesiones del equipo
+          {" "}({shortDate(data.start)} – {shortDate(data.end)}) · ordenados por minutos jugados
+          {data.matches.length > 4 && " · el detalle por partido aparece con 4 partidos o menos"}
+        </p>
         <div className={styles.tableWrap}>
           <table className={styles.table}>
             <thead>

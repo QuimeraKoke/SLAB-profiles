@@ -74,7 +74,7 @@ _COMPARISON_GUIDE = (
     "Comparación con pares: cada métrica puede traer `references.peer` con el "
     "promedio y percentil del jugador respecto del EQUIPO (`team`) y de su "
     "MISMA POSICIÓN (`position`, con `label` y tamaño de muestra `n`). Cuando "
-    "aporte valor, contextualizá los datos del jugador frente a esos promedios "
+    "aporte valor, contextualiza los datos del jugador frente a esos promedios "
     "(p. ej. «por encima del promedio del equipo», «bajo para su posición»), "
     "citando el número. No compares cuando el bloque falte o `n` sea muy chico."
 )
@@ -191,8 +191,8 @@ _ANALYSIS_OUTPUT_CONTRACT = (
     '  "resumen": "2 a 4 frases: estado general del jugador y si la tendencia '
     'es positiva o preocupante",\n'
     '  "analisis": ["3 a 6 puntos que INTERPRETAN los datos: tendencia de carga '
-    'de partido y qué variables la acompañan (citá r); ACWR y microciclo; '
-    'contexto por posición (citá percentil/promedio). Una frase cada uno"],\n'
+    'de partido y qué variables la acompañan (cita r); ACWR y microciclo; '
+    'contexto por posición (cita percentil/promedio). Una frase cada uno"],\n'
     '  "conclusiones": ["2 a 4 conclusiones o acciones concretas: qué vigilar y '
     'qué hacer. Una frase cada una"]\n'
     "}\n"

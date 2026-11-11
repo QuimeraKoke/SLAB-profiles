@@ -170,11 +170,11 @@ export default function PartidoDetailPage({ params }: PageProps) {
             <strong>Sin reporte para este partido.</strong>
             <p>
               No hay datos de GPS ni de rendimiento vinculados a este partido
-              todavía. Cargá los datos desde{" "}
+              todavía. Carga los datos desde{" "}
               <Link href={`/partidos/${id}/editar`} className={styles.inlineLink}>
                 Editar partido
               </Link>{" "}
-              y volvé acá para ver el reporte combinado.
+              y vuelve aquí para ver el reporte combinado.
             </p>
           </div>
         )

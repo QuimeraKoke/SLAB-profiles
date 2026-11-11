@@ -721,7 +721,7 @@ def _spec_fisico(department: Department) -> dict:
     if gps_train is not None:
         # Físico DASHBOARD (período) = carga de ENTRENAMIENTO agregada por
         # rango de fechas, igual que Médico / Nutricional. El GPS de PARTIDO
-        # ya no vive acá: se movió al reporte combinado de la vista Partidos
+        # ya no vive aquí: se movió al reporte combinado de la vista Partidos
         # (scope=match), fijado al partido abierto.
         team.extend(_gps_training_team_sections(gps_train))
 

@@ -52,7 +52,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from core.models import Club, Player, Position
-# El mapa vive en `core.positions` y no acá: lo comparten este comando, el
+# El mapa vive en `core.positions` y no aquí: lo comparten este comando, el
 # importador del plantel formativo y la comparación entre divisiones. Tener una
 # copia por consumidor es exactamente el problema que este comando arregla.
 from core.positions import CANON
@@ -108,7 +108,7 @@ class Command(BaseCommand):
             for s in sin_mapa:
                 self.stdout.write(f"      · {s}")
             self.stdout.write(
-                "      Agregalas a CANON antes de confiar en la comparación "
+                "      Agrégalas a CANON antes de confiar en la comparación "
                 "por línea: una posición sin línea no tiene contra qué medirse.")
 
         # Contraste contra la evidencia del club: `secondary_position` venía

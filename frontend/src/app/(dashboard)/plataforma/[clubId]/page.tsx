@@ -108,7 +108,7 @@ export default function PlataformaClubPage({ params }: PageProps) {
   const submitCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!cat.name.trim()) {
-      setFormError("Ingresá el nombre de la categoría.");
+      setFormError("Ingresa el nombre de la categoría.");
       catNameRef.current?.focus();
       return;
     }
@@ -134,7 +134,7 @@ export default function PlataformaClubPage({ params }: PageProps) {
   const submitRename = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) {
-      setFormError("Ingresá el nombre del club.");
+      setFormError("Ingresa el nombre del club.");
       renameRef.current?.focus();
       return;
     }
@@ -264,7 +264,7 @@ export default function PlataformaClubPage({ params }: PageProps) {
             </button>
           </div>
           {club.categories.length === 0 ? (
-            <div className={styles.empty}>Sin categorías. Creá la primera para cargar jugadores.</div>
+            <div className={styles.empty}>Sin categorías. Crea la primera para cargar jugadores.</div>
           ) : (
             <div className={styles.tableWrapper}>
               <table className={styles.table}>
@@ -335,7 +335,7 @@ export default function PlataformaClubPage({ params }: PageProps) {
               <label className={styles.field}>
                 <span className={styles.label}>Agregar departamento</span>
                 <select value={deptSlug} onChange={(e) => setDeptSlug(e.target.value)}>
-                  <option value="">Elegí un departamento…</option>
+                  <option value="">Elige un departamento…</option>
                   {club.available_departments.map((d) => (
                     <option key={d.slug} value={d.slug}>
                       {d.name} — {d.exams.join(", ")}

@@ -21,8 +21,8 @@ interface Props {
 }
 
 const SUGGESTIONS = [
-  "Mostrame la evolución de las métricas clave de este jugador.",
-  "Compará sus últimas tomas en una tabla.",
+  "Muéstrame la evolución de las métricas clave de este jugador.",
+  "Compara sus últimas tomas en una tabla.",
   "¿Cómo viene su carga / rendimiento en el tiempo?",
 ];
 

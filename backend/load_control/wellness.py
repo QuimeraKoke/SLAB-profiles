@@ -141,7 +141,7 @@ def wellness(mc: Microcycle, *, day: date | None = None, player_id=None) -> dict
     low = cfg["wellness_low"]
     days = [d.date for d in days_of(mc)]
     if day is not None and day not in days:
-        raise ValueError("El día no pertenece a la semana.")
+        raise ValueError("El día no pertenece al período seleccionado.")
     # This week's squad: of the team's players, those who trained (GPS) or
     # answered a form in the microcycle — not the whole roster (SUB-20 lists
     # 63 active players; ~22 trained), or "sin responder" means nothing.
@@ -154,7 +154,7 @@ def wellness(mc: Microcycle, *, day: date | None = None, player_id=None) -> dict
     if player_id is not None:
         players = {k: v for k, v in players.items() if str(k) == str(player_id)}
         if not players:
-            raise ValueError("El jugador no es del equipo de esta semana.")
+            raise ValueError("El jugador no es del equipo en este período.")
     ins = {k: v for k, v in ins.items() if k[0] in players}
     outs = {k: v for k, v in outs.items() if k[0] in players}
 

@@ -462,7 +462,7 @@ class FormativoGpsTests(TestCase):
     def test_acc_dec_queda_vacio(self):
         """Catapult tampoco lo llena (no está en su SLUG_MAP).
 
-        Sumar AC+DEC acá haría del formativo el único origen que lo trae, que
+        Sumar AC+DEC aquí haría del formativo el único origen que lo trae, que
         es la misma inconsistencia al revés.
         """
         self.correr({"U15": [fila()]}, commit=True)

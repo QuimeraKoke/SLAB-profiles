@@ -90,8 +90,8 @@ INPUT_CONFIG: dict = {
     # plantilla devolvían 400 — el modo se ofrecía en la UI y no funcionaba.
     "bulk_ingest": {
         "help": (
-            "Carga la planilla con una fila por jugador. Bajá la plantilla para "
-            "tener los encabezados exactos; el IMC se calcula acá."
+            "Carga la planilla con una fila por jugador. Baja la plantilla para "
+            "tener los encabezados exactos; el IMC se calcula aquí."
         ),
     },
     "column_mapping": mapping_from_schema(SCHEMA),

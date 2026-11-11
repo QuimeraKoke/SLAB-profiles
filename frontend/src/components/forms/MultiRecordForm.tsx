@@ -23,7 +23,7 @@ import styles from "./MultiRecordForm.module.css";
  *  sus fechas.
  *
  *  Reusa `FieldInput` del formulario individual en vez de dibujar sus propios
- *  inputs, así que un campo nuevo (o un tipo nuevo, como el bodymap) aparece acá
+ *  inputs, así que un campo nuevo (o un tipo nuevo, como el bodymap) aparece aquí
  *  sin tocar este archivo.
  */
 
@@ -77,7 +77,7 @@ export default function MultiRecordForm({
    *
    *  Sin los calculados (los resuelve el backend) y sin los `file`: un adjunto
    *  no es un valor, se sube después contra `/attachments` con el id del
-   *  resultado. Antes estaban acá y `FieldInput` —que no sabe de archivos— los
+   *  resultado. Antes estaban aquí y `FieldInput` —que no sabe de archivos— los
    *  dibujaba como CAJA DE TEXTO, y ese texto se guardaba como si fuera el
    *  adjunto.
    */
@@ -201,7 +201,7 @@ export default function MultiRecordForm({
     e.preventDefault();
     setError(null);
     if (usable.length === 0) {
-      setError("Elegí al menos un jugador.");
+      setError("Elige al menos un jugador.");
       return;
     }
     setSaving(true);
@@ -253,7 +253,7 @@ export default function MultiRecordForm({
   return (
     <form className={styles.wrapper} onSubmit={submit}>
       <div className={styles.intro}>
-        Cargá varios registros sin salir de la pantalla. Cada bloque es
+        Carga varios registros sin salir de la pantalla. Cada bloque es
         independiente: su jugador, sus datos.
       </div>
 

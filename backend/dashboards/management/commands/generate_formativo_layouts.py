@@ -408,7 +408,7 @@ class Command(BaseCommand):
                 # `Category.departments` (perfil/[id]/page.tsx:130), no con los
                 # layouts. Sin el vínculo, el layout existe y es inalcanzable:
                 # ninguna categoría formativa lo tenía poblado, así que los 20
-                # dashboards no aparecían en ninguna ficha. Se vincula acá, que
+                # dashboards no aparecían en ninguna ficha. Se vincula aquí, que
                 # es donde ya se sabe que hay algo que mostrar — y sólo se
                 # AGREGA, para no sacar un departamento que el club puso a mano.
                 if not category.departments.filter(pk=department.pk).exists():

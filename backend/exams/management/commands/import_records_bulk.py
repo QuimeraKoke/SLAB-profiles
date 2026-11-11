@@ -61,7 +61,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  Results: {new_results} nuevos, {len(existing_r)} ya existen")
 
         if not opts["commit"]:
-            self.stdout.write(self.style.WARNING("\nDRY-RUN — nada escrito. Pasá --commit para importar."))
+            self.stdout.write(self.style.WARNING("\nDRY-RUN — nada escrito. Pasa --commit para importar."))
             return
 
         with transaction.atomic():

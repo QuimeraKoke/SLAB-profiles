@@ -21,7 +21,7 @@ tiene que poder decirlo.
 **Las series salen crudas, con su fecha, más la fecha de nacimiento.** El eje lo
 elige el consumidor: días desde el primer registro de cada uno (comparar
 *formas* sin forzar que las fechas calcen) o edad del jugador (comparar a *la
-misma edad*, que es la pregunta de proyección). Resolver el eje acá obligaría a
+misma edad*, que es la pregunta de proyección). Resolver el eje aquí obligaría a
 volver al servidor para cambiar de vista, y son los mismos datos.
 """
 from __future__ import annotations
@@ -282,7 +282,7 @@ def percentiles(
     saldría aplastado. El percentil contra los PROPIOS pares contesta la
     pregunta que importa: quién está mejor parado en su grupo.
 
-    ⚠️ **La dirección se corrige acá y es lo más delicado de este módulo.**
+    ⚠️ **La dirección se corrige aquí y es lo más delicado de este módulo.**
     El ranking natural es "cuántos valores son ≤ al tuyo". En T10 y COD 505
     menos es mejor, así que un jugador rápido saldría con percentil bajo y el
     radar lo dibujaría como el peor del plantel — un error que nadie detecta

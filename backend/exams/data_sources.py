@@ -180,7 +180,15 @@ def data_sources(club) -> dict:
             "docs": docs,
             "exams": exams,
         })
-    return {"club": club.name, "sources": out,
+    from exams.sync_issues import open_issues
+
+    issues = open_issues(club)
+    per_source: dict[str, int] = {}
+    for i in issues:
+        per_source[i["source"]] = per_source.get(i["source"], 0) + 1
+    for src in out:
+        src["issues"] = per_source.get(src["key"], 0)
+    return {"club": club.name, "sources": out, "issues": issues,
             "service_account": _service_account()}
 
 

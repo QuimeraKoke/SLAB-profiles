@@ -25,6 +25,8 @@ import {
 import styles from "./loadControl.module.css";
 import { PlayerName } from "@/components/loadControl/PlayerPhotos";
 import PainMap from "@/components/loadControl/PainMap";
+import { usePeriod } from "@/lib/periodWording";
+import ScopeBadge from "./ScopeBadge";
 
 // Validated categorical slots 1–5 for the items, 7 and 6 for the totals
 // (dataviz reference palette, light mode).
@@ -40,14 +42,12 @@ interface Props {
   onFilters: (f: { day?: string | null; player?: string | null }) => void;
   /** The page navigates the days (Centro de mando): hide this view's own. */
   hideDayNav?: boolean;
-  /** Pain map period, from the URL (`?molestias=semana`). */
-  painScope?: "day" | "week";
-  onPainScope?: (s: "day" | "week") => void;
 }
 
 export default function WellnessView({
-  microcycleId, day, playerId, onFilters, hideDayNav = false, painScope = "day", onPainScope,
+  microcycleId, day, playerId, onFilters, hideDayNav = false,
 }: Props) {
+  const per = usePeriod();
   const [detail, setDetail] = useState<McDetail | null>(null);
   const [data, setData] = useState<WellnessPayload | null>(null);
   const [roster, setRoster] = useState<{ player_id: string; name: string }[]>([]);
@@ -63,7 +63,7 @@ export default function WellnessView({
     let cancelled = false;
     api<McDetail>(`/load-control/microcycles/${microcycleId}`)
       .then((d) => { if (!cancelled) setDetail(d); })
-      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudo cargar la semana."); });
+      .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudieron cargar los datos."); });
     return () => { cancelled = true; };
   }, [microcycleId]);
 
@@ -112,6 +112,11 @@ export default function WellnessView({
   const itemLabel = (k: string) => data.items.find((i) => i.key === k)?.label ?? k;
   const who = playerId ? (roster.find((r) => r.player_id === playerId)?.name ?? "Jugador") : "Plantel";
   const chartData = data.series.map((r) => ({ ...r, tick: tick(r.date) }));
+  // A click on a day of the chart chooses that day (the day strip follows).
+  const pickDay = (st: unknown) => {
+    const d = (st as { activePayload?: { payload?: { date?: string } }[] } | null)?.activePayload?.[0]?.payload?.date;
+    if (d && d <= today) onFilters({ day: d });
+  };
   const selected = data.series.find((r) => r.date === effectiveDay);
 
   const LIMIT = { flagged: 8 } as const;
@@ -192,12 +197,15 @@ export default function WellnessView({
 
       <section className={styles.card} aria-labelledby="wl-flag">
         <div className={styles.cardHead}>
-          <h2 id="wl-flag" className={styles.h2}>Bienestar bajo, molestias y síntomas · {effectiveDay ? dayLabel(effectiveDay) : ""}</h2>
-          {data.answered && (
-            <span className={styles.muted}>
-              Check-in {data.answered.checkin} de {data.players} · check-out {data.answered.checkout} de {data.players}
-            </span>
-          )}
+          <h2 id="wl-flag" className={styles.h2}>Bienestar bajo, molestias y síntomas</h2>
+          <span className={styles.cardMeta}>
+            {hideDayNav ? <ScopeBadge kind="day" /> : <span className={styles.muted}>{effectiveDay ? dayLabel(effectiveDay) : ""}</span>}
+            {data.answered && (
+              <span className={styles.muted}>
+                Check-in {data.answered.checkin} de {data.players} · check-out {data.answered.checkout} de {data.players}
+              </span>
+            )}
+          </span>
         </div>
         {flagged.length === 0
           ? <p className={styles.muted}>Nadie reportó bienestar bajo (≤ {data.low}), molestias ni síntomas.</p>
@@ -237,16 +245,20 @@ export default function WellnessView({
       </section>
 
       {!playerId && data.pain_map && (
-        <PainMap data={data.pain_map} scope={painScope} onScope={(s) => onPainScope?.(s)}
-          dayLabel={effectiveDay ? dayLabel(effectiveDay) : ""}
-          weekLabel={`Semana ${detail.number} (${shortDate(detail.start_date)} – ${shortDate(detail.end_date)})`} />
+        <>
+          <PainMap data={data.pain_map} scope="day" />
+          <PainMap data={data.pain_map} scope="week" />
+        </>
       )}
 
       {!playerId && (
         <section className={styles.card} aria-labelledby="wl-rows">
           <div className={styles.cardHead}>
-            <h2 id="wl-rows" className={styles.h2}>Por jugador · {effectiveDay ? dayLabel(effectiveDay) : ""}</h2>
-            <span className={styles.muted}>{rows.length} jugador{rows.length === 1 ? "" : "es"} · 1–2 rojo · 3 amarillo · 4–5 verde</span>
+            <h2 id="wl-rows" className={styles.h2}>Por jugador</h2>
+            <span className={styles.cardMeta}>
+              <ScopeBadge kind="day" />
+              <span className={styles.muted}>{rows.length} jugador{rows.length === 1 ? "" : "es"} · 1–2 rojo · 3 amarillo · 4–5 verde</span>
+            </span>
           </div>
           {rows.length === 0
             ? <p className={styles.muted}>Nadie respondió el check-in ni el check-out este día.</p>
@@ -284,8 +296,11 @@ export default function WellnessView({
       {!playerId && (
         <section className={styles.card} aria-labelledby="wl-pending">
           <div className={styles.cardHead}>
-            <h2 id="wl-pending" className={styles.h2}>Sin responder · {effectiveDay ? dayLabel(effectiveDay) : ""}</h2>
-            <span className={styles.muted}>Plantel de la semana · primero los que entrenaron ese día</span>
+            <h2 id="wl-pending" className={styles.h2}>Sin responder</h2>
+            <span className={styles.cardMeta}>
+              <ScopeBadge kind="day" />
+              <span className={styles.muted}>Plantel {per.of} · primero los que entrenaron ese día</span>
+            </span>
           </div>
           <div className={styles.pendingGrid}>
             <div>
@@ -303,12 +318,13 @@ export default function WellnessView({
       <section className={styles.card} aria-labelledby="wl-in">
         <div className={styles.cardHead}>
           <h2 id="wl-in" className={styles.h2}>Cómo llegan, día a día · {who}</h2>
-          <span className={styles.muted}>Check-in</span>
+          <span className={styles.cardMeta}><ScopeBadge kind="period" /><span className={styles.muted}>Check-in · toca un día para verlo</span></span>
         </div>
         <div className={styles.chartBox} role="img"
           aria-label={`Check-in de ${who} por día: promedio de cada ítem de 1 a 5, total bienestar sobre 25 y total muscular sobre 10.`}>
           <ResponsiveContainer>
-            <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barCategoryGap="18%">
+            <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -12, bottom: 0 }} barCategoryGap="18%"
+              onClick={pickDay} style={{ cursor: "pointer" }}>
               <CartesianGrid vertical={false} stroke="#eaecf0" />
               <XAxis dataKey="tick" tick={{ fontSize: 11, fill: INK }} tickLine={false} axisLine={{ stroke: "#d0d5dd" }} />
               <YAxis domain={[0, 25]} ticks={[0, 5, 10, 15, 20, 25]} tick={{ fontSize: 11, fill: INK }} tickLine={false} axisLine={false} />
@@ -334,7 +350,7 @@ export default function WellnessView({
       <section className={styles.card} aria-labelledby="wl-out">
         <div className={styles.cardHead}>
           <h2 id="wl-out" className={styles.h2}>Cómo se van · {who}</h2>
-          <span className={styles.muted}>Check-out</span>
+          <span className={styles.cardMeta}><ScopeBadge kind="period" /><span className={styles.muted}>Check-out</span></span>
         </div>
         <div className={styles.chartGrid}>
           <div>
@@ -376,10 +392,10 @@ export default function WellnessView({
       </section>
 
       <p className={styles.provenance}>
-        Datos usados: formularios de check-in y check-out del plantel de la semana {detail.number} ({data.players} jugadores que
-        entrenaron o respondieron esa semana). Día en hora de Chile; si alguien respondió dos veces el mismo día, cuenta la
+        Datos usados: formularios de check-in y check-out del plantel {per.range ? `del período (${shortDate(detail.start_date)} – ${shortDate(detail.end_date)})` : `de la semana ${detail.number}`} ({data.players} jugadores que
+        entrenaron o respondieron {per.range ? "en el período" : "esa semana"}). Día en hora de Chile; si alguien respondió dos veces el mismo día, cuenta la
         última. Bienestar bajo = un ítem ≤ {data.low}. Molestia = la zona que anotó en el check-in o el check-out;
-        síntoma = lo que anotó en “Síntomas” (fiebre, resfriado…). “Sin responder” lista al plantel de la semana sin el
+        síntoma = lo que anotó en “Síntomas” (fiebre, resfriado…). “Sin responder” lista al plantel {per.of} sin el
         formulario ese día; “entrenó” = tiene GPS ese día.
       </p>
     </>

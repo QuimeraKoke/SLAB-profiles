@@ -57,6 +57,49 @@ def week_for(team, day: date) -> Microcycle:
     return mc
 
 
+MAX_RANGE_DAYS = 366
+
+
+def range_for(team, start: date, end: date) -> Microcycle:
+    """Any period of the team (Centro de mando › período): its days, read
+    like a week by the services. Planned weeks keep their saved days (and
+    load targets); the rest are built in ONE pass over the whole range —
+    match days, then MD labels — instead of week by week (a season was 14 s
+    week by week). Number and kind are the first week's."""
+    from load_control import planning
+    from load_control.labels import labels_for, neighbour_matches
+
+    if end < start:
+        start, end = end, start
+    if (end - start).days + 1 > MAX_RANGE_DAYS:
+        raise ValueError(f"El período puede tener como máximo {MAX_RANGE_DAYS} días.")
+    first = week_for(team, start)
+    rng = Microcycle(club=team.club, season=team.season, bracket=team.bracket, number=first.number,
+                     kind=first.kind, start_date=start, end_date=end)
+    planned = {d.date: d for d in MicrocycleDay.objects.filter(
+        microcycle__club=team.club, microcycle__season=team.season, microcycle__bracket=team.bracket,
+        date__range=(start, end)).select_related("microcycle")}
+    kinds = planning.detect_day_kinds(team, start, end)
+    days, built = [], []
+    d = start
+    while d <= end:
+        if d in planned:
+            days.append(planned[d])
+        else:
+            x = MicrocycleDay(microcycle=rng, date=d, kind=kinds.get(d, MicrocycleDay.KIND_TRAINING))
+            days.append(x)
+            built.append(x)
+        d += timedelta(days=1)
+    if built:
+        labels = labels_for(team.club, team.season, team.bracket, start, end,
+                            [(x.date, x.is_match) for x in days], neighbour_matches(rng))
+        for x in built:
+            x.md_label, x.md_label_source = labels[x.date]
+    rng._week_days = _Days(days)
+    rng._is_range = True
+    return rng
+
+
 def describe(mc: Microcycle, day: date) -> dict:
     """What the day navigator shows."""
     return {
@@ -65,4 +108,5 @@ def describe(mc: Microcycle, day: date) -> dict:
         "microcycle_id": str(mc.pk) if not hasattr(mc, "_week_days") else None,
         "md_label": next((d.md_label for d in days_of(mc) if d.date == day), ""),
         "day_kind": next((d.kind for d in days_of(mc) if d.date == day), ""),
+        "range": bool(getattr(mc, "_is_range", False)),
     }

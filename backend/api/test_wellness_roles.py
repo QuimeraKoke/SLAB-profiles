@@ -100,7 +100,7 @@ class WellnessRoleResolverTests(TestCase):
         self.assertEqual([t.slug for t in w.templates_for(self.youth, role="checkout")],
                          ["checkout_formativo"])
         # Sin declaración NO hay fallback: el Primer Equipo no llena check-out,
-        # y devolver el check-in acá lo mostraría como si lo llenara.
+        # y devolver el check-in aquí lo mostraría como si lo llenara.
         self.assertEqual(w.templates_for(self.senior, role="checkout"), [])
 
     def test_roles_for(self):

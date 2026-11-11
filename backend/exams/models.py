@@ -899,7 +899,7 @@ class TemplateField(models.Model):
             if lo is None and hi is None:
                 raise ValidationError({
                     "reference_ranges": (
-                        f"Banda '{label}': definí al menos uno de 'min' o 'max'."
+                        f"Banda '{label}': define al menos uno de 'min' o 'max'."
                     ),
                 })
             try:
@@ -1652,3 +1652,65 @@ class CometPlayerLink(models.Model):
 
     def __str__(self) -> str:
         return f"{self.person_name or self.person_id} → {self.player or 'SIN RESOLVER'}"
+
+
+class SyncIssue(models.Model):
+    """Datos › Fuentes › Problemas: something an automatic sync could not load
+    and that the club can fix (a name not in the roster, an unshared sheet, a
+    new column…). One row per problem, NOT per run: each sync upserts what it
+    found (`last_seen_at`, `rows`) and closes the open ones of the documents it
+    read that it no longer finds (`resolved_at`). See `exams.sync_issues`."""
+
+    KIND_PLAYER_NOT_FOUND = "jugador_no_encontrado"
+    KIND_AMBIGUOUS = "nombre_ambiguo"
+    KIND_UNREACHABLE = "planilla_inaccesible"
+    KIND_NEW_COLUMN = "columna_nueva"
+    KIND_MISSING_COLUMN = "columna_faltante"
+    KIND_BAD_ROW = "fila_rechazada"
+    KIND_OUT_OF_RANGE = "fuera_de_rango"
+    KIND_NO_MATCH_DATE = "pestana_sin_partido"
+    KIND_GUARD = "proteccion"
+    KIND_CHOICES = [
+        (KIND_PLAYER_NOT_FOUND, "Jugador no encontrado"),
+        (KIND_AMBIGUOUS, "Nombre ambiguo"),
+        (KIND_UNREACHABLE, "Planilla inaccesible"),
+        (KIND_NEW_COLUMN, "Columna nueva"),
+        (KIND_MISSING_COLUMN, "Columna faltante"),
+        (KIND_BAD_ROW, "Fila rechazada"),
+        (KIND_OUT_OF_RANGE, "Valor fuera de rango"),
+        (KIND_NO_MATCH_DATE, "Pestaña sin partido"),
+        (KIND_GUARD, "Protección activada"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    club = models.ForeignKey(Club, on_delete=models.CASCADE, related_name="sync_issues")
+    source = models.CharField(max_length=40, help_text="Clave de la fuente (exams.data_sources).")
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES)
+    key = models.CharField(max_length=300, help_text="Identidad del problema dentro de la fuente.")
+    document = models.CharField(max_length=200, blank=True)
+    subject = models.CharField(max_length=200, blank=True, help_text="Jugador, columna o pestaña afectada.")
+    detail = models.TextField(blank=True)
+    rows = models.PositiveIntegerField(default=0, help_text="Filas no cargadas en la última corrida.")
+    examples = models.JSONField(default=list, blank=True)
+    # Where to look, for "Ver en la planilla": the document, and per example
+    # {label, tab, row?, find?, date?, header?} (exams.sync_issues.locate).
+    sheet_id = models.CharField(max_length=80, blank=True)
+    locations = models.JSONField(default=list, blank=True)
+    latest_data_date = models.DateField(null=True, blank=True)
+    first_seen_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    # "No es del plantel" / "Ignorar": hidden for good, even when found again.
+    dismissed_at = models.DateTimeField(null=True, blank=True)
+    dismissed_by = models.ForeignKey("auth.User", null=True, blank=True, on_delete=models.SET_NULL,
+                                     related_name="+")
+    dismissed_note = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["club", "source", "kind", "key"], name="uniq_sync_issue"),
+        ]
+        indexes = [models.Index(fields=["club", "resolved_at"])]
+
+    def __str__(self) -> str:
+        return f"{self.source} · {self.get_kind_display()} · {self.subject or self.key}"

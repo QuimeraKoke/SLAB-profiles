@@ -108,7 +108,7 @@ class ChartType(models.TextChoices):
     # configurados. Distinto de `comparison_table`, que está TRANSPUESTO
     # (filas = métricas, columnas = últimas tomas): sirve para leer la
     # evolución de pocas métricas, no para recorrer un registro de actividad.
-    # Acá cada fila es un entrenamiento y se lee de arriba hacia abajo.
+    # Aquí cada fila es un entrenamiento y se lee de arriba hacia abajo.
     SESSION_LOG = "session_log", "Bitácora de sesiones (una fila por registro)"
 
     DUAL_AXIS_BAR_LINE = (

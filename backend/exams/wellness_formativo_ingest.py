@@ -277,7 +277,10 @@ def indice_jugadores(club) -> Indice:
     """Build the four name indices for a club's roster."""
     from core.models import Player
 
+    from exams import sheet_aliases
+
     indice = Indice()
+    indice.alias = sheet_aliases.load(club)
     qs = (Player.objects.filter(category__club=club)
           .select_related("category").only(
               "id", "first_name", "last_name", "second_last_name",
@@ -382,6 +385,10 @@ def resolver_jugador(bruto: str, indice: "Indice", cohortes: list[int]):
     clave = norm(bruto)
     if not clave:
         return None, "sin_jugador"
+    from exams import sheet_aliases
+
+    if (p := getattr(indice, "alias", {}).get(sheet_aliases.key(bruto))) is not None:
+        return p, None
 
     def unico(mapa):
         ps = {p.id: p for p in mapa.get(clave, [])}

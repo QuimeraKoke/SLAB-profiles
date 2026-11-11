@@ -484,10 +484,10 @@ class Command(BaseCommand):
             bulk["validate"] = "anthropometry_masses"
             bulk.setdefault("help", (
                 "Carga la planilla de la evaluación: una fila por jugador. "
-                "Bajá la plantilla para tener los encabezados exactos — se leen "
+                "Baja la plantilla para tener los encabezados exactos — se leen "
                 "POR NOMBRE, así que una columna de más ya no corre las "
                 "mediciones como pasó con las 20 evaluaciones corrompidas en "
-                "2026-08. Las masas se calculan acá desde las mediciones."
+                "2026-08. Las masas se calculan aquí desde las mediciones."
             ))
             template.input_config = cfg
             update_fields.append("input_config")

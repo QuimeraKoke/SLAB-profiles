@@ -75,7 +75,7 @@ export default function RosterPanel({ eventId, refreshKey, onSaved, onEntriesCha
         if (cancelled) return;
         const map: Record<string, string> = {};
         // El mapa alimenta las filas del plantel y el buscador, así que
-        // rotularlo acá cubre los dos.
+        // rotularlo aquí cubre los dos.
         for (const c of cats) map[c.id] = categoryLabel(c);
         setCategoriesById(map);
       })
@@ -209,7 +209,7 @@ export default function RosterPanel({ eventId, refreshKey, onSaved, onEntriesCha
       } else {
         setEntries(suggested);
         setDirty(true);
-        setInfo(`Copiados ${suggested.length} jugadores del último partido. Revisá y guardá.`);
+        setInfo(`Copiados ${suggested.length} jugadores del último partido. Revisa y guarda.`);
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Error al copiar la convocatoria");
@@ -287,7 +287,7 @@ export default function RosterPanel({ eventId, refreshKey, onSaved, onEntriesCha
         <div className={styles.muted}>Cargando convocatoria…</div>
       ) : entries.length === 0 ? (
         <div className={styles.empty}>
-          Sin jugadores. Buscá y agregá uno arriba, o copiá del último partido.
+          Sin jugadores. Busca y agrega uno arriba, o copia del último partido.
         </div>
       ) : (
         <ul className={styles.list}>

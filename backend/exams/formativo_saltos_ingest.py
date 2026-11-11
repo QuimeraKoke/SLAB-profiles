@@ -221,6 +221,10 @@ class NameMatcher:
 
     def match(self, raw: str, played: set | None = None):
         """(player | None, reason)."""
+        from exams import sheet_aliases
+
+        if (p := getattr(self, "aliases", {}).get(sheet_aliases.key(raw))) is not None:
+            return p, "ok (vinculado)"
         for pool in (self.team, self.club):
             for paternal_only in (True, False):
                 found = self.candidates(raw, pool, paternal_only=paternal_only)
@@ -398,6 +402,9 @@ def run(origen: str, club, *, season: int | None = None, commit: bool = False,
     activity = Counter(ExamResult.objects.filter(season_rows(club.id, season, bracket))
                        .values_list("player_id", flat=True))
     matcher = NameMatcher(team, Player.objects.filter(category__club=club), activity)
+    from exams import sheet_aliases
+
+    matcher.aliases = sheet_aliases.load(club)
 
     kinds = team_match_days(club, season, bracket, date(season, 1, 1), min(today, date(season, 12, 31)))
     links = match_links(club, season, bracket, kinds)

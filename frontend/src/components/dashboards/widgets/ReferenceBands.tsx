@@ -5,7 +5,7 @@
  *
  * El backend ya las manda resueltas POR CATEGORÍA en cada `FieldMeta`
  * (`aggregation._field_meta` → `category_bands.for_field`), así que un Sub 15 ve
- * las suyas y un Sub 20 las suyas sin que el renderer se entere. Acá sólo se
+ * las suyas y un Sub 20 las suyas sin que el renderer se entere. Aquí sólo se
  * pintan.
  *
  * ⚠️ La escala Y manda, no las bandas

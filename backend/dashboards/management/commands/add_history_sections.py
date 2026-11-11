@@ -138,4 +138,4 @@ class Command(BaseCommand):
             f"{saltadas} ya existían"))
         if not opts["commit"]:
             self.stdout.write(self.style.WARNING(
-                "\n  ENSAYO — volvé a correr con --commit."))
+                "\n  ENSAYO — vuelve a correr con --commit."))

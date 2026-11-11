@@ -45,8 +45,8 @@ from events.models import Event, EventParticipant
 MIN_APPEARANCES = 3
 
 LAYER_LABELS = {
-    "own": "Mi equipo compite acá",
-    "likely": "Vengo jugando acá",
+    "own": "Mi equipo compite aquí",
+    "likely": "Vengo jugando aquí",
     "context": "Otros partidos del club",
 }
 

@@ -223,7 +223,7 @@ export default function TeamHorizontalComparison({ widget }: Props) {
       <div className={styles.body}>
         {hiddenByFilter && (
           <div className={styles.empty}>
-            Ningún jugador tiene datos en este período. Activá &quot;Mostrar
+            Ningún jugador tiene datos en este período. Activa &quot;Mostrar
             jugadores sin datos&quot; para ver el plantel completo.
           </div>
         )}

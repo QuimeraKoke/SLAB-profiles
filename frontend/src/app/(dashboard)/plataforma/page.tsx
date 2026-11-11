@@ -67,8 +67,8 @@ export default function PlataformaPage() {
     if (Object.keys(errors).length) {
       setFieldErrors(errors);
       setFormError(errors.name
-        ? "Ingresá el nombre del club."
-        : "Completá nombre, apellido y un email válido del administrador.");
+        ? "Ingresa el nombre del club."
+        : "Completa nombre, apellido y un email válido del administrador.");
       (errors.name ? nameRef : adminRef).current?.focus();
       return;
     }
@@ -119,7 +119,7 @@ export default function PlataformaPage() {
           <p className={styles.subtitle}>
             Clubes de la plataforma. Un club nuevo parte con la plantilla base —
             Médico, Físico y Nutricional con sus exámenes— y desde su ficha le
-            sumás categorías, departamentos y usuarios.
+            sumas categorías, departamentos y usuarios.
           </p>
         </div>
         <div className={styles.actions}>
@@ -134,7 +134,7 @@ export default function PlataformaPage() {
       {clubs === null ? (
         <div className={styles.muted}>Cargando clubes…</div>
       ) : clubs.length === 0 ? (
-        <div className={styles.empty}>Todavía no hay clubes. Creá el primero con + Nuevo club.</div>
+        <div className={styles.empty}>Todavía no hay clubes. Crea el primero con + Nuevo club.</div>
       ) : (
         <div className={styles.tableWrapper}>
           <table className={styles.table}>

@@ -46,7 +46,7 @@ export default function FichaButton({ playerId, playerName, department }: {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      setError("No se pudo generar la ficha. Intentá nuevamente.");
+      setError("No se pudo generar la ficha. Intenta nuevamente.");
     } finally {
       setBusy(false);
     }

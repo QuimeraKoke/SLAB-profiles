@@ -614,7 +614,7 @@ def _cargas(d: _Doc, matches: list[dict]):
     if d.period and getattr(d, "left_out", 0) > 0:
         d.y -= 4 * mm
         _text(c, M, d.y - 1 * mm, f"Se muestran las últimas {n} competiciones del período; {d.left_out} anteriores "
-                                  "no entran. Para verlas todas, agrupá por semana o mes.", 7, color=BAD)
+                                  "no entran. Para verlas todas, agrupa por semana o mes.", 7, color=BAD)
     d.y -= 6 * mm
 
     # Distancia total y velocidad: bars (left axis) + HSR / sprint lines (right).

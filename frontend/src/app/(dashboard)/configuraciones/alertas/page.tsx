@@ -121,10 +121,10 @@ export default function AlertRulesPage() {
   }
 
   if (!canEdit) {
-    return <div className={styles.muted}>No tenés permiso para configurar alertas.</div>;
+    return <div className={styles.muted}>No tienes permiso para configurar alertas.</div>;
   }
   if (catLoading) return <div className={styles.muted}>Cargando…</div>;
-  if (!categoryId) return <div className={styles.muted}>Seleccioná una categoría.</div>;
+  if (!categoryId) return <div className={styles.muted}>Selecciona una categoría.</div>;
 
   return (
     <div className={styles.page}>
@@ -134,7 +134,7 @@ export default function AlertRulesPage() {
             <Bell size={20} aria-hidden="true" /> Reglas de alerta
           </h1>
           <p className={styles.sub}>
-            {categoryName} · configurá umbrales y desviaciones; simulá antes de guardar
+            {categoryName} · configura umbrales y desviaciones; simula antes de guardar
           </p>
         </div>
         {meta && editing === null && (
@@ -178,7 +178,7 @@ export default function AlertRulesPage() {
       ) : byTemplate.length === 0 ? (
         editing === null && (
           <div className={styles.empty}>
-            Todavía no hay reglas para esta categoría. Creá la primera con “Nueva regla”.
+            Todavía no hay reglas para esta categoría. Crea la primera con “Nueva regla”.
           </div>
         )
       ) : (

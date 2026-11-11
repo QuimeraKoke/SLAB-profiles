@@ -76,7 +76,7 @@ export default function ReportDownloadDialog({
       setOpen(false);
     } catch (err) {
       console.error("Report download failed:", err);
-      setError("No se pudo generar el informe. Intentá nuevamente.");
+      setError("No se pudo generar el informe. Intenta nuevamente.");
     } finally {
       setBusy(false);
     }

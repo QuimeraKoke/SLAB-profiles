@@ -268,7 +268,7 @@ export default function PlayersAdminPage() {
           <p className={styles.subtitle}>
             Gestiona el plantel — alta, baja y edición de jugadores. Para
             mantener el historial sin contar al jugador en el plantel activo,
-            desactivalo en lugar de borrarlo.
+            desactívalo en lugar de borrarlo.
           </p>
         </div>
         {canAdd && (

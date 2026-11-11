@@ -128,7 +128,7 @@ class Command(BaseCommand):
 
         if not commit:
             self.stdout.write(self.style.WARNING(
-                "\nDRY-RUN — volvé a correr con --commit para escribir."
+                "\nDRY-RUN — vuelve a correr con --commit para escribir."
             ))
 
     # ---------- 1. brackets ----------

@@ -205,11 +205,11 @@ export default function InjuryLog({ episode, template, canEdit, refreshToken = 0
   async function saveNewEntry() {
     if (busy) return;
     if (!draftDate) {
-      toast.error("Elegí una fecha para la entrada.");
+      toast.error("Elige una fecha para la entrada.");
       return;
     }
     if (!draftTitle.trim() && !draftNote.trim() && draftFiles.length === 0 && draftEva.trim() === "") {
-      toast.error("Agregá una nota, un título, EVA o un documento.");
+      toast.error("Agrega una nota, un título, EVA o un documento.");
       return;
     }
     setBusy(true);

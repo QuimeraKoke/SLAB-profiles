@@ -498,7 +498,7 @@ function MatchScopedTeamTable({
             background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8,
           }}>
             Este partido no tiene jugadores marcados como titular /
-            suplente ingresa / citado sin vestir. Configurá la
+            suplente ingresa / citado sin vestir. Configura la
             convocatoria desde{" "}
             <Link href={`/partidos/${pickedMatchId}/editar`} style={{ color: "#6d28d9", fontWeight: 600 }}>
               el editor del partido
@@ -541,7 +541,7 @@ function EpisodePickerForm({ episodes, onPick, onCancel }: EpisodePickerFormProp
       }}
     >
       <h3 style={{ margin: 0, fontSize: "1rem", color: "#111827" }}>
-        ¿Es una nueva lesión o continuás un episodio existente?
+        ¿Es una nueva lesión o continúas un episodio existente?
       </h3>
       <p style={{ margin: 0, fontSize: "0.85rem", color: "#6b7280" }}>
         Hay {episodes.length} episodio{episodes.length === 1 ? "" : "s"} abierto

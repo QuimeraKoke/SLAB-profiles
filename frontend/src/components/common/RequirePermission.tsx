@@ -23,7 +23,7 @@ export default function RequirePermission({
   return (
     <div style={{ padding: 24 }}>
       <p style={{ fontSize: 13, color: "#98a2b3", margin: 0 }}>
-        No tenés permiso para ver este módulo.
+        No tienes permiso para ver este módulo.
       </p>
     </div>
   );

@@ -34,11 +34,11 @@ interface Props {
   matchDate: string | null;
   playerId: string | null;
   onFilters: (f: { match?: string | null; player?: string | null }) => void;
-  /** "match" = Recuperación del partido (picked by match); "micro" = Fatiga del
-   *  microciclo (picked by the page's day: the microcycle that day is in). */
+  /** "match" = Recuperación del partido; "micro" = Fatiga del microciclo (from
+   *  this match's MD+1 to the next one's MD-1). Both are chosen by the match:
+   *  "‹ Partido ›" is this tab's only time control. */
   mode?: FatigueMode;
   onMode?: (m: FatigueMode) => void;
-  day?: string | null;
 }
 
 const MICRO_LABEL: Record<Band, string> = { grave: "Fatiga acumulada", leve: "Fatiga parcial", ok: "Recuperado" };
@@ -118,21 +118,20 @@ function suggestion(r: FatigueRow, recovery: boolean, graveAt: number): { band?:
   return { band: finalBand, label: finalBand === band ? base : "Vigilar", why: [reason, ...why].filter(Boolean) };
 }
 
-export default function FatigueView({ microcycleId, matchDate, playerId, onFilters, mode = "match", onMode, day = null }: Props) {
+export default function FatigueView({ microcycleId, matchDate, playerId, onFilters, mode = "match", onMode }: Props) {
   const [data, setData] = useState<FatiguePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const sp = new URLSearchParams();
-    if (mode === "micro") { if (day) sp.set("day", day); }
-    else if (matchDate) sp.set("match_date", matchDate);
+    if (matchDate) sp.set("match_date", matchDate);
     if (playerId) sp.set("player_id", playerId);
     api<FatiguePayload>(`/load-control/microcycles/${microcycleId}/fatigue?${sp}`)
       .then((d) => { if (!cancelled) { setData(d); setError(null); } })
       .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudo cargar la fatiga."); });
     return () => { cancelled = true; };
-  }, [microcycleId, matchDate, playerId, mode, day]);
+  }, [microcycleId, matchDate, playerId]);
 
   const toggle = (
     <div className={styles.controls}>
@@ -146,14 +145,27 @@ export default function FatigueView({ microcycleId, matchDate, playerId, onFilte
   if (!data) return <>{toggle}<p className={styles.muted}>Cargando…</p></>;
   if (!data.match) return (
     <>{toggle}<div className={styles.empty}>
-      {mode === "micro" ? "No hay un partido con saltos antes de este día: el microciclo no tiene MD+1."
-        : "Aún no hay saltos de partidos de este equipo en la temporada."}
+      Aún no hay saltos de partidos de este equipo en la temporada.
     </div></>
   );
-  if (mode === "micro") return <>{toggle}<MicroView data={data} onFilters={onFilters} /></>;
-
   const m = data.match;
   const next = data.next_match;
+  // The only time control of this tab: the match (both views read it).
+  const matchNav = (
+    <div className={styles.controls} role="group" aria-label="Partido" style={{ alignItems: "center" }}>
+      <button type="button" className={styles.iconBtn} disabled={!data.prev_match}
+        onClick={() => data.prev_match && onFilters({ match: data.prev_match.date, player: null })}
+        aria-label={data.prev_match ? `Partido anterior: ${matchName(data.prev_match)}` : "No hay partido anterior"}>‹</button>
+      <span>
+        <span className={styles.muted}>Partido: </span><strong>vs {m.rival ?? "—"}</strong> · {shortDate(m.date)}
+        {m.event_id && <> · <Link href={`/partidos/${m.event_id}`}>ver partido</Link></>}
+      </span>
+      <button type="button" className={styles.iconBtn} disabled={!next}
+        onClick={() => next && onFilters({ match: next.date, player: null })}
+        aria-label={next ? `Partido siguiente: ${matchName(next)}` : "No hay partido siguiente medido"}>›</button>
+    </div>
+  );
+  if (mode === "micro") return <>{matchNav}{toggle}<MicroView data={data} onFilters={onFilters} /></>;
   const recovery = next != null;          // state 2: the next MD-1 is measured
   const alert = data.params.rsi_alert;
   const c = data.summary.counts;
@@ -173,23 +185,8 @@ export default function FatigueView({ microcycleId, matchDate, playerId, onFilte
 
   return (
     <>
+      {matchNav}
       {toggle}
-      <div className={styles.controls}>
-        <button type="button" className={styles.secondary} disabled={!data.prev_match}
-          onClick={() => data.prev_match && onFilters({ match: data.prev_match.date, player: null })}
-          aria-label={data.prev_match ? `Partido anterior: ${matchName(data.prev_match)}` : "No hay partido anterior"}>
-          ‹ Partido anterior
-        </button>
-        <span>
-          <strong>vs {m.rival ?? "—"}</strong> · {shortDate(m.date)}
-          {m.event_id && <> · <Link href={`/partidos/${m.event_id}`}>ver partido</Link></>}
-        </span>
-        <button type="button" className={styles.secondary} disabled={!next}
-          onClick={() => next && onFilters({ match: next.date, player: null })}
-          aria-label={next ? `Partido siguiente: ${matchName(next)}` : "No hay partido siguiente medido"}>
-          Partido siguiente ›
-        </button>
-      </div>
       {m.source === "propuesta" && (
         <p className={styles.provenance}>
           <strong className={styles.overdue}>Fecha propuesta</strong>: la pestaña {m.tab} de la planilla aún no está
@@ -338,7 +335,7 @@ function MicroView({ data, onFilters }: { data: FatiguePayload; onFilters: Props
       <p className={styles.muted} style={{ margin: 0 }}>
         Microciclo: <strong>MD+1 tras vs {m.rival ?? "—"} ({shortDate(m.date)})</strong> →{" "}
         <strong>{next ? `MD-1 antes de vs ${next.rival ?? "—"} (${shortDate(next.date)})` : "MD-1 del próximo partido (aún no medido)"}</strong>
-        {" "}· cambiá de microciclo con los días.
+        {" "}· cambia de microciclo con el partido.
       </p>
       <section className={styles.card} aria-labelledby="fa-micro">
         <div className={styles.cardHead}>

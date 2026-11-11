@@ -1,6 +1,6 @@
 """Medicación con varios registros independientes en una pantalla.
 
-El modo `team_table` se probó primero y no servía acá: impone UNA carga
+El modo `team_table` se probó primero y no servía aquí: impone UNA carga
 compartida repartida entre jugadores, y cada indicación es su propia receta —su
 droga, su dosis, sus fechas—. Así que la grilla obligaba a fingir que había algo
 en común. `multi` es el formulario individual apilado N veces.

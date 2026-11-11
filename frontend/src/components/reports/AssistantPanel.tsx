@@ -58,7 +58,7 @@ export default function AssistantPanel({
   label,
   scope,
   disabled = false,
-  placeholder = "Escribí tu pregunta…",
+  placeholder = "Escribe tu pregunta…",
   suggestions = [],
   sendMessage,
   renderChart,
@@ -146,7 +146,7 @@ export default function AssistantPanel({
       {open && (
         <div className={styles.body}>
           <p className={styles.hint}>
-            Preguntá y, cuando ayude, te propongo un gráfico para visualizarlo.
+            Pregunta y, cuando ayude, te propongo un gráfico para visualizarlo.
           </p>
 
           <div ref={transcriptRef} className={styles.transcript}>

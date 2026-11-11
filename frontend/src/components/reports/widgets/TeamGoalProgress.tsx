@@ -92,7 +92,7 @@ export default function TeamGoalProgress({ widget }: Props) {
         />
         <SummaryBar summary={data.summary} />
         <div className={styles.empty}>
-          Ningún jugador tiene un objetivo asignado en este alcance. Activá
+          Ningún jugador tiene un objetivo asignado en este alcance. Activa
           &quot;Mostrar jugadores sin datos&quot; para ver el plantel completo.
         </div>
       </div>

@@ -168,12 +168,12 @@ export default function AcwrConfigSection({ categoryId, canEdit }: Props) {
         <div className={styles.body}>
           <p className={styles.intro}>
             Relación entre la carga reciente (<strong>aguda</strong>) y la habitual
-            (<strong>crónica</strong>). Configurá la ventana en días y los límites: la
+            (<strong>crónica</strong>). Configura la ventana en días y los límites: la
             <em> banda objetivo</em> (verde) y el <em>límite de riesgo</em> (rojo).
           </p>
 
           {drafts.length === 0 && (
-            <p className={styles.muted}>Sin variables configuradas. Agregá una para monitorear el ACWR.</p>
+            <p className={styles.muted}>Sin variables configuradas. Agrega una para monitorear el ACWR.</p>
           )}
 
           {drafts.map((d, i) => (

@@ -34,7 +34,7 @@ def player_card(mc: Microcycle, player_id) -> dict:
     players = team_players(mc)
     player = next((p for k, p in players.items() if str(k) == str(player_id)), None)
     if player is None:
-        raise ValueError("El jugador no es del equipo de esta semana.")
+        raise ValueError("El jugador no es del equipo en este período.")
     pid = str(player.id)
 
     # Carga GPS — each planned day, then the week so far (same as the tab).

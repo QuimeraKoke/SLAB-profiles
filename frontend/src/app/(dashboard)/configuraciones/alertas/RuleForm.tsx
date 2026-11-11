@@ -246,7 +246,7 @@ export default function RuleForm({
               setBacktest(null);
             }}
           >
-            <option value="">— elegí —</option>
+            <option value="">— elige —</option>
             {fields.map((f) => (
               <option key={f.key} value={f.key}>
                 {f.label}
@@ -370,7 +370,7 @@ export default function RuleForm({
         {kind === "band" && (
           <div className={styles.bandBox}>
             {!bandField ? (
-              <p className={styles.hint}>Elegí un campo numérico para definir sus bandas.</p>
+              <p className={styles.hint}>Elige un campo numérico para definir sus bandas.</p>
             ) : (
               <>
                 <div className={styles.bandHead}>
@@ -403,8 +403,8 @@ export default function RuleForm({
                 {ownRanges.length === 0 ? (
                   <p className={styles.hint}>
                     {bandField.default_ranges.length > 0
-                      ? "Esta regla usa las bandas del examen, iguales para todas las categorías. Definí umbrales propios para que a un Sub 11 no se lo mida con los de un Sub 20."
-                      : "Este campo no tiene bandas en el examen. Definí las de esta categoría para que la regla pueda disparar."}
+                      ? "Esta regla usa las bandas del examen, iguales para todas las categorías. Define umbrales propios para que a un Sub 11 no se lo mida con los de un Sub 20."
+                      : "Este campo no tiene bandas en el examen. Define las de esta categoría para que la regla pueda disparar."}
                   </p>
                 ) : (
                   <table className={styles.bandTable}>
@@ -472,7 +472,7 @@ export default function RuleForm({
                   </div>
                 ) : (
                   <p className={styles.hint}>
-                    Nombrá al menos una banda arriba para elegir cuál dispara.
+                    Nombra al menos una banda arriba para elegir cuál dispara.
                     Vacío = las bandas rojas por defecto.
                   </p>
                 )}

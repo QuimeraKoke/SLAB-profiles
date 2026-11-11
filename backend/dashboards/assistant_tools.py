@@ -8,7 +8,7 @@ the snapshot doesn't pre-compute:
   - "¿quién es el más rápido?"            → ranking_jugadores(gps…, max_vel_total)
   - "¿quién salta más alto?"               → ranking_jugadores(cmj, …)
   - "¿cuándo fue la última vez que se cargó CK?" → listar_examenes (última_fecha)
-  - "mostrame los últimos datos de Assadi"  → historial_jugador
+  - "muéstrame los últimos datos de Assadi"  → historial_jugador
 
 Everything is **read-only**, scoped to the assistant's `category` and its
 **active** players, and bounded (row/field/limit caps) so a tool call can't
@@ -42,7 +42,7 @@ TOOLS = [
         "description": (
             "Lista los exámenes/tests de la categoría con sus campos medibles "
             "(`campo` = clave, etiqueta, unidad), cuántos resultados tienen, la "
-            "ÚLTIMA FECHA con datos y cuántos jugadores tienen datos. Usalo para "
+            "ÚLTIMA FECHA con datos y cuántos jugadores tienen datos. Úsalo para "
             "(1) descubrir qué se puede consultar y con qué `slug`/`campo` llamar "
             "a las otras herramientas, y (2) responder cuándo fue la última vez "
             "que un examen tuvo datos. No requiere argumentos."
@@ -59,8 +59,8 @@ TOOLS = [
             "Ordena a los jugadores activos de la categoría por una métrica "
             "numérica de un examen. Para preguntas tipo 'quién es el más "
             "rápido' (velocidad máxima de GPS), 'quién salta más alto' (CMJ), "
-            "'quién tiene peor wellness', etc. Si no conocés el `slug`/`campo` "
-            "exactos, llamá primero a listar_examenes."
+            "'quién tiene peor wellness', etc. Si no conoces el `slug`/`campo` "
+            "exactos, llama primero a listar_examenes."
         ),
         "input_schema": {
             "type": "object",
@@ -80,7 +80,7 @@ TOOLS = [
                     "type": "string",
                     "enum": ["desc", "asc"],
                     "description": (
-                        "desc = de mayor a menor (default; usalo para 'el más "
+                        "desc = de mayor a menor (default; úsalo para 'el más "
                         "rápido/más alto'). asc = de menor a mayor ('el más bajo')."
                     ),
                 },
@@ -96,7 +96,7 @@ TOOLS = [
         "description": (
             "Devuelve los resultados recientes de UN jugador (buscado por "
             "nombre), opcional­mente limitados a un examen. Para 'cuándo fue la "
-            "última vez que X hizo un CMJ' o 'mostrame los últimos datos de Y'."
+            "última vez que X hizo un CMJ' o 'muéstrame los últimos datos de Y'."
         ),
         "input_schema": {
             "type": "object",
@@ -115,7 +115,7 @@ TOOLS = [
             "Ficha cruzada (multi-área) del estado ACTUAL de UN jugador: "
             "disponibilidad, readiness con su justificación, carga semanal vs "
             "umbrales, últimas métricas con su banda de referencia (médico, "
-            "físico, nutrición…) y alertas activas. Usalo para profundizar en "
+            "físico, nutrición…) y alertas activas. Úsalo para profundizar en "
             "un jugador puntual; el plantel del snapshot solo trae nombre, "
             "posición, estado y edad."
         ),
@@ -208,7 +208,7 @@ def _ranking_jugadores(category, args: dict) -> dict:
     slug = (args.get("slug") or "").strip()
     campo = (args.get("campo") or "").strip()
     if not slug or not campo:
-        return {"error": "Faltan `slug` y/o `campo`. Revisá listar_examenes."}
+        return {"error": "Faltan `slug` y/o `campo`. Revisa listar_examenes."}
 
     agregacion = args.get("agregacion") if args.get("agregacion") in ("ultimo", "max", "min", "promedio") else "ultimo"
     orden = "asc" if args.get("orden") == "asc" else "desc"
@@ -221,7 +221,7 @@ def _ranking_jugadores(category, args: dict) -> dict:
         .values_list("id", flat=True)
     )
     if not version_ids:
-        return {"error": f"No existe el examen '{slug}' para esta categoría. Usá listar_examenes para ver los slugs válidos."}
+        return {"error": f"No existe el examen '{slug}' para esta categoría. Usa listar_examenes para ver los slugs válidos."}
 
     active = (
         ExamTemplate.objects.filter(slug=slug, applicable_categories=category, is_active_version=True).first()
@@ -283,7 +283,7 @@ def _historial_jugador(category, args: dict) -> dict:
 
     nombre = (args.get("jugador") or "").strip()
     if not nombre:
-        return {"error": "Indicá el nombre del jugador."}
+        return {"error": "Indica el nombre del jugador."}
     slug = (args.get("slug") or "").strip()
     limite = _clamp_limit(args.get("limite"))
 
@@ -330,7 +330,7 @@ def _estado_jugador(category, args: dict) -> dict:
 
     nombre = (args.get("jugador") or "").strip()
     if not nombre:
-        return {"error": "Indicá el nombre del jugador."}
+        return {"error": "Indica el nombre del jugador."}
     player, candidatos = _match_player(category, nombre)
     if player is None:
         out = {"error": f"No encontré a '{nombre}' entre los jugadores activos del plantel."}

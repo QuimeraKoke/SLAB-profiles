@@ -1,6 +1,6 @@
 """Guards del comparador entre divisiones.
 
-Lo que puede salir mal acá no es que falte un dato: es que un número aparezca
+Lo que puede salir mal aquí no es que falte un dato: es que un número aparezca
 con más autoridad de la que tiene. La media de la línea profesional es la vara
 contra la que el club va a juzgar a un juvenil, y si sale de tres jugadores
 tiene que decir tres.
@@ -202,7 +202,7 @@ class SeriesPerezosaTests(PlayerComparisonTests):
 
 
 class PercentilesTests(PlayerComparisonTests):
-    """El percentil del radar. Lo que puede salir mal acá es invisible: un
+    """El percentil del radar. Lo que puede salir mal aquí es invisible: un
     polígono perfectamente dibujado que pone al más rápido como el más lento."""
 
     def _poblar_categoria(self, valores):
@@ -324,7 +324,7 @@ class BandasPorCategoriaTests(PlayerComparisonTests):
         out = compare([juve, pro], [(self.template, "cmj")], club_id=self.club.id)
         self.assertEqual(len(out["players"][0]["bands"]["salto:cmj"]), 1)
         self.assertEqual(out["players"][1]["bands"]["salto:cmj"], [],
-                         "el primer equipo no tiene regla propia acá")
+                         "el primer equipo no tiene regla propia aquí")
 
     def test_sin_bandas_la_etiqueta_es_None(self):
         a = self._jugador(self.juvenil, self.central, "A")

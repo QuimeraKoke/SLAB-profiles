@@ -316,7 +316,7 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
           ? [compararItem] : []),
         // Detrás de `core.view_development`, hoy otorgado a nadie. Ocultar el
         // link es cosmético: la puerta real son los @require_perm del backend.
-        // Pero un link que lleva a "no tenés permiso" es peor que no tenerlo.
+        // Pero un link que lleva a "no tienes permiso" es peor que no tenerlo.
         ...(canViewDevelopment ? [desarrolloItem, crecimientoItem] : []),
         askAiItem,
       ],

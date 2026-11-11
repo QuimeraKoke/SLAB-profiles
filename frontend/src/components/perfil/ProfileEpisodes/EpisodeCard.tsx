@@ -432,7 +432,7 @@ export default function EpisodeCard({
             </label>
             <p className={styles.stageHint}>
               Solo cambia la etapa. La evolución, hallazgos y documentos se
-              registran en la bitácora. Para cerrar la lesión usá “Dar de alta”.
+              registran en la bitácora. Para cerrar la lesión usa “Dar de alta”.
             </p>
             <div className={styles.stageActions}>
               <button type="button" className={styles.primaryBtn} disabled={savingStage} onClick={saveStage}>

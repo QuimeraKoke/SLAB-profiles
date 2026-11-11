@@ -73,7 +73,7 @@ export default function EquipoPage() {
       title: `Dar de baja a ${row.name}`,
       message:
         "Dejará de aparecer en el plantel y en los tableros, pero su historial " +
-        "(resultados, episodios, contratos) se conserva. Podés reactivarlo desde " +
+        "(resultados, episodios, contratos) se conserva. Puedes reactivarlo desde " +
         "Gestionar plantel.",
       confirmLabel: "Dar de baja",
       variant: "danger",
@@ -92,7 +92,7 @@ export default function EquipoPage() {
   }
 
   if (categoryLoading) return <div className={styles.muted}>Cargando…</div>;
-  if (!categoryId) return <div className={styles.muted}>Seleccioná una categoría.</div>;
+  if (!categoryId) return <div className={styles.muted}>Selecciona una categoría.</div>;
   if (error) return <div className={styles.error} role="alert">{error}</div>;
 
   const counts = data?.counts ?? {};

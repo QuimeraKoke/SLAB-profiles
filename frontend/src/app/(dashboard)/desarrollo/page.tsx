@@ -370,7 +370,7 @@ const togglePlayer = useCallback(
   if (!canViewDevelopment) {
     return (
       <div className={styles.page}>
-        <p className={styles.empty}>No tenés permiso para ver este módulo.</p>
+        <p className={styles.empty}>No tienes permiso para ver este módulo.</p>
       </div>
     );
   }
@@ -625,7 +625,7 @@ const togglePlayer = useCallback(
 /** `useSearchParams` obliga a una frontera de Suspense: sin ella el build de
  *  producción falla ("Missing Suspense boundary with useSearchParams"), y en
  *  desarrollo el problema no se ve porque las rutas se renderizan on-demand.
- *  Envolver acá además deja que el resto del árbol se prerenderice. */
+ *  Envolver aquí además deja que el resto del árbol se prerenderice. */
 export default function DesarrolloPage() {
   return (
     <Suspense fallback={<p className={styles.empty}>Cargando…</p>}>

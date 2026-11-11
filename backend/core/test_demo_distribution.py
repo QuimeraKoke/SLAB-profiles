@@ -2,7 +2,7 @@
 
 Las tres propiedades que este módulo promete son fáciles de romper sin que se
 note: un dato sintético se ve plausible de a uno aunque mienta en conjunto.
-Cada test de acá corresponde a un defecto que efectivamente apareció mientras
+Cada test de aquí corresponde a un defecto que efectivamente apareció mientras
 se construía el seed.
 """
 from __future__ import annotations

@@ -202,7 +202,7 @@ export default function DailyPage() {
   }
 
   if (catLoading) return <div className={styles.muted}>Cargando…</div>;
-  if (!categoryId) return <div className={styles.muted}>Seleccioná una categoría.</div>;
+  if (!categoryId) return <div className={styles.muted}>Selecciona una categoría.</div>;
   if (error) return <div className={styles.error} role="alert">{error}</div>;
   if (!data) return <div className={styles.muted}>Cargando la Daily…</div>;
 

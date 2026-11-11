@@ -271,7 +271,7 @@ function CrecimientoContent() {
   if (!canViewDevelopment) {
     return (
       <div className={styles.page}>
-        <p className={styles.empty}>No tenés permiso para ver este módulo.</p>
+        <p className={styles.empty}>No tienes permiso para ver este módulo.</p>
       </div>
     );
   }

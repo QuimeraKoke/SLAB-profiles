@@ -97,7 +97,7 @@ class LadderParityTests(TestCase):
         ya modela esto: para una cohorte bajo el peldaño más bajo devuelve
         "Serie 2018" sin sufijo Sub.
 
-        Se fija acá para que la diferencia sea una decisión y no una sorpresa.
+        Se fija aquí para que la diferencia sea una decisión y no una sorpresa.
         """
         ladder = Bracket.ladder()
         for age in (8, 9, 10):
@@ -107,7 +107,7 @@ class LadderParityTests(TestCase):
 
     def test_los_huecos_de_la_escalera(self):
         # El guard de arriba pasaría igual si las dos implementaciones
-        # estuvieran mal de la misma forma. Acá se fija el valor esperado.
+        # estuvieran mal de la misma forma. Aquí se fija el valor esperado.
         self.assertEqual(self.script.bracket_for_age(17), 18)
         self.assertEqual(self.script.bracket_for_age(19), 20)
         self.assertEqual(self.script.bracket_for_age(16), 16)

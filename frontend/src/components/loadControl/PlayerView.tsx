@@ -17,6 +17,8 @@ import {
 } from "@/lib/loadControl";
 
 import styles from "./loadControl.module.css";
+import { usePeriod } from "@/lib/periodWording";
+import ScopeBadge from "./ScopeBadge";
 
 const INK = "#475467";
 const STATUS_LABEL: Record<string, string> = {
@@ -37,6 +39,7 @@ const rsi = (v: number | null | undefined) => (v == null ? "—" : v.toFixed(2).
 const dayName = (iso: string) => `${WEEKDAY[new Date(`${iso}T12:00:00`).getDay()]} ${shortDate(iso)}`;
 
 export default function PlayerView({ microcycleId, playerId, onPlayer, onTab }: Props) {
+  const per = usePeriod();
   const [roster, setRoster] = useState<{ player_id: string; name: string }[] | null>(null);
   const [card, setCard] = useState<PlayerCard | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +99,7 @@ export default function PlayerView({ microcycleId, playerId, onPlayer, onTab }: 
             ? <img src={p.photo_url} alt="" width={96} height={96} style={{ borderRadius: 16, objectFit: "cover", objectPosition: "center top" }} />
             : <div aria-hidden="true" style={{ width: 72, height: 72, borderRadius: 12, background: "#f2f4f7" }} />}
           <div style={{ flex: 1, minWidth: 200 }}>
-            <h2 className={styles.h2} style={{ margin: 0 }}>{p.name}</h2>
+            <h2 className={styles.h2} style={{ margin: 0 }}>{p.name} <ScopeBadge kind="period" /></h2>
             <div className={styles.muted}>
               {[p.position, p.category, p.age != null ? `${p.age} años` : null].filter(Boolean).join(" · ")}
             </div>
@@ -105,8 +108,8 @@ export default function PlayerView({ microcycleId, playerId, onPlayer, onTab }: 
         </div>
         <div className={styles.summaryGrid}>
           {[
-            ["Minutos esta semana", `${n1(wk.minutes)}'`, wk.matches.length ? `${wk.matches.length} partido(s)` : "sin partidos"],
-            ["Entrenamientos esta semana", `${n1(wk.sessions_attended ?? 0)} de ${wk.sessions}`, wk.sessions_form_only ? `${wk.sessions_form_only} sólo con formulario` : ""],
+            [`Minutos ${per.this}`, `${n1(wk.minutes)}'`, wk.matches.length ? `${wk.matches.length} partido(s)` : "sin partidos"],
+            [`Entrenamientos ${per.this}`, `${n1(wk.sessions_attended ?? 0)} de ${wk.sessions}`, wk.sessions_form_only ? `${wk.sessions_form_only} sólo con formulario` : ""],
             ["Minutos en la temporada", `${n1(se.minutes)}'`, `${se.match_count} partidos del equipo`],
             ["Entrenamientos en la temporada", `${n1(se.sessions_attended ?? 0)} de ${se.sessions}`, se.attendance_pct != null ? `${se.attendance_pct}%` : ""],
           ].map(([label, value, sub]) => (
@@ -121,7 +124,7 @@ export default function PlayerView({ microcycleId, playerId, onPlayer, onTab }: 
 
       {/* Carga GPS */}
       <details open className={styles.card}>
-        <summary className={styles.h2}>Carga GPS de la semana · real vs objetivo</summary>
+        <summary className={styles.h2}>Carga GPS {per.of} · real vs objetivo</summary>
         <div className={styles.tableWrap}>
           <table className={`${styles.table} ${styles.gridTable}`}>
             <thead>
@@ -153,7 +156,7 @@ export default function PlayerView({ microcycleId, playerId, onPlayer, onTab }: 
             {load.accumulated && (
               <tfoot>
                 <tr>
-                  <th scope="row">Semana <span className={styles.muted}>({load.accumulated.days} de {load.accumulated.days_planned} días)</span></th>
+                  <th scope="row">{per.Name} <span className={styles.muted}>({load.accumulated.days} de {load.accumulated.days_planned} días)</span></th>
                   {load.metrics.map((m) => {
                     const c = load.accumulated!.cells[m.key];
                     return (
@@ -174,7 +177,7 @@ export default function PlayerView({ microcycleId, playerId, onPlayer, onTab }: 
       {/* Check-in / out */}
       <details open className={styles.card}>
         <summary className={styles.h2}>Check-in / out</summary>
-        {wl.days.every((d) => !d.row) ? <p className={styles.muted}>No respondió formularios esta semana.</p> : (
+        {wl.days.every((d) => !d.row) ? <p className={styles.muted}>No respondió formularios {per.this}.</p> : (
           <div className={styles.tableWrap}>
             <table className={`${styles.table} ${styles.gridTable}`}>
               <thead>

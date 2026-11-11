@@ -24,10 +24,10 @@ export default function CambiarContrasenaPage() {
 
   return (
     <AuthShell
-      title="Elegí tu contraseña"
+      title="Elige tu contraseña"
       lead={
         <>
-          Ingresaste con una contraseña temporal. Antes de seguir, elegí una
+          Ingresaste con una contraseña temporal. Antes de seguir, elige una
           propia para <strong>{user.email}</strong>.
         </>
       }

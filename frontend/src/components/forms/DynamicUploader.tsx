@@ -288,7 +288,7 @@ export default function DynamicUploader({
         const bm = normalizeBodyMapValue(v);
         if (isBodyMapEmpty(bm)) {
           if (f.required) {
-            setError(`Marcá al menos una zona en "${f.label}"`);
+            setError(`Marca al menos una zona en "${f.label}"`);
             return;
           }
           continue;
@@ -300,7 +300,7 @@ export default function DynamicUploader({
         // Multiple choice: an empty selection is a saved empty list only
         // when it means something ("takes nothing now"), i.e. not required.
         if (v.length === 0 && f.required) {
-          setError(`Elegí al menos una opción en "${f.label}"`);
+          setError(`Elige al menos una opción en "${f.label}"`);
           return;
         }
         raw[f.key] = v;

@@ -6,10 +6,11 @@
  * bracket (U20, U18…). Control de carga keeps only what is about the plan
  * (Carga GPS and Planificación); everything about the squad lives here.
  *
- * Weekly panels read the calendar week holding the selected day (`?dia=`,
- * moved with "día anterior / siguiente" — planned or not); the non-weekly
- * ones (Evaluaciones, Composición) read the selected category.
- * Tab, week and every filter live in the URL (IA principle 2).
+ * ONE time control (`PeriodBar`): a period — the Mon–Sun week of `?dia=`, or
+ * any `?desde=&hasta=` — and a day chosen inside it (`?dia=`, the day strip).
+ * Every card says which of the two it answers (`ScopeBadge`); no card has a
+ * time toggle of its own. Fatiga moves match by match; Evaluaciones and
+ * Composición read the whole history. All of it lives in the URL (IA principle 2).
  */
 
 import React from "react";
@@ -23,7 +24,9 @@ import ParticipationView from "@/components/loadControl/ParticipationView";
 import PlayerView from "@/components/loadControl/PlayerView";
 import SummaryView from "@/components/loadControl/SummaryView";
 import WellnessView from "@/components/loadControl/WellnessView";
-import { type DayNav, shortDate } from "@/lib/loadControl";
+import { dayText, periodText } from "@/components/loadControl/PeriodBar";
+import { type DayNav } from "@/lib/loadControl";
+import { PeriodContext, periodWords } from "@/lib/periodWording";
 
 import styles from "@/components/loadControl/loadControl.module.css";
 
@@ -39,52 +42,32 @@ export const FORMATIVO_TABS = [
 ];
 export const FORMATIVO_TAB_IDS = new Set(FORMATIVO_TABS.map((t) => t.id));
 const NOT_WEEKLY = new Set(["evaluaciones", "composicion"]);
+/** Panels that read several days at once and may read any period (?desde=&hasta=)
+ *  instead of the calendar week. Fatiga stays per microcycle (MD+1 vs MD-1),
+ *  Kinesia per day. */
+export const RANGE_TABS = new Set(["resumen", "bienestar", "minutos", "jugador"]);
 
 export const FORMATIVO_QUESTION: Record<string, string> = {
-  resumen: "¿Cómo está el plantel esta semana? ¿A quién compensar? ¿Quién llega fatigado?",
+  resumen: "¿Cómo está el plantel? ¿A quién compensar? ¿Quién llega fatigado?",
   fatiga: "¿Cuánto les pegó el último partido y cómo llegan al que viene?",
   bienestar: "¿Cómo llegan, cómo se sienten, qué les molesta y cómo se van?",
   lesiones: "¿Quién está en readaptación o en clínica, desde cuándo y cuándo vuelve?",
   minutos: "¿Cuánto jugó cada uno y a cuántas sesiones fue?",
-  jugador: "¿Cómo viene esta persona en todo esta semana?",
+  jugador: "¿Cómo viene esta persona, en todo?",
   evaluaciones: "¿Qué tan fuerte, rápido y resistente es cada uno, frente al grupo y frente a su evaluación anterior?",
   composicion: "¿Cómo evolucionan el músculo, la grasa y los pliegues de cada uno?",
 };
 
-const WEEKDAY = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
-
-/** ISO day ± n, in local calendar terms. */
-export function shiftDay(iso: string, n: number): string {
-  const d = new Date(`${iso}T12:00:00`);
-  d.setDate(d.getDate() + n);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-/** "‹ Día anterior · Miércoles 28 oct · MD-3 · Semana 42 · Día siguiente ›" —
- *  the only way to move: day by day, across weeks, planned or not. */
-export function DayNavBar({ nav, onDay, today }: { nav: DayNav; onDay: (iso: string) => void; today: string }) {
-  const d = new Date(`${nav.day}T12:00:00`);
-  return (
-    <div className={styles.controls} role="group" aria-label="Día">
-      <button type="button" className={styles.secondary} onClick={() => onDay(shiftDay(nav.day, -1))}
-        aria-label={`Día anterior: ${shiftDay(nav.day, -1)}`}>‹ Día anterior</button>
-      <span>
-        <strong>{WEEKDAY[d.getDay()]} {shortDate(nav.day)}</strong>
-        {nav.md_label && <> · {nav.md_label}</>}
-        <span className={styles.muted}>
-          {" "}· Semana {nav.number} ({shortDate(nav.start_date)}–{shortDate(nav.end_date)}){nav.planned ? "" : " · sin planificar"}
-        </span>
-      </span>
-      <button type="button" className={styles.secondary} onClick={() => onDay(shiftDay(nav.day, 1))}
-        aria-label={`Día siguiente: ${shiftDay(nav.day, 1)}`}>Día siguiente ›</button>
-      {nav.day !== today && (
-        <button type="button" className={styles.linkButton} onClick={() => onDay(today)}>Hoy</button>
-      )}
-    </div>
-  );
-}
-
-export const isWeekly = (tab: string) => !NOT_WEEKLY.has(tab);
+/** Tabs that read a period: the period bar. */
+export const PERIOD_TABS = new Set(["resumen", "bienestar", "lesiones", "minutos", "jugador"]);
+/** …and also have cards about ONE day of it: the day strip too. Resumen and
+ *  Jugador add the whole period up, so a day picker there would do nothing. */
+export const STRIP_TABS = new Set(["bienestar", "lesiones", "minutos"]);
+/** Tabs that do not depend on dates at all (whole history). */
+export const NO_TIME_TABS = NOT_WEEKLY;
+/** Fatiga moves match by match (its own "‹ Partido ›"): the microcycle is
+ *  defined by the match, not by a free period. */
+export const OWN_TIME_TABS = new Set(["fatiga"]);
 
 interface Props {
   tab: string;
@@ -97,21 +80,35 @@ interface Props {
   goTab: (tab: string, extra?: Record<string, string | null>) => void;
 }
 
-export default function FormativoPanels({ tab, nav, categoryId, params, setUrl, goTab }: Props) {
-  // Planned week → its id; otherwise the "<day>_<category>" key the API
-  // resolves to the calendar week, built on the fly (`load_control.week`).
-  const week = nav.microcycle_id ?? nav.week_key;
+export default function FormativoPanels(props: Props) {
+  return (
+    <PeriodContext.Provider value={periodWords(!!props.nav.range,
+      { day: props.nav.day, dayText: dayText(props.nav), periodText: periodText(props.nav) })}>
+      <Panels {...props} />
+    </PeriodContext.Provider>
+  );
+}
 
-  if (tab === "evaluaciones") return <EvaluationGrid categoryId={categoryId} />;
-  if (tab === "composicion") {
+function Panels({ tab, nav, categoryId, params, setUrl, goTab }: Props) {
+  // Planned week → its id; otherwise the key the API resolves to the
+  // calendar week ("<day>_<category>") or the period ("<start>~<end>_<category>").
+  const week = nav.microcycle_id ?? nav.week_key;
+  const onDay = (d: string | null | undefined) => d !== undefined && setUrl({ dia: d });
+
+  if (tab === "evaluaciones" || tab === "composicion") {
     return (
-      <CompositionView categoryId={categoryId} playerId={params.get("jugador")}
-        metric={params.get("metrica")} sort={params.get("orden")}
-        onFilters={(f) => setUrl({
-          ...(f.player !== undefined ? { jugador: f.player } : {}),
-          ...(f.metric !== undefined ? { metrica: f.metric } : {}),
-          ...(f.sort !== undefined ? { orden: f.sort } : {}),
-        })} />
+      <>
+        <p className={styles.noTime}>Muestra todo el historial: no depende de las fechas.</p>
+        {tab === "evaluaciones" ? <EvaluationGrid categoryId={categoryId} /> : (
+          <CompositionView categoryId={categoryId} playerId={params.get("jugador")}
+            metric={params.get("metrica")} sort={params.get("orden")}
+            onFilters={(f) => setUrl({
+              ...(f.player !== undefined ? { jugador: f.player } : {}),
+              ...(f.metric !== undefined ? { metrica: f.metric } : {}),
+              ...(f.sort !== undefined ? { orden: f.sort } : {}),
+            })} />
+        )}
+      </>
     );
   }
 
@@ -123,8 +120,7 @@ export default function FormativoPanels({ tab, nav, categoryId, params, setUrl, 
         <FatigueView key={week} microcycleId={week}
           matchDate={params.get("partido")} playerId={params.get("jugador")}
           mode={params.get("fatiga_vista") === "microciclo" ? "micro" : "match"}
-          onMode={(md) => setUrl({ fatiga_vista: md === "micro" ? "microciclo" : null, partido: null })}
-          day={nav.day}
+          onMode={(md) => setUrl({ fatiga_vista: md === "micro" ? "microciclo" : null })}
           onFilters={(f) => setUrl({
             ...(f.match !== undefined ? { partido: f.match } : {}),
             ...(f.player !== undefined ? { jugador: f.player } : {}),
@@ -134,30 +130,23 @@ export default function FormativoPanels({ tab, nav, categoryId, params, setUrl, 
       return (
         <WellnessView key={week} microcycleId={week}
           day={nav.day} playerId={params.get("jugador")} hideDayNav
-          painScope={params.get("molestias") === "semana" ? "week" : "day"}
-          onPainScope={(sc) => setUrl({ molestias: sc === "week" ? "semana" : null })}
-          onFilters={(f) => setUrl({
-            ...(f.day !== undefined ? { dia: f.day } : {}),
-            ...(f.player !== undefined ? { jugador: f.player } : {}),
-          })} />
+          onFilters={(f) => {
+            if (f.day !== undefined) onDay(f.day);
+            if (f.player !== undefined) setUrl({ jugador: f.player });
+          }} />
       );
     case "lesiones":
-      return <AvailabilityView key={week} microcycleId={week} />;
-    case "minutos": {
-      const cargaVista = params.get("carga_vista");
+      return <AvailabilityView key={`${week}-${nav.day}`} microcycleId={week} day={nav.day} />;
+    case "minutos":
       return (
         <>
-        <DayLoadChart key={cargaVista === "semana" ? `${week}-semana` : `${week}-${nav.day}`}
-          microcycleId={week} day={nav.day}
-          view={cargaVista === "semana" ? "week" : "day"}
-          onView={(v) => setUrl({ carga_vista: v === "week" ? "semana" : null })}
-          metric={params.get("carga_metrica")} onMetric={(k) => setUrl({ carga_metrica: k })} />
-        <ParticipationView key={week} microcycleId={week}
-          scope={params.get("periodo") === "temporada" ? "season" : "microcycle"}
-          onScope={(sc) => setUrl({ periodo: sc === "season" ? "temporada" : null })} />
+          <DayLoadChart key={`${week}-periodo`} microcycleId={week} day={nav.day} view="week"
+            metric={params.get("carga_metrica")} onMetric={(k) => setUrl({ carga_metrica: k })} />
+          <DayLoadChart key={`${week}-${nav.day}`} microcycleId={week} day={nav.day} view="day"
+            metric={params.get("carga_metrica")} onMetric={(k) => setUrl({ carga_metrica: k })} />
+          <ParticipationView key={week} microcycleId={week} />
         </>
       );
-    }
     case "jugador":
       return (
         <PlayerView key={week} microcycleId={week} playerId={params.get("jugador")}

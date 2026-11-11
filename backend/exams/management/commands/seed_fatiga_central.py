@@ -137,7 +137,7 @@ INPUT_CONFIG: dict = {
     #   2. No son confiables. El importador histórico
     #      (`import_fatiga_central`) ya documentó que esas celdas traen
     #      artefactos de planilla —fechas donde van números— y por eso las
-    #      recalcula desde I1–I3. Misma decisión acá.
+    #      recalcula desde I1–I3. Misma decisión aquí.
     #
     # "N° alertas" tampoco se mapea: no existe campo para eso, y no debería.
     # SLAB cuenta sus propias alertas con `seed_fatiga_alert_rules` a partir de
@@ -153,8 +153,8 @@ INPUT_CONFIG: dict = {
             "Carga la planilla de la sesión: una fila por jugador, con las "
             "columnas Jugador · I1 (Hz) · I2 (Hz) · I3 (Hz) · PR · EA. "
             "Las columnas calculadas de la planilla (CFF mean, CFF basal, "
-            "Δ% vs basal, Var % intra-sesión) se recalculan acá desde I1–I3, "
-            "así que podés dejarlas: se ignoran."
+            "Δ% vs basal, Var % intra-sesión) se recalculan aquí desde I1–I3, "
+            "así que puedes dejarlas: se ignoran."
         ),
     },
     "column_mapping": {

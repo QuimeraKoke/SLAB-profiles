@@ -1,6 +1,6 @@
 import logging
 import secrets
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -281,6 +281,22 @@ def _serialize_membership(membership):
     }
 
 
+# "Último ingreso" in Usuarios. Login is JWT (authenticate() + issue_token),
+# which never fires Django's user_logged_in, and an active session renews
+# itself via /auth/refresh — so it is stamped on login AND on activity, at
+# most every few minutes so a busy session doesn't write on every call.
+LAST_LOGIN_EVERY = timedelta(minutes=10)
+
+
+def _touch_last_login(user) -> None:
+    from django.utils import timezone as _tz
+
+    now = _tz.now()
+    if user.last_login is None or now - user.last_login > LAST_LOGIN_EVERY:
+        User.objects.filter(pk=user.pk).update(last_login=now)
+        user.last_login = now
+
+
 @api.post("/auth/login", response=LoginOut, auth=None)
 def login(request, payload: LoginIn):
     """Authenticate by email + password.
@@ -294,6 +310,7 @@ def login(request, payload: LoginIn):
     user = authenticate(request, username=user_record.username, password=payload.password)
     if user is None or not user.is_active:
         raise HttpError(401, "Invalid credentials")
+    _touch_last_login(user)
     token, expires_at = issue_token(user)
     membership = get_membership(user)
     return {
@@ -306,6 +323,7 @@ def login(request, payload: LoginIn):
 
 @api.get("/auth/me", response=MeOut)
 def me(request):
+    _touch_last_login(request.user)
     membership = get_membership(request.user)
     return {
         "user": _serialize_user(request.user),
@@ -314,6 +332,7 @@ def me(request):
 
 
 def _session(user) -> dict:
+    _touch_last_login(user)
     token, expires_at = issue_token(user)
     return {
         "access_token": token,
@@ -342,7 +361,7 @@ def forgot_password(request, payload: ForgotPasswordIn):
     key = f"forgot-password:{_client_ip(request)}"
     cache.add(key, 0, timeout=60 * 60)
     if cache.incr(key) > FORGOT_PASSWORD_PER_IP_HOUR:
-        raise HttpError(429, "Demasiados intentos. Probá de nuevo en un rato.")
+        raise HttpError(429, "Demasiados intentos. Prueba de nuevo en un rato.")
 
     user = User.objects.filter(email__iexact=payload.email.strip(), is_active=True).first()
     if user is not None and account.may_send_reset(user):
@@ -359,7 +378,7 @@ def reset_password_with_link(request, payload: ResetPasswordIn):
     """Set a new password from an emailed link and sign the user in."""
     user = account.user_for_reset(payload.uid, payload.token)
     if user is None:
-        raise HttpError(400, "El enlace no es válido o ya expiró. Pedí uno nuevo.")
+        raise HttpError(400, "El enlace no es válido o ya expiró. Pide uno nuevo.")
     try:
         account.set_own_password(user, payload.password)
     except DjangoValidationError as exc:
@@ -392,6 +411,7 @@ def refresh_token(request):
     current token expires), so an active session slides forward and never dies
     mid-use. Requires a valid, non-expired token — an already-expired token
     401s here and the client bounces to login."""
+    _touch_last_login(request.user)
     token, expires_at = issue_token(request.user)
     membership = get_membership(request.user)
     return {
@@ -629,7 +649,7 @@ def _create_staff_user(*, club, email, first_name, last_name, role, is_active=Tr
     transaction commits. Shared by Usuarios and SLAB Admin's "Nuevo club"."""
     email = email.strip().lower()
     if not email or "@" not in email:
-        raise HttpError(400, "Ingresá un email válido.")
+        raise HttpError(400, "Ingresa un email válido.")
     if not first_name.strip() or not last_name.strip():
         raise HttpError(400, "Nombre y apellido son requeridos.")
     if User.objects.filter(email__iexact=email).exists() or \
@@ -637,7 +657,7 @@ def _create_staff_user(*, club, email, first_name, last_name, role, is_active=Tr
         raise HttpError(400, "Ya existe un usuario con ese email.")
     if not Group.objects.filter(name=role).exists():
         # Without the group the account would log in with no permissions.
-        raise HttpError(400, f"El rol {role} no existe todavía (corré seed_role_groups).")
+        raise HttpError(400, f"El rol {role} no existe todavía (corre seed_role_groups).")
 
     password = generate_temp_password()
     user = User.objects.create(
@@ -676,7 +696,7 @@ def update_user(request, user_id: int, payload: AdminUserUpdateIn):
         email = payload.email.strip().lower()
         if email and email != (target.email or "").lower():
             if "@" not in email:
-                raise HttpError(400, "Ingresá un email válido.")
+                raise HttpError(400, "Ingresa un email válido.")
             if User.objects.filter(email__iexact=email).exclude(pk=target.pk).exists() or \
                     User.objects.filter(username__iexact=email).exclude(pk=target.pk).exists():
                 raise HttpError(400, "Ya existe un usuario con ese email.")
@@ -1750,7 +1770,7 @@ def bulk_template_download(request, template_id: str):
 
     Sólo trae las columnas que el parser LEE. Las que la planilla del club
     calcula sola no van: el texto de ayuda ya dice que se pueden dejar y que se
-    ignoran, y ponerlas acá invitaría a llenarlas para nada.
+    ignoran, y ponerlas aquí invitaría a llenarlas para nada.
     """
     membership = get_membership(request.user)
     template = scope_templates(
@@ -2373,7 +2393,7 @@ def get_comparison_sections(request, category_id: str):
     from dashboards.models import ComparisonSectionConfig
 
     # Se recibe la categoría y no el club porque es lo que el frontend tiene a
-    # mano (sale del jugador elegido); el club se resuelve acá.
+    # mano (sale del jugador elegido); el club se resuelve aquí.
     categoria = _scoped_category_or_404(request, category_id)
     guardadas = {
         c.section: c.metric_keys or []
@@ -2481,7 +2501,7 @@ def get_player_comparison(request, players: str, metrics: str,
     # en Primer Equipo es una lectura completa por sí misma, y obligar a elegir
     # un segundo para mirar al primero no tiene sentido.
     if not (1 <= len(ids) <= MAX_PLAYERS):
-        raise HttpError(422, f"Elegí entre 1 y {MAX_PLAYERS} jugadores.")
+        raise HttpError(422, f"Elige entre 1 y {MAX_PLAYERS} jugadores.")
 
     membership = get_membership(request.user)
     encontrados = list(
@@ -2503,7 +2523,7 @@ def get_player_comparison(request, players: str, metrics: str,
 
     pares = [x for x in (v.strip() for v in metrics.split(",")) if x]
     if not pares:
-        raise HttpError(422, "Elegí al menos una métrica.")
+        raise HttpError(422, "Elige al menos una métrica.")
 
     club_id = clubes.pop()
     slugs = {par.split(":", 1)[0] for par in pares if ":" in par}
@@ -4955,11 +4975,103 @@ def data_sources_view(request, category_id: str):
     See `exams.data_sources`."""
     from exams.data_sources import data_sources
 
+    return data_sources(_data_sources_club(request, category_id))
+
+
+def _data_sources_club(request, category_id: str):
     membership = get_membership(request.user)
     category = scope_categories(Category.objects.select_related("club"), membership).filter(pk=category_id).first()
     if category is None:
         raise HttpError(404, "Category not found")
-    return data_sources(category.club)
+    return category.club
+
+
+@api.get("/data-sources/issues/{issue_id}/solutions")
+def data_source_issue_solutions(request, issue_id: str, category_id: str):
+    """Datos › Fuentes › Problemas › "Ver soluciones": the ways to fix one
+    problem, explained, with suggested players / matches. Read-only."""
+    from exams import sync_solutions
+
+    club = _data_sources_club(request, category_id)
+    try:
+        return sync_solutions.solutions(club, issue_id)
+    except Exception as exc:  # noqa: BLE001 — DoesNotExist / bad uuid
+        if exc.__class__.__name__ in ("DoesNotExist", "ValidationError", "ValueError"):
+            raise HttpError(404, "Problema no encontrado (puede que ya se haya resuelto).")
+        raise
+
+
+@api.get("/data-sources/issues/{issue_id}/locate")
+def data_source_issue_locate(request, issue_id: str, category_id: str, i: int = 0):
+    """"Ver en la planilla": the Drive link to the tab and row (or column) of
+    one example of the problem. See `exams.sync_issues.locate`."""
+    from exams.models import SyncIssue
+    from exams.sync_issues import locate
+
+    club = _data_sources_club(request, category_id)
+    issue = SyncIssue.objects.filter(club=club, pk=issue_id).first() if len(issue_id) == 36 else None
+    if issue is None:
+        raise HttpError(404, "Problema no encontrado.")
+    return locate(issue, i)
+
+
+class IssueApplyIn(Schema):
+    action: str
+    player_id: str | None = None
+    match_date: date | None = None
+
+
+@api.post("/data-sources/issues/{issue_id}/apply")
+def data_source_issue_apply(request, issue_id: str, category_id: str, payload: IssueApplyIn):
+    """Apply the solution the staff chose (link a name to a player, assign a
+    jump tab to a match, dismiss). Needs the right to load results."""
+    from exams import sync_solutions
+
+    if not _has_perm(request.user, "exams.add_examresult"):
+        raise HttpError(403, "No tienes permiso para cargar datos.")
+    club = _data_sources_club(request, category_id)
+    try:
+        return sync_solutions.apply(club, issue_id, payload.action, request.user,
+                                    player_id=payload.player_id, match_date=payload.match_date)
+    except sync_solutions.ApplyError as exc:
+        raise HttpError(400, str(exc))
+    except Exception as exc:  # noqa: BLE001
+        if exc.__class__.__name__ in ("DoesNotExist", "ValidationError"):
+            raise HttpError(404, "Problema no encontrado (puede que ya se haya resuelto).")
+        raise
+
+
+@api.get("/data-sources/issues/dismissed")
+def data_source_issues_dismissed(request, category_id: str):
+    from exams import sync_solutions
+
+    return {"items": sync_solutions.dismissed(_data_sources_club(request, category_id))}
+
+
+@api.post("/data-sources/issues/{issue_id}/restore")
+def data_source_issue_restore(request, issue_id: str, category_id: str):
+    from exams import sync_solutions
+
+    if not _has_perm(request.user, "exams.add_examresult"):
+        raise HttpError(403, "No tienes permiso para cargar datos.")
+    sync_solutions.restore(_data_sources_club(request, category_id), issue_id)
+    return {"ok": True}
+
+
+@api.get("/data-sources/players")
+def data_source_players(request, category_id: str, q: str = ""):
+    """Player search for "Vincular a un jugador": the whole club, any category."""
+    from exams.sheet_aliases import key
+    from exams.sync_solutions import _player_label
+
+    club = _data_sources_club(request, category_id)
+    toks = key(q).split()[:4]
+    if not toks:
+        return {"items": []}
+    hits = [p for p in Player.objects.filter(category__club=club).select_related("category")
+            .order_by("-is_active", "last_name", "first_name")
+            if all(t in key(f"{p.first_name} {p.last_name} {p.second_last_name}") for t in toks)]
+    return {"items": [_player_label(p) for p in hits[:20]]}
 
 
 @api.get("/export/fichas/options")
@@ -4998,7 +5110,7 @@ def download_fichas_pdf(request, category_id: str, player_ids: str = "", departm
     else:
         players = list(roster.order_by("last_name", "first_name"))
     if not players:
-        raise HttpError(400, "Elegí al menos un jugador.")
+        raise HttpError(400, "Elige al menos un jugador.")
     if len(players) > MAX_FICHAS_PER_EXPORT:
         raise HttpError(400, f"Máximo {MAX_FICHAS_PER_EXPORT} fichas por archivo.")
     dept_name = "" if not department else areas[department]
@@ -5071,7 +5183,7 @@ def download_informe_plantel(request, payload: InformePlantelIn):
     else:
         players = list(roster.order_by("last_name", "first_name"))
     if not players:
-        raise HttpError(400, "Elegí al menos un jugador.")
+        raise HttpError(400, "Elige al menos un jugador.")
     if len(players) > MAX_FICHAS_PER_EXPORT:
         raise HttpError(400, f"Máximo {MAX_FICHAS_PER_EXPORT} jugadores por archivo.")
     comments = {k: v[:4000] for k, v in payload.comments.items() if isinstance(v, str)}
@@ -6896,7 +7008,7 @@ def fixtures_upcoming(
             raise HttpError(404, "Equipo no encontrado")
 
     if player is None and team is None:
-        raise HttpError(400, "Indicá player_id o category_id")
+        raise HttpError(400, "Indica player_id o category_id")
 
     return _fx.upcoming(
         club_id=membership.club_id, player=player, team=team,
@@ -6981,7 +7093,7 @@ def player_physical_context(request, player_id: str, season: int | None = None):
     if player is None:
         raise HttpError(404, "Jugador no encontrado")
     # `timezone_now()`, el helper de este archivo: `timezone` NUNCA se importa a
-    # nivel de módulo acá (el resto usa alias locales), así que esto lanzaba
+    # nivel de módulo aquí (el resto usa alias locales), así que esto lanzaba
     # NameError cada vez que se llamaba sin `?season=`. El frontend siempre lo
     # manda, así que el bug estuvo latente hasta que un test lo omitió.
     return _dev.physical_context(
@@ -7175,7 +7287,7 @@ def platform_rename_club(request, club_id: UUID, payload: PlatformClubPatchIn):
     club = _platform_club(club_id)
     name = payload.name.strip()
     if not name:
-        raise HttpError(400, "Ingresá el nombre del club.")
+        raise HttpError(400, "Ingresa el nombre del club.")
     if club_setup.name_taken(name, exclude=club):
         raise HttpError(400, f"Ya existe un club llamado {name}.")
     club.name = name

@@ -472,8 +472,13 @@ def build_matcher(club: Club):
         por_nombre[largo] = p
         por_nombre.setdefault(norm(f"{p.first_name} {p.last_name}"), p)
     truncados = {k[:22]: v for k, v in por_nombre.items() if len(k) > 22}
+    from exams import sheet_aliases
+
+    alias = sheet_aliases.load(club)
 
     def match(nombre: str, dob: date | None) -> Player | None:
+        if (p := alias.get(sheet_aliases.key(nombre))) is not None:
+            return p
         clave = norm(nombre)
         if dob and por_dob.get(dob):
             candidatos = sorted(por_dob[dob],

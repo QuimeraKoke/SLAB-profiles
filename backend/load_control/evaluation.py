@@ -123,7 +123,7 @@ def evaluate(mc: Microcycle, *, day: date | None = None, include_sparring: bool 
     resolver = GroupResolver(cfg)
     days = {d.date: d for d in days_of(mc)}
     if day is not None and day not in days:
-        raise ValueError("El día no pertenece a la semana.")
+        raise ValueError("El día no pertenece al período seleccionado.")
 
     def counted(d: MicrocycleDay) -> bool:
         if d.kind == MicrocycleDay.KIND_REST:

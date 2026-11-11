@@ -73,7 +73,7 @@ export default function PlansPanel({
       <p className={styles.window}>Últimos 7 días</p>
       {plans.length === 0 ? (
         <p className={styles.empty}>
-          Sin planes de trabajo en los últimos 7 días. Cargá la directriz de
+          Sin planes de trabajo en los últimos 7 días. Carga la directriz de
           cada jugador — bloque de fuerza, progresión de carrera, plan
           nutricional… —; los anteriores quedan en su perfil.
         </p>

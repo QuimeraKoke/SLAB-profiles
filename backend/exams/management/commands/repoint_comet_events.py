@@ -86,7 +86,7 @@ class Command(BaseCommand):
 
         if not commit:
             self._say(self.style.WARNING(
-                "\nDRY RUN — nada se guardó. Repetí con --commit."
+                "\nDRY RUN — nada se guardó. Repite con --commit."
             ))
 
     def _say(self, text):

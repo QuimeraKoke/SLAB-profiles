@@ -103,7 +103,7 @@ export default function TeamRosterMatrix({ widget }: Props) {
           visibleRows={sortedRows.length}
         />
         <div className={styles.empty}>
-          Ningún jugador tiene datos en este período. Activá
+          Ningún jugador tiene datos en este período. Activa
           &quot;Mostrar jugadores sin datos&quot; para ver el plantel completo.
         </div>
       </div>

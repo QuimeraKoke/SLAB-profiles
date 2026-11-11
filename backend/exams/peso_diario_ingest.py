@@ -42,7 +42,7 @@ from django.utils import timezone
 
 from core.models import Club
 from exams.calculations import compute_result_data
-from exams.lesiones_formativo_ingest import Matcher, norm, norm_cab
+from exams.lesiones_formativo_ingest import Match, Matcher, norm, norm_cab
 from exams.models import ExamResult, ExamTemplate
 
 SHEET_ID = "1I27xvuHdPt82DT1ts4CNoVQxhDBPTdZiT-JYets0Xqc"
@@ -164,6 +164,9 @@ def run(club: Club, filas: list[FilaPeso], dias: list[date], *, commit: bool = F
              for f in template.config_schema.get("fields", [])}
 
     matcher = Matcher(club, {})
+    from exams import sheet_aliases
+
+    alias = sheet_aliases.load(club)
     rep = Reporte(jugadores=len(filas), desde=min(dias, default=None), hasta=max(dias, default=None))
 
     existentes = {
@@ -178,6 +181,8 @@ def run(club: Club, filas: list[FilaPeso], dias: list[date], *, commit: bool = F
     for fp in filas:
         rep.estados.update(fp.estados)
         m = matcher.match_name(fp.nombre)
+        if (linked := alias.get(sheet_aliases.key(fp.nombre))) is not None:
+            m = Match(linked, "vinculo", [linked])
         rep.por_metodo[m.metodo] += 1
         if m.player is None:
             destino = rep.ambiguos if m.metodo == "ambiguo" else rep.sin_jugador

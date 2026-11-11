@@ -297,7 +297,7 @@ class Command(BaseCommand):
                 accion = "creada"
             elif template.is_locked and not opts["unlock"]:
                 self.stdout.write(self.style.WARNING(
-                    f"  {name}: bloqueada, pasá --unlock"))
+                    f"  {name}: bloqueada, pasa --unlock"))
                 continue
             else:
                 template.name = name
@@ -436,7 +436,7 @@ class Command(BaseCommand):
                 continue
             if template.is_locked and not unlock:
                 self.stdout.write(self.style.WARNING(
-                    f"  {slug}: bloqueada, pasá --unlock para agregar FC"))
+                    f"  {slug}: bloqueada, pasa --unlock para agregar FC"))
                 continue
             schema = dict(template.config_schema or {})
             fields = list(schema.get("fields") or [])

@@ -22,6 +22,8 @@ import { api, ApiError } from "@/lib/api";
 import { type Evaluation, shortDate, signedPct } from "@/lib/loadControl";
 
 import styles from "./loadControl.module.css";
+import { usePeriod } from "@/lib/periodWording";
+import ScopeBadge from "./ScopeBadge";
 
 const OVER = "#eb6834";
 const UNDER = "#2a78d6";
@@ -42,13 +44,14 @@ export type LoadView = "day" | "week";
 interface Props {
   microcycleId: string;
   day: string;
+  /** "week": the period, accumulated. "day": the strip's day. */
   view: LoadView;
-  onView: (view: LoadView) => void;
   metric: string | null;
   onMetric: (key: string) => void;
 }
 
-export default function DayLoadChart({ microcycleId, day, view, onView, metric, onMetric }: Props) {
+export default function DayLoadChart({ microcycleId, day, view, metric, onMetric }: Props) {
+  const per = usePeriod();
   const [data, setData] = useState<Evaluation | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,29 +65,23 @@ export default function DayLoadChart({ microcycleId, day, view, onView, metric, 
   }, [microcycleId, day, view]);
 
   const weekly = view === "week";
-  const title = weekly ? "Ejecutado vs planificado de la semana" : "Ejecutado vs planificado del día";
-  const toggle = (
-    <div className={styles.controls}>
-      <div role="group" aria-label="Vista de la carga" className={styles.segmented}>
-        <button type="button" aria-pressed={!weekly} onClick={() => onView("day")}>Diario</button>
-        <button type="button" aria-pressed={weekly} onClick={() => onView("week")}>Semanal</button>
-      </div>
-      {weekly && data?.mode === "accumulated" && (
-        <span className={styles.muted}>
-          {data.days.length > 0
-            ? `Acumulado de ${data.days.length} día${data.days.length === 1 ? "" : "s"} con carga planificada (${shortDate(data.days[0].date)} – ${shortDate(data.days[data.days.length - 1].date)})`
-            : "La semana todavía no tiene días con carga"}
-        </span>
-      )}
-    </div>
-  );
+  const title = weekly ? `Ejecutado vs planificado ${per.of}` : "Ejecutado vs planificado del día";
+  const badge = <ScopeBadge kind={weekly ? "period" : "day"} />;
+  const toggle = weekly && data?.mode === "accumulated" ? (
+    <p className={styles.muted} style={{ margin: "0 0 8px" }}>
+      {data.days.length > 0
+        ? `Acumulado de ${data.days.length} día${data.days.length === 1 ? "" : "s"}${data.provenance.planned !== false ? " con carga planificada" : ""} (${shortDate(data.days[0].date)} – ${shortDate(data.days[data.days.length - 1].date)})`
+        : per.range ? "El período todavía no tiene días con carga planificada." : "La semana todavía no tiene días con carga planificada."}
+    </p>
+  ) : null;
   const head = (
     <div className={styles.cardHead}>
       <h2 className={styles.h2}>{title}</h2>
+      {badge}
     </div>
   );
-  if (error) return <>{toggle}<section className={styles.card}>{head}<div className={styles.error} role="alert">{error}</div></section></>;
-  if (!data) return <>{toggle}<section className={styles.card}>{head}<p className={styles.muted}>Cargando…</p></section></>;
+  if (error) return <section className={styles.card}>{head}<div className={styles.error} role="alert">{error}</div></section>;
+  if (!data) return <section className={styles.card}>{head}<p className={styles.muted}>Cargando…</p></section>;
 
   const m = data.metrics.find((x) => x.key === metric) ?? data.metrics[0];
   const ok = data.bands.ok;
@@ -100,14 +97,15 @@ export default function DayLoadChart({ microcycleId, day, view, onView, metric, 
 
   return (
     <>
-    {toggle}
-    <section className={styles.card} aria-labelledby="dl-title">
+    <section className={styles.card} aria-labelledby={`dl-title-${view}`}>
       <div className={styles.cardHead}>
-        <h2 id="dl-title" className={styles.h2}>{title}</h2>
-        <span className={styles.muted}>
-          {weekly ? `Semana ${data.provenance.microcycle}` : data.days[0]?.md_label || ""} · {bars.length} jugadores
+        <h2 id={`dl-title-${view}`} className={styles.h2}>{title}</h2>
+        <span className={styles.cardMeta}>
+          {badge}
+          <span className={styles.muted}>{bars.length} jugadores</span>
         </span>
       </div>
+      {toggle}
       <div className={styles.segmented} style={{ flexWrap: "wrap" }} role="group" aria-label="Métrica">
         {data.metrics.map((x) => (
           <button key={x.key} type="button" aria-pressed={x.key === m.key} onClick={() => onMetric(x.key)}>
@@ -117,17 +115,17 @@ export default function DayLoadChart({ microcycleId, day, view, onView, metric, 
       </div>
       {!planned ? (
         <p className={styles.muted}>
-          Esta semana no está planificada: sin objetivo {weekly ? "semanal" : "del día"} no hay con qué comparar.
+          {per.range ? (weekly ? "El período tiene días sin planificar" : "El día no está planificado") : "Esta semana no está planificada"}: sin objetivo {weekly ? (per.range ? "del período" : "semanal") : "del día"} no hay con qué comparar.
         </p>
       ) : bars.length === 0 ? (
         <p className={styles.muted}>
           {weekly
-            ? data.days.length === 0 ? "La semana todavía no empieza." : "Nadie tiene GPS y objetivo en lo que va de la semana."
+            ? data.days.length === 0 ? (per.range ? "El período todavía no empieza." : "La semana todavía no empieza.") : `Nadie tiene GPS y objetivo en lo que va ${per.of}.`
             : data.days[0]?.kind === "rest" ? "Día de descanso." : isMatch ? "Día de partido sin GPS contra objetivo." : "Nadie tiene GPS y objetivo este día."}
         </p>
       ) : (
         <div style={{ width: "100%", height: bars.length * 28 + 40 }} role="img"
-          aria-label={`${m.label}: porcentaje sobre o bajo lo planificado ${weekly ? "en la semana" : "del día"} por jugador, del más sobre al más bajo.`}>
+          aria-label={`${m.label}: porcentaje sobre o bajo lo planificado ${weekly ? per.in : "del día"} por jugador, del más sobre al más bajo.`}>
           <ResponsiveContainer>
             <BarChart data={bars} layout="vertical" margin={{ top: 4, right: 56, left: 8, bottom: 4 }} barCategoryGap={4}>
               <CartesianGrid horizontal={false} stroke="#eaecf0" />

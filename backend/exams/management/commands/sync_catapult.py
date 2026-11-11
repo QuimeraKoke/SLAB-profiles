@@ -138,4 +138,4 @@ class Command(BaseCommand):
             if not verbose:
                 unresolved = sum(1 for r in a.rows if r.status == "unresolved")
                 if unresolved:
-                    w(f"      ({unresolved} sin jugador — usá --verbose para el detalle)")
+                    w(f"      ({unresolved} sin jugador — usa --verbose para el detalle)")

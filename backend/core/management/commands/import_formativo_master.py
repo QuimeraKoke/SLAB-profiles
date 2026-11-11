@@ -70,7 +70,7 @@ from core.positions import CANON
 # finer (Extremo derecho / izquierdo). The source does not say which side, so
 # each maps to the unspecified variant — the same reason a generic "Lateral"
 # already sits alongside "Lateral derecho"/"Lateral izquierdo".
-# El tercer elemento salía de acá con la granularidad ("General" / "Específica"
+# El tercer elemento salía de aquí con la granularidad ("General" / "Específica"
 # / vacío), que no agrupa nada y dejaba el catálogo sin línea. Ahora la línea y
 # el orden los dicta `core.positions`, la misma fuente que usa
 # `normalize_positions` — si no, cada corrida del importador volvía a

@@ -102,7 +102,7 @@ export default function TeamDistribution({ widget }: Props) {
                `Bar` sólo dispara sobre el rectángulo, y una banda con 0
                jugadores tiene altura 0: nunca lo recibía, así que el índice se
                quedaba pegado en el último bin hovereado y el detalle de abajo
-               listaba jugadores de OTRA banda. Acá se lee el mismo
+               listaba jugadores de OTRA banda. Aquí se lee el mismo
                `activeTooltipIndex` que alimenta el tooltip, así que los dos no
                pueden discrepar. */
             onMouseMove={(state) => {
@@ -119,7 +119,7 @@ export default function TeamDistribution({ widget }: Props) {
             <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" />
             {/* Con bines por banda las etiquetas las pone la leyenda de arriba,
                 que además dice el rango — cosa que el eje no puede. Inclinadas
-                acá abajo se pisaban entre ellas y se comían 58px de un gráfico
+                aquí abajo se pisaban entre ellas y se comían 58px de un gráfico
                 de 240: la barra queda identificada por su color y por su
                 posición, que es el mismo orden de la leyenda. */}
             <XAxis

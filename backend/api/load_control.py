@@ -55,12 +55,23 @@ def _week_key(request, key: str) -> Microcycle | None:
     category's team, planned or not (`load_control.week`). None if `key` is
     not one (a planned week's id)."""
     day_s, _, category_id = key.partition("_")
+    from load_control.week import range_for, week_for
+
+    if "~" in day_s:  # a period: "<start>~<end>_<category_id>"
+        a, _, b = day_s.partition("~")
+        try:
+            start, end = date.fromisoformat(a), date.fromisoformat(b)
+        except ValueError:
+            return None
+        team = _team(request, category_id, end.year)
+        try:
+            return range_for(team, start, end)
+        except ValueError as exc:
+            raise HttpError(400, str(exc))
     try:
         day = date.fromisoformat(day_s)
     except ValueError:
         return None
-    from load_control.week import week_for
-
     team = _team(request, category_id, day.year)
     return week_for(team, day)
 
@@ -319,16 +330,70 @@ def summary_view(request, microcycle_id: str):
 
 
 @router.get("/day")
-def day_view(request, category_id: str, day: date | None = None):
+def day_view(request, category_id: str, day: date | None = None,
+             start: date | None = None, end: date | None = None):
     """The day navigator of the squad panels: which week holds `day` (default
-    today), whether it is planned, and the key the panels read it by."""
+    today), whether it is planned, and the key the panels read it by. With
+    `start` and `end`, a period instead (Centro de mando › "Período"): the
+    panels read those days, and `day` (default `end`) is the one the
+    day-level parts show."""
     from django.utils import timezone
 
-    from load_control.week import describe, week_for
+    from load_control.week import describe, range_for, week_for
 
     _require(request, PERM_VIEW)
-    day = day or timezone.localdate()
-    team = _team(request, category_id, day.year)
-    mc = week_for(team, day)
+    if start and end:
+        start, end = min(start, end), max(start, end)
+        if not (day and start <= day <= end):
+            # Today if it is inside; never a day that has not happened yet.
+            today = timezone.localdate()
+            day = min(end, today) if start <= today else start
+        team = _team(request, category_id, end.year)
+        try:
+            mc = range_for(team, start, end)
+        except ValueError as exc:
+            raise HttpError(400, str(exc))
+        key = f"{start.isoformat()}~{end.isoformat()}_{category_id}"
+    else:
+        day = day or timezone.localdate()
+        team = _team(request, category_id, day.year)
+        mc = week_for(team, day)
+        key = f"{day.isoformat()}_{category_id}"
+    # The day strip under the period picker: every day with its MD label,
+    # and the rival on match days.
+    from load_control.matches import match_links
+    from load_control.week import days_of
+
+    ds = list(days_of(mc))
+    links = match_links(team.club, team.season, team.bracket,
+                        {d.date: ("friendly" if d.kind == "friendly" else "official") for d in ds if d.is_match})
+    strip = [{"date": d.date.isoformat(), "md_label": d.md_label or "", "kind": d.kind,
+              "opponent": (links.get(d.date) or {}).get("opponent") or ""} for d in ds]
     return {"team": {"label": team.label, "season": team.season, "categories": [c.name for c in team.categories()]},
-            "week_key": f"{day.isoformat()}_{category_id}", **describe(mc, day)}
+            "week_key": key, **describe(mc, day), "days": strip}
+
+
+@router.get("/calendar")
+def calendar_view(request, category_id: str, start: date, end: date):
+    """The team's matches between `start` and `end`, for the date picker:
+    [{date, kind: official | friendly, opponent, event_id}]."""
+    from load_control.matches import match_links, team_match_days
+
+    _require(request, PERM_VIEW)
+    if (end - start).days > 100:
+        raise HttpError(400, "Rango demasiado largo.")
+    out = []
+    for year in range(start.year, end.year + 1):
+        try:
+            team = _team(request, category_id, year)
+        except HttpError:
+            continue
+        lo, hi = max(start, date(year, 1, 1)), min(end, date(year, 12, 31))
+        kinds = team_match_days(team.club, team.season, team.bracket, lo, hi)
+        links = match_links(team.club, team.season, team.bracket, kinds)
+        for d, kind in sorted(kinds.items()):
+            if lo <= d <= hi:
+                link = links.get(d) or {}
+                out.append({"date": d.isoformat(), "kind": kind, "opponent": link.get("opponent") or "",
+                            "event_id": link.get("event_id")})
+    return {"matches": out}

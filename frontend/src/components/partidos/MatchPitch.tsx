@@ -198,7 +198,7 @@ export default function MatchPitch({
         ))}
       </div>
       <p className={styles.hoverHint}>
-        Mové el cursor de un lado al otro para cambiar de equipo, o usá las
+        Mueve el cursor de un lado al otro para cambiar de equipo, o usa las
         pestañas.
       </p>
     </div>

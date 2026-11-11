@@ -100,7 +100,7 @@ export default function RegistrarIndexPage({ params }: PageProps) {
         <div className={styles.titles}>
           <span className={styles.eyebrow}>{player.first_name} {player.last_name}</span>
           <h1 className={styles.title}>Registrar examen</h1>
-          <p className={styles.sub}>Elegí la plantilla para cargar nuevos datos.</p>
+          <p className={styles.sub}>Elige la plantilla para cargar nuevos datos.</p>
         </div>
       </header>
 

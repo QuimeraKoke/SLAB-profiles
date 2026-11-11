@@ -187,7 +187,7 @@ export default function BodyMapField({ diagramKey, value, onChange, readOnly }: 
       {!readOnly && (
         <div className={styles.controls}>
           <span className={styles.hint}>
-            Hacé clic en la figura para marcar un punto — la zona se detecta
+            Haz clic en la figura para marcar un punto — la zona se detecta
             automáticamente. Clic en un punto para quitarlo.
           </span>
         </div>

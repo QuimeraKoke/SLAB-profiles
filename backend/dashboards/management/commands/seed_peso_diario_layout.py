@@ -34,7 +34,7 @@ TITULO = "Peso diario"
 
 JUGADOR = [
     {"chart_type": "line_with_selector", "title": "Peso diario", "column_span": 12,
-     "description": "Pesaje de la mañana. Elegí peso, diferencia con el ideal o IMC.",
+     "description": "Pesaje de la mañana. Elige peso, diferencia con el ideal o IMC.",
      "fields": ["peso", "dif_ideal", "imc"], "aggregation": Aggregation.ALL},
     {"chart_type": "comparison_table", "title": "Últimos pesajes", "column_span": 12,
      "fields": ["peso", "peso_ideal", "dif_ideal"], "aggregation": Aggregation.LAST_N,

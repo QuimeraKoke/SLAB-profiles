@@ -89,7 +89,7 @@ export default function TeamActivityCoverage({ widget }: Props) {
           hiddenCount={hiddenCount}
         />
         <div className={styles.empty}>
-          Ningún jugador tiene registros en este alcance. Activá
+          Ningún jugador tiene registros en este alcance. Activa
           &quot;Mostrar jugadores sin datos&quot; para ver el plantel completo.
         </div>
       </div>

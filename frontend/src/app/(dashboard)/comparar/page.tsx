@@ -13,7 +13,7 @@
  * - **Evolución** — las dos series SIN forzar que las fechas calcen. Cruzarlas
  *   por día calendario es lo que rompe la comparación entre divisiones: dos
  *   chicos de categorías distintas entrenan otros días, otros ciclos, otras
- *   temporadas, y el resultado es una línea con un punto y la otra vacía. Acá
+ *   temporadas, y el resultado es una línea con un punto y la otra vacía. Aquí
  *   el eje es relativo y cada serie arranca en su propio origen, así que se
  *   comparan las FORMAS de las curvas.
  *
@@ -143,7 +143,7 @@ export default function CompararPage() {
 
   // ── lesiones de los elegidos ────────────────────────────────────────
   // Aparte de la comparación: no dependen de las métricas ni de la vista, y
-  // un fallo acá deja los gráficos sin marcadores, no sin gráficos.
+  // un fallo aquí deja los gráficos sin marcadores, no sin gráficos.
   const [lesiones, setLesiones] = useState<InjuryRange[]>([]);
   useEffect(() => {
     let cancelado = false;
@@ -224,7 +224,7 @@ export default function CompararPage() {
 
       {elegidos.length === 0 ? (
         <p className={styles.vacio}>
-          Elegí un jugador para ver su ficha, o dos o más para compararlos.
+          Elige un jugador para ver su ficha, o dos o más para compararlos.
         </p>
       ) : !datos ? (
         <p className={styles.vacio}>{cargando ? "Cargando…" : "Sin datos."}</p>
@@ -396,7 +396,7 @@ function Radar({
   }), [metricas, datos.players, pct, porPercentil]);
 
   if (metricas.length === 0) {
-    return <p className={styles.vacio}>Configurá las métricas de esta sección.</p>;
+    return <p className={styles.vacio}>Configura las métricas de esta sección.</p>;
   }
   if (metricas.length < 3) {
     // Con menos de tres ejes el polígono degenera en una línea y engaña.
@@ -432,7 +432,7 @@ function Radar({
           <>
             Cada eje es el <strong>valor</strong>, escalado al máximo de los
             jugadores comparados — las unidades no comparten escala, así que sin
-            eso una métrica aplastaría a las demás. ⚠️ Acá{" "}
+            eso una métrica aplastaría a las demás. ⚠️ Aquí{" "}
             <strong>más lejos del centro NO siempre es mejor</strong>: en las
             métricas marcadas ↓ el valor bueno es el bajo.
           </>
@@ -686,7 +686,7 @@ function GraficosPorExamen({
     () => agruparPorExamen(datos.metrics), [datos.metrics]);
 
   if (grupos.length === 0) {
-    return <p className={styles.vacio}>Elegí al menos una métrica.</p>;
+    return <p className={styles.vacio}>Elige al menos una métrica.</p>;
   }
 
   return (
@@ -775,7 +775,7 @@ function Evolucion({
     return out;
   }, [series, lesiones]);
 
-  if (!metrica) return <p className={styles.vacio}>Elegí una métrica.</p>;
+  if (!metrica) return <p className={styles.vacio}>Elige una métrica.</p>;
 
   const lineas = new Set(datos.players.map((p) => p.line));
   const linea = lineas.size === 1 ? datos.players[0].line : null;
@@ -793,7 +793,7 @@ function Evolucion({
 
   return (
     <div>
-      {/* El título va acá porque ya no hay selector de métrica: con N gráficos
+      {/* El título va aquí porque ya no hay selector de métrica: con N gráficos
           apilados, la etiqueta del eje Y sola obliga a leer de costado para
           saber qué se está mirando. */}
       <h4 className={styles.graficoTitulo}>
@@ -940,7 +940,7 @@ function fechaCorta(iso: string): string {
 }
 
 /** El rango como query string. El control ya trae los presets y el tope de dos
- *  años; acá sólo se traduce a lo que el endpoint espera. */
+ *  años; aquí sólo se traduce a lo que el endpoint espera. */
 /** The date range as days, for the injury indicators (`ventana` builds the query). */
 function periodo(r: DateRangeValue): { desde: string | null; hasta: string; periodoLabel: string } {
   const hoy = new Date().toISOString().slice(0, 10);

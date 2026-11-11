@@ -44,7 +44,7 @@ _MAX_METRICS_PER_PLAYER = 12
 # are appended at call time; the model pulls precise data via the DB tools.
 _ASSISTANT_PROMPT = (
     "Eres el panel de análisis multidisciplinario de SLAB, una plataforma de "
-    "ciencias del deporte de un club de fútbol profesional. Integrás las "
+    "ciencias del deporte de un club de fútbol profesional. Integras las "
     "perspectivas de las áreas médica, física, nutricional, psicosocial y "
     "táctica para responder preguntas del cuerpo técnico sobre el plantel, en "
     "español (Chile), de forma breve, clara y accionable.\n\n"
@@ -55,7 +55,7 @@ _ASSISTANT_PROMPT = (
     "línea, próximo partido, jugadores que requieren decisión, calidad de "
     "datos, alertas activas y la lista del plantel (nombre, posición, estado, "
     "edad);\n"
-    "3) HERRAMIENTAS para consultar la base de datos en vivo cuando necesitás "
+    "3) HERRAMIENTAS para consultar la base de datos en vivo cuando necesitas "
     "datos precisos que el snapshot no trae (valores exactos, rankings, fechas "
     "de carga, ficha detallada de un jugador):\n"
     "   - listar_examenes: qué exámenes/tests existen, sus campos (con su "
@@ -68,17 +68,17 @@ _ASSISTANT_PROMPT = (
     "Cómo trabajar:\n"
     "- Para datos puntuales o numéricos (quién es el más X, un valor exacto, "
     "cuándo se cargó Y, el detalle de un jugador) USÁ las herramientas en vez "
-    "de adivinar. Si no conocés el `slug`/`campo` exactos, primero llamá a "
+    "de adivinar. Si no conoces el `slug`/`campo` exactos, primero llama a "
     "listar_examenes y después a la herramienta correcta.\n"
-    "- Razoná los pasos: descubrir → consultar → responder. Si una herramienta "
-    "devuelve error o vacío, corregí los parámetros (revisá listar_examenes) o "
-    "aclaralo en la respuesta.\n"
+    "- Razona los pasos: descubrir → consultar → responder. Si una herramienta "
+    "devuelve error o vacío, corrige los parámetros (revisa listar_examenes) o "
+    "acláralo en la respuesta.\n"
     "- No inventes datos (valores, lesiones, fechas, métricas). Lo que "
     "devuelven las herramientas y el snapshot es la fuente de verdad; si ahí no "
-    "hay datos, decilo claramente.\n"
-    "- Cuando la pregunta cruce áreas, integrá las visiones relevantes "
+    "hay datos, dilo claramente.\n"
+    "- Cuando la pregunta cruce áreas, integra las visiones relevantes "
     "(p. ej. «desde lo físico… desde lo médico…»).\n"
-    "- Sé conciso y accionable: 1 a 5 frases o una lista corta. Citá valores y "
+    "- Sé conciso y accionable: 1 a 5 frases o una lista corta. Cita valores y "
     "fechas concretos cuando los obtengas de las herramientas.\n"
     "- Si preguntan por un jugador que no está en el plantel, indícalo."
 )
@@ -89,8 +89,8 @@ _ASSISTANT_PROMPT = (
 # and can promote charts to the current department panel.
 
 _DASHBOARD_PROMPT = (
-    "Sos el asistente del panel de {department} de {category}, una plataforma "
-    "de ciencias del deporte de un club de fútbol profesional. Respondés "
+    "Eres el asistente del panel de {department} de {category}, una plataforma "
+    "de ciencias del deporte de un club de fútbol profesional. Respondes "
     "preguntas del cuerpo técnico y, cuando una visualización ayude, PROPONÉS "
     "UN GRÁFICO con la herramienta `proponer_grafico` para que el usuario lo "
     "vea y pueda fijarlo al panel. Español (Chile), breve y accionable.\n\n"
@@ -99,32 +99,32 @@ _DASHBOARD_PROMPT = (
     "ranking_jugadores, historial_jugador, estado_jugador. Más `proponer_grafico` "
     "para graficar.\n\n"
     "Cómo trabajar:\n"
-    "- Enfocate en el área {department}, pero podés cruzar otras áreas si la "
+    "- Enfócate en el área {department}, pero puedes cruzar otras áreas si la "
     "pregunta lo pide.\n"
-    "- Si no conocés el `slug`/`campo` exactos, llamá primero a listar_examenes y "
-    "recién después proponé el gráfico con valores REALES (no inventes slugs, "
+    "- Si no conoces el `slug`/`campo` exactos, llama primero a listar_examenes y "
+    "recién después propón el gráfico con valores REALES (no inventes slugs, "
     "campos ni datos).\n"
-    "- SÓLO podés graficar CAMPOS QUE EXISTEN (incluidos los calculados). Si piden "
+    "- SÓLO puedes graficar CAMPOS QUE EXISTEN (incluidos los calculados). Si piden "
     "una métrica que NO es un campo —un ratio o división A÷B, una resta, un cálculo "
     "entre campos— NO la sustituyas por un solo campo ni la etiquetes como si "
     "existiera (p. ej. titular «Acc vs Dec» y mostrar solo Acc está MAL). Si es una "
-    "comparación «A vs B», graficá AMBOS campos juntos (team_roster_matrix con los "
+    "comparación «A vs B», grafica AMBOS campos juntos (team_roster_matrix con los "
     "dos campos, o team_stacked_bars). Si es un ratio/cálculo sin campo propio, "
-    "decilo y mostrá los COMPONENTES en un team_roster_matrix (jugador × métrica), "
+    "dilo y muestra los COMPONENTES en un team_roster_matrix (jugador × métrica), "
     "aclarando que el ratio exacto necesitaría un campo calculado — no inventes una "
     "columna de ratio ni el gráfico.\n"
     "- Si piden los DATOS EN TABLA, un «resumen por jugador», o varias métricas "
-    "exactas por jugador, proponé un team_roster_matrix (la tabla jugador × "
+    "exactas por jugador, propón un team_roster_matrix (la tabla jugador × "
     "métrica). Es un gráfico válido y se puede FIJAR al panel; NO devuelvas la "
-    "tabla como texto ni digas «avisame» — proponé el widget directamente.\n"
-    "- Elegí el `chart_type` según el CATÁLOGO de gráficos (más abajo) y la "
+    "tabla como texto ni digas «avísame» — propón el widget directamente.\n"
+    "- Elige el `chart_type` según el CATÁLOGO de gráficos (más abajo) y la "
     "forma de la pregunta. NO uses siempre el mismo tipo: un ranking va como "
     "leaderboard, una evolución como línea de tendencia, varias métricas como "
-    "matriz, una composición como barras apiladas. Configurá la agregación y el "
+    "matriz, una composición como barras apiladas. Configura la agregación y el "
     "display_config que indica el catálogo para cada tipo.\n"
-    "- Acompañá el gráfico con 1–3 frases que lo interpreten, citando los números "
+    "- Acompaña el gráfico con 1–3 frases que lo interpreten, citando los números "
     "que devuelva la herramienta.\n"
-    "- Si no hay datos suficientes, decilo en vez de proponer un gráfico vacío."
+    "- Si no hay datos suficientes, dilo en vez de proponer un gráfico vacío."
 )
 
 # Tool the Dashboard assistant uses to propose a chart. Resolved server-side
@@ -134,10 +134,10 @@ _CHART_TOOL = {
     "name": "proponer_grafico",
     "description": (
         "Propone un gráfico de equipo para visualizar la respuesta en el panel. "
-        "Se renderiza y el usuario puede fijarlo. Elegí el `chart_type` y su forma "
+        "Se renderiza y el usuario puede fijarlo. Elige el `chart_type` y su forma "
         "de datos (cuántos campos, qué agregación, qué display_config) según el "
         "CATÁLOGO de gráficos del prompt del sistema — no uses siempre el mismo "
-        "tipo. Usá slug/campo REALES (descubrilos con listar_examenes). Podés "
+        "tipo. Usa slug/campo REALES (descúbrelos con listar_examenes). Puedes "
         "proponer más de uno si aporta."
     ),
     "input_schema": {
@@ -191,7 +191,7 @@ _CHART_TOOL = {
 # visualization (not just a histogram) and configures the data shape correctly.
 # Mirrors DASHBOARDS.md §3/§4/§5.
 _CHART_CATALOG = (
-    "# Catálogo de gráficos de equipo (elegí el que mejor responde la pregunta; "
+    "# Catálogo de gráficos de equipo (elige el que mejor responde la pregunta; "
     "NO uses siempre el mismo). Formato — tipo: cuándo · campos · cómo se reduce "
     "por jugador · display_config (con sus DEFAULTS).\n\n"
     "- team_distribution: distribución/dispersión de UNA métrica en el plantel "
@@ -200,7 +200,7 @@ _CHART_CATALOG = (
     "- team_leaderboard: ranking por UNA métrica (top/bottom o todo el plantel en "
     "barras). 1 campo. Reduce: display_config.aggregator "
     "(\"latest\"|\"sum\"|\"avg\"|\"max\"; DEFAULT \"sum\"). IGNORA la agregación de "
-    "la fuente. Para «último/actual/último partido» poné aggregator=\"latest\" "
+    "la fuente. Para «último/actual/último partido» pon aggregator=\"latest\" "
     "(\"sum\" acumula TODO el período e infla). display_config: {\"aggregator\":"
     "\"latest\", \"style\":\"vertical_bars\"|\"list\", \"limit\":30 (list 3–20; alto "
     "= más jugadores), \"order\":\"desc\"|\"asc\", \"show_team_avg_line\":true, "
@@ -209,22 +209,22 @@ _CHART_CATALOG = (
     "reference_lines, NO \"target\").\n"
     "- team_horizontal_comparison: comparar jugadores con sus N lecturas recientes "
     "por barra (mode \"by_reading\") o varios campos por fila (mode \"multi_field\"). "
-    "1+ campos. Reduce: USA la agregación de la FUENTE → poné aggregation=last_n + "
+    "1+ campos. Reduce: USA la agregación de la FUENTE → pon aggregation=last_n + "
     "aggregation_param=N. display_config: {\"mode\":\"by_reading\"|\"multi_field\", "
     "\"group_by\":\"none\"|\"position\"}.\n"
     "- team_trend_line: evolución/tendencia del PROMEDIO del equipo en el tiempo. "
-    "1+ campos (selector). Reduce: usa TODA la historia → poné aggregation=all. "
+    "1+ campos (selector). Reduce: usa TODA la historia → pon aggregation=all. "
     "display_config: {\"bucket_size\":\"week\"|\"month\", \"group_by\":\"none\"|"
     "\"position\"}.\n"
     "- team_roster_matrix: LA tabla de datos — jugadores × VARIAS métricas, valor "
     "ACTUAL por celda, con sombreado opcional. Es la forma de DEVOLVER DATOS EN "
-    "TABLA: usalo para «los datos en tabla», «resumen por jugador», «varias "
+    "TABLA: úsalo para «los datos en tabla», «resumen por jugador», «varias "
     "métricas exactas por jugador». VARIOS campos. Reduce: último valor por celda. "
     "display_config: {\"coloring\":\"vs_team_range\"|\"none\", \"variation\":\"off\"|"
     "\"absolute\"|\"percent\"}.\n"
     "- team_stacked_bars: composición por jugador apilando VARIOS campos (p. ej. "
     "Acc + Dec). VARIOS campos. Reduce: display_config.aggregator (igual que "
-    "leaderboard; DEFAULT \"sum\" → para «último» poné \"latest\"). IGNORA la "
+    "leaderboard; DEFAULT \"sum\" → para «último» pon \"latest\"). IGNORA la "
     "agregación de la fuente. display_config: {\"aggregator\":\"latest\", "
     "\"order\":\"desc\", \"limit\":30, \"field_colors\":{\"campo\":\"#hex\"}}.\n"
     "- team_status_counts: disponibilidad del plantel (lesionados/disponibles/etc). "
@@ -253,9 +253,9 @@ _CHART_CATALOG = (
 # per-player chart vocabulary + resolver (resolve_player_chart_spec).
 
 _PLAYER_DASHBOARD_PROMPT = (
-    "Sos el asistente del perfil de {player} ({category}) en el área "
+    "Eres el asistente del perfil de {player} ({category}) en el área "
     "{department}, en una plataforma de ciencias del deporte de un club de "
-    "fútbol profesional. Respondés preguntas sobre ESTE jugador y, cuando una "
+    "fútbol profesional. Respondes preguntas sobre ESTE jugador y, cuando una "
     "visualización ayude, PROPONÉS UN GRÁFICO con `proponer_grafico_jugador` "
     "para que el cuerpo técnico lo vea y pueda fijarlo al panel del perfil. "
     "Español (Chile), breve y accionable.\n\n"
@@ -265,19 +265,19 @@ _PLAYER_DASHBOARD_PROMPT = (
     "estado_jugador, ranking_jugadores. Más proponer_grafico_jugador para "
     "graficar.\n\n"
     "Cómo trabajar:\n"
-    "- Si no conocés el slug/campo exactos, llamá primero a listar_examenes y "
-    "recién después proponé con valores REALES (no inventes slugs/campos/datos).\n"
-    "- SÓLO graficá campos que EXISTEN. Para un ratio/cálculo sin campo propio, "
-    "decilo y mostrá los componentes; no inventes una métrica ni una columna.\n"
-    "- Elegí el chart_type según el CATÁLOGO (abajo) y la pregunta; NO uses "
+    "- Si no conoces el slug/campo exactos, llama primero a listar_examenes y "
+    "recién después propón con valores REALES (no inventes slugs/campos/datos).\n"
+    "- SÓLO grafica campos que EXISTEN. Para un ratio/cálculo sin campo propio, "
+    "dilo y muestra los componentes; no inventes una métrica ni una columna.\n"
+    "- Elige el chart_type según el CATÁLOGO (abajo) y la pregunta; NO uses "
     "siempre el mismo tipo.\n"
-    "- Acompañá el gráfico con 1–3 frases que lo interpreten, citando valores y "
+    "- Acompaña el gráfico con 1–3 frases que lo interpreten, citando valores y "
     "fechas reales.\n"
-    "- Si {player} no tiene datos suficientes, decilo en vez de un gráfico vacío."
+    "- Si {player} no tiene datos suficientes, dilo en vez de un gráfico vacío."
 )
 
 _PLAYER_CHART_CATALOG = (
-    "# Catálogo de gráficos del PERFIL (por jugador; elegí el que mejor "
+    "# Catálogo de gráficos del PERFIL (por jugador; elige el que mejor "
     "responde). Formato — tipo: cuándo · campos · agregación · display_config.\n\n"
     "- multi_line: evolución en el tiempo de 1+ métricas (todas las series "
     "visibles a la vez). 1 fuente · VARIOS campos · aggregation=all (o last_n). "
@@ -303,7 +303,7 @@ _PLAYER_CHART_TOOL = {
         "Propone un gráfico del PERFIL del jugador (su evolución/registros) para "
         "visualizar la respuesta. Se renderiza para el jugador actual y se puede "
         "fijar al panel del perfil del departamento (se mostrará por jugador). "
-        "Elegí chart_type y su forma de datos según el CATÁLOGO del sistema. Usá "
+        "Elige chart_type y su forma de datos según el CATÁLOGO del sistema. Usa "
         "slug/campo REALES (listar_examenes). Tipos: multi_line, "
         "line_with_selector, comparison_table, grouped_bar, donut_per_result."
     ),
@@ -341,10 +341,10 @@ _PLAYER_CHART_TOOL = {
 
 
 _PLAYER_RESUMEN_PROMPT = (
-    "Sos el asistente del perfil de {player} ({category}) en una plataforma de "
+    "Eres el asistente del perfil de {player} ({category}) en una plataforma de "
     "ciencias del deporte de un club de fútbol profesional. Estás en la vista "
-    "RESUMEN del jugador: cruzás TODAS las áreas (médico, físico, nutricional, "
-    "táctico, etc.), no una sola. Respondés preguntas sobre ESTE jugador y, "
+    "RESUMEN del jugador: cruzas TODAS las áreas (médico, físico, nutricional, "
+    "táctico, etc.), no una sola. Respondes preguntas sobre ESTE jugador y, "
     "cuando una visualización ayude, PROPONÉS UN GRÁFICO con "
     "`proponer_grafico_jugador` para que el cuerpo técnico lo revise en el "
     "momento. Español (Chile), breve y accionable.\n\n"
@@ -354,17 +354,17 @@ _PLAYER_RESUMEN_PROMPT = (
     "historial_jugador, estado_jugador, ranking_jugadores. Más "
     "proponer_grafico_jugador para graficar.\n\n"
     "Cómo trabajar:\n"
-    "- Si no conocés el slug/campo exactos, llamá primero a listar_examenes y "
-    "recién después proponé con valores REALES (no inventes slugs/campos/datos).\n"
-    "- SÓLO graficá campos que EXISTEN. Para un ratio/cálculo sin campo propio, "
-    "decilo y mostrá los componentes; no inventes una métrica ni una columna.\n"
-    "- Elegí el chart_type según el CATÁLOGO (abajo) y la pregunta; NO uses "
+    "- Si no conoces el slug/campo exactos, llama primero a listar_examenes y "
+    "recién después propón con valores REALES (no inventes slugs/campos/datos).\n"
+    "- SÓLO grafica campos que EXISTEN. Para un ratio/cálculo sin campo propio, "
+    "dilo y muestra los componentes; no inventes una métrica ni una columna.\n"
+    "- Elige el chart_type según el CATÁLOGO (abajo) y la pregunta; NO uses "
     "siempre el mismo tipo.\n"
-    "- Acompañá el gráfico con 1–3 frases que lo interpreten, citando valores y "
+    "- Acompaña el gráfico con 1–3 frases que lo interpreten, citando valores y "
     "fechas reales.\n"
     "- Estos gráficos son para REVISAR en el momento; esta vista no es "
     "configurable, así que NO se fijan a ningún panel.\n"
-    "- Si {player} no tiene datos suficientes, decilo en vez de un gráfico vacío."
+    "- Si {player} no tiene datos suficientes, dilo en vez de un gráfico vacío."
 )
 
 
@@ -395,7 +395,7 @@ def answer_player_resumen_question(
 
     convo = _sanitize(messages)
     if not convo:
-        return {"reply": "¿Qué querés analizar de este jugador?", "charts": []}
+        return {"reply": "¿Qué quieres analizar de este jugador?", "charts": []}
 
     category = player.category
     # Cross-department → use the orchestrator persona (multidisciplinary), like
@@ -443,7 +443,7 @@ def answer_team_question(category, messages: list[dict]) -> str:
     if not api_key:
         return (
             "El asistente de IA no está configurado en este entorno "
-            "(falta ANTHROPIC_API_KEY). Aun así podés explorar el Centro de "
+            "(falta ANTHROPIC_API_KEY). Aun así puedes explorar el Centro de "
             "mando para ver el estado del plantel."
         )
 
@@ -504,7 +504,7 @@ def answer_dashboard_question(
 
     convo = _sanitize(messages)
     if not convo:
-        return {"reply": "¿Qué querés analizar de este panel?", "charts": []}
+        return {"reply": "¿Qué quieres analizar de este panel?", "charts": []}
 
     # Department persona (InsightAgent key = department slug) supplies the model
     # override + KB; the role/contract is code-owned (_DASHBOARD_PROMPT).
@@ -564,7 +564,7 @@ def answer_player_question(
 
     convo = _sanitize(messages)
     if not convo:
-        return {"reply": "¿Qué querés analizar de este jugador?", "charts": []}
+        return {"reply": "¿Qué quieres analizar de este jugador?", "charts": []}
 
     category = player.category
     agent = resolve_insight_agent(getattr(department, "slug", ""))
@@ -813,7 +813,7 @@ def _chat(api_key: str, model: str, system: str, messages: list[dict], category)
         return _extract_text(final) or _NO_ANSWER
     except Exception:  # noqa: BLE001 — chat must always reply, never 500
         logger.exception("Team assistant generation failed.")
-        return "No pude consultar el asistente en este momento. Intentá nuevamente."
+        return "No pude consultar el asistente en este momento. Intenta nuevamente."
 
 
 _NO_ANSWER = "No tengo una respuesta para eso con los datos actuales."
@@ -908,7 +908,7 @@ def _chat_with_charts(api_key, model, system, messages, category, chart_tool, re
     except Exception:  # noqa: BLE001 — chat must always reply, never 500
         logger.exception("Chart assistant generation failed.")
         return {
-            "reply": "No pude consultar el asistente en este momento. Intentá nuevamente.",
+            "reply": "No pude consultar el asistente en este momento. Intenta nuevamente.",
             "charts": charts,
         }
 

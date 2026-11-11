@@ -160,7 +160,7 @@ class Command(BaseCommand):
                 if not opts["create_if_missing"]:
                     self.stdout.write(self.style.WARNING(
                         f"· {club.name}: plantilla '{SLUG}' no existe "
-                        "(pasá --create-if-missing)."
+                        "(pasa --create-if-missing)."
                     ))
                     continue
                 template = ExamTemplate(
@@ -169,7 +169,7 @@ class Command(BaseCommand):
             elif template.is_locked and not opts["unlock"]:
                 self.stdout.write(self.style.WARNING(
                     f"· {club.name}: '{template.name}' está bloqueada — "
-                    "pasá --unlock para sobrescribir."
+                    "pasa --unlock para sobrescribir."
                 ))
                 continue
             elif opts["unlock"]:

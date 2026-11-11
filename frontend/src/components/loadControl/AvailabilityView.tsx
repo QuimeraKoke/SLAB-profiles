@@ -16,6 +16,7 @@ import { type AvailabilityPayload, shortDate } from "@/lib/loadControl";
 
 import styles from "./loadControl.module.css";
 import { PlayerName } from "@/components/loadControl/PlayerPhotos";
+import ScopeBadge from "./ScopeBadge";
 
 const HISTORY_LIMIT = 8;
 
@@ -26,18 +27,18 @@ function returnText(days: number | null, expected: string | null) {
   return <span>Retorno estimado {shortDate(expected)} · faltan <strong>{days}</strong> día{days === 1 ? "" : "s"}</span>;
 }
 
-export default function AvailabilityView({ microcycleId }: { microcycleId: string }) {
+export default function AvailabilityView({ microcycleId, day }: { microcycleId: string; day?: string | null }) {
   const [data, setData] = useState<AvailabilityPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    api<AvailabilityPayload>(`/load-control/microcycles/${microcycleId}/availability`)
+    api<AvailabilityPayload>(`/load-control/microcycles/${microcycleId}/availability${day ? `?day=${day}` : ""}`)
       .then((d) => { if (!cancelled) { setData(d); setError(null); } })
       .catch((e) => { if (!cancelled) setError(e instanceof ApiError ? e.message : "No se pudo cargar la disponibilidad."); });
     return () => { cancelled = true; };
-  }, [microcycleId]);
+  }, [microcycleId, day]);
 
   if (error) return <div className={styles.error} role="alert">{error}</div>;
   if (!data) return <p className={styles.muted}>Cargando…</p>;
@@ -48,8 +49,8 @@ export default function AvailabilityView({ microcycleId }: { microcycleId: strin
     <>
       <section className={styles.card} aria-labelledby="av-sum">
         <div className={styles.cardHead}>
-          <h2 id="av-sum" className={styles.h2}>Estado del plantel · {shortDate(data.date)}</h2>
-          <span className={styles.muted}>{data.players} jugadores</span>
+          <h2 id="av-sum" className={styles.h2}>Estado del plantel</h2>
+          <span className={styles.cardMeta}><ScopeBadge kind="day" /> <span className={styles.muted}>{data.players} jugadores</span></span>
         </div>
         <div className={styles.countGrid}>
           {data.counts.map((c) => (

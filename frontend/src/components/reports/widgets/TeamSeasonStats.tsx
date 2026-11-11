@@ -108,7 +108,7 @@ export default function TeamSeasonStats({ widget }: Props) {
         <div className={styles.empty}>
           {data.error
             ? `Configuración inválida: ${data.error}`
-            : "Sin partidos seleccionados — elegí al menos uno para ver estadísticas."}
+            : "Sin partidos seleccionados — elige al menos uno para ver estadísticas."}
         </div>
       </div>
     );
@@ -126,7 +126,7 @@ export default function TeamSeasonStats({ widget }: Props) {
         />
         <div className={styles.empty}>
           Ningún jugador tiene citaciones en los partidos seleccionados.
-          Activá &quot;Mostrar jugadores sin convocatoria&quot; para verlos.
+          Activa &quot;Mostrar jugadores sin convocatoria&quot; para verlos.
         </div>
       </div>
     );

@@ -112,7 +112,7 @@ export default function LayoutManager({
         <h2 id="layout-manager-title" className={styles.title}>Vistas de {departmentName}</h2>
         <p className={styles.hint}>
           {layouts.length === 1
-            ? "Con una sola vista, el menú muestra el departamento como siempre. Agregá otra y se vuelve un submenú."
+            ? "Con una sola vista, el menú muestra el departamento como siempre. Agrega otra y se vuelve un submenú."
             : "El menú muestra estas vistas en este orden; la primera es la que abre el departamento."}
         </p>
       </header>

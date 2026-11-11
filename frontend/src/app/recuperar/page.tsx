@@ -17,7 +17,7 @@ export default function RecuperarPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!/.+@.+\..+/.test(email.trim())) {
-      setError("Ingresá un email válido.");
+      setError("Ingresa un email válido.");
       emailRef.current?.focus();
       return;
     }
@@ -30,7 +30,7 @@ export default function RecuperarPage() {
       });
       setSent(true);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "No se pudo enviar. Probá de nuevo.");
+      setError(err instanceof ApiError ? err.message : "No se pudo enviar. Prueba de nuevo.");
     } finally {
       setSubmitting(false);
     }
@@ -45,7 +45,7 @@ export default function RecuperarPage() {
         <>
           <div className={styles.success} role="status">
             Si <strong>{email.trim()}</strong> tiene una cuenta en SLAB, te enviamos
-            un enlace. Vale por una hora y sirve una sola vez. Revisá también la
+            un enlace. Vale por una hora y sirve una sola vez. Revisa también la
             carpeta de spam.
           </div>
           <Link href="/login" className={styles.link}>Volver a ingresar</Link>

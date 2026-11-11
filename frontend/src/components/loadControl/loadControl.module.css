@@ -201,3 +201,43 @@ span.matchLink { text-decoration: none; }
 .painLegend > span:first-child { margin-right: 4px; }
 .painSwatch { display: inline-block; width: 16px; height: 10px; border-radius: 2px; }
 @media (max-width: 900px) { .painGrid { grid-template-columns: 1fr; } }
+/* Day navigator: the date opens the calendar (CalendarPicker). */
+.calWrap { position: relative; display: inline-flex; }
+.dateBtn { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 12px; border: 1px solid #d0d5dd;
+  border-radius: 8px; background: #ffffff; color: #101828; font: inherit; font-size: 14px; cursor: pointer; }
+.dateBtn:hover { background: #f9fafb; border-color: #98a2b3; }
+.dateBtn[aria-expanded="true"] { border-color: #4f46e5; box-shadow: 0 0 0 3px #e0e7ff; }
+.dateBtn svg { color: #4f46e5; }
+/* Scope of a card (ScopeBadge): which time it answers. */
+.scope { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; border-radius: 999px;
+  padding: 2px 9px 2px 7px; white-space: nowrap; border: 1px solid; }
+.scopeKind { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; font-size: 10.5px; }
+.scopeDay { background: #eef2ff; color: #3730a3; border-color: #c7d2fe; }
+.scopePeriod { background: #f0fdf4; color: #14532d; border-color: #bbf7d0; }
+/* PeriodBar: period picker + day strip (the only time control). */
+.periodBar { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.periodRow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: #101828; }
+.iconBtn { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 8px;
+  border: 1px solid #c7d2fe; background: #eef2ff; color: #3730a3; cursor: pointer; }
+.iconBtn:hover { background: #e0e7ff; }
+.iconBtn:focus-visible, .chip:focus-visible, .dateBtn:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 1px; }
+.strip { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 6px; scroll-snap-type: x proximity; }
+.chip { flex: 0 0 auto; min-width: 64px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 8px; border-radius: 10px; border: 1px solid #e4e7ec; background: #fff; color: #101828; font: inherit;
+  cursor: pointer; scroll-snap-align: center; }
+.chip:hover:not(:disabled) { border-color: #98a2b3; }
+.chip:disabled { opacity: 0.45; cursor: not-allowed; }
+.chipDay { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.chipSub { font-size: 11px; color: #667085; white-space: nowrap; }
+.chipOfficial { background: #1e3a8a; border-color: #1e3a8a; color: #fff; }
+.chipOfficial .chipSub { color: #dbeafe; }
+.chipFriendly { border: 1.5px solid #1e3a8a; color: #1e3a8a; }
+.chipToday { box-shadow: inset 0 -3px 0 #0a2240; }
+.chipOn, .chipOn.chipOfficial, .chipOn.chipFriendly { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+.chipOn .chipSub { color: #e0e7ff; }
+.noTime { font-size: 13px; color: #475467; margin: 0; }
+@media (max-width: 640px) {
+  .dateBtn { flex: 1 1 auto; min-width: 0; }
+  .dateBtn strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+.cardMeta { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }

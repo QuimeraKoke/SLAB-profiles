@@ -115,7 +115,7 @@ def _welcome_html(*, intro, email, temp_password, login_url, club_name,
                 font-size:14px;font-weight:bold;padding:12px 22px;border-radius:8px">Ingresar a SLAB</a>
       <p style="font-size:12px;line-height:1.5;color:#6b7280;margin:22px 0 4px">
         Al ingresar te vamos a pedir que elijas una contraseña propia. Si no
-        esperabas este correo, podés ignorarlo.
+        esperabas este correo, puedes ignorarlo.
       </p>
     </td></tr>
     <tr><td style="padding:16px 32px 28px;border-top:1px solid #f3f4f6">
@@ -153,13 +153,13 @@ def send_welcome_email(user_id, temp_password: str, reason: str = "welcome") -> 
     if reason == "reset":
         subject = "SLAB — Restablecimiento de contraseña"
         intro = (
-            "Se restableció tu contraseña en SLAB. Usá esta contraseña "
+            "Se restableció tu contraseña en SLAB. Usa esta contraseña "
             "temporal para ingresar:"
         )
     else:
         subject = f"Bienvenido a SLAB — {club_name}"
         intro = (
-            f"Se creó tu cuenta en SLAB para {club_name}. Usá estos datos "
+            f"Se creó tu cuenta en SLAB para {club_name}. Usa estos datos "
             "para ingresar:"
         )
 
@@ -167,7 +167,7 @@ def send_welcome_email(user_id, temp_password: str, reason: str = "welcome") -> 
         f"{intro}\n\n"
         f"Usuario (email): {user.email}\n"
         f"Contraseña temporal: {temp_password}\n\n"
-        f"Ingresá en: {login_url}\n\n"
+        f"Ingresa en: {login_url}\n\n"
         "Al ingresar te vamos a pedir que elijas una contraseña propia.\n"
     )
 
@@ -212,14 +212,14 @@ def _reset_link_html(*, reset_url, club_name, slab_cid, club_cid):
     <tr><td style="padding:8px 32px 0">
       <h1 style="font-size:20px;margin:16px 0 4px;color:#111827">Recuperar tu contraseña</h1>
       <p style="font-size:14px;line-height:1.5;color:#374151;margin:8px 0 20px">
-        Pediste cambiar tu contraseña de SLAB. Usá este botón para elegir una nueva.
+        Pediste cambiar tu contraseña de SLAB. Usa este botón para elegir una nueva.
         El enlace vale por una hora y sirve una sola vez.
       </p>
       <a href="{reset_url}"
          style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;
                 font-size:14px;font-weight:bold;padding:12px 22px;border-radius:8px">Elegir nueva contraseña</a>
       <p style="font-size:12px;line-height:1.5;color:#6b7280;margin:22px 0 4px">
-        Si no lo pediste vos, ignorá este correo: tu contraseña sigue igual.
+        Si no lo pediste tú, ignora este correo: tu contraseña sigue igual.
       </p>
     </td></tr>
     <tr><td style="padding:16px 32px 28px;border-top:1px solid #f3f4f6">
@@ -251,9 +251,9 @@ def send_password_reset_email(user_id) -> dict:
     msg = EmailMultiAlternatives(
         subject="SLAB — Recuperar contraseña",
         body=(
-            "Pediste cambiar tu contraseña de SLAB. Elegí una nueva en este "
+            "Pediste cambiar tu contraseña de SLAB. Elige una nueva en este "
             f"enlace (vale por una hora y sirve una sola vez):\n\n{url}\n\n"
-            "Si no lo pediste vos, ignorá este correo: tu contraseña sigue igual.\n"
+            "Si no lo pediste tú, ignora este correo: tu contraseña sigue igual.\n"
         ),
         from_email=settings.DEFAULT_FROM_EMAIL,
         to=[user.email],

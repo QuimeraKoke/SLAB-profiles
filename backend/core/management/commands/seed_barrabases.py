@@ -292,7 +292,7 @@ class Command(BaseCommand):
 
         posiciones = list(Position.objects.filter(club=club).order_by("sort_order"))
         if not posiciones:
-            raise CommandError("El club quedó sin posiciones; revisá el origen.")
+            raise CommandError("El club quedó sin posiciones; revisa el origen.")
         # Una plantilla de puestos realista: un arquero cada ~11, el resto
         # repartido por línea. Determinista, no sorteada.
         creados = 0
@@ -698,7 +698,7 @@ class Command(BaseCommand):
     def _microciclo(self, cats) -> None:
         """MD-n / MD+n de cada sesión de GPS, del calendario de la demo.
 
-        En el club real el día lo escribe el club (su CÓDIGO); acá el
+        En el club real el día lo escribe el club (su CÓDIGO); aquí el
         calendario lo inventa la propia demo, así que derivarlo de él es
         exacto. Sin esto los gráficos y filtros por día de microciclo de la
         demo salen vacíos.
@@ -994,7 +994,7 @@ class Command(BaseCommand):
         # Explícito, no por omisión: un usuario de demo con `is_superuser`
         # saltea TODO el scoping —ve los otros clubes y pasa por el bypass de
         # `_has_perm`— y la demo dejaría de mostrar los permisos funcionando.
-        # Apareció en True una vez sin que el código lo pusiera; fijarlo acá
+        # Apareció en True una vez sin que el código lo pusiera; fijarlo aquí
         # cierra la puerta sea cual sea la causa.
         usuario.is_superuser = False
         usuario.is_staff = False
@@ -1015,7 +1015,7 @@ class Command(BaseCommand):
         else:
             self.avisos.append(
                 "No existe el grupo Editor: el usuario demo entra sin "
-                "permisos. Corré `seed_role_groups`.")
+                "permisos. Corre `seed_role_groups`.")
 
         # Desarrollo y Crecimiento: un permiso aparte que Editor no trae. Va al
         # USUARIO, no al grupo — darlo a Editor se lo daría a los Editores de
@@ -1177,7 +1177,7 @@ def _antropometria(jugador, pid: str, cuando, ahora, dist_talla) -> dict:
 
     Muestrearlas por separado en cada medición daba tallas que bajaban
     (144,2 → 143,2 → 146,5 → 143,2 cm) y 13 kg de diferencia en un mes, y
-    Crecimiento calculaba velocidades de nada. Acá cada jugador tiene su edad
+    Crecimiento calculaba velocidades de nada. Aquí cada jugador tiene su edad
     de pico (temprano, normal o tardío), su talla de HOY sacada de la
     distribución real de su categoría, y la curva hacia atrás; la talla
     sentado y el peso siguen a la talla.

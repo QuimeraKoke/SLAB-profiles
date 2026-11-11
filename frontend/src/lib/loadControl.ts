@@ -318,4 +318,8 @@ export interface DayNav {
   team: { label: string; season: number; categories: string[] };
   week_key: string; day: string; start_date: string; end_date: string; number: number; kind: string;
   planned: boolean; microcycle_id: string | null; md_label: string; day_kind: DayKind | "";
+  /** A period picked with start + end dates (Centro de mando › Período), not a calendar week. */
+  range?: boolean;
+  /** Every day of the period, for the day strip. */
+  days?: { date: string; md_label: string; kind: string; opponent: string }[];
 }

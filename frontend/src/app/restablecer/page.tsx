@@ -66,7 +66,7 @@ function ResetForm() {
   }
 
   return (
-    <AuthShell title="Elegí una contraseña nueva">
+    <AuthShell title="Elige una contraseña nueva">
       <form className={styles.form} onSubmit={handleSubmit} noValidate>
         <label className={styles.field}>
           <span className={styles.label}>Nueva contraseña</span>
@@ -84,7 +84,7 @@ function ResetForm() {
           <span className={styles.hint}>{PASSWORD_HINT}</span>
         </label>
         <label className={styles.field}>
-          <span className={styles.label}>Repetila</span>
+          <span className={styles.label}>Repítela</span>
           <input
             type="password"
             className={styles.input}

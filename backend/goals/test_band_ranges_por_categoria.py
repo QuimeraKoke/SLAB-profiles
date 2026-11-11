@@ -103,14 +103,14 @@ class BandasPorCategoriaTests(TestCase):
 
     def test_el_umbral_del_chico_tambien_dispara_cuando_corresponde(self):
         # El guard del test anterior sería igual de feliz si la regla del chico
-        # nunca disparara. Acá se comprueba que sí lo hace, bajo SU umbral.
+        # nunca disparara. Aquí se comprueba que sí lo hace, bajo SU umbral.
         self._rule(self.sub13, ranges=BANDAS_SUB13)
         self._save(self.chico, 60.0)                 # < 68,3 → Muy Deficiente
         self.assertTrue(Alert.objects.filter(player=self.chico).exists())
 
     # ── compatibilidad ──────────────────────────────────────────────────
     def test_sin_ranges_se_usan_las_del_campo(self):
-        # Toda regla existente cae por acá: el cambio no puede alterarlas.
+        # Toda regla existente cae por aquí: el cambio no puede alterarlas.
         self._rule(self.sub18)
         self._save(self.grande, 100.0)               # < 125 en las del campo
         self.assertTrue(Alert.objects.filter(player=self.grande).exists())

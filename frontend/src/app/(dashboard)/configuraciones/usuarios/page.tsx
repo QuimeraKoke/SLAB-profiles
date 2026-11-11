@@ -260,7 +260,7 @@ function UsersAdmin() {
     if (!emailOk) errors.email = true;
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
-      setActionError("Revisá los campos marcados.");
+      setActionError("Revisa los campos marcados.");
       (errors.first_name
         ? firstNameRef
         : errors.last_name
@@ -354,8 +354,8 @@ function UsersAdmin() {
           <span className={styles.eyebrow}>Administración</span>
           <h1 className={styles.title}>Usuarios</h1>
           <p className={styles.subtitle}>
-            Creá cuentas para el staff, asigná su rol y el alcance de datos que
-            ven, y restablecé contraseñas. Al crear un usuario se le envía por
+            Crea cuentas para el staff, asigna su rol y el alcance de datos que
+            ven, y restablece contraseñas. Al crear un usuario se le envía por
             correo una contraseña temporal.
           </p>
         </div>
@@ -401,7 +401,7 @@ function UsersAdmin() {
         <div className={styles.muted}>Cargando usuarios…</div>
       ) : count === 0 ? (
         <div className={styles.empty}>
-          No hay usuarios todavía. Hacé clic en + Nuevo usuario para empezar.
+          No hay usuarios todavía. Haz clic en + Nuevo usuario para empezar.
         </div>
       ) : (
         <div className={styles.tableWrapper}>
@@ -571,7 +571,7 @@ function UsersAdmin() {
                             setScope("category_ids", c.id, e.target.checked)
                           }
                         />
-                        {/* Acá SÍ se puede estilar, así que el Sub del año va
+                        {/* Aquí SÍ se puede estilar, así que el Sub del año va
                           * chico y gris como pidió el club, en vez de unido con
                           * un guión como en los <option>. */}
                         <span>

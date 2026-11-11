@@ -1120,9 +1120,9 @@ class PlayerComparisonPlayerOut(Schema):
     line: str | None = None
     photo_url: str | None = None
     date_of_birth: str | None = None
-    # ⚠️ Todo lo que el payload manda tiene que estar declarado acá: Ninja
+    # ⚠️ Todo lo que el payload manda tiene que estar declarado aquí: Ninja
     # serializa contra el schema y DESCARTA en silencio lo que no figura. Un
-    # campo agregado en el servicio y olvidado acá no rompe nada — simplemente
+    # campo agregado en el servicio y olvidado aquí no rompe nada — simplemente
     # nunca llega al navegador, y la pantalla se ve vacía sin ningún error.
     bands: dict[str, Any] = {}
     band_labels: dict[str, Any] = {}

@@ -1074,7 +1074,7 @@ def _resolve_dual_axis_bar_line(
         puntos.append({
             "recorded_at": r.recorded_at.isoformat(),
             # La semana ISO es el agrupador del eje: "2026-W38". Se calcula
-            # acá y no en el frontend para que el PDF y la pantalla agrupen
+            # aquí y no en el frontend para que el PDF y la pantalla agrupen
             # igual sin duplicar la regla.
             "week": "%d-W%02d" % r.recorded_at.isocalendar()[:2],
             # El microciclo del club (MICRO), cuando la fila lo trae: agrupa

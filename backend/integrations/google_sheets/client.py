@@ -99,6 +99,13 @@ class Documento:
         except Exception as exc:
             raise GoogleSheetsError(f"No se pudieron listar las hojas: {exc}")
 
+    def tab_ids(self) -> dict[str, int]:
+        """{tab title: gid} — the `#gid=` of a link that opens that tab."""
+        try:
+            return {w.title: w.id for w in self._sheet.worksheets()}
+        except Exception as exc:
+            raise GoogleSheetsError(f"No se pudieron listar las hojas: {exc}")
+
     def values_batch(self, worksheets: list[str]) -> dict[str, list[list[Any]]]:
         """Several worksheets' raw grids in ONE request (unformatted).
 

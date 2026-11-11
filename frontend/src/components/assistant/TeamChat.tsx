@@ -172,7 +172,7 @@ export default function TeamChat() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder={categoryId ? "Escribí tu pregunta…" : "Seleccioná una categoría"}
+              placeholder={categoryId ? "Escribe tu pregunta…" : "Selecciona una categoría"}
               rows={1}
               disabled={!categoryId}
             />

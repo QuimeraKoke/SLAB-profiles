@@ -496,7 +496,7 @@ def _fire_overdue_alert(goal: Goal) -> Alert:
         source_type=AlertSource.GOAL_OVERDUE,
         source_id=goal.id,
         severity=AlertSeverity.WARNING,
-        message=f"Objetivo vencido ({when}): «{label}». Marcá cumplido o no cumplido.",
+        message=f"Objetivo vencido ({when}): «{label}». Marca cumplido o no cumplido.",
     )
 
 

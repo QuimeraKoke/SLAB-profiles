@@ -117,14 +117,14 @@ export default function ExportarPage() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      setError("No se pudo generar el archivo. Intentá nuevamente.");
+      setError("No se pudo generar el archivo. Intenta nuevamente.");
     } finally {
       setBusy(false);
     }
   }
 
   if (catLoading) return <div className={styles.muted}>Cargando…</div>;
-  if (!categoryId) return <div className={styles.muted}>Seleccioná una categoría.</div>;
+  if (!categoryId) return <div className={styles.muted}>Selecciona una categoría.</div>;
 
   return (
     <div className={styles.page}>
@@ -132,7 +132,7 @@ export default function ExportarPage() {
         <h1 className={styles.h1}>
           <Database size={20} aria-hidden="true" /> Exportar datos
         </h1>
-        <p className={styles.sub}>{categoryName} · descargá el dato crudo en Excel</p>
+        <p className={styles.sub}>{categoryName} · descarga el dato crudo en Excel</p>
       </header>
 
       <section className={styles.dateRow}>

@@ -257,7 +257,7 @@ class ExamTemplateAdmin(admin.ModelAdmin):
                     f"'{template.name}' v{template.version} no es la versión "
                     "activa de su familia — forkear desde una versión "
                     "histórica está deshabilitado para evitar cadenas "
-                    "ambiguas. Forkeá desde la versión activa.",
+                    "ambiguas. Forkea desde la versión activa.",
                     level=messages.WARNING,
                 )
                 continue
@@ -274,7 +274,7 @@ class ExamTemplateAdmin(admin.ModelAdmin):
                 request,
                 (
                     f"Versión {new_version.version} creada para "
-                    f"'{new_version.name}'. ⚠ Si renombrás o eliminás campos "
+                    f"'{new_version.name}'. ⚠ Si renombras o eliminas campos "
                     "en esta versión, los resultados de versiones anteriores "
                     "con datos en esos campos quedarán fuera de los "
                     "dashboards que usen esta plantilla."
@@ -383,8 +383,8 @@ class ValdIntegrationAdmin(admin.ModelAdmin):
                 ("hip_adab_template_slug", "nordico_template_slug"),
             ),
             "description": (
-                "Activá o desactivá cada producto de VALD y, opcionalmente, "
-                "apuntá cada tipo de test a un slug de plantilla distinto. "
+                "Activa o desactiva cada producto de VALD y, opcionalmente, "
+                "apunta cada tipo de test a un slug de plantilla distinto. "
                 "Dejar el slug en blanco usa el estándar "
                 "(cmj / imtp / hip_adab / nordico)."
             ),
@@ -509,7 +509,7 @@ class CatapultIntegrationAdmin(admin.ModelAdmin):
             "fields": ("base_url", "api_token", "catapult_team_id"),
             "description": (
                 "Token Bearer del tenant Catapult y el UUID del equipo que "
-                "corresponde a esta categoría (usá catapult_probe para listarlos)."
+                "corresponde a esta categoría (usa catapult_probe para listarlos)."
             ),
         }),
         ("Qué sincronizar", {

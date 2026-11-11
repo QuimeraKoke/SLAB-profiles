@@ -131,12 +131,14 @@ def summary(mc: Microcycle) -> dict:
     # ── The sentence ──────────────────────────────────────────────────────
     parts = []
     planned = ev.get("provenance", {}).get("planned", True)
+    # A period (Centro de mando › "Período") reads several weeks at once.
+    span = ("el período", "Período") if getattr(mc, "_is_range", False) else ("la semana", "Semana")
     if not planned:
-        parts.append("Semana sin planificar (sin objetivo de carga)")
+        parts.append(f"{span[1]} sin planificar (sin objetivo de carga)")
     elif worst:
         word = "en objetivo" if worst["band"] == "ok" else ("bajo" if worst["pct"] < 0 else "sobre") + " el objetivo"
-        parts.append(f"La semana va {word} (lo más alejado: {worst['label']} {worst['pct']:+.0f} %)"
-                     if worst["band"] != "ok" else "La semana va en objetivo en todas las métricas")
+        parts.append(f"{span[0]} va {word} (lo más alejado: {worst['label']} {worst['pct']:+.0f} %)"
+                     if worst["band"] != "ok" else f"{span[0]} va en objetivo en todas las métricas")
     n_short = sum(1 for f in load_flags.values() if f["short"])
     if n_short:
         parts.append(_plural(n_short, "jugador para compensar", "jugadores para compensar"))
@@ -153,7 +155,7 @@ def summary(mc: Microcycle) -> dict:
     head = parts[:1] if (not planned or worst) else []
     rest = parts[len(head):]
     chunks = head + ([", ".join(rest)] if rest else [])
-    sentence = (". ".join(c[0].upper() + c[1:] for c in chunks) + ".") if chunks else "Sin novedades esta semana."
+    sentence = (". ".join(c[0].upper() + c[1:] for c in chunks) + ".") if chunks else f"Sin novedades en {span[0]}."
 
     return {
         "ref_day": ref.isoformat(),

@@ -297,7 +297,7 @@ class Command(BaseCommand):
                 accion = "creada"
             elif template.is_locked and not opts["unlock"]:
                 self.stdout.write(self.style.WARNING(
-                    f"  {nombre}: bloqueada, pasá --unlock"))
+                    f"  {nombre}: bloqueada, pasa --unlock"))
                 continue
             else:
                 template.name = nombre
@@ -320,7 +320,7 @@ class Command(BaseCommand):
     def _alertas(self):
         """Una regla `band` por campo y severidad, sin categoría.
 
-        `category=None` significa "todas", que es lo correcto acá: los umbrales
+        `category=None` significa "todas", que es lo correcto aquí: los umbrales
         de una escala 1–5 son los mismos en las doce. Es además el patrón que
         ya tiene `checkin_fisico`.
 

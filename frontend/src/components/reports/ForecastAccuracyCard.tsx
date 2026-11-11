@@ -78,7 +78,7 @@ export default function ForecastAccuracyCard({ deptSlug, categoryId, dateFrom, d
         <div className={styles.muted}>{error}</div>
       ) : !data || data.episodes === 0 ? (
         <div className={styles.muted}>
-          Sin episodios con pronóstico y retorno registrado en el período. Marcá
+          Sin episodios con pronóstico y retorno registrado en el período. Marca
           &quot;Disponible para citar&quot; en los episodios para alimentar este KPI.
         </div>
       ) : (

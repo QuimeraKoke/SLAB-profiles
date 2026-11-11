@@ -119,16 +119,16 @@ export default function PentaPasteModal({
     <Modal open={open} title="Pegar desde Excel" onClose={close}>
       <div className={styles.wrap}>
         <p className={styles.help}>
-          Copiá las medidas desde el informe de Excel — la columna de valores, o
-          ambas columnas para validar los nombres — y pegalas acá. Se asignan por
-          el orden del informe; revisá la vista previa antes de rellenar.
+          Copia las medidas desde el informe de Excel — la columna de valores, o
+          ambas columnas para validar los nombres — y pégalas aquí. Se asignan por
+          el orden del informe; revisa la vista previa antes de rellenar.
         </p>
         <textarea
           className={styles.textarea}
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
           rows={6}
-          placeholder="Pegá acá las celdas copiadas (Ctrl/Cmd+V)…"
+          placeholder="Pega aquí las celdas copiadas (Ctrl/Cmd+V)…"
           aria-label="Contenido pegado desde Excel"
         />
 
@@ -141,7 +141,7 @@ export default function PentaPasteModal({
                 <span className={styles.warn}>
                   {" · "}
                   {mismatches.length} nombre{mismatches.length === 1 ? "" : "s"} no
-                  coincide{mismatches.length === 1 ? "" : "n"} — revisá el orden
+                  coincide{mismatches.length === 1 ? "" : "n"} — revisa el orden
                 </span>
               )}
             </div>
