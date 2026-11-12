@@ -171,6 +171,38 @@ def sync_peso_diario(commit: bool = True) -> dict:
     return out
 
 
+@shared_task(name="exams.tasks.sync_composicion_formativo")
+def sync_composicion_formativo(commit: bool = True) -> dict:
+    """Formativo's anthropometry summary sheet → `pentacompartimental`.
+    See `exams/composicion_ingest.py`. No-op without a sheet id or credentials."""
+    from core.models import Club
+    from exams import composicion_ingest as ing
+    from exams import sync_issues as si
+    from integrations.google_sheets import GoogleSheetsError
+
+    sid = settings.COMPOSICION_FORMATIVO_SHEET_ID
+    creds_file, creds_json = _formativo_creds()
+    if not sid or not (creds_file or creds_json):
+        return {"status": "skipped", "reason": "not configured"}
+    club = Club.objects.filter(name=settings.FORMATIVO_CLUB).first()
+    if club is None:
+        return {"status": "skipped", "reason": "club not found"}
+    try:
+        titulo, filas = ing.leer(sid, creds_file=creds_file, creds_json=creds_json)
+        rep = ing.run(club, filas, commit=commit)
+    except (GoogleSheetsError, ValueError) as exc:
+        logger.warning("composicion formativo sync failed: %s", exc)
+        _unreachable(club, "composicion_formativo", sid, exc, commit)
+        return {"status": "error", "error": str(exc)}
+    col = si.IssueCollector(club, "composicion_formativo", commit=commit, sheet_id=sid)
+    si.from_composicion(col, rep, "Composición corporal Formativo")
+    col.complete()
+    col.save()
+    out = {"status": "ok", **ing.resumen(rep)}
+    logger.info("composicion formativo sync: %s", out)
+    return out
+
+
 @shared_task(name="exams.tasks.sync_kine_formativo")
 def sync_kine_formativo(commit: bool = True) -> dict:
     """Formativo physios' log → Kinesiología notes. See `exams/kine_notes_ingest.py`."""

@@ -35,6 +35,7 @@ RESYNC = {
     "saltos_formativo": ("exams.tasks.sync_formativo_saltos", {}),
     "kine_formativo": ("exams.tasks.sync_kine_formativo", {}),
     "peso_diario": ("exams.tasks.sync_peso_diario", {}),
+    "composicion_formativo": ("exams.tasks.sync_composicion_formativo", {}),
 }
 
 

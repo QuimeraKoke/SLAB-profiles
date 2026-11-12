@@ -363,6 +363,11 @@ def _build_template_namespaces(player, slugs: set[str], tracker: dict) -> dict[s
     return namespaces
 
 
+# `result_data[EXTERNAL]` marks a result whose calculated fields were computed
+# outside SLAB — see `compute_result_data`. Value: where they came from.
+EXTERNAL = "valores_calculados"
+
+
 def compute_result_data(
     template,
     raw_data: Mapping[str, Any],
@@ -382,6 +387,11 @@ def compute_result_data(
     schema = template.config_schema or {}
     fields = schema.get("fields", []) or []
     out: dict[str, Any] = dict(raw_data)
+    # Results whose calculated values came already computed from outside SLAB
+    # (the club's own software, via a summary sheet that lacks the raw inputs)
+    # keep them: recomputing would turn each into None. Only the missing ones
+    # are filled in.
+    keep_given = bool(out.get(EXTERNAL))
     snapshot: dict[str, Any] = {}
 
     # Collect every namespace mentioned across all calculated formulas so we
@@ -406,6 +416,8 @@ def compute_result_data(
         key = field.get("key")
         formula = field.get("formula")
         if not key or not formula:
+            continue
+        if keep_given and out.get(key) is not None:
             continue
         variables = {**out, **namespaces}
         try:

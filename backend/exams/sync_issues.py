@@ -258,6 +258,28 @@ def from_peso(col: IssueCollector, report, document: str) -> None:
                 example=f"{_fmt(day)}: {peso} kg", where={"tab": "Registro peso diario", "find": name})
 
 
+def from_composicion(col: IssueCollector, report, document: str) -> None:
+    """Composición corporal formativo: one tab per category."""
+    for counts, kind, why in ((report.sin_jugador, "jugador_no_encontrado", NOT_IN_ROSTER),
+                              (report.ambiguos, "nombre_ambiguo", AMBIGUOUS)):
+        for (tab, name), rows in counts.items():
+            col.add(kind, name, document=document, detail=why, rows=len(rows),
+                    key=f"{kind}|{_norm(document)}|{_norm(tab)}|{_norm(name)}",
+                    example=f"Hoja {tab} · fila {rows[0]}", where={"tab": tab, "row": rows[0]})
+    for f, why in report.rechazadas:
+        col.add("fila_rechazada", f"{f.nombre} · {f.hoja} fila {f.fila}", document=document,
+                key=f"fila_rechazada|{_norm(document)}|{_norm(f.hoja)}|{f.fila}|{_norm(f.nombre)}",
+                detail=f"No se cargó: {why[0].lower()}{why[1:]}", data_date=f.fecha,
+                example=f"Hoja {f.hoja} · fila {f.fila}" + (f" · {f.fecha_txt}" if f.fecha_txt else ""),
+                where={"tab": f.hoja, "row": f.fila})
+    for f, keys in report.fuera_de_rango:
+        col.add("fuera_de_rango", f"{f.nombre} · {f.hoja} fila {f.fila}", document=document,
+                key=f"fuera_de_rango|{_norm(document)}|{_norm(f.hoja)}|{f.fila}|{_norm(f.nombre)}",
+                detail="No se cargó " + ", ".join(f"{k} = {f.valores[k]:g}".replace(".", ",") for k in keys)
+                       + ": está fuera del rango posible de la métrica. El resto de la fila sí se cargó.",
+                data_date=f.fecha, example=f"Hoja {f.hoja} · fila {f.fila}", where={"tab": f.hoja, "row": f.fila})
+
+
 def from_name_counts(col: IssueCollector, document: str, *, not_found: dict | None = None,
                      ambiguous: dict | None = None, sheet: str = "", sid: str = "") -> None:
     """Wellness (Primer Equipo and Formativo): {raw name: responses}."""

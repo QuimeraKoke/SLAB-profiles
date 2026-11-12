@@ -32,7 +32,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from exams.bulk_ingest import IngestError, blank_workbook, run_ingest
-from exams.calculations import compute_result_data
+from exams.calculations import EXTERNAL, compute_result_data
 from exams.models import ExamResult, ExamTemplate
 
 from .alert_rules import AcwrConfigIn, BacktestIn, RuleUpdateIn, RuleWriteIn
@@ -1454,8 +1454,19 @@ def update_result(request, result_id: UUID, payload: ResultPatchIn):
     fields_to_update: list[str] = []
 
     if payload.raw_data is not None:
+        raw = payload.raw_data
+        old = result.result_data or {}
+        if old.get(EXTERNAL):
+            # Its calculated values came from outside SLAB and the form only
+            # sends the raw fields: keep them (and the mark), or the edit
+            # would blank every mass. See `compute_result_data`.
+            calc = {f.get("key") for f in (result.template.config_schema or {}).get("fields", [])
+                    if isinstance(f, dict) and f.get("type") == "calculated"}
+            kept = {k: v for k, v in old.items() if k in calc or k.startswith("origen")}
+            raw = {**kept, **{k: v for k, v in raw.items() if not (k in calc and v is None)},
+                   EXTERNAL: old[EXTERNAL]}
         result_data, inputs_snapshot = compute_result_data(
-            result.template, payload.raw_data, player=result.player,
+            result.template, raw, player=result.player,
         )
         result.result_data = result_data
         result.inputs_snapshot = inputs_snapshot

@@ -267,6 +267,12 @@ PESO_DIARIO_SHEET_ID = env("PESO_DIARIO_SHEET_ID",
                            default="1I27xvuHdPt82DT1ts4CNoVQxhDBPTdZiT-JYets0Xqc")
 PESO_DIARIO_CLUB = env("PESO_DIARIO_CLUB", default="Universidad de Chile")
 
+# Formativo's anthropometry summary ("COMPOSICIÓN CORPORAL POWER BI", one tab
+# per category) → pentacompartimental. Default id for the same reason as the
+# weigh-in. Blank it to disable.
+COMPOSICION_FORMATIVO_SHEET_ID = env("COMPOSICION_FORMATIVO_SHEET_ID",
+                                     default="1yuloU-oN3RUmdAi8Fqv8gdy4XJ1uDx6bY3NPf_y8n9U")
+
 # Formativo physios' log (tab "f") → Kinesiología's "Notas diarias". Default id
 # for the same reason as the weigh-in: not a secret, and a sync that needs env
 # vars on three services to stop being a silent no-op stays unsynced. Blank it

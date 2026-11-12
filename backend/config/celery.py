@@ -118,6 +118,14 @@ app.conf.beat_schedule = {
         "task": "exams.tasks.sync_formativo_saltos",
         "schedule": crontab(minute=55),
     },
+    # Composición corporal del formativo (planilla de nutrición, una pestaña
+    # por categoría). La antropometría se mide cada pocas semanas, pero el
+    # staff la quiere en SLAB el mismo día: cada 3 horas en :12, libre de los
+    # demás minutos. Una lectura batch del documento entero (2 requests).
+    "composicion-formativo": {
+        "task": "exams.tasks.sync_composicion_formativo",
+        "schedule": crontab(minute=12, hour="*/3"),
+    },
         "peso-diario-15min": {
         "task": "exams.tasks.sync_peso_diario",
         "schedule": crontab(minute="5,20,35,50"),
