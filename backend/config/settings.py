@@ -307,6 +307,22 @@ DEFAULT_FROM_EMAIL = env(
     "DEFAULT_FROM_EMAIL", default="alerts@s-lab.cl",
 )
 
+# Mailgun (HTTP API). Setting MAILGUN_API_KEY is all it takes to send for real:
+# it switches the backend and the sender over, overriding EMAIL_BACKEND /
+# DEFAULT_FROM_EMAIL (prod had those set to the console and a placeholder).
+# s-lab.cl is in Mailgun's US region — hence api.mailgun.net, not api.eu.
+MAILGUN_API_KEY = env("MAILGUN_API_KEY", default="")
+MAILGUN_DOMAIN = env("MAILGUN_DOMAIN", default="s-lab.cl")
+MAILGUN_API_BASE = env("MAILGUN_API_BASE", default="https://api.mailgun.net")
+EMAIL_REPLY_TO = env("MAIL_REPLY_TO", default="contacto@s-lab.cl")
+if MAILGUN_API_KEY:
+    EMAIL_BACKEND = "core.mail.MailgunBackend"
+    DEFAULT_FROM_EMAIL = env("MAIL_FROM", default="SLAB <no-reply@s-lab.cl>")
+
+# One email per alert to everyone who can see the player is ~38 alerts a day ×
+# up to 20 staff (measured 2026-11-12): off until it becomes a daily digest.
+ALERT_EMAILS_ENABLED = env.bool("ALERT_EMAILS_ENABLED", default=False)
+
 # Frontend origin used to build "open in app" links in alert emails.
 FRONTEND_BASE_URL = env(
     "FRONTEND_BASE_URL", default="http://localhost:3000",

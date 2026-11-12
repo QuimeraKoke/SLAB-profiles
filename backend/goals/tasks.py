@@ -60,6 +60,9 @@ def send_alert_email(alert_id: str) -> dict:
     from django.conf import settings
     from django.core.mail import EmailMultiAlternatives
 
+    if not getattr(settings, "ALERT_EMAILS_ENABLED", False):
+        return {"sent": 0, "skipped": "alert emails disabled"}
+
     from core.models import Category, Department, StaffMembership
     from .models import Alert, AlertSource
 
