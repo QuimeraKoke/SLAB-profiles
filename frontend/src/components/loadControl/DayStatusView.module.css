@@ -1,0 +1,26 @@
+.lead { margin: 4px 0 0; font-size: 0.85rem; color: #475467; }
+
+.filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; margin-top: 10px; }
+.filter { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px;
+  border: 2px solid transparent; border-radius: 10px; font: inherit; text-align: left; cursor: pointer; min-height: 44px; }
+.filter:disabled { cursor: default; opacity: 0.6; }
+.filter:hover:not(:disabled) { filter: brightness(0.97); }
+.filter:focus-visible { outline: 2px solid #1d4ed8; outline-offset: 2px; }
+.filterOn { border-color: #101828; }
+.filterN { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.filterLabel { font-size: 0.78rem; font-weight: 600; }
+
+.table { min-width: 860px; }
+.table th, .table td { text-align: left !important; vertical-align: top; }
+.table tbody th { font-weight: 400; }
+.who { display: flex; flex-direction: column; gap: 2px; }
+.injury { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; font-size: 0.8rem; }
+.cell { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+
+.groupRow th { background: #f9fafb; font-size: 0.75rem !important; text-transform: uppercase; letter-spacing: 0.04em;
+  color: #475467; font-weight: 700 !important; padding-top: 14px !important; }
+.outRow { background: #fcfcfd; }
+
+.legend { margin: 10px 0 0; padding-left: 18px; font-size: 0.85rem; color: #344054; line-height: 1.5; }
+.legend li + li { margin-top: 6px; }

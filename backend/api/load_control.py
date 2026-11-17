@@ -233,6 +233,20 @@ def availability_view(request, microcycle_id: str, day: date | None = None):
         raise HttpError(400, str(exc))
 
 
+@router.get("/microcycles/{microcycle_id}/day-status")
+def day_status_view(request, microcycle_id: str, day: date | None = None):
+    """Disponibilidad: how each player comes into the day — status, check-in,
+    last match and load, side by side. See `load_control.day_status`."""
+    from load_control.day_status import day_status
+
+    _require(request, PERM_VIEW)
+    mc = _microcycle(request, microcycle_id)
+    try:
+        return day_status(mc, day=day)
+    except ValueError as exc:
+        raise HttpError(400, str(exc))
+
+
 @router.get("/microcycles/{microcycle_id}/participation")
 def participation_view(request, microcycle_id: str, scope: str = "microcycle"):
     """Minutos y asistencia for the microcycle or the season so far.

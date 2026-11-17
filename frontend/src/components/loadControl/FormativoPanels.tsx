@@ -18,6 +18,7 @@ import React from "react";
 import EvaluationGrid from "@/components/command/EvaluationGrid";
 import AvailabilityView from "@/components/loadControl/AvailabilityView";
 import CompositionView from "@/components/loadControl/CompositionView";
+import DayStatusView, { DAY_STATUS_FILTERS, type DayStatusFilter } from "@/components/loadControl/DayStatusView";
 import DayLoadChart from "@/components/loadControl/DayLoadChart";
 import FatigueView from "@/components/loadControl/FatigueView";
 import ParticipationView from "@/components/loadControl/ParticipationView";
@@ -32,6 +33,7 @@ import styles from "@/components/loadControl/loadControl.module.css";
 
 export const FORMATIVO_TABS = [
   { id: "resumen", label: "Resumen" },
+  { id: "disponibilidad", label: "Disponibilidad" },
   { id: "fatiga", label: "Fatiga post-partido" },
   { id: "bienestar", label: "Check-in / out" },
   { id: "lesiones", label: "Kinesia y lesiones" },
@@ -48,7 +50,8 @@ const NOT_WEEKLY = new Set(["evaluaciones", "composicion"]);
 export const RANGE_TABS = new Set(["resumen", "bienestar", "minutos", "jugador"]);
 
 export const FORMATIVO_QUESTION: Record<string, string> = {
-  resumen: "¿Cómo está el plantel? ¿A quién compensar? ¿Quién llega fatigado?",
+  resumen: "¿Cómo está el plantel? ¿A quién compensar? ¿Quién llega fatigado? ¿Cómo llega cada uno hoy?",
+  disponibilidad: "¿Cómo llega cada jugador a entrenar hoy? Check-in, último partido y carga, lado a lado.",
   fatiga: "¿Cuánto les pegó el último partido y cómo llegan al que viene?",
   bienestar: "¿Cómo llegan, cómo se sienten, qué les molesta y cómo se van?",
   lesiones: "¿Quién está en readaptación o en clínica, desde cuándo y cuándo vuelve?",
@@ -59,10 +62,10 @@ export const FORMATIVO_QUESTION: Record<string, string> = {
 };
 
 /** Tabs that read a period: the period bar. */
-export const PERIOD_TABS = new Set(["resumen", "bienestar", "lesiones", "minutos", "jugador"]);
-/** …and also have cards about ONE day of it: the day strip too. Resumen and
- *  Jugador add the whole period up, so a day picker there would do nothing. */
-export const STRIP_TABS = new Set(["bienestar", "lesiones", "minutos"]);
+export const PERIOD_TABS = new Set(["resumen", "disponibilidad", "bienestar", "lesiones", "minutos", "jugador"]);
+/** …and also have cards about ONE day of it: the day strip too (Resumen: its
+ *  day table). Jugador adds the whole period up, so a day picker would do nothing. */
+export const STRIP_TABS = new Set(["resumen", "disponibilidad", "bienestar", "lesiones", "minutos"]);
 /** Tabs that do not depend on dates at all (whole history). */
 export const NO_TIME_TABS = NOT_WEEKLY;
 /** Fatiga moves match by match (its own "‹ Partido ›"): the microcycle is
@@ -94,6 +97,8 @@ function Panels({ tab, nav, categoryId, params, setUrl, goTab }: Props) {
   // calendar week ("<day>_<category>") or the period ("<start>~<end>_<category>").
   const week = nav.microcycle_id ?? nav.week_key;
   const onDay = (d: string | null | undefined) => d !== undefined && setUrl({ dia: d });
+  const ver = params.get("ver");
+  const dayFilter = ver && DAY_STATUS_FILTERS.has(ver) ? (ver as DayStatusFilter) : null;
 
   if (tab === "evaluaciones" || tab === "composicion") {
     return (
@@ -114,7 +119,13 @@ function Panels({ tab, nav, categoryId, params, setUrl, goTab }: Props) {
 
   switch (tab) {
     case "resumen":
-      return <SummaryView key={week} microcycleId={week} onTab={goTab} />;
+      // The week's cards, then the same day table as Disponibilidad (a copy,
+      // not a move): Resumen is the one screen with everything.
+      return (
+        <SummaryView key={week} microcycleId={week} onTab={goTab}
+          day={<DayStatusView key={`${week}-${nav.day}`} microcycleId={week} day={nav.day}
+            heading="Hoy: señales del día" filter={dayFilter} onFilter={(f) => setUrl({ ver: f })} />} />
+      );
     case "fatiga":
       return (
         <FatigueView key={week} microcycleId={week}
@@ -134,6 +145,11 @@ function Panels({ tab, nav, categoryId, params, setUrl, goTab }: Props) {
             if (f.day !== undefined) onDay(f.day);
             if (f.player !== undefined) setUrl({ jugador: f.player });
           }} />
+      );
+    case "disponibilidad":
+      return (
+        <DayStatusView key={`${week}-${nav.day}`} microcycleId={week} day={nav.day}
+          filter={dayFilter} onFilter={(f) => setUrl({ ver: f })} />
       );
     case "lesiones":
       return <AvailabilityView key={`${week}-${nav.day}`} microcycleId={week} day={nav.day} />;

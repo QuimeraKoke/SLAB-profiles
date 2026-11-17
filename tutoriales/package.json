@@ -1,0 +1,11 @@
+{
+  "name": "slab-tutoriales",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "hacer": "node hacer.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.61.1"
+  }
+}

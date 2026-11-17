@@ -23,9 +23,12 @@ const LIMIT = 10;
 interface Props {
   microcycleId: string;
   onTab: (tab: string, extra?: Record<string, string | null>) => void;
+  /** Rendered right under the week's cards: the day's table (Disponibilidad),
+   *  so Resumen is the one screen with everything. */
+  day?: React.ReactNode;
 }
 
-export default function SummaryView({ microcycleId, onTab }: Props) {
+export default function SummaryView({ microcycleId, onTab, day }: Props) {
   const per = usePeriod();
   const [data, setData] = useState<SummaryPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +86,8 @@ export default function SummaryView({ microcycleId, onTab }: Props) {
           {load.metrics.map((m) => <span key={m.key}>{m.label}: {pill(m.band, signedPct(m.pct))}</span>)}
         </div>
       </section>
+
+      {day}
 
       <section className={styles.card} aria-labelledby="su-review">
         <div className={styles.cardHead}>

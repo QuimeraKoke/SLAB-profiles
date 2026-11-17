@@ -323,3 +323,33 @@ export interface DayNav {
   /** Every day of the period, for the day strip. */
   days?: { date: string; md_label: string; kind: string; opponent: string }[];
 }
+
+// ── Disponibilidad (day status) — backend `load_control/day_status.py` ────────
+export interface DayStatusRow {
+  player_id: string; name: string; position: string;
+  status: "available" | "injured" | "recovery" | "reintegration"; status_label: string;
+  injury: { title: string | null; stage_label: string | null; body_part: string | null;
+    days_out: number | null; expected_return: string | null } | null;
+  checkin: { total: number | null; lows: { key: string; label: string; value: number }[];
+    pain: string[]; symptoms: string[]; band: Band } | null;
+  match: { minutes: number | null; golpe_pct: number | null; golpe_band: Band | null;
+    llega_pct: number | null; llega_band: Band | null } | null;
+  /** The week so far vs the plan (Carga GPS); null = no GPS or no plan. */
+  load: { metrics: DayStatusMetric[]; off: DayStatusMetric[]; days: number; days_planned: number;
+    band: Band; over: boolean; under: boolean } | null;
+  signals: number;
+}
+export interface DayStatusMetric { key: string; label: string; short: string; pct: number; band: Band }
+export interface DayStatusPayload {
+  day: string;
+  match: { date: string; rival: string } | null;
+  next_match: { date: string; rival: string } | null;
+  counts: { players: number; available: number; pain: number; low: number; symptoms: number;
+    no_checkin: number; hit: number; load_over: number; load_under: number };
+  rows: DayStatusRow[];
+  rules: {
+    wellness_low: number;
+    jump: { ok_from: number; grave_at: number };
+    load: { planned: boolean; band_ok: number; band_mild: number; days: number };
+  };
+}

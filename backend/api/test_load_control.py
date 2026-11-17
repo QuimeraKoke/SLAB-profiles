@@ -373,6 +373,31 @@ class LoadControlApiTests(TestCase):
         self.assertEqual(set(body["cards"]), {"load", "fatigue", "wellness", "availability", "participation"})
         self.assertIsInstance(body["review"], list)
 
+    # ── disponibilidad del día ──────────────────────────────────────────
+    def test_disponibilidad_muestra_checkin_partido_y_carga_sin_veredicto(self):
+        checkin = ExamTemplate.objects.create(department=self.dept, name="Check-in", slug="checkin_formativo",
+                                              config_schema={"fields": []})
+        ExamResult.objects.create(template=checkin, player=self.player, recorded_at=aware(WEEK[1], 8),
+                                  result_data={"calidad_sueno": 2, "nivel_fatiga": 4, "nivel_estres": 4,
+                                               "estado_animo": 4, "dano_muscular": 4,
+                                               "dolor_muscular": "Rodilla Izq."})
+        r = self.create().json()
+        c = self.client_for("Lectura Formativo")
+        out = c.get(f"/api/load-control/microcycles/{r['id']}/day-status", {"day": WEEK[1].isoformat()})
+        self.assertEqual(out.status_code, 200)
+        body = out.json()
+        row = next(x for x in body["rows"] if x["name"] == "Ana Soto")
+        self.assertEqual(row["checkin"]["total"], 18)
+        self.assertEqual(row["checkin"]["pain"], ["Rodilla Izq."])
+        self.assertEqual([x["label"] for x in row["checkin"]["lows"]], ["Sueño"])
+        self.assertEqual(row["checkin"]["band"], "grave")
+        self.assertEqual((body["counts"]["pain"], body["counts"]["low"]), (1, 1))
+        self.assertNotIn("verdict", row)  # informa; el profe decide
+        self.assertTrue(body["rules"]["load"]["planned"], "la carga se compara con lo planificado")
+        self.assertEqual(set(body["counts"]) >= {"load_over", "load_under"}, True)
+        self.assertEqual(c.get(f"/api/load-control/microcycles/{r['id']}/day-status",
+                               {"day": "2020-01-01"}).status_code, 400)
+
     # ── navegación por día (Centro de mando) ────────────────────────────
     def test_cualquier_dia_abre_su_semana_aunque_no_este_planificada(self):
         c = self.client_for("Lectura Formativo")
@@ -382,7 +407,7 @@ class LoadControlApiTests(TestCase):
         self.assertEqual((body["start_date"], body["end_date"], body["planned"], body["microcycle_id"]),
                          ("2026-10-26", "2026-11-01", False, None))
         key = body["week_key"]
-        for path in ("summary", "wellness", "availability", "participation", "fatigue", "players"):
+        for path in ("summary", "day-status", "wellness", "availability", "participation", "fatigue", "players"):
             self.assertEqual(c.get(f"/api/load-control/microcycles/{key}/{path}").status_code, 200, path)
         detail = c.get(f"/api/load-control/microcycles/{key}").json()
         self.assertEqual(len(detail["days"]), 7)
