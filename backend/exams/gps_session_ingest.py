@@ -9,6 +9,7 @@ match-Event creation (off for training).
 """
 from __future__ import annotations
 
+from audit.tracking import log_bulk_results
 from datetime import datetime, time
 from typing import Any, Optional
 
@@ -227,6 +228,7 @@ def run(
                 for p in writable
             ]
             ExamResult.objects.bulk_create(to_create, batch_size=400)
+            log_bulk_results(to_create, action="create", source="carga:gps-sesion")
             created = len(to_create)
 
             # Tag each fresh row with its microcycle day (§1.e) from the

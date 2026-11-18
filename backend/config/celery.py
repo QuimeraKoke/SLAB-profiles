@@ -19,6 +19,12 @@ app.autodiscover_tasks()
 # Beat schedule. 05:00 server-time gives the doctor a fresh batch of
 # overnight goal checks before the morning Daily.
 app.conf.beat_schedule = {
+    # Database backup → private S3 bucket (audit/backup.py). 03:30 Santiago:
+    # after the evening syncs, before the morning jobs.
+    "backup-database-daily": {
+        "task": "audit.tasks.backup_database",
+        "schedule": crontab(hour=3, minute=30),
+    },
     "evaluate-due-goals-daily": {
         "task": "goals.tasks.evaluate_due_goals",
         "schedule": crontab(hour=5, minute=0),

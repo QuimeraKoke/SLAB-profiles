@@ -246,6 +246,10 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
       ...(hasPermission(user, "auth.view_user")
         ? [{ label: "Usuarios", href: "/configuraciones/usuarios" }]
         : []),
+      // Audit trail (changes, record views, backups) — same audience.
+      ...(hasPermission(user, "auth.view_user")
+        ? [{ label: "Registro", href: "/configuraciones/registro" }]
+        : []),
       // Clubs, their categories and departments — platform owners only.
       ...(user?.is_superuser ? [{ label: "SLAB Admin", href: "/plataforma" }] : []),
     ],

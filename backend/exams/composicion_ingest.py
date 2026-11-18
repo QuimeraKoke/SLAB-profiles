@@ -31,6 +31,7 @@ that the women's tab only matches women and the men's tabs only men.
 """
 from __future__ import annotations
 
+from audit.tracking import log_bulk_results
 import re
 import unicodedata
 from collections import defaultdict
@@ -381,6 +382,8 @@ def run(club: Club, filas: list[Fila], *, commit: bool = False) -> Reporte:
         with transaction.atomic():
             ExamResult.objects.bulk_create(crear, batch_size=500)
             ExamResult.objects.bulk_update(actualizar, ["result_data", "inputs_snapshot"], batch_size=500)
+            log_bulk_results(crear, action="create", source="sync:composicion")
+            log_bulk_results(actualizar, action="update", source="sync:composicion")
             _fire_band_alerts(crear)
         _refrescar({r.player_id for r in (*crear, *actualizar)})
     return rep

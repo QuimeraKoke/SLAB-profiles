@@ -26,6 +26,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   configuraciones: "Administración",
   jugadores: "Gestionar plantel",
   usuarios: "Usuarios",
+  registro: "Registro",
   registrar: "Registrar examen",
   editar: "Editar",
   nuevo: "Nuevo",

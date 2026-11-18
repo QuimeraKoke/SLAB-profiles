@@ -14,6 +14,8 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
 from ninja.security import HttpBearer
 
+from audit import context as audit_context
+
 User = get_user_model()
 
 
@@ -42,6 +44,7 @@ class JWTAuth(HttpBearer):
         if user is None:
             return None
         request.user = user
+        audit_context.set_user(user)
         return user
 
 

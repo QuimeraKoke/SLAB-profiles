@@ -42,6 +42,7 @@ Additive: existing results are never overwritten.
 """
 from __future__ import annotations
 
+from audit.tracking import log_bulk_results
 import re
 import unicodedata
 from collections import defaultdict
@@ -507,6 +508,8 @@ def run(origen: str, club: Club, *, commit: bool = False,
             ExamResult.objects.bulk_create(a_crear, batch_size=500)
             ExamResult.objects.bulk_update(
                 a_completar, ["result_data", "inputs_snapshot"], batch_size=500)
+            log_bulk_results(a_crear, action="create", source="sync:formativo")
+            log_bulk_results(a_completar, action="update", source="sync:formativo")
             if fire_alerts:
                 rep.alertas = _fire_band_alerts(a_crear + a_completar)
     return rep

@@ -407,3 +407,39 @@ don't run).
   the client signs off and you want VPC isolation or AWS-native cost
   control, the env-var driven config means migration is mostly DNS +
   re-pointing the database. Follow `STATUS.md` §9b when the time comes.
+
+## Respaldos y restauración (audit/backup.py)
+
+**Qué corre:** Celery beat `backup-database-daily`, a las 03:30 hora de Santiago.
+1. `pg_dump -Fc` de toda la base.
+2. Verificación con `pg_restore --list`, que debe leer datos de tablas.
+3. Subida a `s3://slab-backups-prod/diario/` (y a `mensual/` el día 1).
+4. Cada corrida deja una fila `BackupRun`, visible en Configuraciones › Registro › Respaldos.
+
+**Bucket `slab-backups-prod` (us-east-2):**
+- Privado: public access block y solo HTTPS (bucket policy).
+- Cifrado SSE-S3 AES-256 y versionado activo.
+- Lifecycle: `diario/` se guarda 35 días y `mensual/` 400 días; las versiones antiguas se eliminan a los 30 días.
+- La app escribe con el usuario IAM `slab-backup-writer`, que solo tiene `s3:PutObject` en `diario/*` y `mensual/*`. No puede listar, leer ni borrar: si la app se ve comprometida, no puede borrar los respaldos.
+
+**Variables (servicios `Celery` y `backend`):** `BACKUP_BUCKET=slab-backups-prod`, `BACKUP_AWS_REGION=us-east-2`, `BACKUP_AWS_ACCESS_KEY_ID`, `BACKUP_AWS_SECRET_ACCESS_KEY`. Si `BACKUP_BUCKET` está vacío, la corrida falla y queda registrada como fallida.
+
+**Respaldo manual:** `railway ssh --service backend "python manage.py backup_db"`
+
+**Restaurar** (con credenciales de administrador de AWS, nunca con las de la app):
+```bash
+aws s3 ls s3://slab-backups-prod/diario/ | tail -3
+aws s3 cp s3://slab-backups-prod/diario/slab-AAAAMMDDTHHMMSS.dump ./restore.dump
+# Primero en una base nueva, para revisarla:
+createdb slab_restore && pg_restore --no-owner -d slab_restore restore.dump
+# Para reemplazar prod, en una ventana acordada: pg_restore --clean --if-exists --no-owner -d <prod> restore.dump
+```
+
+**Prueba de restauración (2026-11-17):** copia completa restaurada en una base nueva en 8 s. Conteos idénticos en jugadores (697), resultados (248.613), lesiones, notas y usuarios; los triggers de solo-agregar del registro también se restauraron.
+
+## Registro de auditoría (audit/)
+
+- **`ChangeEvent`:** cada alta, edición y borrado de evaluaciones, lesiones, bitácora, notas, plan kinésico, jugadores, contratos, adjuntos, convocatorias, usuarios y accesos. Guarda autor, fecha, IP y antes → después; en un borrado guarda el contenido completo.
+- **`AccessEvent`:** fichas abiertas (una vez cada 30 min por usuario, jugador y tipo), descargas, exportaciones e inicios de sesión.
+- **Solo agregar:** un trigger de Postgres (migración `audit/0002`) rechaza UPDATE y DELETE sobre las dos tablas. Si alguna vez hay que purgar datos de un club, hay que deshabilitar el trigger a mano y dejarlo escrito.
+- **Lo que no cubren las señales:** `bulk_create`, `bulk_update` y `QuerySet.update()`. Para esos casos, los importadores masivos deben llamar a `audit.tracking.log_bulk(...)`.

@@ -1,0 +1,161 @@
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.tab {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: #4b5563;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: #111827;
+}
+
+.tabOn {
+  color: #111827;
+  border-bottom-color: #111827;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.filterActions {
+  grid-column: span 2;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.secondaryBtn {
+  min-height: 36px;
+  padding: 8px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.secondaryBtn:hover {
+  background: #f9fafb;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.action {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.action_create {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.action_update {
+  background: #eff6ff;
+  color: #1e40af;
+}
+
+.action_delete {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.changesCell {
+  min-width: 280px;
+  max-width: 520px;
+}
+
+.diff {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 10px;
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.diff dt {
+  color: #6b7280;
+}
+
+.diff dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.diff del {
+  color: #991b1b;
+}
+
+.diff ins {
+  color: #065f46;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.summary {
+  cursor: pointer;
+  color: #1e40af;
+  font-size: 0.85rem;
+}
+
+.backupCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  padding: 16px 18px;
+}
+
+.backupCard p {
+  margin: 6px 0 0;
+}
+
+.h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .tabs {
+    overflow-x: auto;
+  }
+
+  .filterActions {
+    grid-column: auto;
+  }
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

@@ -50,6 +50,7 @@ that document's categories.
 """
 from __future__ import annotations
 
+from audit.tracking import log_bulk_results
 import re
 import unicodedata
 from dataclasses import dataclass, field
@@ -591,6 +592,7 @@ def ingerir(doc, *, titulo: str, club, rol: str, commit: bool,
     rep.creados = len(nuevos)
     if commit and nuevos:
         ExamResult.objects.bulk_create(nuevos, batch_size=1000)
+        log_bulk_results(nuevos, action="create", source="sync:checkin-formativo")
         if alertas:
             rep.alertas = _disparar_alertas(nuevos)
     return rep

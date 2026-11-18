@@ -15,6 +15,7 @@ regions is the template's job (option_labels / option_regions).
 """
 from __future__ import annotations
 
+from audit.tracking import log_bulk_results
 import unicodedata
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
@@ -329,6 +330,7 @@ def ingest_wellness(
     alerts = 0
     if not dry_run:
         ExamResult.objects.bulk_create(to_create, batch_size=400)
+        log_bulk_results(to_create, action="create", source="sync:checkin")
         # Molestia / estado-mismatch alerts, based on each player's latest check-in.
         try:
             from goals.evaluator import evaluate_molestia_alert

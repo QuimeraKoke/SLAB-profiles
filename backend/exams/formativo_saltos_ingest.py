@@ -32,6 +32,7 @@ the panel reads the one `attempt_value` says (best, as the club's dashboard).
 """
 from __future__ import annotations
 
+from audit.tracking import log_bulk_results
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -473,6 +474,8 @@ def run(origen: str, club, *, season: int | None = None, commit: bool = False,
             ExamResult.objects.bulk_create(to_create, batch_size=500)
             ExamResult.objects.bulk_update(to_update, ["result_data", "player", "event", "recorded_at"],
                                            batch_size=500)
+            log_bulk_results(to_create, action="create", source="sync:saltos")
+            log_bulk_results(to_update, action="update", source="sync:saltos")
             if team_ids:
                 tpl.applicable_categories.add(*team_ids)
     fuente.cerrar()

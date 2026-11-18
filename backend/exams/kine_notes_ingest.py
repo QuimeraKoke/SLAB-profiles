@@ -31,6 +31,7 @@ next sync picks it up — a corrected row is a changed row.
 """
 from __future__ import annotations
 
+from audit.tracking import log_bulk_results
 import hashlib
 import re
 from collections import Counter, defaultdict
@@ -293,7 +294,8 @@ def run(origen: str | list, club: Club, *, commit: bool = False,
             template, {p.category for _, p in deseadas.values()})
         ExamResult.objects.filter(pk__in=sobran).delete()
         ExamResult.objects.bulk_update(a_actualizar, ["result_data"], batch_size=500)
-        ExamResult.objects.bulk_create([
+        log_bulk_results(a_actualizar, action="update", source="sync:kine")
+        nuevos = ExamResult.objects.bulk_create([
             ExamResult(
                 player=p, template=template,
                 recorded_at=timezone.make_aware(datetime.combine(f.fecha, datetime.min.time()))
@@ -302,6 +304,7 @@ def run(origen: str | list, club: Club, *, commit: bool = False,
             )
             for k, (f, p) in deseadas.items() if k in a_crear
         ], batch_size=500)
+        log_bulk_results(nuevos, action="create", source="sync:kine")
     return rep
 
 

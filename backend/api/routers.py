@@ -313,6 +313,14 @@ def login(request, payload: LoginIn):
     _touch_last_login(user)
     token, expires_at = issue_token(user)
     membership = get_membership(user)
+    from audit import context as audit_context
+    from audit.access import log_access
+    audit_context.set_user(user)
+    try:
+        with transaction.atomic():
+            log_access("ingreso", path="/api/auth/login")
+    except Exception:  # noqa: BLE001 — never block a login on the access log
+        logger.exception("audit: no se pudo registrar el ingreso")
     return {
         "access_token": token,
         "expires_at": expires_at,
@@ -7376,3 +7384,7 @@ def platform_add_department(request, club_id: UUID, payload: PlatformDepartmentI
 from api.load_control import router as load_control_router  # noqa: E402
 
 api.add_router("/load-control", load_control_router)
+
+from audit.api import router as audit_router  # noqa: E402
+
+api.add_router("/audit", audit_router)

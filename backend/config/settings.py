@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     "events",
     "goals",
     "load_control",
+    "audit",
     "attachments",
     "api",
     "storages",
@@ -96,6 +97,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Audit trail: resets who-is-acting per request and logs record views.
+    "audit.access.AuditMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -206,6 +209,15 @@ CORS_ALLOWED_ORIGINS = env.list(
     default=["http://localhost:3000", "http://127.0.0.1:3000"],
 )
 CORS_ALLOW_CREDENTIALS = True
+
+# --- Backups (audit.backup) ---
+# Daily pg_dump → a private S3 bucket of its own, written with a put-only key
+# (it cannot list or delete), so a leaked app key cannot erase the backups.
+# Retention lives in the bucket's lifecycle rules, not here. Empty = off.
+BACKUP_BUCKET = env("BACKUP_BUCKET", default="")
+BACKUP_AWS_REGION = env("BACKUP_AWS_REGION", default="us-east-2")
+BACKUP_AWS_ACCESS_KEY_ID = env("BACKUP_AWS_ACCESS_KEY_ID", default="")
+BACKUP_AWS_SECRET_ACCESS_KEY = env("BACKUP_AWS_SECRET_ACCESS_KEY", default="")
 
 # --- JWT ---
 JWT_SECRET = env("JWT_SECRET", default=SECRET_KEY)

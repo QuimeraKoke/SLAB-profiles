@@ -43,6 +43,7 @@ that carries it, which is the same inconsistency pointing the other way.
 """
 from __future__ import annotations
 
+from audit.tracking import log_bulk_results
 import re
 import unicodedata
 from collections import Counter, defaultdict
@@ -744,9 +745,11 @@ def run(origen: str, club: Club, *, commit: bool = False,
     if commit and a_refrescar:
         ExamResult.objects.bulk_update(list(a_refrescar.values()), ["result_data", "event"],
                                        batch_size=500)
+        log_bulk_results(a_refrescar.values(), action="update", source="sync:gps-formativo")
     if commit and a_crear:
         with transaction.atomic():
             ExamResult.objects.bulk_create(a_crear, batch_size=500)
+            log_bulk_results(a_crear, action="create", source="sync:gps-formativo")
             if fire_alerts:
                 _fire_band_alerts(a_crear)
     return rep
