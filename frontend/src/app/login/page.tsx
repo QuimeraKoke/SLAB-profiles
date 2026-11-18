@@ -127,6 +127,10 @@ export default function LoginPage() {
             </button>
           </div>
         </form>
+
+        <Link href="/privacidad" className={styles.privacyLink}>
+          Privacidad y tus datos
+        </Link>
       </div>
     </main>
   );

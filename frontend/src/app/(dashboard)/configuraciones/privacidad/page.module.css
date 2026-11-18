@@ -154,3 +154,33 @@
     grid-template-columns: 1fr;
   }
 }
+
+.text {
+  margin: 8px 0 0;
+  color: #374151;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+}
+
+.secondary {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  color: #111827;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary:hover {
+  background: #f9fafb;
+}

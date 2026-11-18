@@ -19,7 +19,7 @@ interface AuthContextType {
 
 // Reachable without a session: the login screen and the "Olvidé mi
 // contraseña" flow (request a link, then follow it).
-const PUBLIC_PATHS = ["/login", "/recuperar", "/restablecer"];
+const PUBLIC_PATHS = ["/login", "/recuperar", "/restablecer", "/privacidad"];
 // Where a user with a temporary password is held until they replace it.
 export const CHANGE_PASSWORD_PATH = "/cambiar-contrasena";
 

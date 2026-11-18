@@ -160,6 +160,13 @@
   text-decoration: underline;
 }
 
+.privacyLink {
+  margin-top: 1.5rem;
+  font-size: 0.8rem;
+  color: #222;
+  text-decoration: underline;
+}
+
 /* Adjust text color scheme for dark mode consistency */
 @media (prefers-color-scheme: dark) {
   .loginBox {
@@ -170,7 +177,8 @@
   .logoText,
   .label,
   .checkboxGroup,
-  .forgotLink {
+  .forgotLink,
+  .privacyLink {
     color: #fff;
   }
 

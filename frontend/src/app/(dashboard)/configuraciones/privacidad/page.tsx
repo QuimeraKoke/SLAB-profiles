@@ -14,6 +14,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { usePermission } from "@/lib/permissions";
+import { PRIVACY_EMAIL, PRIVACY_PATH } from "@/lib/privacy";
 import { useConfirm } from "@/components/ui/ConfirmDialog/ConfirmDialog";
 import { useToast } from "@/components/ui/Toast/Toast";
 import type { MeResponse, UsersMeta } from "@/lib/types";
@@ -117,6 +118,15 @@ function PrivacidadInner() {
     return <div className={base.container}><div className={base.empty}>Esta sección es solo para administradores del club.</div></div>;
   }
 
+  const copyPublicLink = async () => {
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${PRIVACY_PATH}`);
+      toast.success("Enlace copiado.");
+    } catch {
+      setError("No se pudo copiar el enlace.");
+    }
+  };
+
   const registroHref = `/configuraciones/registro?tab=accesos&tipo=ia${membership ? "" : `&club=${clubId}`}`;
 
   return (
@@ -206,6 +216,28 @@ function PrivacidadInner() {
               </ul>
             )}
             <Link href={registroHref} className={styles.link}>Ver cada envío en el Registro →</Link>
+          </section>
+
+          <section className={styles.card} aria-labelledby="ia-arco">
+            <h2 id="ia-arco" className={styles.h2}>Derechos de los jugadores (ARCO)</h2>
+            <p className={styles.text}>
+              Un jugador, o el apoderado si es menor de edad, puede pedir una copia de sus datos, corregirlos,
+              borrarlos u oponerse a un uso (por ejemplo, al análisis con IA) escribiendo a{" "}
+              <a href={`mailto:${PRIVACY_EMAIL}`} className={styles.link}>{PRIVACY_EMAIL}</a>.
+              SLAB verifica su identidad y coordina contigo antes de entregar o borrar cualquier dato.
+            </p>
+            <p className={styles.text}>
+              Comparte la página pública con el plantel (por ejemplo, en la ficha de inscripción o el reglamento
+              interno). No requiere cuenta en SLAB.
+            </p>
+            <div className={styles.actions}>
+              <a href={PRIVACY_PATH} target="_blank" rel="noopener noreferrer" className={styles.link}>
+                Ver la página pública ↗
+              </a>
+              <button type="button" className={styles.secondary} onClick={() => void copyPublicLink()}>
+                Copiar enlace
+              </button>
+            </div>
           </section>
         </>
       )}

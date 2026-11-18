@@ -1,0 +1,114 @@
+.page {
+  min-height: 100vh;
+  background: #f5f6f8;
+  color: #111827;
+  padding: 48px 16px;
+}
+
+.doc {
+  max-width: 720px;
+  margin: 0 auto;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 40px 44px;
+  line-height: 1.6;
+  font-size: 0.97rem;
+}
+
+.header h1 {
+  margin: 8px 0 12px;
+  font-size: 1.75rem;
+}
+
+.brand {
+  font-family: var(--font-audiowide), sans-serif;
+  font-weight: 800;
+  letter-spacing: 2px;
+  color: #4f46e5;
+}
+
+.lead {
+  color: #374151;
+  margin: 0;
+}
+
+.doc section {
+  margin-top: 28px;
+}
+
+.doc h2 {
+  font-size: 1.1rem;
+  margin: 0 0 10px;
+}
+
+.doc ol,
+.doc ul {
+  padding-left: 20px;
+  margin: 8px 0;
+  color: #374151;
+}
+
+.rights {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.rights div {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 12px;
+}
+
+.rights dt {
+  font-weight: 700;
+}
+
+.rights dd {
+  margin: 0;
+  color: #374151;
+}
+
+.how {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+
+.email {
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.note {
+  margin: 12px 0 0;
+  color: #374151;
+}
+
+.footer {
+  margin-top: 32px;
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+  font-size: 0.9rem;
+}
+
+.footer a {
+  color: #2563eb;
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 16px;
+  }
+
+  .doc {
+    padding: 24px 20px;
+  }
+
+  .rights div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
