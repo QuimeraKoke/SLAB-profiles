@@ -45,6 +45,9 @@ export interface Club {
    *  expires (5 min on the dev MinIO config) so don't cache it
    *  across user-session lifetimes. */
   logo_url?: string | null;
+  /** The club allows sending (pseudonymised) data to the AI provider.
+   *  Off → assistants are hidden and nothing is sent (backend gate). */
+  ai_enabled?: boolean;
 }
 
 /** A team report layout as the menu sees it (Dashboard → <dept> → <name>). */

@@ -23,6 +23,12 @@ class Club(models.Model):
             "JPG funcionan bien; ideal ~600px de alto."
         ),
     )
+    # The club decides whether its data may be analysed by the AI provider at
+    # all (assistants, readiness, report narratives). Off → nothing is sent.
+    ai_enabled = models.BooleanField(
+        default=True,
+        help_text="Permite enviar datos (seudonimizados) al proveedor de IA.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self) -> str:

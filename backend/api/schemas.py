@@ -155,6 +155,7 @@ class ClubOut(Schema):
     id: UUID
     name: str
     logo_url: str | None = None
+    ai_enabled: bool = True
 
     @staticmethod
     def resolve_logo_url(obj) -> str | None:

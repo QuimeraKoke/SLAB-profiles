@@ -74,6 +74,8 @@ def _club_of(model_label, obj, player):
         return str(cat.club_id) if cat is not None else ""
     if model_label == "core.StaffMembership":
         return str(obj.club_id)
+    if model_label == "core.Club":
+        return str(obj.pk)
     if model_label == "auth.User":
         from core.models import StaffMembership
         cid = StaffMembership.objects.filter(user_id=obj.pk).values_list("club_id", flat=True).first()
@@ -86,16 +88,18 @@ def _label_of(model_label, obj):
         return f"Usuario: {obj.email or obj.get_username()}"
     if model_label == "core.StaffMembership":
         return f"Accesos de {obj.user.email}" if obj.user_id else "Accesos"
+    if model_label == "core.Club":
+        return f"Club: {obj.name}"
     return ""
 
 
 def tracked_models():
     from attachments.models import Attachment
-    from core.models import Contract, DailyNote, KineDailyEntry, Player, PlayerCallUp, StaffMembership
+    from core.models import Club, Contract, DailyNote, KineDailyEntry, Player, PlayerCallUp, StaffMembership
     from exams.models import Episode, EpisodeNote, ExamResult
 
     return [ExamResult, Episode, EpisodeNote, Player, DailyNote, KineDailyEntry, PlayerCallUp,
-            Contract, Attachment, StaffMembership, get_user_model()]
+            Contract, Attachment, StaffMembership, Club, get_user_model()]
 
 
 # ── Serialisation ──────────────────────────────────────────────────────────

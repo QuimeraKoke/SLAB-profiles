@@ -5,6 +5,7 @@ import { Sparkles, Send, ChevronDown, ChevronUp } from "lucide-react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { AI_PRIVACY_NOTE, useAiEnabled } from "@/lib/useAiEnabled";
 import styles from "./AssistantPanel.module.css";
 
 /** A resolved chart payload plus the echoed `spec` the backend returns for
@@ -65,6 +66,7 @@ export default function AssistantPanel({
   promote,
   promoteLabel = "Promover al panel",
 }: Props) {
+  const aiEnabled = useAiEnabled();
   const [open, setOpen] = useState(true);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -127,6 +129,9 @@ export default function AssistantPanel({
     }
   }
 
+  // The club switched the AI off (Administración › Privacidad e IA).
+  if (!aiEnabled) return null;
+
   return (
     <section className={styles.card} aria-label="Asistente">
       <button
@@ -148,6 +153,7 @@ export default function AssistantPanel({
           <p className={styles.hint}>
             Pregunta y, cuando ayude, te propongo un gráfico para visualizarlo.
           </p>
+          <p className={styles.privacy}>{AI_PRIVACY_NOTE}</p>
 
           <div ref={transcriptRef} className={styles.transcript}>
             {turns.length === 0 && suggestions.length > 0 && (

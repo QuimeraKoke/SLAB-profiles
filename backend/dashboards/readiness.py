@@ -132,7 +132,7 @@ def compute_readiness(player, *, force: bool = False):
         return existing  # inputs unchanged → keep cached value
 
     score, source, rationale, flags = det, "deterministic", "", []
-    agent = _agent_readiness(inp, det, model) if det is not None else None
+    agent = _agent_readiness(inp, det, model, player) if det is not None else None
     if agent is not None:
         score, source = agent["score"], "agent"
         rationale, flags = agent["rationale"], agent["flags"]
@@ -151,7 +151,7 @@ def compute_readiness(player, *, force: bool = False):
 # ─── Agent call ───────────────────────────────────────────────────────
 
 
-def _agent_readiness(inp: dict, det: int, model: str) -> dict | None:
+def _agent_readiness(inp: dict, det: int, model: str, player=None) -> dict | None:
     api_key = (getattr(settings, "ANTHROPIC_API_KEY", "") or "").strip()
     if not api_key:
         return None
@@ -167,6 +167,18 @@ def _agent_readiness(inp: dict, det: int, model: str) -> dict | None:
         system += "\n\n" + kb
     system += "\n\n" + _CONTRACT
 
+    # Nothing that identifies the player leaves the server (dashboards/ai_privacy.py).
+    from dashboards import ai_privacy
+    try:
+        pz = ai_privacy.open_session("Readiness", model=model, player=player)
+        sent = pz.mask_obj(inp)
+    except ai_privacy.AiDisabled:
+        return None  # the club switched the AI off: deterministic readiness only
+    except Exception:  # noqa: BLE001 — fail closed: deterministic readiness only
+        logger.exception("Readiness AI gate failed.")
+        return None
+    system = pz.mask(system) + "\n\n" + ai_privacy.PROMPT_NOTE
+
     try:
         client = anthropic.Anthropic(api_key=api_key)
         resp = client.messages.create(
@@ -178,7 +190,7 @@ def _agent_readiness(inp: dict, det: int, model: str) -> dict | None:
             messages=[{
                 "role": "user",
                 "content": (
-                    f"Datos del jugador (JSON):\n{json.dumps(inp, ensure_ascii=False, default=str)}\n\n"
+                    f"Datos del jugador (JSON):\n{json.dumps(sent, ensure_ascii=False, default=str)}\n\n"
                     f"Base calculada de readiness: {det}. Devuelve el JSON."
                 ),
             }],
@@ -198,7 +210,8 @@ def _agent_readiness(inp: dict, det: int, model: str) -> dict | None:
         return None
     # Anchor the agent's number to the deterministic base (±_ANCHOR), 0–100.
     score = max(det - _ANCHOR, min(det + _ANCHOR, data["score"]))
-    return {"score": max(0, min(100, score)), "rationale": data["rationale"], "flags": data["flags"]}
+    return {"score": max(0, min(100, score)), "rationale": pz.unmask(data["rationale"]),
+            "flags": [pz.unmask(f) for f in data["flags"]]}
 
 
 def _parse(text: str) -> dict | None:

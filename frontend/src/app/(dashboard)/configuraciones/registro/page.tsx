@@ -39,6 +39,15 @@ interface BackupRow {
 }
 interface Page<T> { rows: T[]; more: boolean }
 
+// Mirrors audit/access.py KIND_LABEL.
+const KINDS: { id: string; label: string }[] = [
+  { id: "ficha", label: "Abrió la ficha" }, { id: "lesiones", label: "Vio lesiones" },
+  { id: "notas", label: "Vio notas diarias" }, { id: "contratos", label: "Vio contratos" },
+  { id: "adjunto", label: "Descargó un adjunto" }, { id: "descarga", label: "Descargó un informe" },
+  { id: "exportacion", label: "Exportó datos del plantel" }, { id: "ingreso", label: "Inició sesión" },
+  { id: "ia", label: "Envío a la IA" },
+];
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "http://localhost:8000/api";
 
 const when = (iso: string) =>
@@ -46,6 +55,7 @@ const when = (iso: string) =>
 
 const show = (v: unknown): string => {
   if (v === null || v === undefined || v === "") return "—";
+  if (typeof v === "boolean") return v ? "Sí" : "No";
   if (Array.isArray(v)) return v.length ? v.map(show).join(", ") : "—";
   if (typeof v === "object") return JSON.stringify(v);
   const s = String(v);
@@ -93,6 +103,7 @@ function RegistroInner() {
   const filters = {
     desde: sp.get("desde") ?? "", hasta: sp.get("hasta") ?? "",
     usuario: sp.get("usuario") ?? "", jugador: sp.get("jugador") ?? "", accion: sp.get("accion") ?? "",
+    tipo: sp.get("tipo") ?? "",
   };
   const [meta, setMeta] = useState<UsersMeta | null>(null);
   const clubId = membership ? membership.club.id : sp.get("club") || meta?.clubs[0]?.id || "";
@@ -124,7 +135,7 @@ function RegistroInner() {
     if (!membership && clubId) qs.set("club_id", clubId);
     const f: Record<string, string> = JSON.parse(filterKey);
     for (const [k, v] of Object.entries({ ...f, ...extra })) {
-      if (v && !(k === "accion" && tab !== "cambios")) qs.set(k, v);
+      if (v && !(k === "accion" && tab !== "cambios") && !(k === "tipo" && tab !== "accesos")) qs.set(k, v);
     }
     return qs.toString();
   }, [membership, clubId, filterKey, tab]);
@@ -238,6 +249,13 @@ function RegistroInner() {
                 <option value="delete">Borró</option>
               </select></label>
           )}
+          {tab === "accesos" && (
+            <label className={base.field}><span className={base.label}>Tipo</span>
+              <select value={draft.tipo} onChange={(e) => setDraft({ ...draft, tipo: e.target.value })}>
+                <option value="">Todos</option>
+                {KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+              </select></label>
+          )}
           <div className={styles.filterActions}>
             <button type="submit" className={base.primaryBtn}>Filtrar</button>
             <button type="button" className={styles.secondaryBtn} onClick={download}>Descargar CSV</button>
@@ -283,7 +301,7 @@ function RegistroInner() {
                     <tr key={r.id}>
                       <td className={styles.nowrap}>{when(r.at)}</td>
                       <td>{r.actor}</td>
-                      <td>{r.kind_label}</td>
+                      <td>{r.kind_label}{r.kind === "ia" && r.detail && <div className={base.muted}>{r.detail}</div>}</td>
                       <td>{r.player_name || "—"}</td>
                       <td className={base.muted}>{r.ip || "—"}</td>
                     </tr>

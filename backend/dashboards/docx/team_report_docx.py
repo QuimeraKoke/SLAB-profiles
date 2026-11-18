@@ -142,7 +142,7 @@ def render_team_docx(
 
     narrative = get_saved_team_narrative(department, category, signature)
     if narrative is None:
-        narrative = generate_player_narrative(_trim(full_payload), agent=agent)
+        narrative = generate_player_narrative(_trim(full_payload), agent=agent, club_id=category.club_id)
 
     etiqueta = (_format_period(date_from, date_to, event_id, layout)
                 if (event_id and not match_day) else periodo.etiqueta())

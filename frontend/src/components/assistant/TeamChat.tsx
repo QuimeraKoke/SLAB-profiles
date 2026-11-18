@@ -9,6 +9,7 @@ import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { useCategoryContext } from "@/context/CategoryContext";
 import { useAssistant } from "@/context/AssistantContext";
+import { AI_PRIVACY_NOTE, useAiEnabled } from "@/lib/useAiEnabled";
 import styles from "./TeamChat.module.css";
 
 interface ChatMessage {
@@ -29,6 +30,7 @@ export default function TeamChat() {
   const { user } = useAuth();
   const { categoryId, categories } = useCategoryContext();
   const { open, setOpen } = useAssistant();
+  const aiEnabled = useAiEnabled();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -52,7 +54,8 @@ export default function TeamChat() {
   }, [open, setOpen]);
 
   // Don't render for logged-out users (e.g. the /login screen).
-  if (!user) return null;
+  // …nor when the club switched the AI off.
+  if (!user || !aiEnabled) return null;
 
   const categoryName = categories.find((c) => c.id === categoryId)?.name ?? "";
 
@@ -127,6 +130,7 @@ export default function TeamChat() {
                   física, nutricional y de carga, con acceso a los datos de
                   todo el equipo.
                 </p>
+                <p className={styles.privacy}>{AI_PRIVACY_NOTE}</p>
                 <div className={styles.suggestions}>
                   {SUGGESTIONS.map((s) => (
                     <button

@@ -11,7 +11,7 @@ from datetime import date, datetime, time, timedelta
 
 from django.http import HttpResponse
 from django.utils import timezone
-from ninja import Router
+from ninja import Router, Schema
 from ninja.errors import HttpError
 
 from api.scoping import get_membership
@@ -26,7 +26,7 @@ MODEL_LABEL = {
     "exams.ExamResult": "Evaluación", "exams.Episode": "Lesión", "exams.EpisodeNote": "Bitácora de lesión",
     "core.Player": "Jugador", "core.DailyNote": "Nota diaria", "core.KineDailyEntry": "Plan kinésico",
     "core.PlayerCallUp": "Convocatoria", "core.Contract": "Contrato", "attachments.Attachment": "Adjunto",
-    "core.StaffMembership": "Accesos de usuario", "auth.User": "Usuario",
+    "core.StaffMembership": "Accesos de usuario", "auth.User": "Usuario", "core.Club": "Club",
 }
 ACTION_LABEL = dict(ChangeEvent.ACTIONS)
 
@@ -70,7 +70,7 @@ def _change_row(e: ChangeEvent) -> dict:
 def _access_row(e: AccessEvent) -> dict:
     return {
         "id": e.id, "at": e.at.isoformat(), "kind": e.kind, "kind_label": KIND_LABEL.get(e.kind, e.kind),
-        "player_id": e.player_id, "player_name": e.player_name, "actor": e.actor_email,
+        "player_id": e.player_id, "player_name": e.player_name, "actor": e.actor_email or "Sistema",
         "ip": e.ip, "path": e.path, "detail": e.detail,
     }
 
@@ -95,11 +95,14 @@ def changes(request, club_id: str | None = None, desde: date | None = None, hast
 
 @router.get("/access")
 def access(request, club_id: str | None = None, desde: date | None = None, hasta: date | None = None,
-           usuario: str = "", jugador: str = "", before: int | None = None):
+           usuario: str = "", jugador: str = "", tipo: str = "", before: int | None = None):
     club = _club(request, club_id)
     qs = _filtered(AccessEvent.objects.all(), club, desde, hasta, usuario, jugador)
+    if tipo:
+        qs = qs.filter(kind=tipo)
     rows, more = _page(qs, before)
-    return {"rows": [_access_row(e) for e in rows], "more": more}
+    return {"rows": [_access_row(e) for e in rows], "more": more,
+            "kinds": [{"id": k, "label": v} for k, v in KIND_LABEL.items()]}
 
 
 def _csv(name: str, header: list[str], rows) -> HttpResponse:
@@ -133,12 +136,14 @@ def changes_csv(request, club_id: str | None = None, desde: date | None = None, 
 
 @router.get("/access.csv")
 def access_csv(request, club_id: str | None = None, desde: date | None = None, hasta: date | None = None,
-               usuario: str = "", jugador: str = ""):
+               usuario: str = "", jugador: str = "", tipo: str = ""):
     club = _club(request, club_id)
     qs = _filtered(AccessEvent.objects.all(), club, desde, hasta, usuario, jugador)
-    rows = ([_local(e.at), e.actor_email, KIND_LABEL.get(e.kind, e.kind), e.player_name, e.path, e.ip]
-            for e in qs.order_by("-id").iterator())
-    return _csv("registro-accesos.csv", ["Fecha", "Usuario", "Acción", "Jugador", "Ruta", "IP"], rows)
+    if tipo:
+        qs = qs.filter(kind=tipo)
+    rows = ([_local(e.at), e.actor_email or "Sistema", KIND_LABEL.get(e.kind, e.kind), e.player_name,
+             e.detail or e.path, e.ip] for e in qs.order_by("-id").iterator())
+    return _csv("registro-accesos.csv", ["Fecha", "Usuario", "Acción", "Jugador", "Detalle", "IP"], rows)
 
 
 def _changes_text(e: ChangeEvent) -> str:
@@ -169,3 +174,47 @@ def _backup_row(r: BackupRun) -> dict:
     return {"started_at": r.started_at.isoformat(), "finished_at": r.finished_at.isoformat() if r.finished_at else None,
             "status": r.status, "size_bytes": r.size_bytes, "tables": r.tables,
             "error": r.error[:300] if r.status != BackupRun.OK else ""}
+
+
+# ── Administración › Privacidad e IA ─────────────────────────────────────
+
+class AiSettingsIn(Schema):
+    ai_enabled: bool
+
+
+def _ai_settings(club_id: str) -> dict:
+    from collections import Counter
+
+    from core.models import Club
+    from dashboards import ai_privacy
+
+    club = Club.objects.get(pk=club_id)
+    since = timezone.now() - timedelta(days=30)
+    details = AccessEvent.objects.filter(club_id=club_id, kind="ia", at__gte=since).values_list("detail", flat=True)
+    by_feature = Counter(d.split(" · ")[0] for d in details)
+    return {
+        "club_id": str(club.pk), "club_name": club.name, "ai_enabled": club.ai_enabled,
+        "pseudonymized": ai_privacy.enabled(),
+        "sends_30d": sum(by_feature.values()),
+        "by_feature": [{"feature": f, "count": n} for f, n in by_feature.most_common()],
+    }
+
+
+@router.get("/ai-settings")
+def ai_settings(request, club_id: str | None = None):
+    return _ai_settings(_club(request, club_id))
+
+
+@router.put("/ai-settings")
+def set_ai_settings(request, payload: AiSettingsIn, club_id: str | None = None):
+    from core.models import Club
+
+    club = _club(request, club_id)
+    u = request.user
+    if not (u.is_superuser or u.has_perm("auth.change_user")):
+        raise HttpError(403, "Solo los administradores del club pueden cambiar esta opción.")
+    c = Club.objects.get(pk=club)
+    if c.ai_enabled != payload.ai_enabled:
+        c.ai_enabled = payload.ai_enabled
+        c.save(update_fields=["ai_enabled"])  # audited: core.Club is a tracked model
+    return _ai_settings(club)

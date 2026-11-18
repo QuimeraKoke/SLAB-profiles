@@ -310,3 +310,11 @@
     animation: none;
   }
 }
+
+/* Disclosure: what leaves the server when you ask (Privacidad e IA). */
+.privacy {
+  font-size: 11.5px;
+  color: #667085;
+  line-height: 1.4;
+  margin: 8px 0 0;
+}

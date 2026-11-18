@@ -210,6 +210,12 @@ CORS_ALLOWED_ORIGINS = env.list(
 )
 CORS_ALLOW_CREDENTIALS = True
 
+# --- AI privacy (dashboards/ai_privacy.py) ---
+# Players/staff are replaced by codes (JUG-042) and RUT/e-mail/photos/birth
+# dates removed before anything goes to the AI provider; names are put back
+# into the answer. Leave on; off only to debug a prompt locally.
+AI_PSEUDONYMIZE = env.bool("AI_PSEUDONYMIZE", default=True)
+
 # --- Backups (audit.backup) ---
 # Daily pg_dump → a private S3 bucket of its own, written with a put-only key
 # (it cannot list or delete), so a leaked app key cannot erase the backups.

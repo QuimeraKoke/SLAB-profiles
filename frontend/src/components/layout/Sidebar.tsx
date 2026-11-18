@@ -250,6 +250,10 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
       ...(hasPermission(user, "auth.view_user")
         ? [{ label: "Registro", href: "/configuraciones/registro" }]
         : []),
+      // Whether the club's data may go to the AI provider — same audience.
+      ...(hasPermission(user, "auth.view_user")
+        ? [{ label: "Privacidad e IA", href: "/configuraciones/privacidad" }]
+        : []),
       // Clubs, their categories and departments — platform owners only.
       ...(user?.is_superuser ? [{ label: "SLAB Admin", href: "/plataforma" }] : []),
     ],
@@ -322,7 +326,8 @@ export default function Sidebar({ open = false, onClose }: SidebarProps = {}) {
         // link es cosmético: la puerta real son los @require_perm del backend.
         // Pero un link que lleva a "no tienes permiso" es peor que no tenerlo.
         ...(canViewDevelopment ? [desarrolloItem, crecimientoItem] : []),
-        askAiItem,
+        // Hidden when the club switched the AI off (Privacidad e IA).
+        ...(membership?.club?.ai_enabled === false ? [] : [askAiItem]),
       ],
     },
     // Datos (carga / exportación / uso) is upkeep, not insight — it sits

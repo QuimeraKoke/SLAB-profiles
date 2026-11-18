@@ -120,7 +120,7 @@ def _build_system(role_prompt: str, knowledge: str) -> str:
     return "\n\n".join(parts)
 
 
-def generate_player_narrative(payload: dict, *, agent=None) -> dict | None:
+def generate_player_narrative(payload: dict, *, agent=None, club_id=None) -> dict | None:
     """Return ``{"resumen", "hallazgos", "objetivos"}`` for the triage
     ``payload``, or ``None`` if the narrative can't be produced (no key,
     API/parse failure). Callers must treat ``None`` as "render without a
@@ -145,7 +145,8 @@ def generate_player_narrative(payload: dict, *, agent=None) -> dict | None:
         model = getattr(settings, "ANTHROPIC_MODEL", "claude-opus-4-8")
         system = _build_system(_DEFAULT_ROLE_PROMPT, "")
 
-    return _call_model(api_key, model, system, stable_json(payload))
+    return _private_call(api_key, model, system, payload, club_id=club_id,
+                         feature="Narrativa de informe de equipo" if club_id else "Narrativa de informe")
 
 
 # ─── Analytical narrative (Resumen / Análisis / Conclusiones) ──────────
@@ -224,7 +225,8 @@ def generate_player_analysis_narrative(payload: dict, *, agent=None) -> dict | N
     parts.append(_ANALYSIS_OUTPUT_CONTRACT)
     system = "\n\n".join(parts)
 
-    return _call_model(api_key, model, system, stable_json(payload), parser=_parse_analysis)
+    return _private_call(api_key, model, system, payload, parser=_parse_analysis,
+                         feature="Análisis de informe")
 
 
 def _parse_analysis(text: str) -> dict | None:
@@ -260,6 +262,43 @@ def _parse_analysis(text: str) -> dict | None:
 
 
 # ─── Model call ──────────────────────────────────────────────────────
+
+
+def _payload_player(obj):
+    """The Player a narrative payload is about (its `player` block)."""
+    from core.models import Player
+
+    stack = [obj]
+    while stack:
+        o = stack.pop()
+        if isinstance(o, dict):
+            if "first_name" in o and o.get("id"):
+                return Player.objects.select_related("category").filter(pk=o["id"]).first()
+            stack.extend(o.values())
+        elif isinstance(o, list):
+            stack.extend(o)
+    return None
+
+
+def _private_call(api_key, model, system, payload, parser=None, club_id=None, feature="Narrativa de informe"):
+    """Pseudonymise the payload (dashboards/ai_privacy.py), call the model and
+    put the real names back into the narrative. Fails closed: if the club has
+    the AI off, or the masking/audit record cannot be made, no call is made and
+    the report renders without prose."""
+    from dashboards import ai_privacy
+
+    try:
+        player = None if club_id else _payload_player(payload)
+        pz = ai_privacy.open_session(feature, model=model, player=player, club_id=club_id)
+        masked = pz.mask_obj(payload)
+    except ai_privacy.AiDisabled:
+        return None
+    except Exception:  # noqa: BLE001
+        logger.exception("Narrative AI gate failed; skipping the AI narrative.")
+        return None
+    out = _call_model(api_key, model, pz.mask(system) + "\n\n" + ai_privacy.PROMPT_NOTE,
+                      stable_json(masked), parser=parser)
+    return pz.unmask_obj(out) if out else out
 
 
 def _call_model(api_key: str, model: str, system: str, prompt_json: str, parser=None) -> dict | None:

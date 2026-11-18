@@ -40,6 +40,7 @@ KIND_LABEL = {
     "ficha": "Abrió la ficha", "lesiones": "Vio lesiones", "notas": "Vio notas diarias",
     "contratos": "Vio contratos", "adjunto": "Descargó un adjunto", "descarga": "Descargó un informe",
     "exportacion": "Exportó datos del plantel", "ingreso": "Inició sesión",
+    "ia": "Envío a la IA",
 }
 
 

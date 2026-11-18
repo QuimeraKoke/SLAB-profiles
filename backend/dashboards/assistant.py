@@ -430,6 +430,7 @@ def answer_player_resumen_question(
 
     return _chat_with_charts(
         api_key, model, system, convo, category, _PLAYER_CHART_TOOL, _resolve,
+        player=player, feature="Asistente del resumen",
     )
 
 
@@ -472,7 +473,7 @@ def answer_team_question(category, messages: list[dict]) -> str:
         + json.dumps(build_team_overview(category), ensure_ascii=False, default=str)
     )
 
-    return _chat(api_key, model, system, convo, category)
+    return _chat(api_key, model, system, convo, category, feature="Asistente del equipo")
 
 
 def answer_dashboard_question(
@@ -535,7 +536,8 @@ def answer_dashboard_question(
             date_from=date_from, date_to=date_to,
         )
 
-    return _chat_with_charts(api_key, model, system, convo, category, _CHART_TOOL, _resolve)
+    return _chat_with_charts(api_key, model, system, convo, category, _CHART_TOOL, _resolve,
+                             feature="Asistente del panel")
 
 
 def answer_player_question(
@@ -588,7 +590,8 @@ def answer_player_question(
             date_from=date_from, date_to=date_to,
         )
 
-    return _chat_with_charts(api_key, model, system, convo, category, _PLAYER_CHART_TOOL, _resolve)
+    return _chat_with_charts(api_key, model, system, convo, category, _PLAYER_CHART_TOOL, _resolve,
+                             player=player, feature="Asistente de la ficha")
 
 
 def _specialist_knowledge() -> str:
@@ -758,7 +761,8 @@ def build_team_overview(category) -> dict:
 # ─── Model call ──────────────────────────────────────────────────────
 
 
-def _chat(api_key: str, model: str, system: str, messages: list[dict], category) -> str:
+def _chat(api_key: str, model: str, system: str, messages: list[dict], category, *,
+          player=None, feature: str = "Asistente") -> str:
     """Agentic loop: let the model call the DB-search tools, run them, feed the
     results back, and repeat until it answers (bounded by `_MAX_TOOL_ROUNDS`)."""
     try:
@@ -767,10 +771,22 @@ def _chat(api_key: str, model: str, system: str, messages: list[dict], category)
         logger.warning("anthropic SDK not installed; team assistant unavailable.")
         return "El asistente no está disponible en este entorno."
 
+    from dashboards import ai_privacy
+
+    try:
+        pz = ai_privacy.open_session(feature, model=model, player=player, category=category,
+                                     detail=getattr(category, "name", ""))
+    except ai_privacy.AiDisabled:
+        return ai_privacy.DISABLED_MESSAGE
+    except Exception:  # noqa: BLE001 — fail closed: never send unmasked or untraced data
+        logger.exception("AI gate failed; AI call skipped.")
+        return "No pude consultar el asistente en este momento. Intenta nuevamente."
+    # Nothing that identifies a person leaves the server (dashboards/ai_privacy.py).
     system_blocks = [
-        {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+        {"type": "text", "text": pz.mask(system) + "\n\n" + ai_privacy.PROMPT_NOTE,
+         "cache_control": {"type": "ephemeral"}}
     ]
-    convo = list(messages)
+    convo = pz.mask_messages(list(messages))
 
     def _create(with_tools: bool):
         kwargs = dict(
@@ -793,7 +809,7 @@ def _chat(api_key: str, model: str, system: str, messages: list[dict], category)
         for _ in range(_MAX_TOOL_ROUNDS):
             response = _create(with_tools=True)
             if response.stop_reason != "tool_use":
-                return _extract_text(response) or _NO_ANSWER
+                return pz.unmask(_extract_text(response)) or _NO_ANSWER
 
             # Run every tool the model asked for, then feed the results back.
             convo.append({"role": "assistant", "content": response.content})
@@ -801,8 +817,8 @@ def _chat(api_key: str, model: str, system: str, messages: list[dict], category)
             for block in response.content:
                 if getattr(block, "type", None) != "tool_use":
                     continue
-                out, is_error = run_tool(category, block.name, block.input)
-                result = {"type": "tool_result", "tool_use_id": block.id, "content": out}
+                out, is_error = run_tool(category, block.name, pz.unmask_obj(block.input))
+                result = {"type": "tool_result", "tool_use_id": block.id, "content": pz.mask(out)}
                 if is_error:
                     result["is_error"] = True
                 tool_results.append(result)
@@ -810,7 +826,7 @@ def _chat(api_key: str, model: str, system: str, messages: list[dict], category)
 
         # Hit the round cap — ask once more without tools so it must answer.
         final = _create(with_tools=False)
-        return _extract_text(final) or _NO_ANSWER
+        return pz.unmask(_extract_text(final)) or _NO_ANSWER
     except Exception:  # noqa: BLE001 — chat must always reply, never 500
         logger.exception("Team assistant generation failed.")
         return "No pude consultar el asistente en este momento. Intenta nuevamente."
@@ -846,7 +862,8 @@ def _sanitize(messages: list[dict]) -> list[dict]:
 # ─── Dashboard assistant loop (data tools + proponer_grafico) ─────────
 
 
-def _chat_with_charts(api_key, model, system, messages, category, chart_tool, resolve_spec) -> dict:
+def _chat_with_charts(api_key, model, system, messages, category, chart_tool, resolve_spec, *,
+                      player=None, feature: str = "Asistente") -> dict:
     """Agentic loop shared by the team-dashboard and player-profile assistants:
     the data tools (run_tool) plus a chart tool whose spec is resolved by
     `resolve_spec(spec) -> payload`. Collects every resolved chart and returns
@@ -857,10 +874,22 @@ def _chat_with_charts(api_key, model, system, messages, category, chart_tool, re
         logger.warning("anthropic SDK not installed; chart assistant unavailable.")
         return {"reply": "El asistente no está disponible en este entorno.", "charts": []}
 
+    from dashboards import ai_privacy
+
+    try:
+        pz = ai_privacy.open_session(feature, model=model, player=player, category=category,
+                                     detail=getattr(category, "name", ""))
+    except ai_privacy.AiDisabled:
+        return {"reply": ai_privacy.DISABLED_MESSAGE, "charts": []}
+    except Exception:  # noqa: BLE001 — fail closed: never send unmasked or untraced data
+        logger.exception("AI gate failed; AI call skipped.")
+        return {"reply": "No pude consultar el asistente en este momento. Intenta nuevamente.", "charts": []}
+    # Nothing that identifies a person leaves the server (dashboards/ai_privacy.py).
     system_blocks = [
-        {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+        {"type": "text", "text": pz.mask(system) + "\n\n" + ai_privacy.PROMPT_NOTE,
+         "cache_control": {"type": "ephemeral"}}
     ]
-    convo = list(messages)
+    convo = pz.mask_messages(list(messages))
     tools = TOOLS + [chart_tool]
     chart_tool_name = chart_tool["name"]
     charts: list[dict] = []
@@ -886,7 +915,7 @@ def _chat_with_charts(api_key, model, system, messages, category, chart_tool, re
         for _ in range(_MAX_TOOL_ROUNDS):
             response = _create(with_tools=True)
             if response.stop_reason != "tool_use":
-                return {"reply": _extract_text(response) or _NO_ANSWER, "charts": charts}
+                return {"reply": pz.unmask(_extract_text(response)) or _NO_ANSWER, "charts": charts}
 
             convo.append({"role": "assistant", "content": response.content})
             tool_results = []
@@ -894,17 +923,17 @@ def _chat_with_charts(api_key, model, system, messages, category, chart_tool, re
                 if getattr(block, "type", None) != "tool_use":
                     continue
                 if block.name == chart_tool_name:
-                    out, is_error = _run_chart(resolve_spec, block.input, charts)
+                    out, is_error = _run_chart(resolve_spec, pz.unmask_obj(block.input), charts)
                 else:
-                    out, is_error = run_tool(category, block.name, block.input)
-                result = {"type": "tool_result", "tool_use_id": block.id, "content": out}
+                    out, is_error = run_tool(category, block.name, pz.unmask_obj(block.input))
+                result = {"type": "tool_result", "tool_use_id": block.id, "content": pz.mask(out)}
                 if is_error:
                     result["is_error"] = True
                 tool_results.append(result)
             convo.append({"role": "user", "content": tool_results})
 
         final = _create(with_tools=False)
-        return {"reply": _extract_text(final) or _NO_ANSWER, "charts": charts}
+        return {"reply": pz.unmask(_extract_text(final)) or _NO_ANSWER, "charts": charts}
     except Exception:  # noqa: BLE001 — chat must always reply, never 500
         logger.exception("Chart assistant generation failed.")
         return {
